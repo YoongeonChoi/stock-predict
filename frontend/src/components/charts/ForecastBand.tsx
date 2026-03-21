@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Refere
 import type { IndexForecast } from "@/lib/types";
 
 export default function ForecastBand({ forecast }: { forecast: IndexForecast }) {
+  if (!forecast?.scenarios?.length) return <p className="text-sm text-text-secondary">Forecast data not available.</p>;
   const data = forecast.scenarios.map((s) => ({
     name: s.name,
     price: s.price,
@@ -15,9 +16,9 @@ export default function ForecastBand({ forecast }: { forecast: IndexForecast }) 
     <div className="space-y-3">
       <div className="flex items-baseline gap-4">
         <span className="text-sm text-text-secondary">Current</span>
-        <span className="text-lg font-bold">{forecast.current_price.toLocaleString()}</span>
+        <span className="text-lg font-bold">{(forecast.current_price ?? 0).toLocaleString()}</span>
         <span className="text-sm text-text-secondary">Fair Value</span>
-        <span className="text-lg font-bold text-emerald-500">{forecast.fair_value.toLocaleString()}</span>
+        <span className="text-lg font-bold text-emerald-500">{(forecast.fair_value ?? 0).toLocaleString()}</span>
       </div>
 
       <div className="w-full h-44">

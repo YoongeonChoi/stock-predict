@@ -37,13 +37,15 @@ export default function StockPage() {
   );
   if (!stock) return <div className="text-text-secondary">Failed to load stock data</div>;
 
-  const bsg = stock.buy_sell_guide;
+  const defaultDetail = { total: 0, max_score: 0, items: [] };
+  const bsg = stock.buy_sell_guide || { buy_zone_low: 0, buy_zone_high: 0, fair_value: 0, sell_zone_low: 0, sell_zone_high: 0, risk_reward_ratio: 0, confidence_grade: "C", methodology: [], summary: "" };
+  const sc = stock.score || {} as any;
   const scoreCategories = [
-    { label: "Fundamental", data: stock.score.fundamental },
-    { label: "Valuation", data: stock.score.valuation },
-    { label: "Growth", data: stock.score.growth_momentum },
-    { label: "Analyst", data: stock.score.analyst },
-    { label: "Risk", data: stock.score.risk },
+    { label: "Fundamental", data: sc.fundamental || defaultDetail },
+    { label: "Valuation", data: sc.valuation || defaultDetail },
+    { label: "Growth", data: sc.growth_momentum || defaultDetail },
+    { label: "Analyst", data: sc.analyst || defaultDetail },
+    { label: "Risk", data: sc.risk || defaultDetail },
   ];
 
   return (
@@ -74,9 +76,9 @@ export default function StockPage() {
       <div className="card">
         <h2 className="font-semibold mb-3">3-Month Price Chart</h2>
         <PriceChart
-          data={stock.price_history}
-          ma20={stock.technical.ma_20}
-          ma60={stock.technical.ma_60}
+          data={stock.price_history || []}
+          ma20={stock.technical?.ma_20 || []}
+          ma60={stock.technical?.ma_60 || []}
           buyZone={{ low: bsg.buy_zone_low, high: bsg.buy_zone_high }}
           sellZone={{ low: bsg.sell_zone_low, high: bsg.sell_zone_high }}
           fairValue={bsg.fair_value}
@@ -119,10 +121,10 @@ export default function StockPage() {
             <div className="font-bold text-red-500">{formatNumber(bsg.sell_zone_high)}</div>
           </div>
         </div>
-        <div className="text-sm text-text-secondary">Risk/Reward Ratio: <strong>{bsg.risk_reward_ratio.toFixed(2)}</strong></div>
-        {bsg.methodology.length > 0 && (
+        <div className="text-sm text-text-secondary">Risk/Reward Ratio: <strong>{(bsg.risk_reward_ratio ?? 0).toFixed(2)}</strong></div>
+        {(bsg.methodology || []).length > 0 && (
           <div className="mt-3 text-xs text-text-secondary">
-            {bsg.methodology.map((m, i) => (
+            {(bsg.methodology || []).map((m, i) => (
               <div key={i}>• {m.name}: {formatNumber(m.value)} (weight {(m.weight * 100).toFixed(0)}%) — {m.details}</div>
             ))}
           </div>
@@ -132,7 +134,7 @@ export default function StockPage() {
       {/* Score Breakdown */}
       <div className="card">
         <div className="flex items-center gap-6 mb-4">
-          <ScoreRadial score={stock.score.total} label="Total" />
+          <ScoreRadial score={sc.total || 0} label="Total" />
           <div className="flex gap-3">
             {scoreCategories.map((c) => (
               <ScoreRadial key={c.label} score={c.data.total} max={c.data.max_score} size={80} label={c.label} />

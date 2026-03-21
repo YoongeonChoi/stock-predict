@@ -14,7 +14,11 @@ async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.
         return err.to_dict()
 
     try:
-        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        client = openai.AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            max_retries=0,
+            timeout=30.0,
+        )
         response = await client.chat.completions.create(
             model=settings.openai_model,
             messages=[
@@ -57,7 +61,11 @@ async def ask_text(system_prompt: str, user_prompt: str, temperature: float = 0.
         return ""
 
     try:
-        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        client = openai.AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            max_retries=0,
+            timeout=30.0,
+        )
         response = await client.chat.completions.create(
             model=settings.openai_model,
             messages=[

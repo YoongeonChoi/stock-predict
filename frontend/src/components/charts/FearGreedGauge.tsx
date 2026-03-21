@@ -3,9 +3,11 @@
 import type { FearGreedIndex } from "@/lib/types";
 
 export default function FearGreedGauge({ data }: { data: FearGreedIndex }) {
-  const rotation = (data.score / 100) * 180 - 90;
+  if (!data) return null;
+  const score = data.score ?? 50;
+  const rotation = (score / 100) * 180 - 90;
   const color =
-    data.score >= 80 ? "#22c55e" : data.score >= 60 ? "#84cc16" : data.score >= 40 ? "#eab308" : data.score >= 20 ? "#f97316" : "#ef4444";
+    score >= 80 ? "#22c55e" : score >= 60 ? "#84cc16" : score >= 40 ? "#eab308" : score >= 20 ? "#f97316" : "#ef4444";
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -18,14 +20,14 @@ export default function FearGreedGauge({ data }: { data: FearGreedIndex }) {
         <div className="absolute bottom-0 left-1/2 w-3 h-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-text" />
       </div>
       <div className="text-center">
-        <span className="text-2xl font-bold" style={{ color }}>{data.score.toFixed(0)}</span>
+        <span className="text-2xl font-bold" style={{ color }}>{score.toFixed(0)}</span>
         <span className="text-sm text-text-secondary ml-2">{data.label}</span>
       </div>
       <div className="grid grid-cols-5 gap-2 w-full mt-2">
-        {data.components.map((c) => (
+        {(data.components || []).map((c) => (
           <div key={c.name} className="text-center">
             <div className="text-xs text-text-secondary">{c.name.split(" ")[0]}</div>
-            <div className="text-sm font-medium">{c.value.toFixed(0)}</div>
+            <div className="text-sm font-medium">{(c.value ?? 0).toFixed(0)}</div>
           </div>
         ))}
       </div>

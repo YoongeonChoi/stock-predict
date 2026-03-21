@@ -3,10 +3,11 @@
 import type { ScoreItem } from "@/lib/types";
 
 export default function ScoreBreakdown({ items }: { items: ScoreItem[] }) {
+  if (!items?.length) return null;
   return (
     <div className="space-y-3">
-      {items.map((item) => {
-        const pct = (item.score / item.max_score) * 100;
+      {items.filter(Boolean).map((item) => {
+        const pct = item.max_score ? (item.score / item.max_score) * 100 : 0;
         const color =
           pct >= 80 ? "bg-emerald-500" : pct >= 60 ? "bg-green-500" : pct >= 40 ? "bg-yellow-500" : pct >= 20 ? "bg-orange-500" : "bg-red-500";
         return (
@@ -14,7 +15,7 @@ export default function ScoreBreakdown({ items }: { items: ScoreItem[] }) {
             <div className="flex justify-between text-sm mb-1">
               <span>{item.name}</span>
               <span className="text-text-secondary">
-                {item.score.toFixed(1)} / {item.max_score}
+                {(item.score ?? 0).toFixed(1)} / {item.max_score ?? 0}
               </span>
             </div>
             <div className="h-2 rounded-full bg-border overflow-hidden">

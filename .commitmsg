@@ -1,0 +1,7 @@
+fix: resolve OpenAI retry delay, LLM ticker format, and frontend null crashes
+
+- Set OpenAI client max_retries=0 and timeout=30s to prevent 20s retry loops on 429 errors
+- Add Yahoo Finance ticker format instructions to country report prompt (KR: 005930.KS, JP: 7203.T)
+- Add 30+ Korean/Japanese company name to ticker fallback mapping in country_analyzer
+- Add comprehensive null-safe guards across all frontend pages and chart components
+- Conditionally render sections (forecast, news, institutional analysis) when data is missing

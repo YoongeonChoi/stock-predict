@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { SectorReport } from "@/lib/types";
+import type { SectorReport, ScoreItem } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
@@ -32,17 +32,20 @@ export default function SectorPage() {
   );
   if (!report) return <div className="text-text-secondary">Failed to load sector report</div>;
 
+  const defaultScore: ScoreItem = { name: "", score: 0, max_score: 0, description: "" };
+  const sc = report.score || {} as any;
   const scoreItems = [
-    report.score.earnings_growth, report.score.institutional_consensus, report.score.valuation_attractiveness,
-    report.score.policy_impact, report.score.technical_momentum, report.score.risk_adjusted_return,
+    sc.earnings_growth || defaultScore, sc.institutional_consensus || defaultScore, sc.valuation_attractiveness || defaultScore,
+    sc.policy_impact || defaultScore, sc.technical_momentum || defaultScore, sc.risk_adjusted_return || defaultScore,
   ];
+  const topStocks = report.top_stocks || [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       <div className="flex items-center gap-4">
         <Link href={`/country/${code}`} className="text-text-secondary hover:text-text">&larr;</Link>
-        <h1 className="text-2xl font-bold">{report.sector.name}</h1>
-        <span className="text-text-secondary">({report.sector.stock_count} stocks)</span>
+        <h1 className="text-2xl font-bold">{report.sector?.name || "Sector"}</h1>
+        <span className="text-text-secondary">({report.sector?.stock_count ?? 0} stocks)</span>
       </div>
 
       {(report as any).errors?.length > 0 && <WarningBanner codes={(report as any).errors} />}
@@ -50,7 +53,7 @@ export default function SectorPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card lg:col-span-2">
           <div className="flex items-center gap-6">
-            <ScoreRadial score={report.score.total} label="Sector Score" />
+            <ScoreRadial score={sc.total || 0} label="Sector Score" />
             <div className="flex-1">
               <ScoreBreakdown items={scoreItems} />
             </div>
@@ -58,10 +61,11 @@ export default function SectorPage() {
         </div>
         <div className="card">
           <h3 className="font-semibold mb-3">Summary</h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{report.summary}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{report.summary || "No summary available."}</p>
         </div>
       </div>
 
+      {topStocks.length > 0 && (
       <div className="card">
         <h2 className="font-semibold mb-4">Top 10 Stocks</h2>
         <div className="overflow-x-auto">
@@ -78,7 +82,7 @@ export default function SectorPage() {
               </tr>
             </thead>
             <tbody>
-              {report.top_stocks.map((s) => (
+              {topStocks.map((s) => (
                 <tr key={s.ticker} className="border-b border-border/50 hover:bg-border/20">
                   <td className="py-3 font-bold text-accent">{s.rank}</td>
                   <td className="py-3">
@@ -87,14 +91,14 @@ export default function SectorPage() {
                       <div className="text-xs text-text-secondary">{s.ticker}</div>
                     </Link>
                   </td>
-                  <td className="py-3 text-right font-mono">{s.current_price.toLocaleString()}</td>
-                  <td className={`py-3 text-right ${changeColor(s.change_pct)}`}>{formatPct(s.change_pct)}</td>
-                  <td className="py-3 text-right font-bold">{s.score.toFixed(1)}</td>
+                  <td className="py-3 text-right font-mono">{(s.current_price ?? 0).toLocaleString()}</td>
+                  <td className={`py-3 text-right ${changeColor(s.change_pct ?? 0)}`}>{formatPct(s.change_pct ?? 0)}</td>
+                  <td className="py-3 text-right font-bold">{(s.score ?? 0).toFixed(1)}</td>
                   <td className="py-3 text-xs text-text-secondary hidden md:table-cell">
-                    {s.pros.slice(0, 2).map((p, i) => <div key={i}>+ {p}</div>)}
+                    {(s.pros || []).slice(0, 2).map((p, i) => <div key={i}>+ {p}</div>)}
                   </td>
                   <td className="py-3 text-xs text-text-secondary hidden md:table-cell">
-                    {s.cons.slice(0, 2).map((c, i) => <div key={i}>- {c}</div>)}
+                    {(s.cons || []).slice(0, 2).map((c, i) => <div key={i}>- {c}</div>)}
                   </td>
                 </tr>
               ))}
@@ -102,6 +106,7 @@ export default function SectorPage() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }
