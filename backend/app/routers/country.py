@@ -37,9 +37,12 @@ async def get_country_report(code: str):
     if code not in COUNTRY_REGISTRY:
         raise HTTPException(404, f"Country {code} not supported")
     report = await analyze_country(code)
-    if "error" in report:
-        raise HTTPException(500, report["error"])
-    await archive_service.save_report("country", report, country_code=code)
+    if report.get("error") and "Unknown country" in report["error"]:
+        raise HTTPException(404, report["error"])
+    try:
+        await archive_service.save_report("country", report, country_code=code)
+    except Exception:
+        pass
     return report
 
 

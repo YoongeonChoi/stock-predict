@@ -31,8 +31,13 @@ async def get_sector_report(code: str, sector_id: str):
         raise HTTPException(404, f"Sector {sector_id} not found")
 
     report = await analyze_sector(code, sector_name)
-    if "error" in report:
-        raise HTTPException(500, report["error"])
+    if report.get("error") and "Unknown" in report.get("error", ""):
+        raise HTTPException(404, report["error"])
+    if report.get("error") and "No tickers" in report.get("error", ""):
+        raise HTTPException(404, report["error"])
 
-    await archive_service.save_report("sector", report, country_code=code, sector_id=sector_id)
+    try:
+        await archive_service.save_report("sector", report, country_code=code, sector_id=sector_id)
+    except Exception:
+        pass
     return report

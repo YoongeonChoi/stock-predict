@@ -11,7 +11,7 @@ SERIES = {
     "gdp_growth": "A191RL1Q225SBEA",
     "cpi_yoy": "CPIAUCSL",
     "unemployment": "UNRATE",
-    "pmi_manufacturing": "MANBUSIMSA",
+    "capacity_utilization": "TCU",
     "treasury_10y": "GS10",
     "treasury_2y": "GS2",
     "sp500_pe": "MULTPL/SP500_PE_RATIO_MONTH",
@@ -28,24 +28,27 @@ async def get_series(series_id: str, limit: int = 12) -> list[dict]:
         return []
 
     async def _fetch():
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{BASE_URL}/series/observations",
-                params={
-                    "series_id": series_id,
-                    "api_key": settings.fred_api_key,
-                    "file_type": "json",
-                    "sort_order": "desc",
-                    "limit": limit,
-                },
-            )
-            resp.raise_for_status()
-            obs = resp.json().get("observations", [])
-            return [
-                {"date": o["date"], "value": _parse_val(o["value"])}
-                for o in obs
-                if o["value"] != "."
-            ]
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{BASE_URL}/series/observations",
+                    params={
+                        "series_id": series_id,
+                        "api_key": settings.fred_api_key,
+                        "file_type": "json",
+                        "sort_order": "desc",
+                        "limit": limit,
+                    },
+                )
+                resp.raise_for_status()
+                obs = resp.json().get("observations", [])
+                return [
+                    {"date": o["date"], "value": _parse_val(o["value"])}
+                    for o in obs
+                    if o["value"] != "."
+                ]
+        except Exception:
+            return []
 
     return await cache.get_or_fetch(
         f"fred:{series_id}", _fetch, settings.cache_ttl_economic

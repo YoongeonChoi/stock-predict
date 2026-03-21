@@ -12,9 +12,10 @@ async def get_stock_detail(ticker: str):
         detail = await analyze_stock(ticker)
     except Exception as e:
         raise HTTPException(500, f"Analysis failed for {ticker}: {str(e)}")
-    if "error" in detail:
-        raise HTTPException(500, detail["error"])
-    await archive_service.save_report("stock", detail, ticker=ticker)
+    try:
+        await archive_service.save_report("stock", detail, ticker=ticker)
+    except Exception:
+        pass
     return detail
 
 

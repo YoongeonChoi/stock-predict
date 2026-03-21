@@ -116,7 +116,7 @@ def _init_registry():
         currency="JPY",
         indices=[
             IndexInfo(ticker="^N225", name="Nikkei 225"),
-            IndexInfo(ticker="2800.T", name="TOPIX ETF"),
+            IndexInfo(ticker="1306.T", name="TOPIX ETF"),
         ],
         research_institutions=[
             "Bank of Japan",

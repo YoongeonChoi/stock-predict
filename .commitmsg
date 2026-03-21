@@ -1,0 +1,11 @@
+fix: resolve 500 errors and improve error resilience
+
+- Fix invalid FRED series ID (MANBUSIMSA → TCU) causing 400 Bad Request
+- Fix delisted Japan TOPIX ticker (2800.T → 1306.T)
+- Add graceful degradation for OpenAI API failures (quota, auth, rate limit)
+  across all analyzers (country, sector, stock, forecast, sentiment)
+- Return partial data (market data, charts, Fear & Greed) when LLM unavailable
+- Replace text-based calendar with visual calendar grid (month view with
+  event dots, date selection, sidebar event details)
+- Add warning color system (CSS + Tailwind) for LLM unavailability banner
+- Improve frontend error handling with retry button and descriptive messages
