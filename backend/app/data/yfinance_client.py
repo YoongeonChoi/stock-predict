@@ -3,72 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from app.data import cache
+from app.data.universe_data import UNIVERSE
 from app.config import get_settings
-
-# Representative tickers per country/sector for screening
-UNIVERSE = {
-    "US": {
-        "Energy": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL"],
-        "Materials": ["LIN", "APD", "SHW", "ECL", "NEM", "FCX", "NUE", "DOW", "DD", "VMC"],
-        "Industrials": ["CAT", "GE", "HON", "UNP", "RTX", "DE", "BA", "LMT", "UPS", "MMM"],
-        "Consumer Discretionary": ["AMZN", "TSLA", "HD", "MCD", "NKE", "LOW", "SBUX", "TJX", "BKNG", "CMG"],
-        "Consumer Staples": ["PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "CL", "MDLZ", "KHC"],
-        "Health Care": ["UNH", "JNJ", "LLY", "PFE", "ABT", "TMO", "MRK", "ABBV", "DHR", "AMGN"],
-        "Financials": ["BRK-B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "BLK", "AXP"],
-        "Information Technology": ["AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "CRM", "AMD", "ADBE", "INTC", "CSCO"],
-        "Communication Services": ["META", "GOOGL", "NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "EA"],
-        "Utilities": ["NEE", "DUK", "SO", "D", "AEP", "SRE", "EXC", "XEL", "ED", "WEC"],
-        "Real Estate": ["PLD", "AMT", "EQIX", "CCI", "PSA", "SPG", "O", "WELL", "DLR", "AVB"],
-    },
-    "KR": {
-        "Information Technology": ["005930.KS", "000660.KS", "035420.KS", "035720.KS", "036570.KS",
-                                   "263750.KS", "034730.KS", "066570.KS", "006400.KS", "009150.KS"],
-        "Financials": ["105560.KS", "055550.KS", "086790.KS", "316140.KS", "024110.KS",
-                       "138930.KS", "003550.KS", "005830.KS", "032830.KS", "071050.KS"],
-        "Consumer Discretionary": ["005380.KS", "000270.KS", "012330.KS", "051910.KS", "004020.KS",
-                                   "003490.KS", "004170.KS", "069960.KS", "161390.KS", "030200.KS"],
-        "Industrials": ["010130.KS", "028260.KS", "009540.KS", "042660.KS", "011200.KS",
-                        "010140.KS", "034020.KS", "003490.KS", "047050.KS", "000120.KS"],
-        "Materials": ["051910.KS", "005490.KS", "010130.KS", "011170.KS", "006800.KS",
-                      "003670.KS", "004000.KS", "001120.KS", "078930.KS", "005300.KS"],
-        "Health Care": ["207940.KS", "068270.KS", "128940.KS", "326030.KS", "145020.KS",
-                        "091990.KS", "004090.KS", "001630.KS", "195940.KS", "185750.KS"],
-        "Energy": ["096770.KS", "010950.KS", "267250.KS", "078930.KS", "006120.KS",
-                   "007070.KS", "003620.KS", "011760.KS", "036460.KS", "014680.KS"],
-        "Consumer Staples": ["097950.KS", "271560.KS", "004370.KS", "033780.KS", "280360.KS",
-                             "005610.KS", "005180.KS", "004990.KS", "014710.KS", "007310.KS"],
-        "Communication Services": ["030200.KS", "036570.KS", "035720.KS", "251270.KS", "041510.KS",
-                                   "035900.KS", "293490.KS", "352820.KS", "259960.KS", "018260.KS"],
-        "Utilities": ["015760.KS", "034590.KS", "017390.KS", "071090.KS", "053210.KS",
-                      "006360.KS", "001440.KS", "029780.KS", "025820.KS", "003580.KS"],
-        "Real Estate": ["316140.KS", "377300.KS", "395400.KS", "365550.KS", "334890.KS",
-                        "448730.KS", "357120.KS", "417310.KS", "432320.KS", "330590.KS"],
-    },
-    "JP": {
-        "Information Technology": ["6758.T", "6861.T", "6857.T", "4063.T", "6723.T",
-                                   "6702.T", "7735.T", "6645.T", "6146.T", "4307.T"],
-        "Consumer Discretionary": ["7203.T", "7267.T", "7974.T", "9983.T", "7751.T",
-                                   "7269.T", "7270.T", "9984.T", "2413.T", "3099.T"],
-        "Financials": ["8306.T", "8316.T", "8411.T", "8766.T", "8035.T",
-                       "8591.T", "8604.T", "8801.T", "8802.T", "7182.T"],
-        "Industrials": ["6301.T", "6501.T", "6503.T", "7011.T", "6902.T",
-                        "6273.T", "6367.T", "7012.T", "9020.T", "9022.T"],
-        "Health Care": ["4502.T", "4503.T", "4568.T", "4519.T", "4523.T",
-                        "6869.T", "4901.T", "4543.T", "6479.T", "2897.T"],
-        "Materials": ["4063.T", "3407.T", "4005.T", "4188.T", "5020.T",
-                      "5108.T", "3401.T", "4042.T", "4021.T", "3405.T"],
-        "Consumer Staples": ["2914.T", "2502.T", "2801.T", "2269.T", "4452.T",
-                             "2871.T", "2503.T", "4578.T", "2607.T", "2002.T"],
-        "Communication Services": ["9432.T", "9433.T", "9434.T", "4689.T", "9602.T",
-                                   "2432.T", "3659.T", "4684.T", "9468.T", "9613.T"],
-        "Energy": ["5020.T", "5019.T", "1605.T", "5021.T", "5017.T",
-                   "9501.T", "9502.T", "9503.T", "1963.T", "5001.T"],
-        "Utilities": ["9501.T", "9502.T", "9503.T", "9531.T", "9532.T",
-                      "9504.T", "9505.T", "9506.T", "9507.T", "9508.T"],
-        "Real Estate": ["8801.T", "8802.T", "3289.T", "8830.T", "3291.T",
-                        "8804.T", "3003.T", "8803.T", "8905.T", "3231.T"],
-    },
-}
 
 
 async def get_index_quote(ticker: str) -> dict:
@@ -249,7 +185,9 @@ async def get_earnings_history(ticker: str) -> list[dict]:
 
 
 async def get_sector_tickers(country_code: str, sector: str) -> list[str]:
-    return UNIVERSE.get(country_code, {}).get(sector, [])
+    from app.data.universe_data import get_universe
+    universe = await get_universe(country_code)
+    return universe.get(sector, UNIVERSE.get(country_code, {}).get(sector, []))
 
 
 async def get_historical_returns(ticker: str, days: int = 60) -> list[float]:

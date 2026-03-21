@@ -1,0 +1,10 @@
+feat: dynamic ticker universe, score-based top 5, dashboard heatmap, detailed scoring docs
+
+- Add FMP Stock Screener API for dynamic ticker fetching (24h cache, hardcoded fallback)
+- Expand static universe to ~850 tickers (US 40-50/sector, KR/JP 20-25/sector)
+- Top 5 stocks now selected by quantitative score ranking instead of LLM picks
+- Dashboard: add global market indicators (VIX, DXY, Gold, Oil, 10Y, BTC)
+- Dashboard: add sector performance heatmap with color-coded ETF returns
+- Archive: fix PDF/CSV download buttons with explicit download trigger
+- Calendar: add fallback event generation when FMP data unavailable
+- README: expand scoring methodology with full threshold tables and process docs
