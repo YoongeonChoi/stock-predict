@@ -1,0 +1,7 @@
+fix: compare page, calendar bars, PDF Unicode font, financials bug
+
+- Compare: add error handling, metric highlighting, Enter key support
+- Calendar: replace dots with Google Calendar-style colored event bars
+- PDF export: add Unicode font support (Malgun Gothic) for Korean/Japanese text
+- Country report: add direct PDF/CSV download endpoints and buttons
+- Financials: fix strftime %q bug that caused empty quarterly data

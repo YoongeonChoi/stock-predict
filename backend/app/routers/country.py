@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from app.models.country import COUNTRY_REGISTRY
 from app.data import yfinance_client
 from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
-from app.services import archive_service
-from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_2005
+from app.services import archive_service, export_service
+from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005
 
 router = APIRouter(prefix="/api", tags=["country"])
 
@@ -59,6 +59,51 @@ async def get_country_report(code: str):
         SP_5002(str(e)[:100]).log()
 
     return report
+
+
+@router.get("/country/{code}/report/pdf")
+async def download_country_report_pdf(code: str):
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+
+    try:
+        report = await analyze_country(code)
+        country_name = COUNTRY_REGISTRY[code].name_local or COUNTRY_REGISTRY[code].name
+        pdf_bytes = export_service.export_pdf(report, title=f"{country_name} Market Report")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={code}_report.pdf"},
+        )
+    except Exception as e:
+        err = SP_5004(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/country/{code}/report/csv")
+async def download_country_report_csv(code: str):
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+
+    try:
+        report = await analyze_country(code)
+        csv_content = export_service.export_csv(report)
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={code}_report.csv"},
+        )
+    except Exception as e:
+        err = SP_5004(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
 
 
 @router.get("/country/{code}/forecast")

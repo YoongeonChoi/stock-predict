@@ -57,9 +57,25 @@ export default function CountryPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      <div className="flex items-center gap-4">
-        <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
-        <h1 className="text-2xl font-bold">{report.country?.name_local || report.country?.name || "Report"} Market Report</h1>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
+          <h1 className="text-2xl font-bold">{report.country?.name_local || report.country?.name || "Report"} Market Report</h1>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <a
+            href={`/api/country/${code}/report/pdf`}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 transition-opacity"
+          >
+            PDF
+          </a>
+          <a
+            href={`/api/country/${code}/report/csv`}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-accent/50 transition-colors"
+          >
+            CSV
+          </a>
+        </div>
       </div>
 
       {/* Error code warnings */}

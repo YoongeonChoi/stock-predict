@@ -12,11 +12,16 @@ const COUNTRIES = [
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface CalEvent {
-  type: "economic" | "earnings" | "major";
+  type: "economic" | "earnings";
   title: string;
   date: string;
   detail?: string;
 }
+
+const EVENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  economic: { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", border: "border-l-blue-500" },
+  earnings: { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", border: "border-l-amber-500" },
+};
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
@@ -27,10 +32,7 @@ function getFirstDayOfMonth(year: number, month: number) {
 }
 
 function formatMonthYear(year: number, month: number) {
-  return new Date(year, month).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+  return new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
 function parseDate(d: string): string | null {
@@ -57,17 +59,14 @@ export default function CalendarPage() {
   const events = useMemo<CalEvent[]>(() => {
     if (!data) return [];
     const list: CalEvent[] = [];
-
     (data.economic_events || []).forEach((e: any) => {
       const d = parseDate(e.date);
       if (d) list.push({ type: "economic", title: e.event || e.name || "Economic Event", date: d, detail: e.country });
     });
-
     (data.earnings_events || []).forEach((e: any) => {
       const d = parseDate(e.date);
       if (d) list.push({ type: "earnings", title: `${e.symbol || "?"} Earnings`, date: d, detail: e.symbol });
     });
-
     return list;
   }, [data]);
 
@@ -103,7 +102,7 @@ export default function CalendarPage() {
   const selectedEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Economic Calendar</h1>
         <div className="flex gap-2">
@@ -124,9 +123,9 @@ export default function CalendarPage() {
       {loading ? (
         <div className="animate-pulse space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-16 bg-border rounded" />)}</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Calendar Grid */}
-          <div className="lg:col-span-2 card">
+          <div className="lg:col-span-3 card !p-4">
             <div className="flex items-center justify-between mb-4">
               <button onClick={goToPrevMonth} className="p-2 rounded-lg hover:bg-border/50 transition-colors text-text-secondary hover:text-text">&larr;</button>
               <h2 className="font-semibold text-lg">{formatMonthYear(viewYear, viewMonth)}</h2>
@@ -134,54 +133,72 @@ export default function CalendarPage() {
             </div>
 
             {/* Day headers */}
-            <div className="grid grid-cols-7 gap-1 mb-1">
+            <div className="grid grid-cols-7 border-b border-border mb-1">
               {DAYS.map((d) => (
-                <div key={d} className="text-center text-xs font-medium text-text-secondary py-1">{d}</div>
+                <div key={d} className="text-center text-xs font-medium text-text-secondary py-2">{d}</div>
               ))}
             </div>
 
             {/* Calendar cells */}
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7">
               {calendarCells.map((day, idx) => {
-                if (day === null) return <div key={idx} className="aspect-square" />;
+                if (day === null) return <div key={idx} className="min-h-[90px] border-b border-r border-border/30" />;
 
                 const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                 const dayEvents = eventsByDate[dateStr] || [];
                 const isToday = dateStr === todayStr;
                 const isSelected = dateStr === selectedDate;
-                const hasEconomic = dayEvents.some((e) => e.type === "economic");
-                const hasEarnings = dayEvents.some((e) => e.type === "earnings");
 
                 return (
                   <button
                     key={idx}
                     onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center relative transition-all text-sm
-                      ${isToday ? "ring-2 ring-accent" : ""}
-                      ${isSelected ? "bg-accent/20 border border-accent" : "hover:bg-border/40"}
-                      ${dayEvents.length > 0 ? "font-medium" : "text-text-secondary"}
+                    className={`min-h-[90px] border-b border-r border-border/30 p-1 text-left flex flex-col transition-colors
+                      ${isSelected ? "bg-accent/10" : "hover:bg-border/20"}
                     `}
                   >
-                    <span>{day}</span>
-                    {dayEvents.length > 0 && (
-                      <div className="flex gap-0.5 mt-0.5">
-                        {hasEconomic && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
-                        {hasEarnings && <span className="w-1.5 h-1.5 rounded-full bg-warning" />}
-                      </div>
-                    )}
+                    <span className={`text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full
+                      ${isToday ? "bg-accent text-white" : "text-text-secondary"}
+                    `}>
+                      {day}
+                    </span>
+
+                    {/* Event bars */}
+                    <div className="flex flex-col gap-[2px] w-full overflow-hidden flex-1">
+                      {dayEvents.slice(0, 3).map((e, i) => {
+                        const c = EVENT_COLORS[e.type];
+                        return (
+                          <div
+                            key={i}
+                            className={`text-[10px] leading-tight px-1 py-[1px] rounded-sm truncate border-l-2 ${c.bg} ${c.text} ${c.border}`}
+                          >
+                            {e.title}
+                          </div>
+                        );
+                      })}
+                      {dayEvents.length > 3 && (
+                        <span className="text-[10px] text-text-secondary pl-1">+{dayEvents.length - 3} more</span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
 
             {/* Legend */}
-            <div className="flex gap-4 mt-4 text-xs text-text-secondary">
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-accent" />Economic</div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-warning" />Earnings</div>
+            <div className="flex gap-6 mt-3 text-xs text-text-secondary">
+              <div className="flex items-center gap-1.5">
+                <div className="w-8 h-3 rounded-sm bg-blue-500/15 border-l-2 border-l-blue-500" />
+                Economic
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-8 h-3 rounded-sm bg-amber-500/15 border-l-2 border-l-amber-500" />
+                Earnings
+              </div>
             </div>
           </div>
 
-          {/* Sidebar: selected date events + major events */}
+          {/* Sidebar */}
           <div className="space-y-4">
             {/* Selected date events */}
             <div className="card">
@@ -192,16 +209,18 @@ export default function CalendarPage() {
               </h3>
               {selectedDate ? (
                 selectedEvents.length > 0 ? (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {selectedEvents.map((e, i) => (
-                      <div key={i} className="flex items-start gap-2 text-sm">
-                        <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${e.type === "economic" ? "bg-accent" : "bg-warning"}`} />
-                        <div>
-                          <div className="font-medium">{e.title}</div>
-                          {e.detail && <div className="text-xs text-text-secondary">{e.detail}</div>}
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {selectedEvents.map((e, i) => {
+                      const c = EVENT_COLORS[e.type];
+                      return (
+                        <div key={i} className={`flex items-start gap-2 text-sm p-2 rounded-md border-l-2 ${c.bg} ${c.border}`}>
+                          <div>
+                            <div className={`font-medium ${c.text}`}>{e.title}</div>
+                            {e.detail && <div className="text-xs text-text-secondary mt-0.5">{e.detail}</div>}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-text-secondary">No events on this date.</p>
@@ -214,7 +233,7 @@ export default function CalendarPage() {
             {/* Major recurring events */}
             {data?.major_events?.length > 0 && (
               <div className="card">
-                <h3 className="font-semibold mb-3 text-sm">Major Recurring Events</h3>
+                <h3 className="font-semibold mb-3 text-sm">Major Events</h3>
                 <div className="space-y-2">
                   {data.major_events.map((e: any, i: number) => (
                     <div key={i} className="flex justify-between text-sm">
@@ -228,19 +247,24 @@ export default function CalendarPage() {
 
             {/* Upcoming events list */}
             <div className="card">
-              <h3 className="font-semibold mb-3 text-sm">Upcoming Events</h3>
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {events.slice(0, 15).map((e, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setSelectedDate(e.date)}
-                    className="w-full flex items-center gap-2 text-sm text-left hover:bg-border/30 rounded p-1 transition-colors"
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${e.type === "economic" ? "bg-accent" : "bg-warning"}`} />
-                    <span className="flex-1 truncate">{e.title}</span>
-                    <span className="text-xs text-text-secondary shrink-0">{e.date.slice(5)}</span>
-                  </button>
-                ))}
+              <h3 className="font-semibold mb-3 text-sm">Upcoming</h3>
+              <div className="space-y-1 max-h-80 overflow-y-auto">
+                {events.slice(0, 20).map((e, i) => {
+                  const c = EVENT_COLORS[e.type];
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedDate(e.date)}
+                      className="w-full flex items-center gap-2 text-sm text-left hover:bg-border/30 rounded p-1.5 transition-colors"
+                    >
+                      <div className={`w-1 h-6 rounded-full shrink-0 ${e.type === "economic" ? "bg-blue-500" : "bg-amber-500"}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-xs">{e.title}</div>
+                        <div className="text-[10px] text-text-secondary">{e.date.slice(5)}</div>
+                      </div>
+                    </button>
+                  );
+                })}
                 {events.length === 0 && <p className="text-sm text-text-secondary">No upcoming events.</p>}
               </div>
             </div>
