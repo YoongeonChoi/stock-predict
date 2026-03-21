@@ -12,6 +12,22 @@ from app.models.country import COUNTRY_REGISTRY, CountryReport, StockSummaryRef,
 from app.config import get_settings
 from app.errors import SP_2005, SP_3004, SP_6001
 
+TICKER_FALLBACK = {
+    "삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "네이버": "035420.KS",
+    "카카오": "035720.KS", "LG화학": "051910.KS", "현대차": "005380.KS",
+    "기아": "000270.KS", "삼성SDI": "006400.KS", "셀트리온": "068270.KS",
+    "POSCO홀딩스": "005490.KS", "삼성바이오로직스": "207940.KS", "LG에너지솔루션": "373220.KS",
+    "현대모비스": "012330.KS", "KB금융": "105560.KS", "신한지주": "055550.KS",
+    "삼성물산": "028260.KS", "SK이노베이션": "096770.KS", "LG전자": "066570.KS",
+    "한국전력": "015760.KS", "SK텔레콤": "017670.KS", "KT": "030200.KS",
+    "포스코퓨처엠": "003670.KS", "엔씨소프트": "036570.KS", "크래프톤": "259960.KS",
+    "하이브": "352820.KS", "두산에너빌리티": "034020.KS", "한화에어로스페이스": "012450.KS",
+    "トヨタ": "7203.T", "ソニー": "6758.T", "任天堂": "7974.T",
+    "ソフトバンク": "9984.T", "キーエンス": "6861.T", "三菱UFJ": "8306.T",
+    "Toyota": "7203.T", "Sony": "6758.T", "Nintendo": "7974.T",
+    "SoftBank": "9984.T", "Keyence": "6861.T",
+}
+
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
@@ -72,7 +88,8 @@ async def analyze_country(country_code: str) -> dict:
 
     top_stocks = []
     if not llm_failed:
-        top_tickers = llm_result.get("top_5_tickers", [])
+        raw_tickers = llm_result.get("top_5_tickers", [])
+        top_tickers = [TICKER_FALLBACK.get(t, t) for t in raw_tickers]
         top_reasons = llm_result.get("top_5_reasons", [])
         for i, ticker in enumerate(top_tickers[:5]):
             try:

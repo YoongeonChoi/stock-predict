@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { CountryReport, SectorListItem } from "@/lib/types";
+import type { CountryReport, SectorListItem, ScoreItem } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
@@ -45,16 +45,21 @@ export default function CountryPage() {
   );
   if (!report) return <div className="text-text-secondary">Failed to load report</div>;
 
+  const defaultScore: ScoreItem = { name: "", score: 0, max_score: 0, description: "" };
+  const s = report.score || {} as any;
   const scoreItems = [
-    report.score.monetary_policy, report.score.economic_growth, report.score.market_valuation,
-    report.score.earnings_momentum, report.score.institutional_consensus, report.score.risk_assessment,
+    s.monetary_policy || defaultScore, s.economic_growth || defaultScore, s.market_valuation || defaultScore,
+    s.earnings_momentum || defaultScore, s.institutional_consensus || defaultScore, s.risk_assessment || defaultScore,
   ];
+  const ia = report.institutional_analysis || { policy_institutions: [], sell_side: [], consensus_summary: "" };
+  const news = report.key_news || [];
+  const topStocks = report.top_stocks || [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       <div className="flex items-center gap-4">
         <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
-        <h1 className="text-2xl font-bold">{report.country.name_local} Market Report</h1>
+        <h1 className="text-2xl font-bold">{report.country?.name_local || report.country?.name || "Report"} Market Report</h1>
       </div>
 
       {/* Error code warnings */}
@@ -65,36 +70,41 @@ export default function CountryPage() {
       {/* Market Summary */}
       <div className="card">
         <h2 className="font-semibold mb-3">Market Summary</h2>
-        <div className="text-sm leading-relaxed whitespace-pre-line">{report.market_summary}</div>
+        <div className="text-sm leading-relaxed whitespace-pre-line">{report.market_summary || "No summary available."}</div>
       </div>
 
       {/* Score + Fear & Greed */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card lg:col-span-2">
           <div className="flex items-center gap-6 mb-4">
-            <ScoreRadial score={report.score.total} label="Total Score" />
+            <ScoreRadial score={s.total || 0} label="Total Score" />
             <div className="flex-1">
               <ScoreBreakdown items={scoreItems} />
             </div>
           </div>
         </div>
+        {report.fear_greed && (
         <div className="card flex flex-col items-center justify-center">
           <h3 className="font-semibold mb-3">Fear & Greed</h3>
           <FearGreedGauge data={report.fear_greed} />
         </div>
+        )}
       </div>
 
       {/* Index Forecast */}
+      {report.forecast && report.forecast.scenarios?.length > 0 && (
       <div className="card">
         <h2 className="font-semibold mb-3">1-Month Index Forecast</h2>
         <ForecastBand forecast={report.forecast} />
       </div>
+      )}
 
       {/* Key News */}
+      {news.length > 0 && (
       <div className="card">
         <h2 className="font-semibold mb-3">Key News</h2>
         <div className="space-y-2">
-          {report.key_news.slice(0, 8).map((n, i) => (
+          {news.slice(0, 8).map((n, i) => (
             <a key={i} href={n.url} target="_blank" rel="noopener noreferrer"
                className="block text-sm hover:text-accent transition-colors">
               <span className="text-text-secondary mr-2">{n.source}</span>
@@ -103,47 +113,50 @@ export default function CountryPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Institutional Analysis */}
+      {(ia.policy_institutions?.length > 0 || ia.sell_side?.length > 0) && (
       <div className="card">
         <h2 className="font-semibold mb-3">Institutional Consensus</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <h3 className="text-sm font-medium text-text-secondary mb-2">Policy Institutions</h3>
-            {report.institutional_analysis.policy_institutions.map((inst, i) => (
+            {(ia.policy_institutions || []).map((inst, i) => (
               <div key={i} className="mb-2 text-sm">
                 <span className="font-medium">{inst.name}</span>
                 <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
                   inst.stance === "bullish" ? "bg-positive/20 text-positive" :
                   inst.stance === "bearish" ? "bg-negative/20 text-negative" : "bg-border text-text-secondary"
                 }`}>{inst.stance}</span>
-                <ul className="mt-1 text-text-secondary">{inst.key_points.map((p, j) => <li key={j}>• {p}</li>)}</ul>
+                <ul className="mt-1 text-text-secondary">{(inst.key_points || []).map((p, j) => <li key={j}>• {p}</li>)}</ul>
               </div>
             ))}
           </div>
           <div>
             <h3 className="text-sm font-medium text-text-secondary mb-2">Sell-Side</h3>
-            {report.institutional_analysis.sell_side.map((inst, i) => (
+            {(ia.sell_side || []).map((inst, i) => (
               <div key={i} className="mb-2 text-sm">
                 <span className="font-medium">{inst.name}</span>
                 <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
                   inst.stance === "bullish" ? "bg-positive/20 text-positive" :
                   inst.stance === "bearish" ? "bg-negative/20 text-negative" : "bg-border text-text-secondary"
                 }`}>{inst.stance}</span>
-                <ul className="mt-1 text-text-secondary">{inst.key_points.map((p, j) => <li key={j}>• {p}</li>)}</ul>
+                <ul className="mt-1 text-text-secondary">{(inst.key_points || []).map((p, j) => <li key={j}>• {p}</li>)}</ul>
               </div>
             ))}
           </div>
         </div>
-        <p className="text-sm text-text-secondary">{report.institutional_analysis.consensus_summary}</p>
+        {ia.consensus_summary && <p className="text-sm text-text-secondary">{ia.consensus_summary}</p>}
       </div>
+      )}
 
       {/* Top 5 Stocks */}
-      {report.top_stocks.length > 0 && (
+      {topStocks.length > 0 && (
       <div className="card">
         <h2 className="font-semibold mb-3">Top 5 Recommended Stocks</h2>
         <div className="space-y-3">
-          {report.top_stocks.map((s) => (
+          {topStocks.map((s) => (
             <Link key={s.ticker} href={`/stock/${s.ticker}`}
                   className="flex items-center justify-between p-3 rounded-lg hover:bg-border/30 transition-colors">
               <div className="flex items-center gap-3">
@@ -154,8 +167,8 @@ export default function CountryPage() {
                 </div>
               </div>
               <div className="text-right">
-                <div className="font-mono">{s.current_price.toLocaleString()}</div>
-                <div className={`text-sm ${changeColor(s.change_pct)}`}>{formatPct(s.change_pct)}</div>
+                <div className="font-mono">{(s.current_price ?? 0).toLocaleString()}</div>
+                <div className={`text-sm ${changeColor(s.change_pct ?? 0)}`}>{formatPct(s.change_pct ?? 0)}</div>
               </div>
               <div className="text-sm text-text-secondary max-w-xs hidden md:block">{s.reason}</div>
             </Link>

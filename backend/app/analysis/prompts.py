@@ -25,12 +25,20 @@ def country_report_prompt(
         headlines = "\n".join(f"  - {a['title']} ({a['source']})" for a in articles[:5])
         news_text += f"\n[{inst}]\n{headlines}\n"
 
+    ticker_guide = {
+        "US": "US tickers use plain symbols (e.g. AAPL, MSFT, NVDA, TSLA, AMZN)",
+        "KR": "Korean tickers MUST use Yahoo Finance format: 6-digit number + .KS (e.g. 005930.KS for Samsung, 000660.KS for SK Hynix, 051910.KS for LG Chem, 035420.KS for NAVER)",
+        "JP": "Japanese tickers MUST use Yahoo Finance format: 4-digit number + .T (e.g. 7203.T for Toyota, 6758.T for Sony, 9984.T for SoftBank)",
+    }.get(country_code, "Use Yahoo Finance ticker symbols")
+
     system = (
         "You are a senior equity strategist analyzing a country's stock market.\n"
         "You MUST respond with valid JSON only.\n"
         "Follow the scoring rubric EXACTLY. Each score must be justified.\n"
         "Cross-validate: check if 3+ institutions agree, if policy vs sell-side align,\n"
-        "and if assumptions match the latest data provided."
+        "and if assumptions match the latest data provided.\n\n"
+        f"CRITICAL: For top_5_tickers, {ticker_guide}.\n"
+        "NEVER use company names or local-language names as tickers."
     )
 
     user = f"""Analyze the {country_name} ({country_code}) stock market.
