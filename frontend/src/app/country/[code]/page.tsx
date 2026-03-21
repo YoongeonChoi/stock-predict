@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { CountryReport, SectorListItem, ScoreItem } from "@/lib/types";
-import { formatPct, changeColor } from "@/lib/utils";
+import { formatPct, changeColor, formatPrice } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import FearGreedGauge from "@/components/charts/FearGreedGauge";
@@ -176,14 +176,22 @@ export default function CountryPage() {
             <Link key={s.ticker} href={`/stock/${s.ticker}`}
                   className="flex items-center justify-between p-3 rounded-lg hover:bg-border/30 transition-colors">
               <div className="flex items-center gap-3">
-                <span className="text-lg font-bold text-accent w-8">#{s.rank}</span>
+                <div className="flex flex-col items-center w-12 shrink-0">
+                  <span className="text-lg font-bold text-accent">#{s.rank}</span>
+                  {(s.score ?? 0) > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                      (s.score ?? 0) >= 70 ? "bg-positive/20 text-positive" :
+                      (s.score ?? 0) >= 50 ? "bg-warning/20 text-warning" : "bg-negative/20 text-negative"
+                    }`}>{(s.score ?? 0).toFixed(1)}pt</span>
+                  )}
+                </div>
                 <div>
                   <div className="font-medium">{s.name}</div>
                   <div className="text-xs text-text-secondary">{s.ticker}</div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="font-mono">{(s.current_price ?? 0).toLocaleString()}</div>
+                <div className="font-mono">{formatPrice(s.current_price, code ?? "US")}</div>
                 <div className={`text-sm ${changeColor(s.change_pct ?? 0)}`}>{formatPct(s.change_pct ?? 0)}</div>
               </div>
               <div className="text-sm text-text-secondary max-w-xs hidden md:block">{s.reason}</div>

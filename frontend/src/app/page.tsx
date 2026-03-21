@@ -3,31 +3,85 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import type { HeatmapData } from "@/lib/api";
 import type { CountryListItem } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
+import StockHeatmap from "@/components/charts/StockHeatmap";
+
+interface MarketIndicator {
+  name: string;
+  price: number;
+  change_pct: number;
+}
 
 export default function HomePage() {
   const [countries, setCountries] = useState<CountryListItem[]>([]);
+  const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(true);
+  const [activeCountry, setActiveCountry] = useState("US");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getCountries().then(setCountries).catch(console.error).finally(() => setLoading(false));
+    Promise.all([
+      api.getCountries().then(setCountries).catch(console.error),
+      api.getMarketIndicators().then(setIndicators).catch(console.error),
+    ]).finally(() => setLoading(false));
+    loadHeatmap("US");
   }, []);
+
+  const loadHeatmap = (code: string) => {
+    setActiveCountry(code);
+    setHeatmapLoading(true);
+    api.getHeatmap(code)
+      .then(setHeatmapData)
+      .catch(console.error)
+      .finally(() => setHeatmapLoading(false));
+  };
 
   const flags: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
 
+  const indicatorUnit: Record<string, string> = {
+    "Gold": "$", "Oil (WTI)": "$", "Bitcoin": "$",
+    "US 10Y": "%",
+  };
+
+  const fmtIndicator = (ind: MarketIndicator) => {
+    const unit = indicatorUnit[ind.name];
+    const v = (ind.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (unit === "$") return `$${v}`;
+    if (unit === "%") return `${v}%`;
+    return v;
+  };
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Stock Predict</h1>
         <p className="text-text-secondary mt-1">AI-powered market analysis for US, KR, JP</p>
       </div>
 
+      {/* Global Market Indicators */}
+      {indicators.length > 0 && (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          {indicators.map((ind) => (
+            <div key={ind.name} className="card !p-3 text-center">
+              <div className="text-xs text-text-secondary mb-1">{ind.name}</div>
+              <div className="font-mono text-sm font-bold">
+                {fmtIndicator(ind)}
+              </div>
+              <div className={`text-xs font-medium ${changeColor(ind.change_pct ?? 0)}`}>
+                {formatPct(ind.change_pct ?? 0)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Country Cards */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="card animate-pulse h-48" />
-          ))}
+          {[1, 2, 3].map((i) => <div key={i} className="card animate-pulse h-48" />)}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -40,21 +94,18 @@ export default function HomePage() {
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-3xl">{flags[c.code]}</span>
                 <div>
-                  <h2 className="font-semibold text-lg group-hover:text-accent transition-colors">
-                    {c.name_local}
-                  </h2>
+                  <h2 className="font-semibold text-lg group-hover:text-accent transition-colors">{c.name_local}</h2>
                   <span className="text-xs text-text-secondary">{c.name}</span>
                 </div>
               </div>
-
               <div className="space-y-2">
                 {c.indices.map((idx) => (
                   <div key={idx.ticker} className="flex justify-between items-baseline">
                     <span className="text-sm text-text-secondary">{idx.name}</span>
                     <div className="text-right">
-                      <span className="font-mono text-sm">{idx.price.toLocaleString()}</span>
-                      <span className={`ml-2 text-sm font-medium ${changeColor(idx.change_pct)}`}>
-                        {formatPct(idx.change_pct)}
+                      <span className="font-mono text-sm">{(idx.price ?? 0).toLocaleString()}</span>
+                      <span className={`ml-2 text-sm font-medium ${changeColor(idx.change_pct ?? 0)}`}>
+                        {formatPct(idx.change_pct ?? 0)}
                       </span>
                     </div>
                   </div>
@@ -64,6 +115,35 @@ export default function HomePage() {
           ))}
         </div>
       )}
+
+      {/* Stock Market Heatmap */}
+      <div className="card !p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-lg">Market Heatmap</h2>
+          <div className="flex gap-1.5">
+            {["US", "KR", "JP"].map((code) => (
+              <button
+                key={code}
+                onClick={() => loadHeatmap(code)}
+                className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                  activeCountry === code ? "bg-accent text-white" : "bg-surface border border-border hover:border-accent/50"
+                }`}
+              >
+                {flags[code]} {code}
+              </button>
+            ))}
+          </div>
+        </div>
+        <StockHeatmap data={heatmapData} loading={heatmapLoading} />
+        <div className="flex items-center gap-4 mt-3 text-[10px] text-text-secondary">
+          <span>Size = Market Cap</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#b91c1c]" /> -3%+</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#ef4444]" /> -1~-2%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#86efac]" /> 0~+0.5%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#22c55e]" /> +1~+2%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#15803d]" /> +3%+</span>
+        </div>
+      </div>
     </div>
   );
 }

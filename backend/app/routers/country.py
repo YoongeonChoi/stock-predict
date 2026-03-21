@@ -61,6 +61,52 @@ async def get_country_report(code: str):
     return report
 
 
+@router.get("/country/{code}/heatmap")
+async def get_heatmap(code: str):
+    """Treemap heatmap data: sector > stocks with market_cap and change_pct."""
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+
+    from app.data import cache as data_cache
+    cache_key = f"heatmap:{code}"
+    cached = await data_cache.get(cache_key)
+    if cached:
+        return cached
+
+    from app.data.universe_data import get_universe
+    universe = await get_universe(code)
+
+    sectors = []
+    for sector_name, tickers in universe.items():
+        stocks = []
+        for ticker in tickers[:10]:
+            try:
+                q = await yfinance_client.get_index_quote(ticker)
+                info = await yfinance_client.get_stock_info(ticker)
+                mc = info.get("market_cap") or 0
+                if mc <= 0:
+                    continue
+                stocks.append({
+                    "name": ticker.split(".")[0],
+                    "ticker": ticker,
+                    "fullName": info.get("name", ticker),
+                    "size": mc,
+                    "change": q.get("change_pct", 0),
+                })
+            except Exception:
+                continue
+        if stocks:
+            stocks.sort(key=lambda s: s["size"], reverse=True)
+            sectors.append({"name": sector_name, "children": stocks[:8]})
+
+    result = {"children": sectors}
+    await data_cache.set(cache_key, result, 900)
+    return result
+
+
 @router.get("/country/{code}/report/pdf")
 async def download_country_report_pdf(code: str):
     code = code.upper()
@@ -123,6 +169,73 @@ async def get_country_forecast(code: str):
         err = SP_3004(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/market/indicators")
+async def get_market_indicators():
+    """Global market indicators for the dashboard."""
+    from app.data import cache as data_cache
+    cached = await data_cache.get("market_indicators")
+    if cached:
+        return cached
+
+    indicators = []
+    tickers = {
+        "VIX": "^VIX", "DXY": "DX-Y.NYB", "Gold": "GC=F", "Oil (WTI)": "CL=F",
+        "US 10Y": "^TNX", "Bitcoin": "BTC-USD",
+    }
+    for name, ticker in tickers.items():
+        try:
+            q = await yfinance_client.get_index_quote(ticker)
+            indicators.append({"name": name, "price": q.get("price", 0), "change_pct": q.get("change_pct", 0)})
+        except Exception:
+            indicators.append({"name": name, "price": 0, "change_pct": 0})
+
+    await data_cache.set("market_indicators", indicators, 300)
+    return indicators
+
+
+@router.get("/country/{code}/sector-performance")
+async def get_sector_performance(code: str):
+    """Sector performance heatmap data using sector ETFs."""
+    code = code.upper()
+    from app.data import cache as data_cache
+    cache_key = f"sector_perf:{code}"
+    cached = await data_cache.get(cache_key)
+    if cached:
+        return cached
+
+    sector_etfs = {
+        "US": {
+            "Energy": "XLE", "Materials": "XLB", "Industrials": "XLI",
+            "Consumer Disc.": "XLY", "Consumer Stap.": "XLP", "Health Care": "XLV",
+            "Financials": "XLF", "IT": "XLK", "Communication": "XLC",
+            "Utilities": "XLU", "Real Estate": "XLRE",
+        },
+        "KR": {
+            "KOSPI 200": "069500.KS", "IT": "091160.KS", "Financials": "091170.KS",
+            "Industrials": "091180.KS", "Health Care": "227540.KS",
+            "Consumer": "098560.KS", "Materials": "091220.KS",
+        },
+        "JP": {
+            "TOPIX": "1306.T", "Nikkei 225": "1321.T",
+            "Banks": "1615.T", "IT": "1627.T",
+        },
+    }
+    etfs = sector_etfs.get(code, {})
+    results = []
+    for sector_name, etf_ticker in etfs.items():
+        try:
+            q = await yfinance_client.get_index_quote(etf_ticker)
+            results.append({
+                "sector": sector_name, "ticker": etf_ticker,
+                "price": q.get("price", 0), "change_pct": q.get("change_pct", 0),
+            })
+        except Exception:
+            results.append({"sector": sector_name, "ticker": etf_ticker, "price": 0, "change_pct": 0})
+
+    await data_cache.set(cache_key, results, 300)
+    return results
 
 
 @router.get("/country/{code}/sectors")

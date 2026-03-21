@@ -81,6 +81,51 @@ async def get_economic_calendar(from_date: str, to_date: str) -> list[dict]:
     )
 
 
+async def screen_stocks(
+    exchange: str,
+    sector: str | None = None,
+    market_cap_min: int = 1_000_000_000,
+    limit: int = 50,
+) -> list[str]:
+    """Fetch top stocks by market cap from FMP Stock Screener.
+
+    Args:
+        exchange: NYSE, NASDAQ, KSE (Korea), TSE (Japan), etc.
+        sector: GICS sector name (optional filter)
+        market_cap_min: Minimum market cap in USD
+        limit: Max number of results
+    Returns:
+        List of ticker symbols
+    """
+    settings = get_settings()
+    if not settings.fmp_api_key:
+        return []
+
+    params_key = f"fmp_screen:{exchange}:{sector}:{market_cap_min}:{limit}"
+
+    async def _fetch():
+        try:
+            params = {
+                "exchange": exchange,
+                "marketCapMoreThan": market_cap_min,
+                "limit": limit,
+                "apikey": settings.fmp_api_key,
+            }
+            if sector:
+                params["sector"] = sector
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{BASE}/stock-screener", params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, list):
+                    return [item["symbol"] for item in data if "symbol" in item]
+        except Exception as e:
+            SP_2006(f"screen({exchange},{sector}): {e}").log()
+        return []
+
+    return await cache.get_or_fetch(params_key, _fetch, 86400)
+
+
 async def get_dcf(ticker: str) -> float | None:
     settings = get_settings()
     if not settings.fmp_api_key:

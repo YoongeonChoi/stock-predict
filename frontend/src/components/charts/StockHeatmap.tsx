@@ -1,0 +1,111 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { Treemap, ResponsiveContainer } from "recharts";
+import type { HeatmapData } from "@/lib/api";
+
+function changeToColor(change: number): string {
+  if (change >= 3) return "#15803d";
+  if (change >= 2) return "#16a34a";
+  if (change >= 1) return "#22c55e";
+  if (change >= 0.5) return "#4ade80";
+  if (change >= 0) return "#86efac";
+  if (change >= -0.5) return "#fca5a5";
+  if (change >= -1) return "#f87171";
+  if (change >= -2) return "#ef4444";
+  if (change >= -3) return "#dc2626";
+  return "#b91c1c";
+}
+
+interface CustomContentProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  name?: string;
+  change?: number;
+  ticker?: string;
+  depth?: number;
+  index?: number;
+}
+
+function CustomContent(props: CustomContentProps) {
+  const { x = 0, y = 0, width = 0, height = 0, name, change = 0, ticker, depth } = props;
+
+  if (depth !== 2 || width < 4 || height < 4) return null;
+
+  const bg = changeToColor(change);
+  const showTicker = width > 40 && height > 24;
+  const showChange = width > 50 && height > 36;
+  const fontSize = Math.max(8, Math.min(12, width / 7));
+
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={bg} stroke="var(--bg)" strokeWidth={1.5} rx={2} />
+      {showTicker && (
+        <text
+          x={x + width / 2} y={y + height / 2 - (showChange ? 5 : 0)}
+          textAnchor="middle" dominantBaseline="central"
+          fill="white" fontSize={fontSize} fontWeight="bold"
+          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)", pointerEvents: "none" }}
+        >
+          {name}
+        </text>
+      )}
+      {showChange && (
+        <text
+          x={x + width / 2} y={y + height / 2 + fontSize}
+          textAnchor="middle" dominantBaseline="central"
+          fill="rgba(255,255,255,0.85)" fontSize={Math.max(7, fontSize - 2)}
+          style={{ pointerEvents: "none" }}
+        >
+          {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+        </text>
+      )}
+    </g>
+  );
+}
+
+interface Props {
+  data: HeatmapData | null;
+  loading?: boolean;
+}
+
+export default function StockHeatmap({ data, loading }: Props) {
+  const router = useRouter();
+
+  if (loading) {
+    return <div className="h-[400px] bg-border/30 rounded-lg animate-pulse" />;
+  }
+
+  if (!data || !data.children?.length) {
+    return <p className="text-sm text-text-secondary text-center py-8">Loading heatmap data...</p>;
+  }
+
+  const flat = data.children.flatMap((sector) =>
+    sector.children.map((stock) => ({
+      ...stock,
+      sector: sector.name,
+    }))
+  );
+
+  const handleClick = (node: any) => {
+    if (node?.ticker) {
+      router.push(`/stock/${encodeURIComponent(node.ticker)}`);
+    }
+  };
+
+  return (
+    <div className="w-full h-[420px] cursor-pointer">
+      <ResponsiveContainer width="100%" height="100%">
+        <Treemap
+          data={flat}
+          dataKey="size"
+          aspectRatio={4 / 3}
+          content={<CustomContent />}
+          onClick={handleClick}
+        />
+      </ResponsiveContainer>
+    </div>
+  );
+}

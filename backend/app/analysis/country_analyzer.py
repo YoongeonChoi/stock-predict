@@ -7,6 +7,7 @@ from app.analysis.prompts import country_report_prompt
 from app.analysis.forecast_engine import forecast_index
 from app.analysis.sentiment import get_news_sentiment_for_country
 from app.scoring.country_scorer import build_country_score
+from app.scoring.stock_scorer import score_stock
 from app.scoring.fear_greed import calculate_fear_greed
 from app.models.country import COUNTRY_REGISTRY, CountryReport, StockSummaryRef, NewsItem, InstitutionalAnalysis, InstitutionView
 from app.config import get_settings
@@ -86,29 +87,15 @@ async def analyze_country(country_code: str) -> dict:
             consensus_summary=inst_raw.get("consensus_summary", ""),
         )
 
-    top_stocks = []
+    llm_reasons = {}
     if not llm_failed:
         raw_tickers = llm_result.get("top_5_tickers", [])
-        top_tickers = [TICKER_FALLBACK.get(t, t) for t in raw_tickers]
         top_reasons = llm_result.get("top_5_reasons", [])
-        for i, ticker in enumerate(top_tickers[:5]):
-            try:
-                info = await yfinance_client.get_stock_info(ticker)
-                price = info.get("current_price", 0)
-                prev = info.get("prev_close", price)
-                chg = ((price - prev) / prev * 100) if prev else 0
-                top_stocks.append(StockSummaryRef(
-                    rank=i + 1, ticker=ticker,
-                    name=info.get("name", ticker), score=0,
-                    current_price=round(price, 2), change_pct=round(chg, 2),
-                    reason=top_reasons[i] if i < len(top_reasons) else "",
-                ))
-            except Exception:
-                top_stocks.append(StockSummaryRef(
-                    rank=i + 1, ticker=ticker, name=ticker, score=0,
-                    current_price=0, change_pct=0,
-                    reason=top_reasons[i] if i < len(top_reasons) else "",
-                ))
+        for i, t in enumerate(raw_tickers[:5]):
+            resolved = TICKER_FALLBACK.get(t, t)
+            llm_reasons[resolved] = top_reasons[i] if i < len(top_reasons) else ""
+
+    top_stocks = await _score_top_stocks(country_code, llm_reasons)
 
     key_news = [
         NewsItem(title=n["title"], source=n.get("source", ""), url=n.get("url", ""),
@@ -164,6 +151,46 @@ async def analyze_country(country_code: str) -> dict:
     ttl = settings.cache_ttl_report if not llm_failed else 120
     await cache.set(cache_key, report, ttl)
     return report
+
+
+async def _score_top_stocks(
+    country_code: str, llm_reasons: dict[str, str]
+) -> list[StockSummaryRef]:
+    """Score a sample of stocks from the country and return top 5 by score."""
+    from app.data.universe_data import get_universe
+    universe = await get_universe(country_code)
+    all_tickers: list[str] = []
+    for sector_tickers in universe.values():
+        all_tickers.extend(sector_tickers[:8])
+
+    scored: list[tuple[float, str, dict]] = []
+    for ticker in all_tickers:
+        try:
+            info = await yfinance_client.get_stock_info(ticker)
+            if not info.get("current_price"):
+                continue
+            prices = await yfinance_client.get_price_history(ticker, period="3mo")
+            qs = score_stock(info, price_hist=prices)
+            scored.append((qs.total, ticker, info))
+        except Exception:
+            continue
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    top_stocks = []
+    for rank, (total_score, ticker, info) in enumerate(scored[:5], start=1):
+        price = info.get("current_price", 0)
+        prev = info.get("prev_close", price)
+        chg = ((price - prev) / prev * 100) if prev else 0
+        reason = llm_reasons.get(ticker, f"Score: {total_score:.1f}/100")
+        top_stocks.append(StockSummaryRef(
+            rank=rank, ticker=ticker,
+            name=info.get("name", ticker), score=round(total_score, 1),
+            current_price=round(price, 2), change_pct=round(chg, 2),
+            reason=reason,
+        ))
+
+    return top_stocks
 
 
 async def _get_economic_data(country_code: str) -> dict:

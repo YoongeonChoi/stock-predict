@@ -65,8 +65,28 @@ async function del(path: string) {
   return res.json();
 }
 
+export interface HeatmapStock {
+  name: string;
+  ticker: string;
+  fullName: string;
+  size: number;
+  change: number;
+}
+
+export interface HeatmapSector {
+  name: string;
+  children: HeatmapStock[];
+}
+
+export interface HeatmapData {
+  children: HeatmapSector[];
+}
+
 export const api = {
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
+  getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
+  getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),
+  getHeatmap: (code: string) => get<HeatmapData>(`/api/country/${code}/heatmap`),
   getCountryReport: (code: string) => get<import("./types").CountryReport>(`/api/country/${code}/report`),
   getCountryForecast: (code: string) => get<import("./types").IndexForecast>(`/api/country/${code}/forecast`),
   getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
