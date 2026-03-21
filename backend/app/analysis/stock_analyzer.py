@@ -45,15 +45,17 @@ async def analyze_stock(ticker: str) -> dict:
         ticker, info, financials_raw, news, quant_score.model_dump()
     )
     llm_result = await ask_json(system, user)
+    llm_failed = "error_code" in llm_result or "error" in llm_result
 
-    est_rev_score = float(llm_result.get("estimate_revision_score", 2.5))
-    quant_score.analyst.items[-1].score = min(5, max(0, est_rev_score))
-    quant_score.analyst.total = sum(i.score for i in quant_score.analyst.items)
-    quant_score.total = (
-        quant_score.fundamental.total + quant_score.valuation.total +
-        quant_score.growth_momentum.total + quant_score.analyst.total +
-        quant_score.risk.total
-    )
+    if not llm_failed:
+        est_rev_score = float(llm_result.get("estimate_revision_score", 2.5))
+        quant_score.analyst.items[-1].score = min(5, max(0, est_rev_score))
+        quant_score.analyst.total = sum(i.score for i in quant_score.analyst.items)
+        quant_score.total = (
+            quant_score.fundamental.total + quant_score.valuation.total +
+            quant_score.growth_momentum.total + quant_score.analyst.total +
+            quant_score.risk.total
+        )
 
     technical = _calc_technicals(prices_raw)
     price_history = [PricePoint(**p) for p in prices_raw]
@@ -102,9 +104,19 @@ async def analyze_stock(ticker: str) -> dict:
     )
 
     result = detail.model_dump()
-    result["analysis_summary"] = llm_result.get("analysis_summary", "")
-    result["key_risks"] = llm_result.get("key_risks", [])
-    result["key_catalysts"] = llm_result.get("key_catalysts", [])
+    errors = []
+    if llm_failed:
+        errors.append(llm_result.get("error_code", "SP-4005"))
+        result["analysis_summary"] = llm_result.get("message", "AI analysis unavailable. Showing quantitative data only.")
+        result["key_risks"] = []
+        result["key_catalysts"] = []
+        result["llm_available"] = False
+    else:
+        result["analysis_summary"] = llm_result.get("analysis_summary", "")
+        result["key_risks"] = llm_result.get("key_risks", [])
+        result["key_catalysts"] = llm_result.get("key_catalysts", [])
+        result["llm_available"] = True
+    result["errors"] = errors
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
     return result

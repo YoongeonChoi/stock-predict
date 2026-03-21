@@ -3,6 +3,7 @@
 import httpx
 from app.data import cache
 from app.config import get_settings
+from app.errors import SP_1003, SP_2001
 
 BASE_URL = "https://api.stlouisfed.org/fred"
 
@@ -11,7 +12,7 @@ SERIES = {
     "gdp_growth": "A191RL1Q225SBEA",
     "cpi_yoy": "CPIAUCSL",
     "unemployment": "UNRATE",
-    "pmi_manufacturing": "MANBUSIMSA",
+    "capacity_utilization": "TCU",
     "treasury_10y": "GS10",
     "treasury_2y": "GS2",
     "sp500_pe": "MULTPL/SP500_PE_RATIO_MONTH",
@@ -25,27 +26,32 @@ SERIES = {
 async def get_series(series_id: str, limit: int = 12) -> list[dict]:
     settings = get_settings()
     if not settings.fred_api_key:
+        SP_1003().log("warning")
         return []
 
     async def _fetch():
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{BASE_URL}/series/observations",
-                params={
-                    "series_id": series_id,
-                    "api_key": settings.fred_api_key,
-                    "file_type": "json",
-                    "sort_order": "desc",
-                    "limit": limit,
-                },
-            )
-            resp.raise_for_status()
-            obs = resp.json().get("observations", [])
-            return [
-                {"date": o["date"], "value": _parse_val(o["value"])}
-                for o in obs
-                if o["value"] != "."
-            ]
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{BASE_URL}/series/observations",
+                    params={
+                        "series_id": series_id,
+                        "api_key": settings.fred_api_key,
+                        "file_type": "json",
+                        "sort_order": "desc",
+                        "limit": limit,
+                    },
+                )
+                resp.raise_for_status()
+                obs = resp.json().get("observations", [])
+                return [
+                    {"date": o["date"], "value": _parse_val(o["value"])}
+                    for o in obs
+                    if o["value"] != "."
+                ]
+        except Exception as e:
+            SP_2001(series_id, str(e)[:150]).log()
+            return []
 
     return await cache.get_or_fetch(
         f"fred:{series_id}", _fetch, settings.cache_ttl_economic

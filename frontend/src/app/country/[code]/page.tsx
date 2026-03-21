@@ -10,6 +10,7 @@ import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import FearGreedGauge from "@/components/charts/FearGreedGauge";
 import ForecastBand from "@/components/charts/ForecastBand";
+import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
 export default function CountryPage() {
   const { code } = useParams<{ code: string }>();
@@ -17,16 +18,31 @@ export default function CountryPage() {
   const [sectors, setSectors] = useState<SectorListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState<unknown>(null);
+
   useEffect(() => {
     if (!code) return;
     setLoading(true);
-    Promise.all([api.getCountryReport(code), api.getSectors(code)])
-      .then(([r, s]) => { setReport(r); setSectors(s); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    setError(null);
+
+    const loadReport = api.getCountryReport(code)
+      .then(setReport)
+      .catch((e) => { console.error(e); setError(e); });
+
+    const loadSectors = api.getSectors(code)
+      .then(setSectors)
+      .catch(console.error);
+
+    Promise.all([loadReport, loadSectors]).finally(() => setLoading(false));
   }, [code]);
 
   if (loading) return <div className="animate-pulse space-y-4"><div className="h-8 bg-border rounded w-48" /><div className="h-96 bg-border rounded" /></div>;
+  if (!report && error) return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      <Link href="/" className="text-text-secondary hover:text-text">&larr; Back</Link>
+      <ErrorBanner error={error} onRetry={() => window.location.reload()} />
+    </div>
+  );
   if (!report) return <div className="text-text-secondary">Failed to load report</div>;
 
   const scoreItems = [
@@ -40,6 +56,11 @@ export default function CountryPage() {
         <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
         <h1 className="text-2xl font-bold">{report.country.name_local} Market Report</h1>
       </div>
+
+      {/* Error code warnings */}
+      {(report as any).errors?.length > 0 && (
+        <WarningBanner codes={(report as any).errors} />
+      )}
 
       {/* Market Summary */}
       <div className="card">
@@ -118,6 +139,7 @@ export default function CountryPage() {
       </div>
 
       {/* Top 5 Stocks */}
+      {report.top_stocks.length > 0 && (
       <div className="card">
         <h2 className="font-semibold mb-3">Top 5 Recommended Stocks</h2>
         <div className="space-y-3">
@@ -140,6 +162,7 @@ export default function CountryPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Sectors */}
       <div className="card">

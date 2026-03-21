@@ -38,15 +38,17 @@ async def forecast_index(
     )
     llm = await ask_json(system, user, temperature=0.3)
 
-    fair_value = float(llm.get("fair_value", mc_result["base"]))
+    _llm_ok = "error_code" not in llm and "error" not in llm
+    fair_value = float(llm.get("fair_value", mc_result["base"])) if _llm_ok else mc_result["base"]
     scenarios = []
-    for s in llm.get("scenarios", []):
-        scenarios.append(ForecastScenario(
-            name=s.get("name", ""),
-            price=round(float(s.get("price", 0)), 2),
-            probability=float(s.get("probability", 33)),
-            description=s.get("description", ""),
-        ))
+    if _llm_ok:
+        for s in llm.get("scenarios", []):
+            scenarios.append(ForecastScenario(
+                name=s.get("name", ""),
+                price=round(float(s.get("price", 0)), 2),
+                probability=float(s.get("probability", 33)),
+                description=s.get("description", ""),
+            ))
 
     if not scenarios:
         scenarios = [

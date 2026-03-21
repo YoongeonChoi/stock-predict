@@ -52,32 +52,50 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
         sector_name, country_code, stock_data, inst_news_text
     )
     llm_result = await ask_json(system, user)
+    llm_failed = "error_code" in llm_result or "error" in llm_result
 
     scores = llm_result.get("scores", {})
     sector_score = build_sector_score(scores)
 
-    top_10_raw = llm_result.get("top_10", [])
     top_stocks = []
-    for item in top_10_raw[:10]:
-        ticker = item.get("ticker", "")
-        matched = next((s for s in stock_data if s.get("ticker") == ticker), None)
-        price = matched.get("current_price", 0) if matched else 0
-        prev = matched.get("prev_close", price) if matched else price
-        chg = ((price - prev) / prev * 100) if prev else 0
-        q_score = matched.get("quant_score", 0) if matched else 0
+    if llm_failed:
+        sorted_data = sorted(stock_data, key=lambda s: s.get("quant_score", 0), reverse=True)
+        for i, sd in enumerate(sorted_data[:10]):
+            price = sd.get("current_price", 0)
+            prev = sd.get("prev_close", price)
+            chg = ((price - prev) / prev * 100) if prev else 0
+            top_stocks.append({
+                "rank": i + 1, "ticker": sd.get("ticker", ""),
+                "name": sd.get("name", sd.get("ticker", "")),
+                "score": round(sd.get("quant_score", 0), 1),
+                "current_price": round(price, 2), "change_pct": round(chg, 2),
+                "pros": [], "cons": [], "buy_price": None, "sell_price": None,
+            })
+    else:
+        top_10_raw = llm_result.get("top_10", [])
+        for item in top_10_raw[:10]:
+            ticker = item.get("ticker", "")
+            matched = next((s for s in stock_data if s.get("ticker") == ticker), None)
+            price = matched.get("current_price", 0) if matched else 0
+            prev = matched.get("prev_close", price) if matched else price
+            chg = ((price - prev) / prev * 100) if prev else 0
+            q_score = matched.get("quant_score", 0) if matched else 0
+            top_stocks.append({
+                "rank": item.get("rank", 0), "ticker": ticker,
+                "name": item.get("name", ticker),
+                "score": round(q_score, 1), "current_price": round(price, 2),
+                "change_pct": round(chg, 2),
+                "pros": item.get("pros", []), "cons": item.get("cons", []),
+                "buy_price": item.get("buy_price"), "sell_price": item.get("sell_price"),
+            })
 
-        top_stocks.append({
-            "rank": item.get("rank", 0),
-            "ticker": ticker,
-            "name": item.get("name", ticker),
-            "score": round(q_score, 1),
-            "current_price": round(price, 2),
-            "change_pct": round(chg, 2),
-            "pros": item.get("pros", []),
-            "cons": item.get("cons", []),
-            "buy_price": item.get("buy_price"),
-            "sell_price": item.get("sell_price"),
-        })
+    summary = llm_result.get("summary", "")
+    if llm_failed:
+        summary = llm_result.get("error", "AI analysis unavailable. Showing quantitative rankings only.")
+
+    errors = []
+    if llm_failed:
+        errors.append(llm_result.get("error_code", "SP-4005"))
 
     report = {
         "sector": {
@@ -87,10 +105,13 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
             "stock_count": len(tickers),
         },
         "score": sector_score.model_dump(),
-        "summary": llm_result.get("summary", ""),
+        "summary": summary,
         "top_stocks": top_stocks,
+        "llm_available": not llm_failed,
+        "errors": errors,
         "generated_at": datetime.now().isoformat(),
     }
 
-    await cache.set(cache_key, report, settings.cache_ttl_report)
+    ttl = settings.cache_ttl_report if not llm_failed else 120
+    await cache.set(cache_key, report, ttl)
     return report

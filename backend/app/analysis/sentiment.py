@@ -18,6 +18,8 @@ async def analyze_sentiment(headlines: list[str]) -> float:
 
     system, user = sentiment_prompt(headlines)
     result = await ask_json(system, user, temperature=0.2)
+    if "error_code" in result or "error" in result:
+        return 0.5
     score = float(result.get("score", 0.5))
     score = max(0.0, min(1.0, score))
 

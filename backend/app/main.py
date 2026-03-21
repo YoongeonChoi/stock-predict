@@ -1,9 +1,18 @@
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import db
+from app.errors import AppError
 from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 @asynccontextmanager
@@ -15,7 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Stock Predict API",
     description="AI-powered stock market analysis for US, KR, JP markets",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -27,6 +36,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    log = logging.getLogger("stock_predict.unhandled")
+    log.error(f"[SP-9999] Unhandled: {request.url.path} -> {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_code": "SP-9999",
+            "message": "Unexpected server error",
+            "detail": str(exc)[:300],
+        },
+    )
+
 
 app.include_router(country.router)
 app.include_router(sector.router)
@@ -40,4 +64,4 @@ app.include_router(export.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.1.0"}

@@ -3,6 +3,7 @@
 import httpx
 from app.data import cache
 from app.config import get_settings
+from app.errors import SP_1005, SP_2006
 
 BASE = "https://financialmodelingprep.com/api/v3"
 
@@ -10,6 +11,7 @@ BASE = "https://financialmodelingprep.com/api/v3"
 async def get_stock_peers(ticker: str) -> list[str]:
     settings = get_settings()
     if not settings.fmp_api_key:
+        SP_1005().log("debug")
         return []
 
     async def _fetch():
@@ -22,8 +24,8 @@ async def get_stock_peers(ticker: str) -> list[str]:
                 data = resp.json()
                 if data and isinstance(data, list):
                     return data[0].get("peersList", [])[:10]
-        except Exception:
-            pass
+        except Exception as e:
+            SP_2006(f"peers({ticker}): {e}").log()
         return []
 
     return await cache.get_or_fetch(
@@ -34,6 +36,7 @@ async def get_stock_peers(ticker: str) -> list[str]:
 async def get_earning_calendar(from_date: str, to_date: str) -> list[dict]:
     settings = get_settings()
     if not settings.fmp_api_key:
+        SP_1005().log("debug")
         return []
 
     async def _fetch():
@@ -45,7 +48,8 @@ async def get_earning_calendar(from_date: str, to_date: str) -> list[dict]:
                 )
                 resp.raise_for_status()
                 return resp.json()[:100]
-        except Exception:
+        except Exception as e:
+            SP_2006(f"earning_calendar: {e}").log()
             return []
 
     return await cache.get_or_fetch(
@@ -56,6 +60,7 @@ async def get_earning_calendar(from_date: str, to_date: str) -> list[dict]:
 async def get_economic_calendar(from_date: str, to_date: str) -> list[dict]:
     settings = get_settings()
     if not settings.fmp_api_key:
+        SP_1005().log("debug")
         return []
 
     async def _fetch():
@@ -67,7 +72,8 @@ async def get_economic_calendar(from_date: str, to_date: str) -> list[dict]:
                 )
                 resp.raise_for_status()
                 return resp.json()[:200]
-        except Exception:
+        except Exception as e:
+            SP_2006(f"economic_calendar: {e}").log()
             return []
 
     return await cache.get_or_fetch(
@@ -91,8 +97,8 @@ async def get_dcf(ticker: str) -> float | None:
                 data = resp.json()
                 if data and isinstance(data, list):
                     return data[0].get("dcf")
-        except Exception:
-            pass
+        except Exception as e:
+            SP_2006(f"dcf({ticker}): {e}").log()
         return None
 
     return await cache.get_or_fetch(f"fmp_dcf:{ticker}", _fetch, settings.cache_ttl_fmp)

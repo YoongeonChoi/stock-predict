@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from app.models.country import COUNTRY_REGISTRY
 from app.analysis.sector_analyzer import analyze_sector
 from app.services import archive_service
+from app.errors import SP_6001, SP_6002, SP_3002, SP_5002
 
 router = APIRouter(prefix="/api", tags=["sector"])
 
@@ -24,15 +26,27 @@ SECTOR_MAP = {
 async def get_sector_report(code: str, sector_id: str):
     code = code.upper()
     if code not in COUNTRY_REGISTRY:
-        raise HTTPException(404, f"Country {code} not supported")
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
 
     sector_name = SECTOR_MAP.get(sector_id)
     if not sector_name:
-        raise HTTPException(404, f"Sector {sector_id} not found")
+        err = SP_6002(sector_id)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
 
-    report = await analyze_sector(code, sector_name)
-    if "error" in report:
-        raise HTTPException(500, report["error"])
+    try:
+        report = await analyze_sector(code, sector_name)
+    except Exception as e:
+        err = SP_3002(sector_name)
+        err.detail = str(e)[:200]
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
 
-    await archive_service.save_report("sector", report, country_code=code, sector_id=sector_id)
+    try:
+        await archive_service.save_report("sector", report, country_code=code, sector_id=sector_id)
+    except Exception as e:
+        SP_5002(str(e)[:100]).log()
+
     return report

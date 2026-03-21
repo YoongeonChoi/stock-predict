@@ -1,10 +1,34 @@
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
+export interface ApiErrorInfo {
+  error_code: string;
+  message: string;
+  detail?: string;
+}
+
+export class ApiError extends Error {
+  status: number;
+  errorCode: string;
+  detail: string;
+
+  constructor(status: number, info: ApiErrorInfo) {
+    super(info.message);
+    this.status = status;
+    this.errorCode = info.error_code || `HTTP-${status}`;
+    this.detail = info.detail || "";
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`, { cache: "no-store" });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`API ${res.status}: ${text.slice(0, 200)}`);
+    let info: ApiErrorInfo;
+    try {
+      info = await res.json();
+    } catch {
+      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
+    }
+    throw new ApiError(res.status, info);
   }
   return res.json();
 }
@@ -15,11 +39,29 @@ async function post(path: string, body?: unknown) {
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (!res.ok) {
+    let info: ApiErrorInfo;
+    try {
+      info = await res.json();
+    } catch {
+      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
+    }
+    throw new ApiError(res.status, info);
+  }
   return res.json();
 }
 
 async function del(path: string) {
   const res = await fetch(`${API}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    let info: ApiErrorInfo;
+    try {
+      info = await res.json();
+    } catch {
+      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
+    }
+    throw new ApiError(res.status, info);
+  }
   return res.json();
 }
 

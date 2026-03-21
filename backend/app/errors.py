@@ -1,0 +1,118 @@
+"""
+Centralized error code registry for Stock Predict.
+
+Format: SP-XYYY
+  SP = Stock Predict prefix
+  X  = Category digit (1~6)
+  YYY = Specific error number
+
+Categories:
+  1xxx = Configuration (API keys, env vars)
+  2xxx = Data Sources (FRED, ECOS, BOJ, yfinance, FMP, News)
+  3xxx = Analysis Pipeline (analyzers, scoring, forecast)
+  4xxx = LLM / OpenAI
+  5xxx = Services / Database (archive, watchlist, export, cache)
+  6xxx = Request Validation (bad params, not found)
+"""
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+
+log = logging.getLogger("stock_predict.errors")
+
+
+@dataclass
+class AppError:
+    code: str
+    message: str
+    detail: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> dict:
+        d = {"error_code": self.code, "message": self.message}
+        if self.detail:
+            d["detail"] = self.detail
+        d["timestamp"] = self.timestamp
+        return d
+
+    def log(self, level: str = "error"):
+        msg = f"[{self.code}] {self.message}"
+        if self.detail:
+            msg += f" | {self.detail}"
+        getattr(log, level, log.error)(msg)
+
+
+# ---------------------------------------------------------------------------
+# 1xxx  Configuration
+# ---------------------------------------------------------------------------
+SP_1001 = lambda: AppError("SP-1001", "OpenAI API key not configured",
+                           "Set OPENAI_API_KEY in backend/.env")
+SP_1002 = lambda: AppError("SP-1002", "OpenAI API key invalid",
+                           "Check your key at platform.openai.com/api-keys")
+SP_1003 = lambda: AppError("SP-1003", "FRED API key not configured",
+                           "Set FRED_API_KEY in backend/.env (free)")
+SP_1004 = lambda: AppError("SP-1004", "ECOS API key not configured",
+                           "Set ECOS_API_KEY in backend/.env (free)")
+SP_1005 = lambda: AppError("SP-1005", "FMP API key not configured",
+                           "Set FMP_API_KEY in backend/.env (free, optional)")
+
+# ---------------------------------------------------------------------------
+# 2xxx  Data Sources
+# ---------------------------------------------------------------------------
+SP_2001 = lambda sid="", d="": AppError("SP-2001", f"FRED API request failed: {sid}", d)
+SP_2002 = lambda d="": AppError("SP-2002", "ECOS (BOK) API request failed", d)
+SP_2003 = lambda d="": AppError("SP-2003", "BOJ API request failed", d)
+SP_2004 = lambda t="": AppError("SP-2004", f"Ticker not found or delisted: {t}",
+                                "Yahoo Finance returned no data")
+SP_2005 = lambda t="": AppError("SP-2005", f"Price data unavailable: {t}",
+                                "Check if the market is open or ticker is valid")
+SP_2006 = lambda d="": AppError("SP-2006", "FMP API request failed", d)
+SP_2007 = lambda d="": AppError("SP-2007", "News feed unavailable", d)
+SP_2008 = lambda t="": AppError("SP-2008", f"Financial data unavailable: {t}",
+                                "yfinance returned no financials")
+
+# ---------------------------------------------------------------------------
+# 3xxx  Analysis Pipeline
+# ---------------------------------------------------------------------------
+SP_3001 = lambda cc="": AppError("SP-3001", f"Country analysis failed: {cc}")
+SP_3002 = lambda s="": AppError("SP-3002", f"Sector analysis failed: {s}")
+SP_3003 = lambda t="": AppError("SP-3003", f"Stock analysis failed: {t}")
+SP_3004 = lambda d="": AppError("SP-3004", "Forecast engine failed", d)
+SP_3005 = lambda: AppError("SP-3005", "Sentiment analysis failed")
+SP_3006 = lambda d="": AppError("SP-3006", "Scoring calculation failed", d)
+
+# ---------------------------------------------------------------------------
+# 4xxx  LLM / OpenAI
+# ---------------------------------------------------------------------------
+SP_4001 = lambda: AppError("SP-4001", "OpenAI quota exceeded",
+                           "Check your plan and billing at platform.openai.com")
+SP_4002 = lambda: AppError("SP-4002", "OpenAI authentication failed",
+                           "Your API key is invalid or revoked")
+SP_4003 = lambda: AppError("SP-4003", "LLM response parse error",
+                           "GPT returned non-JSON output")
+SP_4004 = lambda: AppError("SP-4004", "LLM request timeout",
+                           "OpenAI did not respond in time")
+SP_4005 = lambda d="": AppError("SP-4005", "LLM unknown error", d)
+
+# ---------------------------------------------------------------------------
+# 5xxx  Services / Database
+# ---------------------------------------------------------------------------
+SP_5001 = lambda d="": AppError("SP-5001", "Database connection failed", d)
+SP_5002 = lambda d="": AppError("SP-5002", "Archive save failed", d)
+SP_5003 = lambda d="": AppError("SP-5003", "Watchlist operation failed", d)
+SP_5004 = lambda d="": AppError("SP-5004", "Export generation failed", d)
+SP_5005 = lambda d="": AppError("SP-5005", "Cache operation failed", d)
+
+# ---------------------------------------------------------------------------
+# 6xxx  Request Validation
+# ---------------------------------------------------------------------------
+SP_6001 = lambda cc="": AppError("SP-6001", f"Country not supported: {cc}")
+SP_6002 = lambda sid="": AppError("SP-6002", f"Sector not found: {sid}")
+SP_6003 = lambda: AppError("SP-6003", "Invalid period parameter",
+                           "Allowed: 1mo, 3mo, 6mo, 1y, 2y")
+SP_6004 = lambda: AppError("SP-6004", "Insufficient tickers for comparison",
+                           "Provide at least 2 tickers, max 4")
+SP_6005 = lambda rid=0: AppError("SP-6005", f"Report not found: #{rid}")
+SP_6006 = lambda: AppError("SP-6006", "Invalid export format",
+                           "Allowed: pdf, csv")

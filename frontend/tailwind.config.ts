@@ -14,6 +14,7 @@ const config: Config = {
         accent: "var(--accent)",
         positive: "var(--positive)",
         negative: "var(--negative)",
+        warning: "var(--warning)",
       },
     },
   },
