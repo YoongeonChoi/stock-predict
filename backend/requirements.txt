@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+yfinance
+fredapi
+feedparser
+openai
+httpx
+numpy
+pandas
+ta
+fpdf2
+aiosqlite
