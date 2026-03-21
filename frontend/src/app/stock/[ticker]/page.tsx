@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { StockDetail } from "@/lib/types";
-import { formatNumber, formatPct, changeColor, scoreColor } from "@/lib/utils";
+import { formatPct, changeColor, formatPrice, formatMarketCap } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import PriceChart from "@/components/charts/PriceChart";
@@ -64,7 +64,7 @@ export default function StockPage() {
             + Watchlist
           </button>
           <div className="text-right">
-            <div className="text-2xl font-bold font-mono">{formatNumber(stock.current_price)}</div>
+            <div className="text-2xl font-bold font-mono">{formatPrice(stock.current_price, stock.ticker)}</div>
             <div className={`text-lg ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</div>
           </div>
         </div>
@@ -102,30 +102,30 @@ export default function StockPage() {
         <div className="grid grid-cols-5 gap-3 text-center mb-4">
           <div className="p-3 rounded-lg bg-blue-500/10">
             <div className="text-xs text-text-secondary">Buy Low</div>
-            <div className="font-bold text-blue-500">{formatNumber(bsg.buy_zone_low)}</div>
+            <div className="font-bold text-blue-500">{formatPrice(bsg.buy_zone_low, stock.ticker)}</div>
           </div>
           <div className="p-3 rounded-lg bg-blue-500/10">
             <div className="text-xs text-text-secondary">Buy High</div>
-            <div className="font-bold text-blue-500">{formatNumber(bsg.buy_zone_high)}</div>
+            <div className="font-bold text-blue-500">{formatPrice(bsg.buy_zone_high, stock.ticker)}</div>
           </div>
           <div className="p-3 rounded-lg bg-emerald-500/10">
             <div className="text-xs text-text-secondary">Fair Value</div>
-            <div className="font-bold text-emerald-500">{formatNumber(bsg.fair_value)}</div>
+            <div className="font-bold text-emerald-500">{formatPrice(bsg.fair_value, stock.ticker)}</div>
           </div>
           <div className="p-3 rounded-lg bg-red-500/10">
             <div className="text-xs text-text-secondary">Sell Low</div>
-            <div className="font-bold text-red-500">{formatNumber(bsg.sell_zone_low)}</div>
+            <div className="font-bold text-red-500">{formatPrice(bsg.sell_zone_low, stock.ticker)}</div>
           </div>
           <div className="p-3 rounded-lg bg-red-500/10">
             <div className="text-xs text-text-secondary">Sell High</div>
-            <div className="font-bold text-red-500">{formatNumber(bsg.sell_zone_high)}</div>
+            <div className="font-bold text-red-500">{formatPrice(bsg.sell_zone_high, stock.ticker)}</div>
           </div>
         </div>
         <div className="text-sm text-text-secondary">Risk/Reward Ratio: <strong>{(bsg.risk_reward_ratio ?? 0).toFixed(2)}</strong></div>
         {(bsg.methodology || []).length > 0 && (
           <div className="mt-3 text-xs text-text-secondary">
             {(bsg.methodology || []).map((m, i) => (
-              <div key={i}>• {m.name}: {formatNumber(m.value)} (weight {(m.weight * 100).toFixed(0)}%) — {m.details}</div>
+              <div key={i}>• {m.name}: {formatPrice(m.value, stock.ticker)} (weight {(m.weight * 100).toFixed(0)}%) — {m.details}</div>
             ))}
           </div>
         )}
@@ -155,7 +155,7 @@ export default function StockPage() {
       <div className="card">
         <h2 className="font-semibold mb-3">Financials</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-          <div><span className="text-xs text-text-secondary">Market Cap</span><div className="font-bold">{formatNumber(stock.market_cap)}</div></div>
+          <div><span className="text-xs text-text-secondary">Market Cap</span><div className="font-bold">{formatMarketCap(stock.market_cap, stock.ticker)}</div></div>
           <div><span className="text-xs text-text-secondary">P/E</span><div className="font-bold">{stock.pe_ratio?.toFixed(1) ?? "N/A"}</div></div>
           <div><span className="text-xs text-text-secondary">P/B</span><div className="font-bold">{stock.pb_ratio?.toFixed(1) ?? "N/A"}</div></div>
           <div><span className="text-xs text-text-secondary">EV/EBITDA</span><div className="font-bold">{stock.ev_ebitda?.toFixed(1) ?? "N/A"}</div></div>
@@ -172,11 +172,11 @@ export default function StockPage() {
               <tbody>{stock.financials.slice(0, 6).map((f) => (
                 <tr key={f.period} className="border-b border-border/30">
                   <td className="py-1">{f.period}</td>
-                  <td className="py-1 text-right font-mono">{formatNumber(f.revenue)}</td>
-                  <td className="py-1 text-right font-mono">{formatNumber(f.operating_income)}</td>
-                  <td className="py-1 text-right font-mono">{formatNumber(f.net_income)}</td>
-                  <td className="py-1 text-right font-mono">{formatNumber(f.ebitda)}</td>
-                  <td className="py-1 text-right font-mono">{formatNumber(f.free_cash_flow)}</td>
+                  <td className="py-1 text-right font-mono">{formatMarketCap(f.revenue, stock.ticker)}</td>
+                  <td className="py-1 text-right font-mono">{formatMarketCap(f.operating_income, stock.ticker)}</td>
+                  <td className="py-1 text-right font-mono">{formatMarketCap(f.net_income, stock.ticker)}</td>
+                  <td className="py-1 text-right font-mono">{formatMarketCap(f.ebitda, stock.ticker)}</td>
+                  <td className="py-1 text-right font-mono">{formatMarketCap(f.free_cash_flow, stock.ticker)}</td>
                 </tr>
               ))}</tbody>
             </table>

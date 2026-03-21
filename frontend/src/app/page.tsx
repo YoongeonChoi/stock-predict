@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import type { HeatmapData } from "@/lib/api";
 import type { CountryListItem } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
+import StockHeatmap from "@/components/charts/StockHeatmap";
 
 interface MarketIndicator {
   name: string;
@@ -12,27 +14,11 @@ interface MarketIndicator {
   change_pct: number;
 }
 
-interface SectorPerf {
-  sector: string;
-  ticker: string;
-  price: number;
-  change_pct: number;
-}
-
-function heatColor(pct: number): string {
-  if (pct >= 2) return "bg-emerald-600 text-white";
-  if (pct >= 1) return "bg-emerald-500/80 text-white";
-  if (pct >= 0.3) return "bg-emerald-500/40 text-emerald-700 dark:text-emerald-300";
-  if (pct >= -0.3) return "bg-border text-text-secondary";
-  if (pct >= -1) return "bg-red-500/40 text-red-700 dark:text-red-300";
-  if (pct >= -2) return "bg-red-500/80 text-white";
-  return "bg-red-600 text-white";
-}
-
 export default function HomePage() {
   const [countries, setCountries] = useState<CountryListItem[]>([]);
   const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
-  const [sectorPerf, setSectorPerf] = useState<SectorPerf[]>([]);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [activeCountry, setActiveCountry] = useState("US");
   const [loading, setLoading] = useState(true);
 
@@ -40,16 +26,33 @@ export default function HomePage() {
     Promise.all([
       api.getCountries().then(setCountries).catch(console.error),
       api.getMarketIndicators().then(setIndicators).catch(console.error),
-      api.getSectorPerformance("US").then(setSectorPerf).catch(console.error),
     ]).finally(() => setLoading(false));
+    loadHeatmap("US");
   }, []);
 
-  const loadSectorPerf = (code: string) => {
+  const loadHeatmap = (code: string) => {
     setActiveCountry(code);
-    api.getSectorPerformance(code).then(setSectorPerf).catch(console.error);
+    setHeatmapLoading(true);
+    api.getHeatmap(code)
+      .then(setHeatmapData)
+      .catch(console.error)
+      .finally(() => setHeatmapLoading(false));
   };
 
   const flags: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
+
+  const indicatorUnit: Record<string, string> = {
+    "Gold": "$", "Oil (WTI)": "$", "Bitcoin": "$",
+    "US 10Y": "%",
+  };
+
+  const fmtIndicator = (ind: MarketIndicator) => {
+    const unit = indicatorUnit[ind.name];
+    const v = (ind.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (unit === "$") return `$${v}`;
+    if (unit === "%") return `${v}%`;
+    return v;
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -64,8 +67,12 @@ export default function HomePage() {
           {indicators.map((ind) => (
             <div key={ind.name} className="card !p-3 text-center">
               <div className="text-xs text-text-secondary mb-1">{ind.name}</div>
-              <div className="font-mono text-sm font-bold">{ind.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-              <div className={`text-xs font-medium ${changeColor(ind.change_pct)}`}>{formatPct(ind.change_pct)}</div>
+              <div className="font-mono text-sm font-bold">
+                {fmtIndicator(ind)}
+              </div>
+              <div className={`text-xs font-medium ${changeColor(ind.change_pct ?? 0)}`}>
+                {formatPct(ind.change_pct ?? 0)}
+              </div>
             </div>
           ))}
         </div>
@@ -109,15 +116,15 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Sector Performance Heatmap */}
-      <div className="card">
+      {/* Stock Market Heatmap */}
+      <div className="card !p-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-lg">Sector Performance</h2>
+          <h2 className="font-semibold text-lg">Market Heatmap</h2>
           <div className="flex gap-1.5">
             {["US", "KR", "JP"].map((code) => (
               <button
                 key={code}
-                onClick={() => loadSectorPerf(code)}
+                onClick={() => loadHeatmap(code)}
                 className={`px-3 py-1 rounded-lg text-xs transition-colors ${
                   activeCountry === code ? "bg-accent text-white" : "bg-surface border border-border hover:border-accent/50"
                 }`}
@@ -127,20 +134,15 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-          {sectorPerf.map((s) => (
-            <div
-              key={s.sector}
-              className={`rounded-lg p-3 text-center transition-colors ${heatColor(s.change_pct)}`}
-            >
-              <div className="text-xs font-medium mb-1 truncate">{s.sector}</div>
-              <div className="text-sm font-bold">{formatPct(s.change_pct)}</div>
-            </div>
-          ))}
+        <StockHeatmap data={heatmapData} loading={heatmapLoading} />
+        <div className="flex items-center gap-4 mt-3 text-[10px] text-text-secondary">
+          <span>Size = Market Cap</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#b91c1c]" /> -3%+</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#ef4444]" /> -1~-2%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#86efac]" /> 0~+0.5%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#22c55e]" /> +1~+2%</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#15803d]" /> +3%+</span>
         </div>
-        {sectorPerf.length === 0 && (
-          <p className="text-sm text-text-secondary text-center py-6">Loading sector data...</p>
-        )}
       </div>
     </div>
   );

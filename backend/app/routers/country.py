@@ -61,6 +61,52 @@ async def get_country_report(code: str):
     return report
 
 
+@router.get("/country/{code}/heatmap")
+async def get_heatmap(code: str):
+    """Treemap heatmap data: sector > stocks with market_cap and change_pct."""
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+
+    from app.data import cache as data_cache
+    cache_key = f"heatmap:{code}"
+    cached = await data_cache.get(cache_key)
+    if cached:
+        return cached
+
+    from app.data.universe_data import get_universe
+    universe = await get_universe(code)
+
+    sectors = []
+    for sector_name, tickers in universe.items():
+        stocks = []
+        for ticker in tickers[:10]:
+            try:
+                q = await yfinance_client.get_index_quote(ticker)
+                info = await yfinance_client.get_stock_info(ticker)
+                mc = info.get("market_cap") or 0
+                if mc <= 0:
+                    continue
+                stocks.append({
+                    "name": ticker.split(".")[0],
+                    "ticker": ticker,
+                    "fullName": info.get("name", ticker),
+                    "size": mc,
+                    "change": q.get("change_pct", 0),
+                })
+            except Exception:
+                continue
+        if stocks:
+            stocks.sort(key=lambda s: s["size"], reverse=True)
+            sectors.append({"name": sector_name, "children": stocks[:8]})
+
+    result = {"children": sectors}
+    await data_cache.set(cache_key, result, 900)
+    return result
+
+
 @router.get("/country/{code}/report/pdf")
 async def download_country_report_pdf(code: str):
     code = code.upper()

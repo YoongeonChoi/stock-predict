@@ -33,3 +33,27 @@ export function changeColor(pct: number): string {
   if (pct < 0) return "text-negative";
   return "text-text-secondary";
 }
+
+export function currencySymbol(countryOrTicker: string): string {
+  const v = countryOrTicker.toUpperCase();
+  if (v === "KR" || v.endsWith(".KS") || v.endsWith(".KQ")) return "₩";
+  if (v === "JP" || v.endsWith(".T")) return "¥";
+  return "$";
+}
+
+export function formatPrice(n: number | undefined | null, countryOrTicker: string): string {
+  if (n == null) return "N/A";
+  const sym = currencySymbol(countryOrTicker);
+  if (sym === "₩") return `₩${Math.round(n).toLocaleString()}`;
+  if (sym === "¥") return `¥${Math.round(n).toLocaleString()}`;
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function formatMarketCap(n: number | undefined | null, countryOrTicker?: string): string {
+  if (n == null) return "N/A";
+  const sym = countryOrTicker ? currencySymbol(countryOrTicker) : "$";
+  if (Math.abs(n) >= 1e12) return `${sym}${(n / 1e12).toFixed(1)}T`;
+  if (Math.abs(n) >= 1e9) return `${sym}${(n / 1e9).toFixed(1)}B`;
+  if (Math.abs(n) >= 1e6) return `${sym}${(n / 1e6).toFixed(1)}M`;
+  return `${sym}${n.toLocaleString()}`;
+}

@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { formatNumber, formatPct, changeColor } from "@/lib/utils";
+import { formatPct, changeColor, formatPrice, formatMarketCap } from "@/lib/utils";
 import ErrorBanner from "@/components/ErrorBanner";
 
 const METRICS: { key: string; label: string; fmt?: "pct" | "num" | "money" }[] = [
   { key: "current_price", label: "Price", fmt: "money" },
   { key: "change_pct", label: "Change %", fmt: "pct" },
-  { key: "market_cap", label: "Market Cap", fmt: "money" },
+  { key: "market_cap", label: "Market Cap", fmt: "cap" },
   { key: "pe_ratio", label: "P/E" },
   { key: "pb_ratio", label: "P/B" },
   { key: "ev_ebitda", label: "EV/EBITDA" },
@@ -18,12 +18,13 @@ const METRICS: { key: string; label: string; fmt?: "pct" | "num" | "money" }[] =
   { key: "beta", label: "Beta" },
 ];
 
-function fmtVal(val: unknown, fmt?: string): string {
+function fmtVal(val: unknown, fmt?: string, ticker?: string): string {
   if (val == null) return "N/A";
   const n = Number(val);
   if (isNaN(n)) return String(val);
   if (fmt === "pct") return (n * 100).toFixed(2) + "%";
-  if (fmt === "money") return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (fmt === "money") return formatPrice(n, ticker ?? "US");
+  if (fmt === "cap") return formatMarketCap(n, ticker ?? "US");
   return n.toFixed(2);
 }
 
@@ -113,7 +114,7 @@ export default function ComparePage() {
                       const isBest = val != null && val === best;
                       return (
                         <td key={r.ticker} className={`py-2.5 text-right pr-4 font-mono ${m.key === "change_pct" ? changeColor(val ?? 0) : ""} ${isBest ? "font-bold text-accent" : ""}`}>
-                          {fmtVal(val, m.fmt)}
+                          {fmtVal(val, m.fmt, r.ticker)}
                         </td>
                       );
                     })}

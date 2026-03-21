@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { SectorReport, ScoreItem } from "@/lib/types";
-import { formatPct, changeColor } from "@/lib/utils";
+import { formatPct, changeColor, formatPrice } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
@@ -91,7 +91,7 @@ export default function SectorPage() {
                       <div className="text-xs text-text-secondary">{s.ticker}</div>
                     </Link>
                   </td>
-                  <td className="py-3 text-right font-mono">{(s.current_price ?? 0).toLocaleString()}</td>
+                  <td className="py-3 text-right font-mono">{formatPrice(s.current_price, code ?? "US")}</td>
                   <td className={`py-3 text-right ${changeColor(s.change_pct ?? 0)}`}>{formatPct(s.change_pct ?? 0)}</td>
                   <td className="py-3 text-right font-bold">{(s.score ?? 0).toFixed(1)}</td>
                   <td className="py-3 text-xs text-text-secondary hidden md:table-cell">
