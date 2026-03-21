@@ -10,6 +10,7 @@ import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import FearGreedGauge from "@/components/charts/FearGreedGauge";
 import ForecastBand from "@/components/charts/ForecastBand";
+import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
 export default function CountryPage() {
   const { code } = useParams<{ code: string }>();
@@ -17,7 +18,7 @@ export default function CountryPage() {
   const [sectors, setSectors] = useState<SectorListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!code) return;
@@ -26,7 +27,7 @@ export default function CountryPage() {
 
     const loadReport = api.getCountryReport(code)
       .then(setReport)
-      .catch((e) => { console.error(e); setError(e.message); });
+      .catch((e) => { console.error(e); setError(e); });
 
     const loadSectors = api.getSectors(code)
       .then(setSectors)
@@ -39,11 +40,7 @@ export default function CountryPage() {
   if (!report && error) return (
     <div className="max-w-5xl mx-auto space-y-4">
       <Link href="/" className="text-text-secondary hover:text-text">&larr; Back</Link>
-      <div className="card border-negative/30 bg-negative/5">
-        <h2 className="font-semibold text-negative mb-2">Report Loading Failed</h2>
-        <p className="text-sm text-text-secondary">{error}</p>
-        <button onClick={() => window.location.reload()} className="mt-3 px-4 py-2 bg-accent text-white rounded-lg text-sm">Retry</button>
-      </div>
+      <ErrorBanner error={error} onRetry={() => window.location.reload()} />
     </div>
   );
   if (!report) return <div className="text-text-secondary">Failed to load report</div>;
@@ -60,13 +57,9 @@ export default function CountryPage() {
         <h1 className="text-2xl font-bold">{report.country.name_local} Market Report</h1>
       </div>
 
-      {/* LLM Warning Banner */}
-      {(report as any).llm_available === false && (
-        <div className="card border-warning/30 bg-warning/5">
-          <p className="text-sm text-warning font-medium">
-            ⚠ AI 분석을 사용할 수 없습니다 (API 키 확인 필요). 시장 데이터만 표시됩니다.
-          </p>
-        </div>
+      {/* Error code warnings */}
+      {(report as any).errors?.length > 0 && (
+        <WarningBanner codes={(report as any).errors} />
       )}
 
       {/* Market Summary */}

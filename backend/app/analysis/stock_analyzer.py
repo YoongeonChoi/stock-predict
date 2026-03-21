@@ -45,7 +45,7 @@ async def analyze_stock(ticker: str) -> dict:
         ticker, info, financials_raw, news, quant_score.model_dump()
     )
     llm_result = await ask_json(system, user)
-    llm_failed = "error" in llm_result
+    llm_failed = "error_code" in llm_result or "error" in llm_result
 
     if not llm_failed:
         est_rev_score = float(llm_result.get("estimate_revision_score", 2.5))
@@ -104,8 +104,10 @@ async def analyze_stock(ticker: str) -> dict:
     )
 
     result = detail.model_dump()
+    errors = []
     if llm_failed:
-        result["analysis_summary"] = llm_result.get("error", "AI analysis unavailable. Showing quantitative data only.")
+        errors.append(llm_result.get("error_code", "SP-4005"))
+        result["analysis_summary"] = llm_result.get("message", "AI analysis unavailable. Showing quantitative data only.")
         result["key_risks"] = []
         result["key_catalysts"] = []
         result["llm_available"] = False
@@ -114,6 +116,7 @@ async def analyze_stock(ticker: str) -> dict:
         result["key_risks"] = llm_result.get("key_risks", [])
         result["key_catalysts"] = llm_result.get("key_catalysts", [])
         result["llm_available"] = True
+    result["errors"] = errors
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
     return result

@@ -1,6 +1,5 @@
 """Country-level analysis: aggregates data, calls LLM, builds report."""
 
-import logging
 from datetime import datetime
 from app.data import yfinance_client, fred_client, ecos_client, boj_client, news_client, cache
 from app.analysis.llm_client import ask_json
@@ -11,8 +10,7 @@ from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.models.country import COUNTRY_REGISTRY, CountryReport, StockSummaryRef, NewsItem, InstitutionalAnalysis, InstitutionView
 from app.config import get_settings
-
-log = logging.getLogger(__name__)
+from app.errors import SP_2005, SP_3004, SP_6001
 
 
 async def analyze_country(country_code: str) -> dict:
@@ -24,7 +22,9 @@ async def analyze_country(country_code: str) -> dict:
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
-        return {"error": f"Unknown country: {country_code}"}
+        err = SP_6001(country_code)
+        err.log()
+        return err.to_dict()
 
     economic_data = await _get_economic_data(country_code)
     market_data = {}
@@ -33,7 +33,7 @@ async def analyze_country(country_code: str) -> dict:
             q = await yfinance_client.get_index_quote(idx.ticker)
             market_data[idx.name] = q
         except Exception as e:
-            log.warning(f"Failed to get quote for {idx.ticker}: {e}")
+            SP_2005(idx.ticker).log("warning")
             market_data[idx.name] = {"price": 0, "change_pct": 0}
 
     news_by_inst = await news_client.get_all_institution_news(
@@ -47,7 +47,7 @@ async def analyze_country(country_code: str) -> dict:
         economic_data, news_by_inst, market_data,
     )
     llm_result = await ask_json(system, user)
-    llm_failed = "error" in llm_result
+    llm_failed = "error_code" in llm_result or "error" in llm_result
 
     scores = llm_result.get("scores", {})
     country_score = build_country_score(scores)
@@ -118,12 +118,16 @@ async def analyze_country(country_code: str) -> dict:
         )
         forecast_data = forecast.model_dump()
     except Exception as e:
-        log.warning(f"Forecast failed: {e}")
+        SP_3004(str(e)[:150]).log("warning")
         forecast_data = {"scenarios": [], "current_price": 0, "index_name": primary_index.name}
 
     market_summary = llm_result.get("market_summary", "")
     if llm_failed:
-        market_summary = llm_result.get("error", "Analysis temporarily unavailable. Market data is still shown below.")
+        market_summary = llm_result.get("message", llm_result.get("error", "Analysis temporarily unavailable."))
+
+    errors = []
+    if llm_failed:
+        errors.append(llm_result.get("error_code", "SP-4005"))
 
     report = {
         "country": country.model_dump(),
@@ -136,6 +140,7 @@ async def analyze_country(country_code: str) -> dict:
         "forecast": forecast_data,
         "market_data": market_data,
         "llm_available": not llm_failed,
+        "errors": errors,
         "generated_at": datetime.now().isoformat(),
     }
 

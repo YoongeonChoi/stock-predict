@@ -3,6 +3,7 @@
 import httpx
 from app.data import cache
 from app.config import get_settings
+from app.errors import SP_1004, SP_2002
 
 BASE_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 
@@ -21,6 +22,7 @@ SERIES = {
 async def get_series(table_code: str, item_code: str, count: int = 12) -> list[dict]:
     settings = get_settings()
     if not settings.ecos_api_key:
+        SP_1004().log("warning")
         return []
 
     async def _fetch():
@@ -38,7 +40,8 @@ async def get_series(table_code: str, item_code: str, count: int = 12) -> list[d
                     {"date": r.get("TIME"), "value": _parse(r.get("DATA_VALUE"))}
                     for r in rows
                 ]
-        except Exception:
+        except Exception as e:
+            SP_2002(str(e)[:150]).log()
             return []
 
     return await cache.get_or_fetch(

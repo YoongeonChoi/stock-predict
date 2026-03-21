@@ -8,19 +8,28 @@ import type { SectorReport } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
+import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
 export default function SectorPage() {
   const { code, id } = useParams<{ code: string; id: string }>();
   const [report, setReport] = useState<SectorReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!code || !id) return;
     setLoading(true);
-    api.getSectorReport(code, id).then(setReport).catch(console.error).finally(() => setLoading(false));
+    setError(null);
+    api.getSectorReport(code, id).then(setReport).catch((e) => { console.error(e); setError(e); }).finally(() => setLoading(false));
   }, [code, id]);
 
   if (loading) return <div className="animate-pulse space-y-4"><div className="h-8 bg-border rounded w-48" /><div className="h-96 bg-border rounded" /></div>;
+  if (!report && error) return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      <Link href={`/country/${code}`} className="text-text-secondary hover:text-text">&larr; Back</Link>
+      <ErrorBanner error={error} onRetry={() => window.location.reload()} />
+    </div>
+  );
   if (!report) return <div className="text-text-secondary">Failed to load sector report</div>;
 
   const scoreItems = [
@@ -35,6 +44,8 @@ export default function SectorPage() {
         <h1 className="text-2xl font-bold">{report.sector.name}</h1>
         <span className="text-text-secondary">({report.sector.stock_count} stocks)</span>
       </div>
+
+      {(report as any).errors?.length > 0 && <WarningBanner codes={(report as any).errors} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="card lg:col-span-2">

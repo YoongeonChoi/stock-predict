@@ -38,9 +38,10 @@ async def forecast_index(
     )
     llm = await ask_json(system, user, temperature=0.3)
 
-    fair_value = float(llm.get("fair_value", mc_result["base"])) if "error" not in llm else mc_result["base"]
+    _llm_ok = "error_code" not in llm and "error" not in llm
+    fair_value = float(llm.get("fair_value", mc_result["base"])) if _llm_ok else mc_result["base"]
     scenarios = []
-    if "error" not in llm:
+    if _llm_ok:
         for s in llm.get("scenarios", []):
             scenarios.append(ForecastScenario(
                 name=s.get("name", ""),

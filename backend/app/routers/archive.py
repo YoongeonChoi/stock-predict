@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from app.services import archive_service
+from app.errors import SP_6005
 
 router = APIRouter(prefix="/api", tags=["archive"])
 
@@ -17,7 +19,9 @@ async def list_archives(
 async def get_archive(report_id: int):
     result = await archive_service.get_report(report_id)
     if not result:
-        raise HTTPException(404, "Report not found")
+        err = SP_6005(report_id)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
     return result
 
 

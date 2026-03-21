@@ -6,6 +6,7 @@ BOJ Time-Series Data uses a REST API with CSV/JSON output.
 import httpx
 from app.data import cache
 from app.config import get_settings
+from app.errors import SP_2003
 
 BASE_URL = "https://www.stat-search.boj.or.jp/ssi/mtsui/rest/getBojTimeSeriesData"
 
@@ -36,7 +37,8 @@ async def get_series(series_code: str, limit: int = 12) -> list[dict]:
                     {"date": o.get("date", ""), "value": _parse(o.get("value"))}
                     for o in obs
                 ]
-        except Exception:
+        except Exception as e:
+            SP_2003(str(e)[:150]).log()
             return []
 
     settings = get_settings()

@@ -115,48 +115,53 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 - Node.js 18 이상
 - Git
 
-### 1. 레포지토리 클론
+### 1. 레포지토리 클론 (최초 1회)
 
 ```bash
 git clone https://github.com/YoongeonChoi/stock-predict.git
 cd stock-predict
 ```
 
-### 2. 백엔드 설정
+### 2. 백엔드 설정 (최초 1회)
+
+가상환경을 생성하고 패키지를 설치합니다. **이 단계는 최초 1번만** 실행하면 됩니다.
 
 ```powershell
-# 가상환경 생성 & 활성화 (Windows)
+# Windows PowerShell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-
-# 의존성 설치
 pip install -r backend\requirements.txt
 ```
 
-macOS/Linux:
 ```bash
+# macOS / Linux
 python3 -m venv venv
 source venv/bin/activate
 pip install -r backend/requirements.txt
 ```
 
-### 3. API 키 설정
+> **패키지가 추가/변경된 경우에만** `pip install -r backend/requirements.txt`를 다시 실행하세요.
+
+### 3. API 키 설정 (최초 1회)
 
 ```powershell
-# .env 파일 생성
+# .env 파일 생성 (최초 1회)
 Copy-Item backend\.env.example backend\.env
 ```
 
-`backend/.env` 파일을 열고 아래 키를 입력하세요:
+`backend/.env` 파일을 열고 아래 키를 입력합니다. **한 번 설정하면 다시 할 필요 없습니다.**
 
-| 키 | 필수 여부 | 발급처 |
-|----|----------|--------|
-| `OPENAI_API_KEY` | **필수** | https://platform.openai.com/api-keys |
-| `FRED_API_KEY` | **필수** (무료) | https://fred.stlouisfed.org/docs/api/api_key.html |
-| `ECOS_API_KEY` | **필수** (무료) | https://ecos.bok.or.kr/api/ |
-| `FMP_API_KEY` | 선택 (무료) | https://financialmodelingprep.com/developer/docs/ |
+| 키 | 필수 여부 | 무료 여부 | 발급처 |
+|----|----------|----------|--------|
+| `OPENAI_API_KEY` | **필수** | 유료 | https://platform.openai.com/api-keys |
+| `FRED_API_KEY` | **필수** | 무료 | https://fred.stlouisfed.org/docs/api/api_key.html |
+| `ECOS_API_KEY` | **필수** | 무료 | https://ecos.bok.or.kr/api/ |
+| `FMP_API_KEY` | 선택 | 무료 | https://financialmodelingprep.com/developer/docs/ |
 
-### 4. 프론트엔드 설정
+> `OPENAI_API_KEY`가 없으면 AI 분석 기능(리포트, 추천 종목, 매수/매도 가이드)이 비활성화됩니다.
+> 시장 데이터, 차트, Fear & Greed 지수 등은 정상 작동합니다. (에러코드: SP-1001)
+
+### 4. 프론트엔드 설정 (최초 1회)
 
 ```powershell
 cd frontend
@@ -164,7 +169,11 @@ npm install
 cd ..
 ```
 
-### 5. 실행
+> `package.json`이 변경된 경우에만 `npm install`을 다시 실행하세요.
+
+### 5. 실행 (매번)
+
+아래 단계는 **서버를 켤 때마다** 실행합니다.
 
 **방법 A: PowerShell 원클릭 실행 (Windows)**
 
@@ -176,7 +185,7 @@ cd ..
 
 터미널 1 — 백엔드:
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1          # 가상환경 활성화 (매번 필요)
 cd backend
 uvicorn app.main:app --reload --port 8000
 ```
@@ -194,6 +203,96 @@ npm run dev
 | http://localhost:3000 | 웹 UI |
 | http://localhost:8000/docs | API 문서 (Swagger) |
 | http://localhost:8000/api/health | 서버 상태 확인 |
+
+### 요약: 최초 vs 매번
+
+| 단계 | 최초 설치 | 매번 실행 |
+|------|-----------|-----------|
+| `git clone` | O | X |
+| `python -m venv venv` | O | X |
+| `pip install -r requirements.txt` | O | 패키지 변경 시만 |
+| `.env` 파일 생성 + API 키 입력 | O | X |
+| `npm install` | O | package.json 변경 시만 |
+| 가상환경 활성화 (`Activate.ps1`) | - | **O (매번)** |
+| `uvicorn` 백엔드 실행 | - | **O (매번)** |
+| `npm run dev` 프론트엔드 실행 | - | **O (매번)** |
+
+---
+
+## Error Codes Reference
+
+모든 에러는 `SP-XYYY` 형식의 코드를 가집니다. 로그와 프론트엔드 UI 모두에 표시됩니다.
+
+코드 정의: `backend/app/errors.py`
+
+### 1xxx — 설정 (Configuration)
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-1001 | OpenAI API 키 미설정 | `backend/.env`에 `OPENAI_API_KEY` 설정 |
+| SP-1002 | OpenAI API 키 무효 | platform.openai.com에서 키 재발급 |
+| SP-1003 | FRED API 키 미설정 | `backend/.env`에 `FRED_API_KEY` 설정 (무료) |
+| SP-1004 | ECOS API 키 미설정 | `backend/.env`에 `ECOS_API_KEY` 설정 (무료) |
+| SP-1005 | FMP API 키 미설정 | `backend/.env`에 `FMP_API_KEY` 설정 (무료, 선택) |
+
+### 2xxx — 데이터 소스 (Data Sources)
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-2001 | FRED API 요청 실패 | API 키 확인, 시리즈 ID 유효성 확인 |
+| SP-2002 | ECOS (BOK) API 요청 실패 | 네트워크/키 확인 |
+| SP-2003 | BOJ API 요청 실패 | 네트워크 확인 (키 불필요) |
+| SP-2004 | 티커 미발견/상장폐지 | 유효한 Yahoo Finance 티커인지 확인 |
+| SP-2005 | 가격 데이터 불가 | 장 개장 여부 / 티커 유효성 확인 |
+| SP-2006 | FMP API 요청 실패 | FMP 키 확인, 일일 250콜 한도 확인 |
+| SP-2007 | 뉴스 피드 불가 | 네트워크 확인, Google News 접근 가능 확인 |
+| SP-2008 | 재무 데이터 불가 | yfinance에서 해당 종목 재무제표 미제공 |
+
+### 3xxx — 분석 파이프라인 (Analysis)
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-3001 | 국가 분석 실패 | 로그에서 하위 에러 코드 확인 |
+| SP-3002 | 섹터 분석 실패 | 로그에서 하위 에러 코드 확인 |
+| SP-3003 | 종목 분석 실패 | 티커 유효성 확인 |
+| SP-3004 | 지수 예측 실패 | 가격 데이터 확인 |
+| SP-3005 | 감성 분석 실패 | LLM 에러 코드 확인 |
+| SP-3006 | 스코어링 계산 실패 | 입력 데이터 확인 |
+
+### 4xxx — LLM / OpenAI
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-4001 | OpenAI 쿼터 초과 | platform.openai.com에서 결제/플랜 확인 |
+| SP-4002 | OpenAI 인증 실패 | API 키 재발급 |
+| SP-4003 | LLM 응답 파싱 오류 | 자동 재시도 또는 캐시 삭제 후 재요청 |
+| SP-4004 | LLM 요청 타임아웃 | 네트워크 확인, 재시도 |
+| SP-4005 | LLM 기타 오류 | 로그 상세 메시지 확인 |
+
+### 5xxx — 서비스 / 데이터베이스
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-5001 | DB 연결 실패 | SQLite 파일 경로/권한 확인 |
+| SP-5002 | 리포트 저장 실패 | DB 용량/권한 확인 |
+| SP-5003 | 워치리스트 작업 실패 | DB 확인 |
+| SP-5004 | 내보내기 생성 실패 | fpdf2 패키지 설치 확인 |
+| SP-5005 | 캐시 작업 실패 | DB 확인 |
+
+### 6xxx — 요청 검증 (Validation)
+
+| 코드 | 설명 | 해결 방법 |
+|------|------|----------|
+| SP-6001 | 미지원 국가 | US, KR, JP만 지원 |
+| SP-6002 | 미존재 섹터 | 유효한 GICS 섹터 ID 확인 |
+| SP-6003 | 잘못된 기간 파라미터 | 1mo, 3mo, 6mo, 1y, 2y 중 선택 |
+| SP-6004 | 비교 티커 부족 | 최소 2개, 최대 4개 |
+| SP-6005 | 아카이브 리포트 미발견 | 유효한 report_id 확인 |
+| SP-6006 | 잘못된 내보내기 형식 | pdf 또는 csv |
+| SP-9999 | 예상치 못한 서버 오류 | 서버 로그 확인 |
+
+> 프론트엔드에서는 에러 발생 시 **에러 코드 + 한국어 가이드**가 함께 표시됩니다.
+> 백엔드 로그에는 `[SP-XXXX] 메시지 | 상세` 형식으로 기록됩니다.
 
 ---
 

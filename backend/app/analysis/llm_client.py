@@ -1,18 +1,17 @@
-"""OpenAI GPT-4o wrapper with structured JSON output and graceful error handling."""
+"""OpenAI GPT-4o wrapper with structured JSON output and error-coded responses."""
 
 import json
-import logging
 import openai
 from app.config import get_settings
-
-log = logging.getLogger(__name__)
+from app.errors import SP_1001, SP_4001, SP_4002, SP_4003, SP_4004, SP_4005
 
 
 async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.3) -> dict:
     settings = get_settings()
     if not settings.openai_api_key or settings.openai_api_key.startswith("sk-your"):
-        log.warning("OpenAI API key not configured, returning empty analysis")
-        return {"error": "OpenAI API key not configured"}
+        err = SP_1001()
+        err.log("warning")
+        return err.to_dict()
 
     try:
         client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
@@ -29,22 +28,32 @@ async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            return {"error": "Failed to parse LLM response", "raw": text[:500]}
+            err = SP_4003()
+            err.log()
+            return err.to_dict()
 
     except openai.RateLimitError:
-        log.error("OpenAI quota exceeded - check billing at platform.openai.com")
-        return {"error": "OpenAI quota exceeded. Please check your plan and billing."}
+        err = SP_4001()
+        err.log()
+        return err.to_dict()
     except openai.AuthenticationError:
-        log.error("OpenAI API key invalid")
-        return {"error": "OpenAI API key is invalid."}
+        err = SP_4002()
+        err.log()
+        return err.to_dict()
+    except openai.APITimeoutError:
+        err = SP_4004()
+        err.log()
+        return err.to_dict()
     except Exception as e:
-        log.error(f"OpenAI call failed: {e}")
-        return {"error": f"LLM analysis failed: {str(e)[:200]}"}
+        err = SP_4005(str(e)[:200])
+        err.log()
+        return err.to_dict()
 
 
 async def ask_text(system_prompt: str, user_prompt: str, temperature: float = 0.4) -> str:
     settings = get_settings()
     if not settings.openai_api_key or settings.openai_api_key.startswith("sk-your"):
+        SP_1001().log("warning")
         return ""
 
     try:
@@ -59,5 +68,5 @@ async def ask_text(system_prompt: str, user_prompt: str, temperature: float = 0.
         )
         return response.choices[0].message.content or ""
     except Exception as e:
-        log.error(f"OpenAI text call failed: {e}")
+        SP_4005(str(e)[:200]).log()
         return ""

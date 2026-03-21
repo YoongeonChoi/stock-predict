@@ -3,6 +3,7 @@
 import httpx
 from app.data import cache
 from app.config import get_settings
+from app.errors import SP_1003, SP_2001
 
 BASE_URL = "https://api.stlouisfed.org/fred"
 
@@ -25,6 +26,7 @@ SERIES = {
 async def get_series(series_id: str, limit: int = 12) -> list[dict]:
     settings = get_settings()
     if not settings.fred_api_key:
+        SP_1003().log("warning")
         return []
 
     async def _fetch():
@@ -47,7 +49,8 @@ async def get_series(series_id: str, limit: int = 12) -> list[dict]:
                     for o in obs
                     if o["value"] != "."
                 ]
-        except Exception:
+        except Exception as e:
+            SP_2001(series_id, str(e)[:150]).log()
             return []
 
     return await cache.get_or_fetch(

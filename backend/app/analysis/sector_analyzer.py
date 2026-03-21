@@ -52,7 +52,7 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
         sector_name, country_code, stock_data, inst_news_text
     )
     llm_result = await ask_json(system, user)
-    llm_failed = "error" in llm_result
+    llm_failed = "error_code" in llm_result or "error" in llm_result
 
     scores = llm_result.get("scores", {})
     sector_score = build_sector_score(scores)
@@ -93,6 +93,10 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
     if llm_failed:
         summary = llm_result.get("error", "AI analysis unavailable. Showing quantitative rankings only.")
 
+    errors = []
+    if llm_failed:
+        errors.append(llm_result.get("error_code", "SP-4005"))
+
     report = {
         "sector": {
             "id": sector_id,
@@ -104,6 +108,7 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
         "summary": summary,
         "top_stocks": top_stocks,
         "llm_available": not llm_failed,
+        "errors": errors,
         "generated_at": datetime.now().isoformat(),
     }
 

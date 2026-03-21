@@ -9,16 +9,19 @@ import { formatNumber, formatPct, changeColor, scoreColor } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import PriceChart from "@/components/charts/PriceChart";
+import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
 export default function StockPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const [stock, setStock] = useState<StockDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
-    api.getStockDetail(decodeURIComponent(ticker)).then(setStock).catch(console.error).finally(() => setLoading(false));
+    setError(null);
+    api.getStockDetail(decodeURIComponent(ticker)).then(setStock).catch((e) => { console.error(e); setError(e); }).finally(() => setLoading(false));
   }, [ticker]);
 
   const addToWatchlist = () => {
@@ -26,6 +29,12 @@ export default function StockPage() {
   };
 
   if (loading) return <div className="animate-pulse space-y-4"><div className="h-8 bg-border rounded w-64" /><div className="h-72 bg-border rounded" /><div className="h-48 bg-border rounded" /></div>;
+  if (!stock && error) return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      <Link href="/" className="text-text-secondary hover:text-text">&larr; Back</Link>
+      <ErrorBanner error={error} onRetry={() => window.location.reload()} />
+    </div>
+  );
   if (!stock) return <div className="text-text-secondary">Failed to load stock data</div>;
 
   const bsg = stock.buy_sell_guide;
@@ -58,6 +67,8 @@ export default function StockPage() {
           </div>
         </div>
       </div>
+
+      {(stock as any).errors?.length > 0 && <WarningBanner codes={(stock as any).errors} />}
 
       {/* Price Chart */}
       <div className="card">

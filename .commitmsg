@@ -1,11 +1,12 @@
-fix: resolve 500 errors and improve error resilience
+feat: add structured error code system (SP-XYYY) across entire stack
 
-- Fix invalid FRED series ID (MANBUSIMSA → TCU) causing 400 Bad Request
-- Fix delisted Japan TOPIX ticker (2800.T → 1306.T)
-- Add graceful degradation for OpenAI API failures (quota, auth, rate limit)
-  across all analyzers (country, sector, stock, forecast, sentiment)
-- Return partial data (market data, charts, Fear & Greed) when LLM unavailable
-- Replace text-based calendar with visual calendar grid (month view with
-  event dots, date selection, sidebar event details)
-- Add warning color system (CSS + Tailwind) for LLM unavailability banner
-- Improve frontend error handling with retry button and descriptive messages
+- Create centralized error registry (backend/app/errors.py) with 30+ codes
+  across 6 categories: Config, Data, Analysis, LLM, Service, Validation
+- Apply error codes to all 8 routers with JSONResponse + error_code field
+- Apply error codes to all analyzers, data clients, and LLM client
+- Add global exception handler (SP-9999) in main.py
+- Create frontend ErrorBanner + WarningBanner components with Korean guides
+- Create ApiError class in api.ts to parse server error codes
+- Apply error banners to Country, Sector, Stock pages
+- Update README with full error code reference table and resolution steps
+- Rewrite README setup guide: clarify one-time vs every-run steps
