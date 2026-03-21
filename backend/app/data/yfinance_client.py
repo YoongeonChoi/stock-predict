@@ -175,7 +175,6 @@ async def get_financials(ticker: str) -> list[dict]:
             cf = t.quarterly_cashflow
             if inc is not None and not inc.empty:
                 for col in inc.columns[:8]:
-                    period_str = col.strftime("%Y-Q%q") if hasattr(col, "strftime") else str(col)
                     try:
                         period_str = col.strftime("%Y") + "-Q" + str((col.month - 1) // 3 + 1)
                     except Exception:
