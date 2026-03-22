@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from app.errors import SP_5008
 from app.services import portfolio_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
@@ -20,7 +21,9 @@ async def get_portfolio():
         data = await portfolio_service.get_portfolio()
         return data
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error_code": "SP-5001", "message": str(e)[:200]})
+        err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
 
 
 @router.post("/portfolio/holdings")
@@ -31,7 +34,9 @@ async def add_holding(body: HoldingCreate):
         )
         return {"status": "ok"}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error_code": "SP-5001", "message": str(e)[:200]})
+        err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
 
 
 @router.delete("/portfolio/holdings/{holding_id}")
@@ -40,4 +45,6 @@ async def delete_holding(holding_id: int):
         await portfolio_service.remove_holding(holding_id)
         return {"status": "ok"}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error_code": "SP-5001", "message": str(e)[:200]})
+        err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())

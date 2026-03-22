@@ -13,6 +13,7 @@ Categories:
   4xxx = LLM / OpenAI
   5xxx = Services / Database (archive, watchlist, export, cache)
   6xxx = Request Validation (bad params, not found)
+  9xxx = Unexpected server/runtime errors
 """
 
 import logging
@@ -103,6 +104,9 @@ SP_5002 = lambda d="": AppError("SP-5002", "Archive save failed", d)
 SP_5003 = lambda d="": AppError("SP-5003", "Watchlist operation failed", d)
 SP_5004 = lambda d="": AppError("SP-5004", "Export generation failed", d)
 SP_5005 = lambda d="": AppError("SP-5005", "Cache operation failed", d)
+SP_5006 = lambda d="": AppError("SP-5006", "System diagnostics failed", d)
+SP_5007 = lambda d="": AppError("SP-5007", "Prediction research query failed", d)
+SP_5008 = lambda d="": AppError("SP-5008", "Portfolio analytics failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -116,3 +120,8 @@ SP_6004 = lambda: AppError("SP-6004", "Insufficient tickers for comparison",
 SP_6005 = lambda rid=0: AppError("SP-6005", f"Report not found: #{rid}")
 SP_6006 = lambda: AppError("SP-6006", "Invalid export format",
                            "Allowed: pdf, csv")
+
+# ---------------------------------------------------------------------------
+# 9xxx  Unexpected server/runtime errors
+# ---------------------------------------------------------------------------
+SP_9999 = lambda d="": AppError("SP-9999", "Unexpected server error", d)

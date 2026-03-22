@@ -2,7 +2,14 @@
 
 AI 기반 주식 시장 분석 플랫폼 — 미국, 한국, 일본 시장을 커버합니다.
 
-OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고, 엄격한 루브릭 기반 100점 만점 스코어링 시스템으로 국가/섹터/종목을 평가합니다.
+현재 릴리즈: `v2.2.1`
+
+OpenAI API 기반 LLM과 정량 엔진을 함께 사용해 리서치 기관 보고서를 종합 분석하고, 엄격한 루브릭 기반 100점 만점 스코어링 시스템으로 국가/섹터/종목을 평가합니다.
+
+버전 정책:
+- 백엔드 앱 버전 기준: `backend/app/version.py`
+- 프론트 패키지 버전 기준: `frontend/package.json`
+- 릴리즈 변경 사항 기록: [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
@@ -382,6 +389,9 @@ npm run dev
 | SP-5003 | 워치리스트 작업 실패 | DB 확인 |
 | SP-5004 | 내보내기 생성 실패 | fpdf2 패키지 설치 확인 |
 | SP-5005 | 캐시 작업 실패 | DB 확인 |
+| SP-5006 | 시스템 진단 조회 실패 | `/api/system/diagnostics` 로그 확인 |
+| SP-5007 | Prediction Lab 조회 실패 | `/api/research/predictions` 로그 확인 |
+| SP-5008 | 포트폴리오 분석 실패 | `/api/portfolio` 로그 확인 |
 
 ### 6xxx — 요청 검증 (Validation)
 
