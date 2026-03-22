@@ -32,7 +32,7 @@ interface CustomContentProps {
 function CustomContent(props: CustomContentProps) {
   const { x = 0, y = 0, width = 0, height = 0, name, change = 0, ticker, depth } = props;
 
-  if (depth !== 2 || width < 4 || height < 4) return null;
+  if (depth !== 1 || width < 4 || height < 4) return null;
 
   const bg = changeToColor(change);
   const showTicker = width > 40 && height > 24;

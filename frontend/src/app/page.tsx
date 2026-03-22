@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { HeatmapData } from "@/lib/api";
+import type { HeatmapData, MarketMovers } from "@/lib/api";
 import type { CountryListItem } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import StockHeatmap from "@/components/charts/StockHeatmap";
@@ -20,6 +20,8 @@ export default function HomePage() {
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [activeCountry, setActiveCountry] = useState("US");
+  const [movers, setMovers] = useState<MarketMovers | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,6 +29,8 @@ export default function HomePage() {
       api.getCountries().then(setCountries).catch(console.error),
       api.getMarketIndicators().then(setIndicators).catch(console.error),
     ]).finally(() => setLoading(false));
+    api.getMarketMovers("US").then(setMovers).catch(console.error);
+    setLastUpdated(new Date().toLocaleTimeString());
     loadHeatmap("US");
   }, []);
 
@@ -58,6 +62,7 @@ export default function HomePage() {
     <div className="max-w-6xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Stock Predict</h1>
+        {lastUpdated && <span className="text-xs text-text-secondary ml-2">Last updated: {lastUpdated}</span>}
         <p className="text-text-secondary mt-1">AI-powered market analysis for US, KR, JP</p>
       </div>
 
@@ -144,6 +149,40 @@ export default function HomePage() {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-[#15803d]" /> +3%+</span>
         </div>
       </div>
+
+      {/* Top Movers */}
+      {movers && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="card !p-4">
+            <h3 className="font-semibold text-sm mb-3 text-positive">Top Gainers</h3>
+            <div className="space-y-2">
+              {movers.gainers.map((s) => (
+                <Link key={s.ticker} href={`/stock/${s.ticker}`} className="flex justify-between items-center text-sm hover:text-accent transition-colors">
+                  <div>
+                    <span className="font-medium">{s.ticker}</span>
+                    <span className="text-text-secondary text-xs ml-2">{s.name}</span>
+                  </div>
+                  <span className="text-positive font-mono font-medium">+{s.change_pct.toFixed(2)}%</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="card !p-4">
+            <h3 className="font-semibold text-sm mb-3 text-negative">Top Losers</h3>
+            <div className="space-y-2">
+              {movers.losers.map((s) => (
+                <Link key={s.ticker} href={`/stock/${s.ticker}`} className="flex justify-between items-center text-sm hover:text-accent transition-colors">
+                  <div>
+                    <span className="font-medium">{s.ticker}</span>
+                    <span className="text-text-secondary text-xs ml-2">{s.name}</span>
+                  </div>
+                  <span className="text-negative font-mono font-medium">{s.change_pct.toFixed(2)}%</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

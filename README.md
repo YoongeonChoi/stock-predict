@@ -13,9 +13,10 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 │                    Frontend (Next.js 14)                 │
 │  ┌──────────┬──────────┬──────────┬──────────┬────────┐ │
 │  │Dashboard │ Country  │ Sector   │  Stock   │Watchlist│ │
-│  │  (Home)  │ Report   │ Analysis │  Detail  │Compare │ │
-│  │          │+Forecast │ +Top10   │+Chart    │Archive │ │
-│  │          │+F&G Index│          │+Buy/Sell │Calendar│ │
+│  │+Heatmap  │ Report   │ Analysis │+Candle   │Compare │ │
+│  │+Movers   │+Forecast │ +Top10   │+TechAnls │Screener│ │
+│  │+ExchRate │+F&G Index│          │+Pivot    │Portfolo│ │
+│  │+Search   │          │          │+Analyst  │Archive │ │
 │  └────┬─────┴────┬─────┴────┬─────┴────┬─────┴───┬────┘ │
 │       └──────────┴──────────┴──────────┴─────────┘      │
 │                         ▼ HTTP (port 3000 → 8000)       │
@@ -27,12 +28,14 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 │  ┌─ API Routers ──────────────────────────────────────┐ │
 │  │ /countries  /country/{code}/report  /stock/{ticker} │ │
 │  │ /sectors    /sector/{id}/report     /stock/chart    │ │
+│  │ /stock/technical-summary  /stock/pivot-points       │ │
+│  │ /screener  /portfolio  /search  /market/movers      │ │
 │  │ /watchlist  /compare  /archive  /calendar  /export  │ │
 │  └────────────────────────┬───────────────────────────┘ │
 │                           ▼                             │
 │  ┌─ Services ─────────────────────────────────────────┐ │
 │  │ archive_service │ watchlist_service │ export_service│ │
-│  │ compare_service │ calendar_service                  │ │
+│  │ compare_service │ calendar_service  │ portfolio_svc │ │
 │  └────────────────────────┬───────────────────────────┘ │
 │                           ▼                             │
 │  ┌─ Analysis Engine ──────────────────────────────────┐ │
@@ -61,6 +64,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 │                               ▼                         │
 │  ┌─ SQLite Cache + Archive DB ────────────────────────┐ │
 │  │ cache │ watchlist │ archive_reports │ forecast_acc  │ │
+│  │ portfolio_holdings                                  │ │
 │  └────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -82,18 +86,58 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 
 ## Features
 
+### 핵심 분석 기능
+
 | 기능 | 설명 |
 |------|------|
-| **국가 리포트** | 100점 만점 6항목 채점, 리서치 기관 컨센서스 분석, Top 5 종목 |
+| **국가 리포트** | 100점 만점 6항목 채점, 리서치 기관 컨센서스 분석, Top 5 종목 (점수 기반) |
 | **지수 예측** | Monte Carlo 시뮬레이션 + LLM 보정, 1개월 상단/기본/하단 확률% |
 | **섹터 분석** | 섹터별 100점 채점, Top 10 종목 장단점/점수/매수매도가 |
-| **종목 상세** | 3개월 차트(MA20/60, RSI, MACD), Buy/Sell Zone, 재무 상세 |
+| **종목 상세** | 캔들스틱/라인 차트, Buy/Sell Zone, 재무 상세, 52주 범위 |
 | **Fear & Greed** | 5개 지표 복합 게이지 (모멘텀, 주가강도, 변동성, 안전자산, 센티먼트) |
-| **워치리스트** | 관심 종목 CRUD, 실시간 점수/가격 업데이트 |
-| **비교 모드** | 2~4개 종목 나란히 비교 테이블 |
-| **아카이브** | 과거 리포트 저장, 예측 정확도 추적 |
+
+### 투자 도구 (Investing.com / TradingView / Yahoo Finance 스타일)
+
+| 기능 | 설명 |
+|------|------|
+| **Technical Analysis Summary** | Investing.com 스타일 — SMA/EMA(5~200), RSI, MACD, Stochastic, CCI, ADX, Williams %R, Bollinger Bands 기반 종합 Buy/Sell 게이지 |
+| **Stock Screener** | 국가/섹터/P·E/배당수익률/시총 등 조건 필터링, 정렬 가능한 결과 테이블 |
+| **Portfolio Tracker** | 보유 종목 CRUD, 실시간 P&L 계산, 섹터·국가별 자산 배분 파이차트 |
+| **Candlestick Chart** | TradingView 스타일 OHLC 캔들스틱 + 라인 차트 전환, 기간 선택 (1M/3M/6M/1Y) |
+| **Pivot Points** | Classic + Fibonacci Pivot, Support/Resistance 레벨 (S1~S3, R1~R3) |
+| **Analyst Consensus** | Buy/Hold/Sell 비율 시각화, 목표가 범위 (Low/Mean/High vs 현재가) |
+| **Earnings Surprise** | 분기별 EPS Estimate vs Actual 바 차트 |
+| **52-Week Range** | 현재가의 52주 범위 내 위치를 프로그레스 바로 표시 |
+| **Top Gainers/Losers** | 대시보드에 시장별 당일 상승/하락 Top 5 종목 표시 |
+
+### 시장 데이터
+
+| 기능 | 설명 |
+|------|------|
+| **Market Heatmap** | Treemap 기반 종목별 시총/등락률 히트맵 (US/KR/JP) |
+| **Global Indicators** | VIX, DXY, Gold, Oil, US 10Y, Bitcoin 실시간 지표 |
+| **Exchange Rates** | USD/KRW, USD/JPY, EUR/USD 환율 위젯 |
 | **경제 캘린더** | FOMC/BOK금통위/BOJ회의 + 어닝 일정 |
-| **PDF/CSV** | 모든 리포트 내보내기 |
+
+### 사용자 기능
+
+| 기능 | 설명 |
+|------|------|
+| **Global Search** | 네비게이션 상단 검색바, 티커/종목명 자동완성 |
+| **워치리스트** | 인라인 추가, 실시간 점수/가격 업데이트, 통화 단위 자동 적용 |
+| **비교 모드** | 2~4개 종목 나란히 비교 테이블 (통화 단위 자동) |
+| **아카이브** | 과거 리포트 저장, 예측 정확도 추적 |
+| **PDF/CSV** | 모든 리포트 내보내기 (CJK 폰트 지원) |
+
+### UX
+
+| 기능 | 설명 |
+|------|------|
+| **모바일 반응형** | 모바일 햄버거 메뉴 + 데스크톱 사이드바 |
+| **다크/라이트 모드** | 시스템 테마 연동, 수동 전환 |
+| **Toast 알림** | Watchlist/Portfolio 추가·삭제 등 사용자 액션 피드백 |
+| **데이터 갱신 시각** | 대시보드에 마지막 업데이트 시각 표시 |
+| **통화 단위 자동** | US($), KR(₩), JP(¥) 국가별 통화 기호 자동 적용 |
 
 ---
 

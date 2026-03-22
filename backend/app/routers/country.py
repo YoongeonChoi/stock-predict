@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, Response
 from app.models.country import COUNTRY_REGISTRY
@@ -96,7 +97,8 @@ async def get_heatmap(code: str):
                     "size": mc,
                     "change": q.get("change_pct", 0),
                 })
-            except Exception:
+            except Exception as e:
+                logging.warning("heatmap: failed to fetch %s: %s", ticker, e)
                 continue
         if stocks:
             stocks.sort(key=lambda s: s["size"], reverse=True)
@@ -183,6 +185,7 @@ async def get_market_indicators():
     tickers = {
         "VIX": "^VIX", "DXY": "DX-Y.NYB", "Gold": "GC=F", "Oil (WTI)": "CL=F",
         "US 10Y": "^TNX", "Bitcoin": "BTC-USD",
+        "USD/KRW": "USDKRW=X", "USD/JPY": "USDJPY=X", "EUR/USD": "EURUSD=X",
     }
     for name, ticker in tickers.items():
         try:
@@ -259,3 +262,49 @@ async def list_sectors(code: str):
             "stock_count": len(tickers),
         })
     return sectors
+
+
+@router.get("/market/movers/{code}")
+async def get_market_movers(code: str):
+    """Top gainers and losers for a given market."""
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        return JSONResponse(status_code=404, content=SP_6001(code).to_dict())
+
+    from app.data import cache as data_cache
+    cache_key = f"movers:{code}"
+    cached = await data_cache.get(cache_key)
+    if cached:
+        return cached
+
+    from app.data.universe_data import get_universe
+    universe = await get_universe(code)
+    all_tickers = []
+    for sec_tickers in universe.values():
+        all_tickers.extend(sec_tickers[:8])
+
+    stocks = []
+    for ticker in all_tickers:
+        try:
+            q = await yfinance_client.get_index_quote(ticker)
+            info = await yfinance_client.get_stock_info(ticker)
+            price = q.get("price", 0)
+            change = q.get("change_pct", 0)
+            if price <= 0:
+                continue
+            stocks.append({
+                "ticker": ticker,
+                "name": info.get("name", ticker),
+                "price": round(price, 2),
+                "change_pct": round(change, 2),
+            })
+        except Exception:
+            continue
+
+    stocks.sort(key=lambda x: x["change_pct"], reverse=True)
+    result = {
+        "gainers": stocks[:5],
+        "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
+    }
+    await data_cache.set(cache_key, result, 900)
+    return result

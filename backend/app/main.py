@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import db
 from app.errors import AppError
-from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export
+from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Stock Predict API",
     description="AI-powered stock market analysis for US, KR, JP markets",
-    version="1.1.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -60,8 +60,10 @@ app.include_router(compare.router)
 app.include_router(archive.router)
 app.include_router(calendar.router)
 app.include_router(export.router)
+app.include_router(screener.router)
+app.include_router(portfolio.router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.1.0"}
+    return {"status": "ok", "version": "2.0.0"}

@@ -5,10 +5,15 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { StockDetail } from "@/lib/types";
+import type { TechSummary, PivotPoints } from "@/lib/api";
 import { formatPct, changeColor, formatPrice, formatMarketCap } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import PriceChart from "@/components/charts/PriceChart";
+import TechnicalSummary from "@/components/charts/TechnicalSummary";
+import AnalystConsensus from "@/components/charts/AnalystConsensus";
+import EarningsSurprise from "@/components/charts/EarningsSurprise";
+import CandlestickChart from "@/components/charts/CandlestickChart";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
 export default function StockPage() {
@@ -16,13 +21,28 @@ export default function StockPage() {
   const [stock, setStock] = useState<StockDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [techSummary, setTechSummary] = useState<TechSummary | null>(null);
+  const [pivotPoints, setPivotPoints] = useState<PivotPoints | null>(null);
+  const [chartPeriod, setChartPeriod] = useState("3mo");
+  const [chartType, setChartType] = useState<"line" | "candle">("line");
+  const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
     setError(null);
     api.getStockDetail(decodeURIComponent(ticker)).then(setStock).catch((e) => { console.error(e); setError(e); }).finally(() => setLoading(false));
+    api.getTechSummary(decodeURIComponent(ticker)).then(setTechSummary).catch(console.error);
+    api.getPivotPoints(decodeURIComponent(ticker)).then(setPivotPoints).catch(console.error);
   }, [ticker]);
+
+  const changeChartPeriod = async (period: string) => {
+    setChartPeriod(period);
+    try {
+      const res = await api.getStockChart(decodeURIComponent(ticker!), period);
+      setChartData(res.data);
+    } catch { /* use existing data */ }
+  };
 
   const addToWatchlist = () => {
     if (stock) api.addWatchlist(stock.ticker, stock.country_code).catch(console.error);
@@ -74,15 +94,50 @@ export default function StockPage() {
 
       {/* Price Chart */}
       <div className="card">
-        <h2 className="font-semibold mb-3">3-Month Price Chart</h2>
-        <PriceChart
-          data={stock.price_history || []}
-          ma20={stock.technical?.ma_20 || []}
-          ma60={stock.technical?.ma_60 || []}
-          buyZone={{ low: bsg.buy_zone_low, high: bsg.buy_zone_high }}
-          sellZone={{ low: bsg.sell_zone_low, high: bsg.sell_zone_high }}
-          fairValue={bsg.fair_value}
-        />
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold">Price Chart</h2>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {[{ label: "1M", value: "1mo" }, { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" }, { label: "1Y", value: "1y" }].map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => changeChartPeriod(p.value)}
+                  className={`px-2 py-0.5 text-xs rounded ${chartPeriod === p.value ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 ml-2 border-l border-border pl-2">
+              <button
+                onClick={() => setChartType("line")}
+                className={`px-2 py-0.5 text-xs rounded ${chartType === "line" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}
+              >
+                Line
+              </button>
+              <button
+                onClick={() => setChartType("candle")}
+                className={`px-2 py-0.5 text-xs rounded ${chartType === "candle" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}
+              >
+                Candle
+              </button>
+            </div>
+          </div>
+        </div>
+        {chartType === "candle" ? (
+          <CandlestickChart
+            data={chartData.length > 0 ? chartData : stock.price_history || []}
+          />
+        ) : (
+          <PriceChart
+            data={chartData.length > 0 ? chartData : stock.price_history || []}
+            ma20={stock.technical?.ma_20 || []}
+            ma60={stock.technical?.ma_60 || []}
+            buyZone={{ low: bsg.buy_zone_low, high: bsg.buy_zone_high }}
+            sellZone={{ low: bsg.sell_zone_low, high: bsg.sell_zone_high }}
+            fairValue={bsg.fair_value}
+          />
+        )}
         <div className="flex gap-4 mt-2 text-xs text-text-secondary">
           <span><span className="inline-block w-3 h-0.5 bg-accent mr-1" /> Price</span>
           <span><span className="inline-block w-3 h-0.5 bg-yellow-500 mr-1" /> MA20</span>
@@ -131,6 +186,49 @@ export default function StockPage() {
         )}
       </div>
 
+      {/* Technical Analysis */}
+      {techSummary && (
+      <div className="card">
+        <h2 className="font-semibold mb-3">Technical Analysis</h2>
+        <TechnicalSummary data={techSummary} />
+      </div>
+      )}
+
+      {/* Pivot Points */}
+      {pivotPoints && (
+      <div className="card">
+        <h2 className="font-semibold mb-3">Pivot Points</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <h4 className="text-xs text-text-secondary mb-2">Classic</h4>
+            <div className="space-y-1 text-xs">
+              {["r3","r2","r1","pivot","s1","s2","s3"].map(k => (
+                <div key={k} className="flex justify-between">
+                  <span className={k.startsWith("r") ? "text-positive" : k.startsWith("s") ? "text-negative" : "font-bold"}>
+                    {k.toUpperCase()}
+                  </span>
+                  <span className="font-mono">{(pivotPoints.classic as any)[k]?.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-xs text-text-secondary mb-2">Fibonacci</h4>
+            <div className="space-y-1 text-xs">
+              {["r3","r2","r1","pivot","s1","s2","s3"].map(k => (
+                <div key={k} className="flex justify-between">
+                  <span className={k.startsWith("r") ? "text-positive" : k.startsWith("s") ? "text-negative" : "font-bold"}>
+                    {k.toUpperCase()}
+                  </span>
+                  <span className="font-mono">{(pivotPoints.fibonacci as any)[k]?.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
       {/* Score Breakdown */}
       <div className="card">
         <div className="flex items-center gap-6 mb-4">
@@ -151,9 +249,40 @@ export default function StockPage() {
         </div>
       </div>
 
+      {/* Analyst Consensus */}
+      {(stock.analyst_ratings?.buy > 0 || stock.analyst_ratings?.hold > 0 || stock.analyst_ratings?.sell > 0) && (
+      <div className="card">
+        <h2 className="font-semibold mb-3">Analyst Consensus</h2>
+        <AnalystConsensus
+          buy={stock.analyst_ratings.buy}
+          hold={stock.analyst_ratings.hold}
+          sell={stock.analyst_ratings.sell}
+          targetLow={stock.analyst_ratings.target_low}
+          targetMean={stock.analyst_ratings.target_mean}
+          targetHigh={stock.analyst_ratings.target_high}
+          currentPrice={stock.current_price}
+        />
+      </div>
+      )}
+
       {/* Financials */}
       <div className="card">
         <h2 className="font-semibold mb-3">Financials</h2>
+        {(stock as any).week52_high && (stock as any).week52_low && (
+          <div className="mb-4">
+            <div className="text-xs text-text-secondary mb-1">52-Week Range</div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-mono">{(stock as any).week52_low?.toLocaleString()}</span>
+              <div className="flex-1 h-2 bg-border rounded-full relative">
+                <div
+                  className="absolute top-0 bottom-0 w-1.5 bg-accent rounded-full"
+                  style={{ left: `${Math.min(100, Math.max(0, ((stock.current_price - ((stock as any).week52_low || 0)) / (((stock as any).week52_high || 1) - ((stock as any).week52_low || 0))) * 100))}%` }}
+                />
+              </div>
+              <span className="font-mono">{(stock as any).week52_high?.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           <div><span className="text-xs text-text-secondary">Market Cap</span><div className="font-bold">{formatMarketCap(stock.market_cap, stock.ticker)}</div></div>
           <div><span className="text-xs text-text-secondary">P/E</span><div className="font-bold">{stock.pe_ratio?.toFixed(1) ?? "N/A"}</div></div>
@@ -183,6 +312,14 @@ export default function StockPage() {
           </div>
         )}
       </div>
+
+      {/* Earnings Surprise */}
+      {(stock as any).earnings_history?.length > 0 && (
+      <div className="card">
+        <h2 className="font-semibold mb-3">Earnings Surprise</h2>
+        <EarningsSurprise data={(stock as any).earnings_history} />
+      </div>
+      )}
 
       {/* Analysis Summary */}
       {stock.analysis_summary && (

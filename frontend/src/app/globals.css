@@ -35,3 +35,12 @@ body {
 .card {
   @apply bg-surface border border-border rounded-xl p-5;
 }
+
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.25s ease-out;
+}

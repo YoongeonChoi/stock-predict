@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS forecast_accuracy (
     target_date REAL,
     checked_at REAL
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_holdings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    country_code TEXT DEFAULT 'US',
+    buy_price REAL NOT NULL,
+    quantity REAL NOT NULL,
+    buy_date TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -215,6 +226,33 @@ class Database:
                 "accuracy_rate": (row[1] or 0) / total if total > 0 else 0,
                 "avg_error_pct": round((row[2] or 0) * 100, 2),
             }
+
+
+    # ── portfolio ────────────────────────────────────────────
+
+    async def portfolio_add(
+        self, ticker: str, name: str, country_code: str, buy_price: float, quantity: float, buy_date: str
+    ):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "INSERT INTO portfolio_holdings (ticker, name, country_code, buy_price, quantity, buy_date) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ticker, name, country_code, buy_price, quantity, buy_date),
+            )
+            await conn.commit()
+
+    async def portfolio_list(self) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM portfolio_holdings ORDER BY created_at DESC"
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def portfolio_delete(self, holding_id: int):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute("DELETE FROM portfolio_holdings WHERE id = ?", (holding_id,))
+            await conn.commit()
 
 
 db = Database()
