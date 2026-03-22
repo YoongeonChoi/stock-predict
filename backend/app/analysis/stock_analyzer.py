@@ -8,6 +8,7 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
+from app.analysis.historical_pattern_forecast import build_historical_pattern_forecast
 from app.analysis.llm_client import ask_json
 from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
@@ -35,7 +36,7 @@ from app.utils.async_tools import gather_limited
 
 async def analyze_stock(ticker: str) -> dict:
     settings = get_settings()
-    cache_key = f"stock_detail:v4:{ticker}"
+    cache_key = f"stock_detail:v6:{ticker}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -43,23 +44,26 @@ async def analyze_stock(ticker: str) -> dict:
     country_code = _detect_country(ticker)
     (
         info,
-        prices_raw,
-        prices_6mo,
-        market_prices,
+        prices_full,
+        market_prices_full,
         financials_raw,
         analyst_raw,
         earnings_raw,
         peers,
     ) = await asyncio.gather(
         yfinance_client.get_stock_info(ticker),
-        yfinance_client.get_price_history(ticker, period="3mo"),
-        yfinance_client.get_price_history(ticker, period="6mo"),
-        yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="6mo"),
+        yfinance_client.get_price_history(ticker, period="2y"),
+        yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="2y"),
         yfinance_client.get_financials(ticker),
         yfinance_client.get_analyst_ratings(ticker),
         yfinance_client.get_earnings_history(ticker),
         fmp_client.get_stock_peers(ticker),
     )
+
+    prices_raw = _window_prices(prices_full, 63)
+    prices_6mo = _window_prices(prices_full, 126)
+    market_prices = _window_prices(market_prices_full, 126)
+    info = _enrich_info_from_history(info, prices_full)
 
     peer_avg_task = _calc_peer_averages(peers)
     news_task = news_client.search_news(
@@ -125,6 +129,19 @@ async def analyze_stock(ticker: str) -> dict:
         context_bias=((composite.total if composite else quant_score.total) - 50) / 50,
         asset_type="stock",
     )
+    historical_pattern_forecast = None
+    setup_backtest = None
+    historical_error = None
+    try:
+        historical_pattern_forecast, setup_backtest = build_historical_pattern_forecast(
+            ticker=ticker,
+            name=info.get("name", ticker),
+            country_code=country_code,
+            price_history=prices_full or prices_6mo or prices_raw,
+            market_history=market_prices_full or market_prices,
+        )
+    except Exception as exc:
+        historical_error = str(exc)[:180]
     market_regime = build_market_regime(
         country_code=country_code,
         name=COUNTRY_REGISTRY[country_code].indices[0].name,
@@ -181,6 +198,8 @@ async def analyze_stock(ticker: str) -> dict:
         score=quant_score,
         buy_sell_guide=buy_sell,
         next_day_forecast=next_day_forecast,
+        historical_pattern_forecast=historical_pattern_forecast,
+        setup_backtest=setup_backtest,
         market_regime=market_regime,
         trade_plan=trade_plan,
     )
@@ -201,6 +220,10 @@ async def analyze_stock(ticker: str) -> dict:
         result["analysis_summary"] = llm_result.get("analysis_summary", "")
         result["key_risks"] = llm_result.get("key_risks", [])
         result["key_catalysts"] = llm_result.get("key_catalysts", [])
+
+    if historical_error:
+        result["errors"].append("SP-3007")
+        result["historical_pattern_warning"] = historical_error
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
     return result
@@ -326,3 +349,31 @@ def _detect_country(ticker: str) -> str:
     if ticker.endswith(".T"):
         return "JP"
     return "US"
+
+
+def _window_prices(prices: list[dict], window: int) -> list[dict]:
+    if len(prices) <= window:
+        return prices
+    return prices[-window:]
+
+
+def _enrich_info_from_history(info: dict, prices: list[dict]) -> dict:
+    if not prices:
+        return info
+
+    enriched = dict(info)
+    closes = [float(item.get("close", 0) or 0) for item in prices if item.get("close") is not None]
+    highs = [float(item.get("high", 0) or 0) for item in prices[-252:] if item.get("high") is not None]
+    lows = [float(item.get("low", 0) or 0) for item in prices[-252:] if item.get("low") is not None]
+    volumes = [float(item.get("volume", 0) or 0) for item in prices[-20:] if item.get("volume") is not None]
+
+    if closes:
+        enriched["current_price"] = enriched.get("current_price") or round(closes[-1], 2)
+        enriched["prev_close"] = enriched.get("prev_close") or round(closes[-2] if len(closes) >= 2 else closes[-1], 2)
+    if highs and enriched.get("52w_high") is None:
+        enriched["52w_high"] = round(max(highs), 2)
+    if lows and enriched.get("52w_low") is None:
+        enriched["52w_low"] = round(min(lows), 2)
+    if volumes and enriched.get("avg_volume") is None:
+        enriched["avg_volume"] = round(float(np.mean(volumes)))
+    return enriched

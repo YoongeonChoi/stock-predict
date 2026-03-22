@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
+import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
 import CandlestickChart from "@/components/charts/CandlestickChart";
@@ -188,6 +190,7 @@ export default function StockPage() {
             sellZone={{ low: bsg.sell_zone_low, high: bsg.sell_zone_high }}
             fairValue={bsg.fair_value}
             nextDayForecast={stock.next_day_forecast}
+            historicalPatternForecast={stock.historical_pattern_forecast}
           />
         )}
 
@@ -196,10 +199,26 @@ export default function StockPage() {
           <span><span className="inline-block w-3 h-0.5 bg-yellow-500 mr-1" /> MA20</span>
           <span><span className="inline-block w-3 h-0.5 bg-purple-500 mr-1" /> MA60</span>
           <span><span className="inline-block w-3 h-0.5 bg-emerald-500 mr-1" /> 매수 구간</span>
+          <span><span className="inline-block w-3 h-0.5 bg-sky-500 mr-1" /> 과거 유사 국면 경로</span>
         </div>
       </div>
 
       {stock.next_day_forecast ? <NextDayForecastCard forecast={stock.next_day_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
+
+      {stock.historical_pattern_warning ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
+          과거 유사 국면 예측을 계산하는 중 일부 입력이 부족했습니다. 기본 예측은 계속 표시되며, 상세 경고는 다음과 같습니다: {stock.historical_pattern_warning}
+        </div>
+      ) : null}
+
+      {(stock.historical_pattern_forecast || stock.setup_backtest) ? (
+        <div className="grid grid-cols-1 gap-6">
+          {stock.historical_pattern_forecast ? (
+            <HistoricalPatternCard forecast={stock.historical_pattern_forecast} priceKey={priceKey} />
+          ) : null}
+          {stock.setup_backtest ? <SetupBacktestCard backtest={stock.setup_backtest} /> : null}
+        </div>
+      ) : null}
 
       {(stock.market_regime || stock.trade_plan) ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.analysis.historical_pattern_forecast import MODEL_VERSION as HISTORICAL_MODEL_VERSION
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.config import get_settings
 from app.runtime import get_runtime_state
@@ -122,7 +123,22 @@ async def get_diagnostics() -> dict:
                     "한국 수급 데이터는 PyKRX 커버리지가 있는 구간에서 가장 강하게 작동합니다.",
                     "예측 정확도 추적은 아카이브된 다음 거래일 예측을 기준으로 누적됩니다.",
                 ],
-            }
+            },
+            {
+                "name": "historical_pattern",
+                "version": HISTORICAL_MODEL_VERSION,
+                "markets": ["US", "KR", "JP"],
+                "signals": [
+                    "historical_analog_matching",
+                    "multi_horizon_return_distribution",
+                    "relative_strength_vs_market",
+                    "setup_backtest",
+                ],
+                "notes": [
+                    "최근 2년 가격 이력에서 현재와 비슷한 국면을 찾아 5·20·60거래일 기대 분포를 계산합니다.",
+                    "유사 국면이 충분하지 않으면 이 모델은 조용히 생략되고 기존 다음 거래일 예측만 표시됩니다.",
+                ],
+            },
         ],
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,

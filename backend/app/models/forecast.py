@@ -59,6 +59,64 @@ class NextDayForecast(BaseModel):
     model_version: str = "signal-v2.3"
 
 
+class HistoricalForecastHorizon(BaseModel):
+    horizon_days: int
+    sample_size: int
+    up_probability: float
+    expected_return_pct: float
+    median_return_pct: float
+    predicted_price: float
+    range_low: float
+    range_high: float
+    realized_volatility_pct: float
+    avg_max_drawdown_pct: float
+    confidence: float
+
+
+class HistoricalAnalogCase(BaseModel):
+    date: str
+    similarity: float
+    return_5d: float | None = None
+    return_20d: float | None = None
+    return_60d: float | None = None
+
+
+class HistoricalPathPoint(BaseModel):
+    offset: int
+    target_date: str
+    expected_price: float
+    band_low: float
+    band_high: float
+
+
+class HistoricalPatternForecast(BaseModel):
+    reference_date: str
+    reference_price: float
+    lookback_window_days: int
+    analog_count: int
+    feature_regime: str
+    summary: str
+    horizons: list[HistoricalForecastHorizon]
+    analog_cases: list[HistoricalAnalogCase]
+    projected_path: list[HistoricalPathPoint]
+    model_version: str = "analog-v1.0"
+
+
+class SetupBacktest(BaseModel):
+    setup_label: str
+    forward_horizon_days: int
+    sample_size: int
+    win_rate: float
+    avg_return_pct: float
+    median_return_pct: float
+    avg_max_drawdown_pct: float
+    best_return_pct: float
+    worst_return_pct: float
+    profit_factor: float | None = None
+    confidence: float
+    summary: str
+
+
 class FearGreedComponent(BaseModel):
     name: str
     value: float

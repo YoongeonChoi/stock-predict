@@ -1,7 +1,7 @@
 "use client";
 
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { NextDayForecast, PricePoint } from "@/lib/types";
+import type { HistoricalPatternForecast, NextDayForecast, PricePoint } from "@/lib/types";
 
 interface Props {
   data: PricePoint[];
@@ -11,9 +11,19 @@ interface Props {
   sellZone?: { low: number; high: number };
   fairValue?: number;
   nextDayForecast?: NextDayForecast;
+  historicalPatternForecast?: HistoricalPatternForecast | null;
 }
 
-export default function PriceChart({ data, ma20, ma60, buyZone, sellZone, fairValue, nextDayForecast }: Props) {
+export default function PriceChart({
+  data,
+  ma20,
+  ma60,
+  buyZone,
+  sellZone,
+  fairValue,
+  nextDayForecast,
+  historicalPatternForecast,
+}: Props) {
   const chartData: Array<{
     date: string;
     close?: number;
@@ -22,6 +32,9 @@ export default function PriceChart({ data, ma20, ma60, buyZone, sellZone, fairVa
     projection?: number;
     forecastHigh?: number;
     forecastLow?: number;
+    analogProjection?: number;
+    analogBandLow?: number;
+    analogBandHigh?: number;
   }> = data.map((p, i) => ({
     date: p.date.slice(5),
     close: p.close,
@@ -46,6 +59,34 @@ export default function PriceChart({ data, ma20, ma60, buyZone, sellZone, fairVa
       forecastHigh: nextDayForecast.predicted_high,
       forecastLow: nextDayForecast.predicted_low,
     });
+  }
+
+  if (historicalPatternForecast && data.length > 0) {
+    chartData[chartData.length - 1] = {
+      ...chartData[chartData.length - 1],
+      analogProjection: data[data.length - 1].close,
+      analogBandLow: data[data.length - 1].close,
+      analogBandHigh: data[data.length - 1].close,
+    };
+    for (const point of historicalPatternForecast.projected_path) {
+      const label = point.target_date.slice(5);
+      const existing = chartData.find((item) => item.date === label);
+      if (existing) {
+        existing.analogProjection = point.expected_price;
+        existing.analogBandLow = point.band_low;
+        existing.analogBandHigh = point.band_high;
+      } else {
+        chartData.push({
+          date: label,
+          close: undefined,
+          ma20: undefined,
+          ma60: undefined,
+          analogProjection: point.expected_price,
+          analogBandLow: point.band_low,
+          analogBandHigh: point.band_high,
+        });
+      }
+    }
   }
 
   return (
@@ -92,9 +133,46 @@ export default function PriceChart({ data, ma20, ma60, buyZone, sellZone, fairVa
               />
             </>
           )}
-          {fairValue && <ReferenceLine y={fairValue} stroke="#22c55e" strokeDasharray="6 3" label={{ value: "???", fill: "#22c55e", fontSize: 10 }} />}
-          {buyZone && <ReferenceLine y={buyZone.high} stroke="#3b82f6" strokeDasharray="4 4" label={{ value: "??", fill: "#3b82f6", fontSize: 10 }} />}
-          {sellZone && <ReferenceLine y={sellZone.low} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "??", fill: "#ef4444", fontSize: 10 }} />}
+          {historicalPatternForecast && (
+            <>
+              <Line
+                type="monotone"
+                dataKey="analogProjection"
+                stroke="#0ea5e9"
+                dot={false}
+                strokeWidth={2}
+                strokeDasharray="7 4"
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="analogBandLow"
+                stroke="#38bdf8"
+                dot={false}
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="analogBandHigh"
+                stroke="#0284c7"
+                dot={false}
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                connectNulls
+              />
+            </>
+          )}
+          {fairValue ? (
+            <ReferenceLine y={fairValue} stroke="#22c55e" strokeDasharray="6 3" label={{ value: "적정가", fill: "#22c55e", fontSize: 10 }} />
+          ) : null}
+          {buyZone ? (
+            <ReferenceLine y={buyZone.high} stroke="#3b82f6" strokeDasharray="4 4" label={{ value: "매수 구간", fill: "#3b82f6", fontSize: 10 }} />
+          ) : null}
+          {sellZone ? (
+            <ReferenceLine y={sellZone.low} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "매도 구간", fill: "#ef4444", fontSize: 10 }} />
+          ) : null}
         </LineChart>
       </ResponsiveContainer>
     </div>

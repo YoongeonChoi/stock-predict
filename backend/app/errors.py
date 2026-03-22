@@ -82,6 +82,7 @@ SP_3003 = lambda t="": AppError("SP-3003", f"Stock analysis failed: {t}")
 SP_3004 = lambda d="": AppError("SP-3004", "Forecast engine failed", d)
 SP_3005 = lambda: AppError("SP-3005", "Sentiment analysis failed")
 SP_3006 = lambda d="": AppError("SP-3006", "Scoring calculation failed", d)
+SP_3007 = lambda d="": AppError("SP-3007", "Historical pattern forecast failed", d)
 
 # ---------------------------------------------------------------------------
 # 4xxx  LLM / OpenAI

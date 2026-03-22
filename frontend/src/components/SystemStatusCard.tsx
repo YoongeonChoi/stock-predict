@@ -25,7 +25,7 @@ function statusLabel(status: string) {
 }
 
 export default function SystemStatusCard({ diagnostics }: Props) {
-  const model = diagnostics.forecast_models[0];
+  const primaryModel = diagnostics.forecast_models[0];
   const criticalSources = diagnostics.data_sources.slice(0, 4);
 
   return (
@@ -34,7 +34,7 @@ export default function SystemStatusCard({ diagnostics }: Props) {
         <div>
           <h2 className="font-semibold text-lg">시스템 준비 상태</h2>
           <p className="text-sm text-text-secondary mt-1">
-            API v{diagnostics.version} · 다음 거래일 모델 {model?.version ?? "N/A"}
+            API v{diagnostics.version} · 예측 모델 {diagnostics.forecast_models.map((item) => item.version).join(" / ") || "N/A"}
           </p>
         </div>
         <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide ${statusTone(diagnostics.status)}`}>
@@ -112,13 +112,22 @@ export default function SystemStatusCard({ diagnostics }: Props) {
         </div>
       </div>
 
-      {model ? (
+      {primaryModel ? (
         <div className="mt-4 rounded-xl border border-border p-3">
-          <div className="text-xs font-medium text-text-secondary mb-2">예측 커버리지</div>
-          <div className="text-sm">
-            지원 시장: {model.markets.join(", ")} · 핵심 신호: {model.signals.slice(0, 5).join(", ")}
+          <div className="text-xs font-medium text-text-secondary mb-2">예측 모델</div>
+          <div className="space-y-3">
+            {diagnostics.forecast_models.map((model) => (
+              <div key={`${model.name}-${model.version}`} className="rounded-lg bg-border/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm">{model.name}</span>
+                  <span className="text-xs text-text-secondary">{model.version}</span>
+                </div>
+                <div className="text-sm mt-1">지원 시장: {model.markets.join(", ")}</div>
+                <div className="text-xs text-text-secondary mt-1">핵심 신호: {model.signals.slice(0, 5).join(", ")}</div>
+                <div className="text-xs text-text-secondary mt-2">{model.notes.join(" ")}</div>
+              </div>
+            ))}
           </div>
-          <div className="text-xs text-text-secondary mt-2">{model.notes.join(" ")}</div>
         </div>
       ) : null}
     </div>

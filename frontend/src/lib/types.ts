@@ -86,6 +86,64 @@ export interface NextDayForecast {
   model_version: string;
 }
 
+export interface HistoricalForecastHorizon {
+  horizon_days: number;
+  sample_size: number;
+  up_probability: number;
+  expected_return_pct: number;
+  median_return_pct: number;
+  predicted_price: number;
+  range_low: number;
+  range_high: number;
+  realized_volatility_pct: number;
+  avg_max_drawdown_pct: number;
+  confidence: number;
+}
+
+export interface HistoricalAnalogCase {
+  date: string;
+  similarity: number;
+  return_5d?: number | null;
+  return_20d?: number | null;
+  return_60d?: number | null;
+}
+
+export interface HistoricalPathPoint {
+  offset: number;
+  target_date: string;
+  expected_price: number;
+  band_low: number;
+  band_high: number;
+}
+
+export interface HistoricalPatternForecast {
+  reference_date: string;
+  reference_price: number;
+  lookback_window_days: number;
+  analog_count: number;
+  feature_regime: string;
+  summary: string;
+  horizons: HistoricalForecastHorizon[];
+  analog_cases: HistoricalAnalogCase[];
+  projected_path: HistoricalPathPoint[];
+  model_version: string;
+}
+
+export interface SetupBacktest {
+  setup_label: string;
+  forward_horizon_days: number;
+  sample_size: number;
+  win_rate: number;
+  avg_return_pct: number;
+  median_return_pct: number;
+  avg_max_drawdown_pct: number;
+  best_return_pct: number;
+  worst_return_pct: number;
+  profit_factor?: number | null;
+  confidence: number;
+  summary: string;
+}
+
 export interface MarketRegimeSignal {
   name: string;
   value: number;
@@ -352,6 +410,8 @@ export interface StockDetail {
   score: StockScore;
   buy_sell_guide: BuySellGuide;
   next_day_forecast?: NextDayForecast;
+  historical_pattern_forecast?: HistoricalPatternForecast | null;
+  setup_backtest?: SetupBacktest | null;
   market_regime?: MarketRegime;
   trade_plan?: TradePlan;
   analysis_summary?: string;
@@ -359,6 +419,7 @@ export interface StockDetail {
   key_catalysts?: string[];
   llm_available?: boolean;
   errors?: string[];
+  historical_pattern_warning?: string;
 }
 
 export interface WatchlistItem {

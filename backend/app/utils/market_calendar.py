@@ -45,3 +45,17 @@ def next_trading_day(country_code: str, reference_date: date | datetime | str | 
     while cursor.weekday() >= 5:
         cursor += timedelta(days=1)
     return cursor
+
+
+def trading_days_forward(
+    country_code: str,
+    reference_date: date | datetime | str | None,
+    count: int,
+) -> list[date]:
+    """Return the next `count` trading days after the reference date."""
+    days: list[date] = []
+    cursor = _normalize_date(reference_date)
+    for _ in range(max(count, 0)):
+        cursor = next_trading_day(country_code, cursor)
+        days.append(cursor)
+    return days
