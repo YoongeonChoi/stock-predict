@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -7,15 +7,15 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "Dashboard", icon: "◈" },
-  { href: "/radar", label: "Radar", icon: "⌁" },
-  { href: "/lab", label: "Lab", icon: "⋇" },
-  { href: "/screener", label: "Screener", icon: "⊞" },
-  { href: "/portfolio", label: "Portfolio", icon: "◉" },
-  { href: "/watchlist", label: "Watchlist", icon: "★" },
-  { href: "/compare", label: "Compare", icon: "⇄" },
-  { href: "/archive", label: "Archive", icon: "▤" },
-  { href: "/calendar", label: "Calendar", icon: "▦" },
+  { href: "/", label: "대시보드", icon: "◈" },
+  { href: "/radar", label: "레이더", icon: "⌁" },
+  { href: "/lab", label: "랩", icon: "⋇" },
+  { href: "/screener", label: "스크리너", icon: "⊞" },
+  { href: "/portfolio", label: "포트폴리오", icon: "◉" },
+  { href: "/watchlist", label: "관심종목", icon: "★" },
+  { href: "/compare", label: "비교", icon: "⇄" },
+  { href: "/archive", label: "아카이브", icon: "▤" },
+  { href: "/calendar", label: "캘린더", icon: "▦" },
 ];
 
 export default function Navigation() {
@@ -46,7 +46,6 @@ export default function Navigation() {
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-56 border-r border-border bg-surface px-3 py-6 shrink-0">
         <Link href="/" className="text-lg font-semibold tracking-tight px-3 mb-8">
           Stock Predict
@@ -56,11 +55,10 @@ export default function Navigation() {
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="px-3 py-2 text-sm text-text-secondary hover:text-text transition-colors"
         >
-          {theme === "dark" ? "☀ Light" : "☾ Dark"}
+          {theme === "dark" ? "☀ 라이트" : "☾ 다크"}
         </button>
       </aside>
 
-      {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-surface border-b border-border">
         <Link href="/" className="font-semibold text-sm">Stock Predict</Link>
         <div className="flex items-center gap-2">
@@ -76,15 +74,14 @@ export default function Navigation() {
         </div>
       </div>
 
-      {/* Mobile menu overlay */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40 bg-bg/90 pt-14">
           <nav className="flex flex-col gap-1 p-4">{navLinks}</nav>
         </div>
       )}
 
-      {/* Mobile spacer */}
       <div className="lg:hidden h-14 shrink-0" />
     </>
   );
 }
+

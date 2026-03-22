@@ -1,4 +1,4 @@
-"""
+﻿"""
 Centralized error code registry for Stock Predict.
 
 Format: SP-XYYY
@@ -120,8 +120,14 @@ SP_6004 = lambda: AppError("SP-6004", "Insufficient tickers for comparison",
 SP_6005 = lambda rid=0: AppError("SP-6005", f"Report not found: #{rid}")
 SP_6006 = lambda: AppError("SP-6006", "Invalid export format",
                            "Allowed: pdf, csv")
+SP_6007 = lambda field="period": AppError(
+    "SP-6007",
+    f"Invalid calendar parameter: {field}",
+    "Provide month 1-12 and year between 2000 and 2100.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors
 # ---------------------------------------------------------------------------
 SP_9999 = lambda d="": AppError("SP-9999", "Unexpected server error", d)
+

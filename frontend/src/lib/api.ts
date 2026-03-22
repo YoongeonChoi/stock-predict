@@ -1,5 +1,9 @@
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 
+export function apiPath(path: string): string {
+  return `${API}${path}`;
+}
+
 export interface ApiErrorInfo {
   error_code: string;
   message: string;
@@ -20,7 +24,7 @@ export class ApiError extends Error {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`, { cache: "no-store" });
+  const res = await fetch(apiPath(path), { cache: "no-store" });
   if (!res.ok) {
     let info: ApiErrorInfo;
     try {
@@ -34,7 +38,7 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post(path: string, body?: unknown) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
@@ -52,7 +56,7 @@ async function post(path: string, body?: unknown) {
 }
 
 async function del(path: string) {
-  const res = await fetch(`${API}${path}`, { method: "DELETE" });
+  const res = await fetch(apiPath(path), { method: "DELETE" });
   if (!res.ok) {
     let info: ApiErrorInfo;
     try {
@@ -332,6 +336,58 @@ export interface SystemDiagnostics {
   prediction_accuracy_error?: string | null;
 }
 
+export interface CalendarMajorEvent {
+  name: string;
+  name_local: string;
+  frequency: string;
+  description: string;
+  impact: "high" | "medium" | "low";
+  color: string;
+}
+
+export interface CalendarSummary {
+  total_events: number;
+  high_impact_count: number;
+  policy_count: number;
+  earnings_count: number;
+  economic_count: number;
+  note: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  date: string;
+  type: "policy" | "economic" | "earnings";
+  category: string;
+  title: string;
+  title_en: string;
+  subtitle?: string | null;
+  description: string;
+  impact: "high" | "medium" | "low";
+  color: string;
+  source: string;
+  all_day: boolean;
+  time?: string | null;
+  symbol?: string | null;
+  country_code: string;
+}
+
+export interface CalendarResponse {
+  country_code: string;
+  year: number;
+  month: number;
+  month_label: string;
+  range_start: string;
+  range_end: string;
+  generated_at: string;
+  summary: CalendarSummary;
+  major_events: CalendarMajorEvent[];
+  events: CalendarEvent[];
+  upcoming_events: CalendarEvent[];
+  economic_events: CalendarEvent[];
+  earnings_events: CalendarEvent[];
+}
+
 export interface SearchResult {
   ticker: string; name: string; country_code: string; sector: string;
 }
@@ -363,7 +419,13 @@ export const api = {
   getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),
   getMarketOpportunities: (code: string, limit = 12) =>
     get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`),
-  getCalendar: (code: string) => get<unknown>(`/api/calendar/${code}`),
+  getCalendar: (code: string, year?: number, month?: number) => {
+    const qs = new URLSearchParams();
+    if (year) qs.set("year", String(year));
+    if (month) qs.set("month", String(month));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<CalendarResponse>(`/api/calendar/${code}${suffix}`);
+  },
   getScreener: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
     return get<ScreenerResponse>(`/api/screener?${qs}`);

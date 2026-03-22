@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 
@@ -9,7 +9,7 @@ import type { PredictionLabResponse } from "@/lib/api";
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
-  return new Error(typeof error === "string" ? error : "Unknown error");
+  return new Error(typeof error === "string" ? error : "알 수 없는 오류가 발생했습니다.");
 }
 
 export default function LabPage() {
@@ -32,7 +32,7 @@ export default function LabPage() {
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Prediction Lab</h1>
-        <p className="text-text-secondary mt-1">Validation, calibration, and research tooling for the live next-session forecasting engine.</p>
+        <p className="text-text-secondary mt-1">실전 예측 엔진의 검증, 보정, 연구 지표를 한곳에서 확인하는 공간입니다.</p>
       </div>
 
       {error ? <ErrorBanner error={error} onRetry={() => window.location.reload()} /> : null}
@@ -48,8 +48,9 @@ export default function LabPage() {
       ) : data ? (
         <PredictionLabDashboard data={data} />
       ) : (
-        <div className="card text-text-secondary">Prediction lab data is not available yet.</div>
+        <div className="card text-text-secondary">Prediction Lab 데이터가 아직 준비되지 않았습니다.</div>
       )}
     </div>
   );
 }
+
