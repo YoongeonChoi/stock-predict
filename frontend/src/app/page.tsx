@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { HeatmapData, MarketMovers } from "@/lib/api";
@@ -16,6 +16,7 @@ interface MarketIndicator {
 }
 
 export default function HomePage() {
+  const initializedRef = useRef(false);
   const [countries, setCountries] = useState<CountryListItem[]>([]);
   const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
@@ -29,6 +30,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     Promise.all([
       api.getCountries().then(setCountries).catch(console.error),
       api.getMarketIndicators().then(setIndicators).catch(console.error),

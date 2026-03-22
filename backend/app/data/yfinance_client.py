@@ -33,6 +33,19 @@ class _TickerSnapshot:
     quote: dict
 
 
+def _empty_market_snapshot(ticker: str) -> dict:
+    return {
+        "ticker": ticker,
+        "name": ticker,
+        "price": 0.0,
+        "prev_close": 0.0,
+        "change_pct": 0.0,
+        "market_cap": 0.0,
+        "current_price": 0.0,
+        "valid": False,
+    }
+
+
 def _is_index_like(ticker: str) -> bool:
     return str(ticker).startswith("^")
 
@@ -150,15 +163,11 @@ def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
     }
 
 
-def _history_based_quote(ticker: str) -> dict:
-    return _quote_from_history_df(_history_sync(ticker, period="5d"), ticker)
-
-
 def _load_snapshot(ticker: str, *, history_period: str = "6mo", include_info: bool = True) -> _TickerSnapshot:
     ticker_obj = yf.Ticker(ticker)
     history_df = _history_sync(ticker, period=history_period)
     history_rows = _format_rows(history_df)
-    quote = _quote_from_history_df(history_df, ticker) if not history_df.empty else _history_based_quote(ticker)
+    quote = _quote_from_history_df(history_df, ticker)
 
     if include_info:
         try:
@@ -234,6 +243,65 @@ def _history_stat(rows: list[dict], key: str, *, window: int, reducer):
     return reducer(values)
 
 
+def _snapshot_to_market_snapshot(snapshot: _TickerSnapshot) -> dict:
+    current_price = _resolve_number(
+        snapshot,
+        info_keys=("currentPrice", "regularMarketPrice"),
+        fast_key="lastPrice",
+        metadata_keys=("regularMarketPrice",),
+        fallback=snapshot.quote["price"],
+    ) or 0.0
+    prev_close = _resolve_number(
+        snapshot,
+        info_keys=("previousClose",),
+        fast_key="previousClose",
+        metadata_keys=("previousClose",),
+        fallback=snapshot.quote["prev_close"],
+    ) or current_price
+    market_cap = _resolve_number(
+        snapshot,
+        info_keys=("marketCap",),
+        fast_key="marketCap",
+        fallback=0.0,
+    ) or 0.0
+
+    return {
+        "ticker": snapshot.ticker,
+        "name": _resolve_text(
+            snapshot,
+            info_keys=("shortName", "longName"),
+            metadata_keys=("shortName", "longName"),
+            fallback=snapshot.ticker,
+        ),
+        "price": round(float(current_price), 2),
+        "prev_close": round(float(prev_close), 2),
+        "change_pct": round(((float(current_price) - float(prev_close)) / float(prev_close) * 100.0) if prev_close else 0.0, 2),
+        "market_cap": round(float(market_cap), 2),
+        "current_price": round(float(current_price), 2),
+        "valid": bool(current_price > 0),
+    }
+
+
+async def get_market_snapshot(ticker: str, *, period: str = "6mo") -> dict:
+    settings = get_settings()
+
+    async def _fetch():
+        def _sync():
+            snapshot = _load_snapshot(ticker, history_period=period, include_info=True)
+            market_snapshot = _snapshot_to_market_snapshot(snapshot)
+            if not market_snapshot["valid"] and not snapshot.history_rows:
+                return _empty_market_snapshot(ticker)
+            return market_snapshot
+
+        return await asyncio.to_thread(_sync)
+
+    return await cache.get_or_fetch(
+        f"market_snapshot:{ticker}:{period}",
+        _fetch,
+        settings.cache_ttl_price,
+    )
+
+
 async def get_index_quote(ticker: str) -> dict:
     settings = get_settings()
 
@@ -242,6 +310,8 @@ async def get_index_quote(ticker: str) -> dict:
             snapshot = _load_snapshot(ticker, history_period="5d", include_info=False)
             price = _resolve_number(snapshot, fast_key="lastPrice", fallback=snapshot.quote["price"]) or 0.0
             prev = _resolve_number(snapshot, fast_key="previousClose", fallback=snapshot.quote["prev_close"]) or 0.0
+            if price <= 0 and not snapshot.history_rows:
+                return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0}
             return {
                 "ticker": ticker,
                 "price": round(price, 2),

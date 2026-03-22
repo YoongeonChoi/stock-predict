@@ -2,6 +2,16 @@
 
 All notable changes to this project are tracked here.
 
+## v2.5.1 - 2026-03-23
+
+- 한국 헬스케어 유니버스에서 무효 티커 `091990.KS`를 제거하고 `196170.KQ`로 교체했습니다.
+- 유니버스 로더에 중복/무효 티커 정리 로직을 추가해 heatmap, movers, radar가 비정상 심볼을 반복 호출하지 않도록 보강했습니다.
+- 캐시 계층에 in-flight dedupe를 추가해 동일 키에 대한 동시 요청이 들어와도 fetch를 한 번만 수행하도록 개선했습니다.
+- `heatmap`과 `market movers`를 단일 시장 스냅샷 기반으로 재구성해 Yahoo 호출 수를 줄이고 응답 안정성을 높였습니다.
+- 한국 거래소 캘린더의 `break_start`, `break_end` 경고를 억제하도록 시장 캘린더 초기화를 정리했습니다.
+- 홈 화면 초기 로딩 effect를 개발 모드 중복 실행에서 보호해 불필요한 API 중복 호출과 프록시 `socket hang up` 가능성을 낮췄습니다.
+- 루트 `verify.ps1` 검증 스크립트를 추가하고 AI/기여 가이드의 기본 검증 절차를 강화했습니다.
+
 ## v2.5.0 - 2026-03-23
 
 - Yahoo Finance 연동을 `info + fast_info + history_metadata + 최근 가격 이력` 기반 fallback 구조로 재정비해 빈 필드와 공급자 흔들림에 더 강하게 만들었습니다.

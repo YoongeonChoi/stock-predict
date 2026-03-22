@@ -54,6 +54,18 @@
 
 ## 기본 검증 명령
 
+가장 먼저 아래 원클릭 검증을 권장합니다.
+
+```powershell
+.\verify.ps1
+```
+
+프론트 수정이 없거나 백엔드만 빠르게 볼 때는 아래처럼 실행합니다.
+
+```powershell
+.\verify.ps1 -SkipFrontend
+```
+
 ### Backend
 
 ```powershell

@@ -25,6 +25,19 @@ EXCHANGE_MAP = {
 }
 
 SUFFIX_MAP = {"KR": ".KS", "JP": ".T"}
+INVALID_TICKERS = {"091990.KS"}
+
+
+def _sanitize_tickers(tickers: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in tickers:
+        ticker = str(raw or "").strip().upper()
+        if not ticker or ticker in INVALID_TICKERS or ticker in seen:
+            continue
+        seen.add(ticker)
+        cleaned.append(ticker)
+    return cleaned
 
 
 async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | None:
@@ -60,6 +73,7 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
                         t = t + suffix
                     if t not in tickers:
                         tickers.append(t)
+            tickers = _sanitize_tickers(tickers)
             if tickers:
                 return sector, tickers[:50]
             return sector, []
@@ -84,8 +98,11 @@ async def get_universe(country_code: str) -> dict[str, list[str]]:
     """Get stock universe: dynamic first, hardcoded fallback."""
     dynamic = await fetch_dynamic_universe(country_code)
     if dynamic:
-        return dynamic
-    return UNIVERSE.get(country_code, {})
+        return {sector: _sanitize_tickers(tickers) for sector, tickers in dynamic.items()}
+    return {
+        sector: _sanitize_tickers(tickers)
+        for sector, tickers in UNIVERSE.get(country_code, {}).items()
+    }
 
 US = {
     "Energy": [
@@ -199,7 +216,7 @@ KR = {
     ],
     "Health Care": [
         "207940.KS", "068270.KS", "128940.KS", "326030.KS", "145020.KS",
-        "091990.KS", "004090.KS", "001630.KS", "195940.KS", "185750.KS",
+        "196170.KQ", "004090.KS", "001630.KS", "195940.KS", "185750.KS",
         "214370.KS", "141080.KS", "006280.KS", "003060.KS", "002390.KS",
         "000100.KS", "119860.KS", "294870.KS", "237690.KS", "263750.KS",
     ],

@@ -7,8 +7,20 @@ from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
 from app.services import archive_service, export_service, market_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005
+from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
+
+
+async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
+    try:
+        snapshot = await yfinance_client.get_market_snapshot(ticker, period=period)
+    except Exception as exc:
+        logging.warning("market snapshot fetch failed for %s: %s", ticker, exc)
+        return None
+    if not snapshot or not snapshot.get("valid"):
+        return None
+    return snapshot
 
 
 @router.get("/countries")
@@ -82,24 +94,18 @@ async def get_heatmap(code: str):
 
     sectors = []
     for sector_name, tickers in universe.items():
+        fetched = await gather_limited(tickers[:10], lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=4)
         stocks = []
-        for ticker in tickers[:10]:
-            try:
-                q = await yfinance_client.get_index_quote(ticker)
-                info = await yfinance_client.get_stock_info(ticker)
-                mc = info.get("market_cap") or 0
-                if mc <= 0:
-                    continue
-                stocks.append({
-                    "name": ticker.split(".")[0],
-                    "ticker": ticker,
-                    "fullName": info.get("name", ticker),
-                    "size": mc,
-                    "change": q.get("change_pct", 0),
-                })
-            except Exception as e:
-                logging.warning("heatmap: failed to fetch %s: %s", ticker, e)
+        for item in fetched:
+            if isinstance(item, Exception) or item is None:
                 continue
+            stocks.append({
+                "name": item["ticker"].split(".")[0],
+                "ticker": item["ticker"],
+                "fullName": item.get("name", item["ticker"]),
+                "size": item.get("market_cap", 0),
+                "change": item.get("change_pct", 0),
+            })
         if stocks:
             stocks.sort(key=lambda s: s["size"], reverse=True)
             sectors.append({"name": sector_name, "children": stocks[:8]})
@@ -280,26 +286,25 @@ async def get_market_movers(code: str):
     from app.data.universe_data import get_universe
     universe = await get_universe(code)
     all_tickers = []
+    seen = set()
     for sec_tickers in universe.values():
-        all_tickers.extend(sec_tickers[:8])
-
-    stocks = []
-    for ticker in all_tickers:
-        try:
-            q = await yfinance_client.get_index_quote(ticker)
-            info = await yfinance_client.get_stock_info(ticker)
-            price = q.get("price", 0)
-            change = q.get("change_pct", 0)
-            if price <= 0:
+        for ticker in sec_tickers[:8]:
+            if ticker in seen:
                 continue
-            stocks.append({
-                "ticker": ticker,
-                "name": info.get("name", ticker),
-                "price": round(price, 2),
-                "change_pct": round(change, 2),
-            })
-        except Exception:
+            seen.add(ticker)
+            all_tickers.append(ticker)
+
+    fetched = await gather_limited(all_tickers, lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=6)
+    stocks = []
+    for item in fetched:
+        if isinstance(item, Exception) or item is None:
             continue
+        stocks.append({
+            "ticker": item["ticker"],
+            "name": item.get("name", item["ticker"]),
+            "price": round(item.get("price", 0), 2),
+            "change_pct": round(item.get("change_pct", 0), 2),
+        })
 
     stocks.sort(key=lambda x: x["change_pct"], reverse=True)
     result = {

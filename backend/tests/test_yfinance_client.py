@@ -63,7 +63,6 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
             patch("app.data.yfinance_client.cache.get_or_fetch", new=_passthrough_cache),
             patch("app.data.yfinance_client.yf.Ticker", side_effect=lambda ticker: _FakeTicker(ticker)),
             patch("app.data.yfinance_client._history_sync", return_value=history),
-            patch("app.data.yfinance_client._history_based_quote", return_value={"ticker": "TEST", "price": 101.5, "prev_close": 100.0, "change_pct": 1.5}),
         ):
             info = await yfinance_client.get_stock_info("TEST")
 

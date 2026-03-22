@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 from functools import lru_cache
+import warnings
 
 import pandas_market_calendars as mcal
 
@@ -12,7 +13,19 @@ CALENDAR_BY_COUNTRY = {
 
 @lru_cache(maxsize=8)
 def _get_calendar(country_code: str):
-    return mcal.get_calendar(CALENDAR_BY_COUNTRY.get(country_code, "XNYS"))
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*\['break_start', 'break_end'\] are discontinued.*",
+            category=UserWarning,
+        )
+        calendar = mcal.get_calendar(CALENDAR_BY_COUNTRY.get(country_code, "XNYS"))
+    for market_time in ("break_start", "break_end"):
+        try:
+            calendar.remove_time(market_time)
+        except Exception:
+            pass
+    return calendar
 
 
 def _normalize_date(value: date | datetime | str | None) -> date:
