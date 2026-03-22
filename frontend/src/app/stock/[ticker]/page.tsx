@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { StockDetail } from "@/lib/types";
-import type { TechSummary, PivotPoints } from "@/lib/api";
+import type { TechSummary, PivotPoints, CompositeScore } from "@/lib/api";
 import { formatPct, changeColor, formatPrice, formatMarketCap } from "@/lib/utils";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
@@ -67,6 +67,15 @@ export default function StockPage() {
     { label: "Analyst", data: sc.analyst || defaultDetail },
     { label: "Risk", data: sc.risk || defaultDetail },
   ];
+  const cs: CompositeScore | null = (stock as any).composite_score ?? null;
+  const compositeCategories = cs ? [
+    { label: "Fundamental", data: cs.fundamental, color: "bg-blue-500" },
+    { label: "Valuation", data: cs.valuation, color: "bg-purple-500" },
+    { label: "Growth", data: cs.growth_momentum, color: "bg-emerald-500" },
+    { label: "Analyst", data: cs.analyst, color: "bg-amber-500" },
+    { label: "Risk", data: cs.risk, color: "bg-rose-500" },
+    { label: "Technical", data: cs.technical, color: "bg-cyan-500" },
+  ] : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -229,8 +238,57 @@ export default function StockPage() {
       </div>
       )}
 
-      {/* Score Breakdown */}
+      {/* Composite Score */}
+      {cs && (
       <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold">Composite Score</h2>
+          <div className="flex items-center gap-3">
+            <div className={`text-3xl font-bold ${
+              cs.total >= 70 ? "text-positive" : cs.total >= 50 ? "text-warning" : "text-negative"
+            }`}>{cs.total.toFixed(1)}</div>
+            <span className="text-xs text-text-secondary">/100</span>
+          </div>
+        </div>
+
+        <div className="space-y-3 mb-5">
+          {compositeCategories.map((cat) => (
+            <div key={cat.label}>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="font-medium">{cat.label}</span>
+                <span className="text-text-secondary">{cat.data.total}/{cat.data.max_score}</span>
+              </div>
+              <div className="h-2 bg-border rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${cat.color}`}
+                  style={{ width: `${(cat.data.total / cat.data.max_score) * 100}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                {cat.data.items.map((item) => (
+                  <div key={item.name} className="flex items-center gap-1 text-[10px] text-text-secondary">
+                    <span>{item.name}</span>
+                    <span className={`font-mono font-medium ${
+                      item.score / item.max_score >= 0.7 ? "text-positive" :
+                      item.score / item.max_score >= 0.4 ? "text-warning" : "text-negative"
+                    }`}>{item.score.toFixed(1)}/{item.max_score}</span>
+                    <span className="opacity-60">({item.description})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-[10px] text-text-secondary border-t border-border pt-2">
+          Raw: {cs.total_raw}/{cs.max_raw} (Fundamental 25 + Valuation 20 + Growth 15 + Analyst 20 + Risk 20 + Technical 25 = 125, scaled to 100)
+        </div>
+      </div>
+      )}
+
+      {/* Legacy Score Breakdown */}
+      <div className="card">
+        <h2 className="font-semibold mb-4">Score Breakdown (Legacy)</h2>
         <div className="flex items-center gap-6 mb-4">
           <ScoreRadial score={sc.total || 0} label="Total" />
           <div className="flex gap-3">

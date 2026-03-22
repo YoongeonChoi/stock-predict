@@ -143,6 +143,20 @@ TARGET_UPSIDE = Threshold(
     higher_is_better=True,
 )
 
+ANALYST_COVERAGE = Threshold(
+    name="Analyst Coverage (count)",
+    max_score=5,
+    breakpoints=((20, 5), (10, 4), (5, 3), (1, 2), (-1, 1)),
+    higher_is_better=True,
+)
+
+CONSENSUS_STRENGTH = Threshold(
+    name="Consensus Strength (majority %)",
+    max_score=5,
+    breakpoints=((70, 5), (60, 4), (50, 3), (40, 2), (-1, 1)),
+    higher_is_better=True,
+)
+
 # Estimate revision is qualitative → scored by LLM (0-5)
 ESTIMATE_REVISION_MAX = 5
 

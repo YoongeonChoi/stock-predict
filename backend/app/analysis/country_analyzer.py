@@ -156,12 +156,12 @@ async def analyze_country(country_code: str) -> dict:
 async def _score_top_stocks(
     country_code: str, llm_reasons: dict[str, str]
 ) -> list[StockSummaryRef]:
-    """Score a sample of stocks from the country and return top 5 by score."""
+    """Score a broad sample of stocks from the country and return top 5 by score."""
     from app.data.universe_data import get_universe
     universe = await get_universe(country_code)
     all_tickers: list[str] = []
     for sector_tickers in universe.values():
-        all_tickers.extend(sector_tickers[:8])
+        all_tickers.extend(sector_tickers[:20])
 
     scored: list[tuple[float, str, dict]] = []
     for ticker in all_tickers:
@@ -170,7 +170,8 @@ async def _score_top_stocks(
             if not info.get("current_price"):
                 continue
             prices = await yfinance_client.get_price_history(ticker, period="3mo")
-            qs = score_stock(info, price_hist=prices)
+            analyst_raw = await yfinance_client.get_analyst_ratings(ticker)
+            qs = score_stock(info, price_hist=prices, analyst_counts=analyst_raw)
             scored.append((qs.total, ticker, info))
         except Exception:
             continue

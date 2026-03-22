@@ -65,6 +65,31 @@ async function del(path: string) {
   return res.json();
 }
 
+export interface CompositeScoreItem {
+  name: string;
+  score: number;
+  max_score: number;
+  description: string;
+}
+
+export interface CompositeScoreDetail {
+  total: number;
+  max_score: number;
+  items: CompositeScoreItem[];
+}
+
+export interface CompositeScore {
+  total: number;
+  total_raw: number;
+  max_raw: number;
+  fundamental: CompositeScoreDetail;
+  valuation: CompositeScoreDetail;
+  growth_momentum: CompositeScoreDetail;
+  analyst: CompositeScoreDetail;
+  risk: CompositeScoreDetail;
+  technical: CompositeScoreDetail;
+}
+
 export interface HeatmapStock {
   name: string;
   ticker: string;

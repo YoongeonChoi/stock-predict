@@ -9,7 +9,7 @@ import pandas as pd
 from app.data import yfinance_client, fmp_client, news_client, cache
 from app.analysis.llm_client import ask_json
 from app.analysis.prompts import stock_analysis_prompt
-from app.scoring.stock_scorer import score_stock
+from app.scoring.stock_scorer import score_stock, score_composite
 from app.scoring import rubric
 from app.models.stock import (
     StockDetail, BuySellGuide, ValuationMethod, DividendInfo,
@@ -35,7 +35,13 @@ async def analyze_stock(ticker: str) -> dict:
     peers = await fmp_client.get_stock_peers(ticker)
     peer_avg = await _calc_peer_averages(peers) if peers else {}
 
-    quant_score = score_stock(info, peers_avg=peer_avg, price_hist=prices_raw)
+    quant_score = score_stock(info, peers_avg=peer_avg, price_hist=prices_raw, analyst_counts=analyst_raw)
+
+    prices_6mo = await yfinance_client.get_price_history(ticker, period="6mo")
+    composite = score_composite(
+        info, peers_avg=peer_avg, price_hist=prices_raw,
+        price_hist_6mo=prices_6mo, analyst_counts=analyst_raw,
+    )
 
     news = await news_client.search_news(
         f"{info.get('name', ticker)} stock", _detect_country(ticker), max_results=10
@@ -48,9 +54,6 @@ async def analyze_stock(ticker: str) -> dict:
     llm_failed = "error_code" in llm_result or "error" in llm_result
 
     if not llm_failed:
-        est_rev_score = float(llm_result.get("estimate_revision_score", 2.5))
-        quant_score.analyst.items[-1].score = min(5, max(0, est_rev_score))
-        quant_score.analyst.total = sum(i.score for i in quant_score.analyst.items)
         quant_score.total = (
             quant_score.fundamental.total + quant_score.valuation.total +
             quant_score.growth_momentum.total + quant_score.analyst.total +
@@ -104,6 +107,7 @@ async def analyze_stock(ticker: str) -> dict:
     )
 
     result = detail.model_dump()
+    result["composite_score"] = composite.model_dump()
     errors = []
     if llm_failed:
         errors.append(llm_result.get("error_code", "SP-4005"))

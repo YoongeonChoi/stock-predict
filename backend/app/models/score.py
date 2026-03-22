@@ -33,6 +33,19 @@ class StockScore(BaseModel):
     risk: StockScoreDetail
 
 
+class CompositeScore(BaseModel):
+    """Composite score merging fundamentals, valuation, growth, analyst, risk, and technical analysis."""
+    total: float
+    total_raw: float
+    max_raw: float
+    fundamental: StockScoreDetail
+    valuation: StockScoreDetail
+    growth_momentum: StockScoreDetail
+    analyst: StockScoreDetail
+    risk: StockScoreDetail
+    technical: StockScoreDetail
+
+
 class SectorScore(BaseModel):
     total: float
     earnings_growth: ScoreItem
