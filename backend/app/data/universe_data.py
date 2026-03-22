@@ -5,7 +5,10 @@ Falls back to hardcoded lists (S&P 500, KOSPI 200, Nikkei 225 level).
 Dynamic data is cached for 24h so it doesn't burn API calls.
 """
 
+import asyncio
 import logging
+
+from app.utils.async_tools import gather_limited
 
 log = logging.getLogger("stock_predict.universe")
 
@@ -39,21 +42,34 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
         result: dict[str, list[str]] = {}
         suffix = SUFFIX_MAP.get(country_code, "")
 
-        for sector in GICS_SECTORS:
+        async def _fetch_sector(sector: str):
             tickers: list[str] = []
-            for exchange in exchanges:
-                fetched = await fmp_client.screen_stocks(
+            tasks = [
+                fmp_client.screen_stocks(
                     exchange=exchange, sector=sector,
                     market_cap_min=500_000_000 if country_code == "US" else 100_000_000,
                     limit=60,
                 )
+                for exchange in exchanges
+            ]
+            for fetched in await asyncio.gather(*tasks, return_exceptions=True):
+                if isinstance(fetched, Exception):
+                    continue
                 for t in fetched:
                     if suffix and not t.endswith(suffix):
                         t = t + suffix
                     if t not in tickers:
                         tickers.append(t)
             if tickers:
-                result[sector] = tickers[:50]
+                return sector, tickers[:50]
+            return sector, []
+
+        for item in await gather_limited(GICS_SECTORS, _fetch_sector, limit=4):
+            if isinstance(item, Exception):
+                continue
+            sector, tickers = item
+            if tickers:
+                result[sector] = tickers
 
         if len(result) >= 5:
             await cache.set(f"dynamic_universe:{country_code}", result, 86400)

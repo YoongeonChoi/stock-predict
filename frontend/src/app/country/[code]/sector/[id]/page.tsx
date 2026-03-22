@@ -10,17 +10,22 @@ import ScoreRadial from "@/components/charts/ScoreRadial";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 
+function toError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  return new Error(typeof error === "string" ? error : "Unknown error");
+}
+
 export default function SectorPage() {
   const { code, id } = useParams<{ code: string; id: string }>();
   const [report, setReport] = useState<SectorReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!code || !id) return;
     setLoading(true);
     setError(null);
-    api.getSectorReport(code, id).then(setReport).catch((e) => { console.error(e); setError(e); }).finally(() => setLoading(false));
+    api.getSectorReport(code, id).then(setReport).catch((e) => { console.error(e); setError(toError(e)); }).finally(() => setLoading(false));
   }, [code, id]);
 
   if (loading) return <div className="animate-pulse space-y-4"><div className="h-8 bg-border rounded w-48" /><div className="h-96 bg-border rounded" /></div>;

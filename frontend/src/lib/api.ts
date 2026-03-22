@@ -169,6 +169,18 @@ export interface MarketMovers {
   losers: { ticker: string; name: string; price: number; change_pct: number }[];
 }
 
+export interface PredictionAccuracyStats {
+  stored_predictions: number;
+  pending_predictions: number;
+  total_predictions: number;
+  within_range: number;
+  within_range_rate: number;
+  direction_hits: number;
+  direction_accuracy: number;
+  avg_error_pct: number;
+  avg_confidence: number;
+}
+
 export interface SearchResult {
   ticker: string; name: string; country_code: string; sector: string;
 }
@@ -194,6 +206,7 @@ export const api = {
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<unknown[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
+  getPredictionAccuracy: () => get<PredictionAccuracyStats>("/api/archive/accuracy/stats"),
   getCalendar: (code: string) => get<unknown>(`/api/calendar/${code}`),
   getScreener: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();

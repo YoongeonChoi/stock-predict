@@ -92,6 +92,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 |------|------|
 | **국가 리포트** | 100점 만점 6항목 채점, 리서치 기관 컨센서스 분석, Top 5 종목 (점수 기반) |
 | **지수 예측** | Monte Carlo 시뮬레이션 + LLM 보정, 1개월 상단/기본/하단 확률% |
+| **다음 거래일 예측** | 정량 신호 엔진 기반 방향/상승확률/예상 종가/예상 고가·저가를 계산 |
 | **섹터 분석** | 섹터별 100점 채점, Top 10 종목 장단점/점수/매수매도가 |
 | **종목 상세** | 캔들스틱/라인 차트, Buy/Sell Zone, 재무 상세, 52주 범위 |
 | **Fear & Greed** | 5개 지표 복합 게이지 (모멘텀, 주가강도, 변동성, 안전자산, 센티먼트) |
@@ -108,6 +109,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **Analyst Consensus** | Buy/Hold/Sell 비율 시각화, 목표가 범위 (Low/Mean/High vs 현재가) |
 | **Earnings Surprise** | 분기별 EPS Estimate vs Actual 바 차트 |
 | **52-Week Range** | 현재가의 52주 범위 내 위치를 프로그레스 바로 표시 |
+| **Prediction Overlay** | 라인 차트 위에 다음 거래일 예상 종가/상단/하단 경로를 오버레이 |
 | **Top Gainers/Losers** | 대시보드에 시장별 당일 상승/하락 Top 5 종목 표시 |
 
 ### 시장 데이터
@@ -126,7 +128,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **Global Search** | 네비게이션 상단 검색바, 티커/종목명 자동완성 |
 | **워치리스트** | 인라인 추가, 실시간 점수/가격 업데이트, 통화 단위 자동 적용 |
 | **비교 모드** | 2~4개 종목 나란히 비교 테이블 (통화 단위 자동) |
-| **아카이브** | 과거 리포트 저장, 예측 정확도 추적 |
+| **아카이브** | 과거 리포트 저장, 다음 거래일 예측 정확도 자동 누적 |
 | **PDF/CSV** | 모든 리포트 내보내기 (CJK 폰트 지원) |
 
 ### UX
@@ -147,7 +149,39 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 |------|------|
 | Backend | Python 3.10+, FastAPI, SQLite, OpenAI GPT-4o |
 | Frontend | Next.js 14 (App Router), Tailwind CSS, Recharts |
-| Data | yfinance, FRED API, BOK ECOS API, BOJ API, Google News RSS, FMP Basic |
+| Data | yfinance, pykrx, FRED API, BOK ECOS API, BOJ API, Google News RSS, FMP Basic |
+| Forecast Infra | pandas-market-calendars, ta, SQLite prediction history |
+
+### 다음 거래일 예측 엔진
+
+- LLM이 가격을 직접 찍는 방식이 아니라, 기술 지표와 수급/뉴스를 정량화한 `signal-v2.1` 엔진을 사용합니다.
+- 사용 신호:
+  - 최근 5일 / 1개월 모멘텀
+  - EMA 추세 괴리
+  - RSI mean reversion
+  - MACD histogram
+  - 거래량 확인 신호
+  - 뉴스 헤드라인 감성 점수
+  - 애널리스트 목표가/컨센서스
+  - 한국 시장의 경우 pykrx 기반 외국인/기관 순매수 신호를 우선 시도
+- 출력:
+  - `direction`
+  - `up_probability`
+  - `predicted_close`
+  - `predicted_high`
+  - `predicted_low`
+  - `confidence`
+  - `drivers`
+
+### 정확도 추적
+
+- `prediction_records` 테이블에 다음 거래일 예측을 저장합니다.
+- 앱 시작 시와 정확도 조회 시점에 미평가 예측을 자동 재평가합니다.
+- 집계 항목:
+  - 방향 적중률
+  - 예상 밴드 내 적중률
+  - 평균 절대 오차율
+  - 평균 confidence
 
 ---
 
@@ -185,6 +219,21 @@ pip install -r backend/requirements.txt
 ```
 
 > **패키지가 추가/변경된 경우에만** `pip install -r backend/requirements.txt`를 다시 실행하세요.
+
+### 검증 명령어
+
+개발 후 아래 명령으로 백엔드/프론트엔드 상태를 빠르게 확인할 수 있습니다.
+
+```powershell
+# Backend
+.\venv\Scripts\python.exe -m compileall backend\app
+.\venv\Scripts\python.exe -m unittest discover -s backend\tests -v
+
+# Frontend
+cd frontend
+npx tsc --noEmit
+npm run build
+```
 
 ### 3. API 키 설정 (최초 1회)
 

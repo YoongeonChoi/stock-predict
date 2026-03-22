@@ -18,6 +18,7 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.initialize()
+    await archive_service.refresh_prediction_accuracy(limit=100)
     yield
 
 

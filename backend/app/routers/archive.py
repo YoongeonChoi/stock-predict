@@ -15,6 +15,11 @@ async def list_archives(
     return await archive_service.list_reports(report_type, country_code, limit)
 
 
+@router.get("/archive/accuracy/stats")
+async def get_accuracy_stats():
+    return await archive_service.get_accuracy()
+
+
 @router.get("/archive/{report_id}")
 async def get_archive(report_id: int):
     result = await archive_service.get_report(report_id)
@@ -23,8 +28,3 @@ async def get_archive(report_id: int):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
     return result
-
-
-@router.get("/archive/accuracy/stats")
-async def get_accuracy_stats():
-    return await archive_service.get_accuracy()

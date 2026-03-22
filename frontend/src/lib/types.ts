@@ -1,7 +1,8 @@
 export interface IndexInfo {
   ticker: string;
   name: string;
-  price: number;
+  price?: number;
+  current_price?: number;
   change_pct: number;
 }
 
@@ -44,6 +45,45 @@ export interface IndexForecast {
   fair_value: number;
   scenarios: ForecastScenario[];
   confidence_note: string;
+}
+
+export interface FlowSignal {
+  available: boolean;
+  source: string;
+  market: string;
+  unit: string;
+  foreign_net_buy?: number | null;
+  institutional_net_buy?: number | null;
+  retail_net_buy?: number | null;
+}
+
+export interface ForecastDriver {
+  name: string;
+  value: number;
+  signal: "bullish" | "bearish" | "neutral";
+  weight: number;
+  contribution: number;
+  detail: string;
+}
+
+export interface NextDayForecast {
+  target_date: string;
+  reference_date: string;
+  reference_price: number;
+  direction: "up" | "down" | "flat";
+  up_probability: number;
+  predicted_open?: number | null;
+  predicted_close: number;
+  predicted_high: number;
+  predicted_low: number;
+  predicted_return_pct: number;
+  confidence: number;
+  confidence_note: string;
+  news_sentiment: number;
+  raw_signal: number;
+  flow_signal?: FlowSignal | null;
+  drivers: ForecastDriver[];
+  model_version: string;
 }
 
 export interface FearGreedComponent {
@@ -92,8 +132,23 @@ export interface NewsItem {
   sentiment?: string;
 }
 
+export interface PricePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface CountryReport {
-  country: { code: string; name: string; name_local: string };
+  country: {
+    code: string;
+    name: string;
+    name_local: string;
+    currency?: string;
+    indices?: IndexInfo[];
+  };
   score: CountryScore;
   market_summary: string;
   key_news: NewsItem[];
@@ -101,8 +156,12 @@ export interface CountryReport {
   top_stocks: StockSummaryRef[];
   fear_greed: FearGreedIndex;
   forecast: IndexForecast;
+  next_day_forecast?: NextDayForecast;
+  primary_index_history?: PricePoint[];
   market_data: Record<string, { price: number; change_pct: number }>;
   generated_at: string;
+  llm_available?: boolean;
+  errors?: string[];
 }
 
 export interface SectorListItem {
@@ -121,8 +180,8 @@ export interface SectorStockItem {
   change_pct: number;
   pros: string[];
   cons: string[];
-  buy_price?: number;
-  sell_price?: number;
+  buy_price?: number | null;
+  sell_price?: number | null;
 }
 
 export interface SectorScore {
@@ -141,6 +200,8 @@ export interface SectorReport {
   summary: string;
   top_stocks: SectorStockItem[];
   generated_at: string;
+  llm_available?: boolean;
+  errors?: string[];
 }
 
 export interface BuySellGuide {
@@ -153,15 +214,6 @@ export interface BuySellGuide {
   confidence_grade: string;
   methodology: { name: string; value: number; weight: number; details: string }[];
   summary: string;
-}
-
-export interface PricePoint {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
 }
 
 export interface StockScoreDetail {
@@ -188,22 +240,50 @@ export interface StockDetail {
   market_cap: number;
   current_price: number;
   change_pct: number;
-  financials: { period: string; revenue?: number; operating_income?: number; net_income?: number; ebitda?: number; free_cash_flow?: number }[];
+  financials: {
+    period: string;
+    revenue?: number;
+    operating_income?: number;
+    net_income?: number;
+    ebitda?: number;
+    free_cash_flow?: number;
+  }[];
   pe_ratio?: number;
   pb_ratio?: number;
   ev_ebitda?: number;
   peg_ratio?: number;
+  week52_high?: number | null;
+  week52_low?: number | null;
   peer_comparisons: { metric: string; company_value?: number; peer_avg?: number }[];
   dividend: { dividend_yield?: number; payout_ratio?: number };
-  analyst_ratings: { buy: number; hold: number; sell: number; target_mean?: number; target_median?: number };
-  earnings_history: { date: string; eps_estimate?: number; eps_actual?: number; surprise_pct?: number }[];
+  analyst_ratings: {
+    buy: number;
+    hold: number;
+    sell: number;
+    target_mean?: number;
+    target_median?: number;
+    target_high?: number | null;
+    target_low?: number | null;
+  };
+  earnings_history: { date: string; eps_estimate?: number | null; eps_actual?: number | null; surprise_pct?: number | null }[];
   price_history: PricePoint[];
-  technical: { ma_20: (number | null)[]; ma_60: (number | null)[]; rsi_14: (number | null)[]; macd: (number | null)[]; dates: string[] };
+  technical: {
+    ma_20: (number | null)[];
+    ma_60: (number | null)[];
+    rsi_14: (number | null)[];
+    macd: (number | null)[];
+    macd_signal?: (number | null)[];
+    macd_hist?: (number | null)[];
+    dates: string[];
+  };
   score: StockScore;
   buy_sell_guide: BuySellGuide;
+  next_day_forecast?: NextDayForecast;
   analysis_summary?: string;
   key_risks?: string[];
   key_catalysts?: string[];
+  llm_available?: boolean;
+  errors?: string[];
 }
 
 export interface WatchlistItem {

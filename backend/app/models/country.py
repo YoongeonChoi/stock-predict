@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime
 from app.models.score import CountryScore
+from app.models.forecast import NextDayForecast
+from app.models.stock import PricePoint
 
 
 class IndexInfo(BaseModel):
@@ -59,6 +61,8 @@ class CountryReport(BaseModel):
     key_news: list[NewsItem]
     institutional_analysis: InstitutionalAnalysis
     top_stocks: list["StockSummaryRef"]
+    primary_index_history: list[PricePoint] = []
+    next_day_forecast: NextDayForecast | None = None
     generated_at: datetime
 
 

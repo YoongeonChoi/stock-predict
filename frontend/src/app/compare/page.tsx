@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { formatPct, changeColor, formatPrice, formatMarketCap } from "@/lib/utils";
 import ErrorBanner from "@/components/ErrorBanner";
 
-const METRICS: { key: string; label: string; fmt?: "pct" | "num" | "money" }[] = [
+const METRICS: { key: string; label: string; fmt?: "pct" | "num" | "money" | "cap" }[] = [
   { key: "current_price", label: "Price", fmt: "money" },
   { key: "change_pct", label: "Change %", fmt: "pct" },
   { key: "market_cap", label: "Market Cap", fmt: "cap" },
@@ -17,6 +17,11 @@ const METRICS: { key: string; label: string; fmt?: "pct" | "num" | "money" }[] =
   { key: "dividend_yield", label: "Dividend Yield", fmt: "pct" },
   { key: "beta", label: "Beta" },
 ];
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  return new Error(typeof error === "string" ? error : "Unknown error");
+}
 
 function fmtVal(val: unknown, fmt?: string, ticker?: string): string {
   if (val == null) return "N/A";
@@ -39,7 +44,7 @@ export default function ComparePage() {
   const [input, setInput] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   const handleCompare = async () => {
     const tickers = input.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
@@ -51,7 +56,7 @@ export default function ComparePage() {
       setResults(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
-      setError(e);
+      setError(toError(e));
     }
     setLoading(false);
   };
@@ -79,7 +84,7 @@ export default function ComparePage() {
         </button>
       </div>
 
-      {error && <ErrorBanner error={error} onRetry={handleCompare} />}
+      {error ? <ErrorBanner error={error} onRetry={handleCompare} /> : null}
 
       {results.length > 0 && results.some((r) => r.error) && (
         <div className="text-sm text-warning">

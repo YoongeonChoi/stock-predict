@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from app.models.score import StockScore
+from app.models.forecast import NextDayForecast
 
 
 class PricePoint(BaseModel):
@@ -104,6 +105,8 @@ class StockDetail(BaseModel):
     pb_ratio: float | None = None
     ev_ebitda: float | None = None
     peg_ratio: float | None = None
+    week52_high: float | None = None
+    week52_low: float | None = None
     peer_comparisons: list[PeerComparison]
 
     dividend: DividendInfo
@@ -115,3 +118,4 @@ class StockDetail(BaseModel):
 
     score: StockScore
     buy_sell_guide: BuySellGuide
+    next_day_forecast: NextDayForecast | None = None

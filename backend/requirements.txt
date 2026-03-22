@@ -13,3 +13,5 @@ pandas
 ta
 fpdf2
 aiosqlite
+pykrx
+pandas-market-calendars

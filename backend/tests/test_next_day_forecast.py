@@ -1,0 +1,55 @@
+import unittest
+from datetime import date, timedelta
+
+from app.analysis.next_day_forecast import forecast_next_day
+from app.models.forecast import FlowSignal
+from app.utils.market_calendar import next_trading_day
+
+
+def _sample_prices(days: int = 40) -> list[dict]:
+    base = date(2026, 1, 1)
+    rows = []
+    price = 100.0
+    for i in range(days):
+        price += 0.8 if i % 6 != 0 else -0.3
+        rows.append({
+            "date": (base + timedelta(days=i)).isoformat(),
+            "open": round(price - 0.6, 2),
+            "high": round(price + 1.2, 2),
+            "low": round(price - 1.0, 2),
+            "close": round(price, 2),
+            "volume": 1_000_000 + i * 5_000,
+        })
+    return rows
+
+
+class NextDayForecastTests(unittest.TestCase):
+    def test_next_trading_day_skips_weekend(self):
+        self.assertEqual(next_trading_day("US", "2026-03-21").isoformat(), "2026-03-23")
+
+    def test_forecast_outputs_expected_structure(self):
+        forecast = forecast_next_day(
+            ticker="TEST",
+            name="Synthetic Corp",
+            country_code="US",
+            price_history=_sample_prices(),
+            news_items=[
+                {"title": "Synthetic Corp beats estimates and raises growth outlook"},
+                {"title": "Analysts upgrade Synthetic Corp after resilient demand"},
+            ],
+            analyst_context={"buy": 8, "hold": 2, "sell": 1, "target_mean": 118},
+            flow_signal=FlowSignal(available=False, source="not_supported", market="TEST", unit=""),
+            context_bias=0.25,
+            asset_type="stock",
+        )
+
+        self.assertEqual(forecast.reference_date, _sample_prices()[-1]["date"])
+        self.assertGreaterEqual(forecast.predicted_high, max(forecast.predicted_open or 0, forecast.predicted_close))
+        self.assertLessEqual(forecast.predicted_low, min(forecast.predicted_open or 0, forecast.predicted_close))
+        self.assertTrue(0 <= forecast.up_probability <= 100)
+        self.assertTrue(35 <= forecast.confidence <= 92)
+        self.assertGreater(len(forecast.drivers), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
