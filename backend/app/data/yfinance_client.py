@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -21,8 +22,23 @@ FINANCIAL_LABELS = {
 }
 
 
+@dataclass
+class _TickerSnapshot:
+    ticker: str
+    info: dict
+    fast_info: object
+    metadata: dict
+    history_df: pd.DataFrame
+    history_rows: list[dict]
+    quote: dict
+
+
 def _is_index_like(ticker: str) -> bool:
     return str(ticker).startswith("^")
+
+
+def _as_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _safe_float(value, default: float | None = None) -> float | None:
@@ -60,6 +76,20 @@ def _fast_get(container, key: str):
             snake_key.append("_")
         snake_key.append(char.lower())
     return getattr(container, "".join(snake_key), getattr(container, key, None))
+
+
+def _coalesce(*values, default=None):
+    for value in values:
+        if value is None:
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except TypeError:
+            pass
+        if value != "":
+            return value
+    return default
 
 
 def _format_rows(df: pd.DataFrame) -> list[dict]:
@@ -104,11 +134,6 @@ def _history_sync(
     return pd.DataFrame()
 
 
-def _history_based_quote(ticker: str) -> dict:
-    df = _history_sync(ticker, period="5d")
-    return _quote_from_history_df(df, ticker)
-
-
 def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
     if df.empty:
         return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0}
@@ -125,18 +150,88 @@ def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
     }
 
 
-def _coalesce(*values, default=None):
-    for value in values:
-        if value is None:
-            continue
+def _history_based_quote(ticker: str) -> dict:
+    return _quote_from_history_df(_history_sync(ticker, period="5d"), ticker)
+
+
+def _load_snapshot(ticker: str, *, history_period: str = "6mo", include_info: bool = True) -> _TickerSnapshot:
+    ticker_obj = yf.Ticker(ticker)
+    history_df = _history_sync(ticker, period=history_period)
+    history_rows = _format_rows(history_df)
+    quote = _quote_from_history_df(history_df, ticker) if not history_df.empty else _history_based_quote(ticker)
+
+    if include_info:
         try:
-            if pd.isna(value):
-                continue
-        except TypeError:
-            pass
-        if value != "":
-            return value
-    return default
+            info = _as_dict(ticker_obj.info or {})
+        except Exception as exc:
+            log.debug("info fetch failed for %s: %s", ticker, exc)
+            info = {}
+    else:
+        info = {}
+
+    try:
+        fast_info = ticker_obj.fast_info
+    except Exception as exc:
+        log.debug("fast_info fetch failed for %s: %s", ticker, exc)
+        fast_info = {}
+
+    try:
+        metadata = _as_dict(ticker_obj.history_metadata or {})
+    except Exception as exc:
+        log.debug("history_metadata fetch failed for %s: %s", ticker, exc)
+        metadata = {}
+
+    return _TickerSnapshot(
+        ticker=ticker,
+        info=info,
+        fast_info=fast_info,
+        metadata=metadata,
+        history_df=history_df,
+        history_rows=history_rows,
+        quote=quote,
+    )
+
+
+def _resolve_number(
+    snapshot: _TickerSnapshot,
+    *,
+    info_keys: tuple[str, ...] = (),
+    fast_key: str | None = None,
+    metadata_keys: tuple[str, ...] = (),
+    fallback=None,
+) -> float | None:
+    values = []
+    for key in info_keys:
+        values.append(_safe_float(snapshot.info.get(key)))
+    if fast_key:
+        values.append(_safe_float(_fast_get(snapshot.fast_info, fast_key)))
+    for key in metadata_keys:
+        values.append(_safe_float(snapshot.metadata.get(key)))
+    if fallback is not None:
+        values.append(_safe_float(fallback))
+    return _coalesce(*values, default=_safe_float(fallback))
+
+
+def _resolve_text(
+    snapshot: _TickerSnapshot,
+    *,
+    info_keys: tuple[str, ...] = (),
+    metadata_keys: tuple[str, ...] = (),
+    fallback: str,
+) -> str:
+    values = []
+    for key in info_keys:
+        values.append(snapshot.info.get(key))
+    for key in metadata_keys:
+        values.append(snapshot.metadata.get(key))
+    return str(_coalesce(*values, default=fallback))
+
+
+def _history_stat(rows: list[dict], key: str, *, window: int, reducer):
+    values = [float(item.get(key, 0) or 0) for item in rows[-window:] if item.get(key) is not None]
+    if not values:
+        return None
+    return reducer(values)
 
 
 async def get_index_quote(ticker: str) -> dict:
@@ -144,28 +239,14 @@ async def get_index_quote(ticker: str) -> dict:
 
     async def _fetch():
         def _sync():
-            quote = _history_based_quote(ticker)
-            ticker_obj = yf.Ticker(ticker)
-            try:
-                fast_info = ticker_obj.fast_info
-            except Exception:
-                fast_info = {}
-
-            price = _coalesce(
-                _safe_float(_fast_get(fast_info, "lastPrice")),
-                quote["price"],
-                default=0.0,
-            )
-            prev = _coalesce(
-                _safe_float(_fast_get(fast_info, "previousClose")),
-                quote["prev_close"],
-                default=0.0,
-            )
+            snapshot = _load_snapshot(ticker, history_period="5d", include_info=False)
+            price = _resolve_number(snapshot, fast_key="lastPrice", fallback=snapshot.quote["price"]) or 0.0
+            prev = _resolve_number(snapshot, fast_key="previousClose", fallback=snapshot.quote["prev_close"]) or 0.0
             return {
                 "ticker": ticker,
-                "price": round(float(price or 0.0), 2),
-                "prev_close": round(float(prev or 0.0), 2),
-                "change_pct": round(((float(price or 0.0) - float(prev or 0.0)) / float(prev or 1.0) * 100.0) if prev else 0.0, 2),
+                "price": round(price, 2),
+                "prev_close": round(prev, 2),
+                "change_pct": round(((price - prev) / prev * 100.0) if prev else 0.0, 2),
             }
 
         return await asyncio.to_thread(_sync)
@@ -178,107 +259,79 @@ async def get_stock_info(ticker: str) -> dict:
 
     async def _fetch():
         def _sync():
-            ticker_obj = yf.Ticker(ticker)
-            history_df = _history_sync(ticker, period="6mo")
-            history_rows = _format_rows(history_df)
-            quote = _quote_from_history_df(history_df, ticker)
-
-            try:
-                info = ticker_obj.info or {}
-            except Exception as exc:
-                log.debug("info fetch failed for %s: %s", ticker, exc)
-                info = {}
-
-            try:
-                fast_info = ticker_obj.fast_info
-            except Exception:
-                fast_info = {}
-
-            try:
-                metadata = ticker_obj.history_metadata or {}
-            except Exception:
-                metadata = {}
-
-            current_price = _coalesce(
-                _safe_float(info.get("currentPrice") if isinstance(info, dict) else None),
-                _safe_float(info.get("regularMarketPrice") if isinstance(info, dict) else None),
-                _safe_float(_fast_get(fast_info, "lastPrice")),
-                _safe_float(metadata.get("regularMarketPrice") if isinstance(metadata, dict) else None),
-                quote["price"],
-                default=0.0,
+            snapshot = _load_snapshot(ticker, history_period="6mo", include_info=True)
+            current_price = _resolve_number(
+                snapshot,
+                info_keys=("currentPrice", "regularMarketPrice"),
+                fast_key="lastPrice",
+                metadata_keys=("regularMarketPrice",),
+                fallback=snapshot.quote["price"],
+            ) or 0.0
+            prev_close = _resolve_number(
+                snapshot,
+                info_keys=("previousClose",),
+                fast_key="previousClose",
+                metadata_keys=("previousClose",),
+                fallback=snapshot.quote["prev_close"],
             )
-            prev_close = _coalesce(
-                _safe_float(info.get("previousClose") if isinstance(info, dict) else None),
-                _safe_float(_fast_get(fast_info, "previousClose")),
-                _safe_float(metadata.get("previousClose") if isinstance(metadata, dict) else None),
-                quote["prev_close"],
-                default=current_price,
+            week52_high = _resolve_number(
+                snapshot,
+                info_keys=("fiftyTwoWeekHigh",),
+                metadata_keys=("fiftyTwoWeekHigh",),
+                fallback=_history_stat(snapshot.history_rows, "high", window=252, reducer=max),
             )
-
-            week52_high = _coalesce(
-                _safe_float(info.get("fiftyTwoWeekHigh") if isinstance(info, dict) else None),
-                _safe_float(metadata.get("fiftyTwoWeekHigh") if isinstance(metadata, dict) else None),
-                max((row["high"] for row in history_rows[-252:]), default=None),
+            week52_low = _resolve_number(
+                snapshot,
+                info_keys=("fiftyTwoWeekLow",),
+                metadata_keys=("fiftyTwoWeekLow",),
+                fallback=_history_stat(snapshot.history_rows, "low", window=252, reducer=min),
             )
-            week52_low = _coalesce(
-                _safe_float(info.get("fiftyTwoWeekLow") if isinstance(info, dict) else None),
-                _safe_float(metadata.get("fiftyTwoWeekLow") if isinstance(metadata, dict) else None),
-                min((row["low"] for row in history_rows[-252:]), default=None),
-            )
-            avg_volume = _coalesce(
-                _safe_float(info.get("averageVolume") if isinstance(info, dict) else None),
-                _safe_float(info.get("averageVolume10days") if isinstance(info, dict) else None),
-                _safe_float(_fast_get(fast_info, "threeMonthAverageVolume")),
-                np.mean([row["volume"] for row in history_rows[-20:]]) if history_rows else None,
+            avg_volume = _resolve_number(
+                snapshot,
+                info_keys=("averageVolume", "averageVolume10days"),
+                fast_key="threeMonthAverageVolume",
+                fallback=_history_stat(snapshot.history_rows, "volume", window=20, reducer=np.mean),
             )
 
             return {
                 "ticker": ticker,
-                "name": _coalesce(
-                    info.get("shortName") if isinstance(info, dict) else None,
-                    info.get("longName") if isinstance(info, dict) else None,
-                    metadata.get("shortName") if isinstance(metadata, dict) else None,
-                    metadata.get("longName") if isinstance(metadata, dict) else None,
-                    ticker,
+                "name": _resolve_text(
+                    snapshot,
+                    info_keys=("shortName", "longName"),
+                    metadata_keys=("shortName", "longName"),
+                    fallback=ticker,
                 ),
-                "sector": (info.get("sector") if isinstance(info, dict) else None) or "N/A",
-                "industry": (info.get("industry") if isinstance(info, dict) else None) or "N/A",
-                "market_cap": _safe_float(
-                    _coalesce(
-                        info.get("marketCap") if isinstance(info, dict) else None,
-                        _fast_get(fast_info, "marketCap"),
-                    ),
-                    0.0,
-                )
-                or 0.0,
-                "current_price": round(float(current_price or 0.0), 2),
-                "prev_close": round(float(prev_close or 0.0), 2),
-                "pe_ratio": _safe_float(info.get("trailingPE") if isinstance(info, dict) else None),
-                "forward_pe": _safe_float(info.get("forwardPE") if isinstance(info, dict) else None),
-                "pb_ratio": _safe_float(info.get("priceToBook") if isinstance(info, dict) else None),
-                "peg_ratio": _safe_float(info.get("pegRatio") if isinstance(info, dict) else None),
-                "ev_ebitda": _safe_float(info.get("enterpriseToEbitda") if isinstance(info, dict) else None),
-                "dividend_yield": _safe_float(info.get("dividendYield") if isinstance(info, dict) else None),
-                "payout_ratio": _safe_float(info.get("payoutRatio") if isinstance(info, dict) else None),
-                "beta": _safe_float(info.get("beta") if isinstance(info, dict) else None),
-                "52w_high": _safe_float(week52_high),
-                "52w_low": _safe_float(week52_low),
-                "avg_volume": _safe_float(avg_volume),
-                "target_mean": _safe_float(info.get("targetMeanPrice") if isinstance(info, dict) else None),
-                "target_median": _safe_float(info.get("targetMedianPrice") if isinstance(info, dict) else None),
-                "target_high": _safe_float(info.get("targetHighPrice") if isinstance(info, dict) else None),
-                "target_low": _safe_float(info.get("targetLowPrice") if isinstance(info, dict) else None),
-                "recommendation": info.get("recommendationKey") if isinstance(info, dict) else None,
-                "num_analysts": _safe_int(info.get("numberOfAnalystOpinions") if isinstance(info, dict) else None, 0),
-                "roe": _safe_float(info.get("returnOnEquity") if isinstance(info, dict) else None),
-                "roa": _safe_float(info.get("returnOnAssets") if isinstance(info, dict) else None),
-                "debt_to_equity": _safe_float(info.get("debtToEquity") if isinstance(info, dict) else None),
-                "current_ratio": _safe_float(info.get("currentRatio") if isinstance(info, dict) else None),
-                "free_cashflow": _safe_float(info.get("freeCashflow") if isinstance(info, dict) else None),
-                "operating_margins": _safe_float(info.get("operatingMargins") if isinstance(info, dict) else None),
-                "profit_margins": _safe_float(info.get("profitMargins") if isinstance(info, dict) else None),
-                "revenue_growth": _safe_float(info.get("revenueGrowth") if isinstance(info, dict) else None),
-                "earnings_growth": _safe_float(info.get("earningsGrowth") if isinstance(info, dict) else None),
+                "sector": snapshot.info.get("sector") or "N/A",
+                "industry": snapshot.info.get("industry") or "N/A",
+                "market_cap": _resolve_number(snapshot, info_keys=("marketCap",), fast_key="marketCap", fallback=0.0) or 0.0,
+                "current_price": round(current_price, 2),
+                "prev_close": round(float(prev_close or current_price), 2),
+                "pe_ratio": _resolve_number(snapshot, info_keys=("trailingPE",)),
+                "forward_pe": _resolve_number(snapshot, info_keys=("forwardPE",)),
+                "pb_ratio": _resolve_number(snapshot, info_keys=("priceToBook",)),
+                "peg_ratio": _resolve_number(snapshot, info_keys=("pegRatio",)),
+                "ev_ebitda": _resolve_number(snapshot, info_keys=("enterpriseToEbitda",)),
+                "dividend_yield": _resolve_number(snapshot, info_keys=("dividendYield",)),
+                "payout_ratio": _resolve_number(snapshot, info_keys=("payoutRatio",)),
+                "beta": _resolve_number(snapshot, info_keys=("beta",)),
+                "52w_high": week52_high,
+                "52w_low": week52_low,
+                "avg_volume": avg_volume,
+                "target_mean": _resolve_number(snapshot, info_keys=("targetMeanPrice",)),
+                "target_median": _resolve_number(snapshot, info_keys=("targetMedianPrice",)),
+                "target_high": _resolve_number(snapshot, info_keys=("targetHighPrice",)),
+                "target_low": _resolve_number(snapshot, info_keys=("targetLowPrice",)),
+                "recommendation": snapshot.info.get("recommendationKey"),
+                "num_analysts": _safe_int(snapshot.info.get("numberOfAnalystOpinions"), 0),
+                "roe": _resolve_number(snapshot, info_keys=("returnOnEquity",)),
+                "roa": _resolve_number(snapshot, info_keys=("returnOnAssets",)),
+                "debt_to_equity": _resolve_number(snapshot, info_keys=("debtToEquity",)),
+                "current_ratio": _resolve_number(snapshot, info_keys=("currentRatio",)),
+                "free_cashflow": _resolve_number(snapshot, info_keys=("freeCashflow",)),
+                "operating_margins": _resolve_number(snapshot, info_keys=("operatingMargins",)),
+                "profit_margins": _resolve_number(snapshot, info_keys=("profitMargins",)),
+                "revenue_growth": _resolve_number(snapshot, info_keys=("revenueGrowth",)),
+                "earnings_growth": _resolve_number(snapshot, info_keys=("earningsGrowth",)),
             }
 
         return await asyncio.to_thread(_sync)

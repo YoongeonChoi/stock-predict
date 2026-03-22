@@ -7,6 +7,8 @@ import { useParams } from "next/navigation";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
+import MetricValueCard from "@/components/MetricValueCard";
+import PivotLevelsCard from "@/components/PivotLevelsCard";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
@@ -25,10 +27,6 @@ import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/util
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
   return new Error(typeof error === "string" ? error : "종목 상세를 불러오지 못했습니다.");
-}
-
-function valueOrPending(value: number | null | undefined, priceKey: string) {
-  return value == null ? "미정" : formatPrice(value, priceKey);
 }
 
 export default function StockPage() {
@@ -127,6 +125,25 @@ export default function StockPage() {
         { label: "기술 지표", data: composite.technical, color: "bg-cyan-500" },
       ]
     : [];
+  const overviewMetrics = [
+    { label: "시가총액", value: formatMarketCap(stock.market_cap, priceKey) },
+    { label: "P/E", value: stock.pe_ratio?.toFixed(2) ?? "없음" },
+    { label: "P/B", value: stock.pb_ratio?.toFixed(2) ?? "없음" },
+    { label: "EV/EBITDA", value: stock.ev_ebitda?.toFixed(2) ?? "없음" },
+  ];
+  const guideLevels = [
+    { label: "매수 하단", value: formatPrice(bsg.buy_zone_low, priceKey), toneClass: "bg-blue-500/10", valueClassName: "font-bold text-blue-500" },
+    { label: "매수 상단", value: formatPrice(bsg.buy_zone_high, priceKey), toneClass: "bg-blue-500/10", valueClassName: "font-bold text-blue-500" },
+    { label: "적정가", value: formatPrice(bsg.fair_value, priceKey), toneClass: "bg-emerald-500/10", valueClassName: "font-bold text-emerald-500" },
+    { label: "매도 하단", value: formatPrice(bsg.sell_zone_low, priceKey), toneClass: "bg-red-500/10", valueClassName: "font-bold text-red-500" },
+    { label: "매도 상단", value: formatPrice(bsg.sell_zone_high, priceKey), toneClass: "bg-red-500/10", valueClassName: "font-bold text-red-500" },
+  ];
+  const financialMetrics = [
+    { label: "PEG", value: stock.peg_ratio?.toFixed(2) ?? "없음" },
+    { label: "배당수익률", value: stock.dividend.dividend_yield != null ? `${(stock.dividend.dividend_yield * 100).toFixed(2)}%` : "없음" },
+    { label: "배당성향", value: stock.dividend.payout_ratio != null ? `${(stock.dividend.payout_ratio * 100).toFixed(2)}%` : "없음" },
+    { label: "최근 분기 수", value: String(stock.financials.length) },
+  ];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -150,10 +167,12 @@ export default function StockPage() {
       {stock.errors && stock.errors.length > 0 ? <WarningBanner codes={stock.errors} /> : null}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card !p-4"><div className="text-xs text-text-secondary">시가총액</div><div className="font-bold mt-2">{formatMarketCap(stock.market_cap, priceKey)}</div></div>
-        <div className="card !p-4"><div className="text-xs text-text-secondary">P/E</div><div className="font-bold mt-2">{stock.pe_ratio?.toFixed(2) ?? "없음"}</div></div>
-        <div className="card !p-4"><div className="text-xs text-text-secondary">P/B</div><div className="font-bold mt-2">{stock.pb_ratio?.toFixed(2) ?? "없음"}</div></div>
-        <div className="card !p-4"><div className="text-xs text-text-secondary">EV/EBITDA</div><div className="font-bold mt-2">{stock.ev_ebitda?.toFixed(2) ?? "없음"}</div></div>
+        {overviewMetrics.map((item) => (
+          <div key={item.label} className="card !p-4">
+            <div className="text-xs text-text-secondary">{item.label}</div>
+            <div className="font-bold mt-2">{item.value}</div>
+          </div>
+        ))}
       </div>
 
       {stock.analysis_summary ? (
@@ -237,11 +256,15 @@ export default function StockPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-          <div className="p-3 rounded-lg bg-blue-500/10"><div className="text-xs text-text-secondary">매수 하단</div><div className="font-bold text-blue-500">{formatPrice(bsg.buy_zone_low, priceKey)}</div></div>
-          <div className="p-3 rounded-lg bg-blue-500/10"><div className="text-xs text-text-secondary">매수 상단</div><div className="font-bold text-blue-500">{formatPrice(bsg.buy_zone_high, priceKey)}</div></div>
-          <div className="p-3 rounded-lg bg-emerald-500/10"><div className="text-xs text-text-secondary">적정가</div><div className="font-bold text-emerald-500">{formatPrice(bsg.fair_value, priceKey)}</div></div>
-          <div className="p-3 rounded-lg bg-red-500/10"><div className="text-xs text-text-secondary">매도 하단</div><div className="font-bold text-red-500">{formatPrice(bsg.sell_zone_low, priceKey)}</div></div>
-          <div className="p-3 rounded-lg bg-red-500/10"><div className="text-xs text-text-secondary">매도 상단</div><div className="font-bold text-red-500">{formatPrice(bsg.sell_zone_high, priceKey)}</div></div>
+          {guideLevels.map((item) => (
+            <MetricValueCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              toneClass={item.toneClass}
+              valueClassName={item.valueClassName}
+            />
+          ))}
         </div>
 
         <div className="text-sm text-text-secondary">손익비: <strong>{bsg.risk_reward_ratio.toFixed(2)}</strong></div>
@@ -266,22 +289,8 @@ export default function StockPage() {
           <div className="card">
             <h2 className="font-semibold mb-3">피벗 포인트</h2>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <h4 className="text-xs text-text-secondary mb-2">클래식</h4>
-                <div className="space-y-1 text-xs">
-                  {(["r3", "r2", "r1", "pivot", "s1", "s2", "s3"] as const).map((key) => (
-                    <div key={key} className="flex justify-between"><span className={key.startsWith("r") ? "text-positive" : key.startsWith("s") ? "text-negative" : "font-bold"}>{key.toUpperCase()}</span><span className="font-mono">{pivotPoints.classic[key]?.toFixed(2)}</span></div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs text-text-secondary mb-2">피보나치</h4>
-                <div className="space-y-1 text-xs">
-                  {(["r3", "r2", "r1", "pivot", "s1", "s2", "s3"] as const).map((key) => (
-                    <div key={key} className="flex justify-between"><span className={key.startsWith("r") ? "text-positive" : key.startsWith("s") ? "text-negative" : "font-bold"}>{key.toUpperCase()}</span><span className="font-mono">{pivotPoints.fibonacci[key]?.toFixed(2)}</span></div>
-                  ))}
-                </div>
-              </div>
+              <PivotLevelsCard title="클래식" levels={pivotPoints.classic} />
+              <PivotLevelsCard title="피보나치" levels={pivotPoints.fibonacci} />
             </div>
           </div>
         ) : null}
@@ -333,10 +342,9 @@ export default function StockPage() {
         <div className="card">
           <h2 className="font-semibold mb-3">재무와 배당</h2>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-lg bg-border/30 p-3"><div className="text-xs text-text-secondary">PEG</div><div className="font-semibold mt-1">{stock.peg_ratio?.toFixed(2) ?? "없음"}</div></div>
-            <div className="rounded-lg bg-border/30 p-3"><div className="text-xs text-text-secondary">배당수익률</div><div className="font-semibold mt-1">{stock.dividend.dividend_yield != null ? `${(stock.dividend.dividend_yield * 100).toFixed(2)}%` : "없음"}</div></div>
-            <div className="rounded-lg bg-border/30 p-3"><div className="text-xs text-text-secondary">배당성향</div><div className="font-semibold mt-1">{stock.dividend.payout_ratio != null ? `${(stock.dividend.payout_ratio * 100).toFixed(2)}%` : "없음"}</div></div>
-            <div className="rounded-lg bg-border/30 p-3"><div className="text-xs text-text-secondary">최근 분기 수</div><div className="font-semibold mt-1">{stock.financials.length}</div></div>
+            {financialMetrics.map((item) => (
+              <MetricValueCard key={item.label} label={item.label} value={item.value} />
+            ))}
           </div>
         </div>
       </div>
