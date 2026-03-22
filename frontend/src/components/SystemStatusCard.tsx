@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 
@@ -44,7 +44,7 @@ export default function SystemStatusCard({ diagnostics }: Props) {
 
       <div className="flex items-center justify-end mb-4">
         <Link href="/lab" className="text-sm text-accent hover:underline">
-          Prediction Lab 열기
+          예측 연구실 열기
         </Link>
       </div>
 

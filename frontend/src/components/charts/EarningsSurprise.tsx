@@ -33,7 +33,7 @@ export default function EarningsSurprise({ data }: Props) {
             <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} width={40} />
             <Tooltip
               contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-              formatter={(value: number, name: string) => [value?.toFixed(2), name === "estimate" ? "Estimate" : "Actual"]}
+              formatter={(value: number, name: string) => [value?.toFixed(2), name === "estimate" ? "예상 EPS" : "실제 EPS"]}
             />
             <ReferenceLine y={0} stroke="var(--border)" />
             <Bar dataKey="estimate" fill="var(--text-secondary)" opacity={0.4} radius={[2, 2, 0, 0]} />
@@ -42,8 +42,8 @@ export default function EarningsSurprise({ data }: Props) {
         </ResponsiveContainer>
       </div>
       <div className="flex gap-4 mt-1 text-[10px] text-text-secondary">
-        <span><span className="inline-block w-3 h-2 bg-text-secondary/40 mr-1 rounded-sm" /> Estimate</span>
-        <span><span className="inline-block w-3 h-2 bg-accent mr-1 rounded-sm" /> Actual</span>
+        <span><span className="inline-block w-3 h-2 bg-text-secondary/40 mr-1 rounded-sm" /> 예상 EPS</span>
+        <span><span className="inline-block w-3 h-2 bg-accent mr-1 rounded-sm" /> 실제 EPS</span>
       </div>
     </div>
   );

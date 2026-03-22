@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { HeatmapData, MarketMovers, SystemDiagnostics } from "@/lib/api";
+import type { HeatmapData, MarketMovers } from "@/lib/api";
 import type { CountryListItem, OpportunityRadarResponse } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
-import SystemStatusCard from "@/components/SystemStatusCard";
 
 interface MarketIndicator {
   name: string;
@@ -21,11 +20,10 @@ export default function HomePage() {
   const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
-  const [activeCountry, setActiveCountry] = useState("US");
+  const [activeCountry, setActiveCountry] = useState("KR");
   const [movers, setMovers] = useState<MarketMovers | null>(null);
-  const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
   const [radarData, setRadarData] = useState<OpportunityRadarResponse | null>(null);
-  const [radarCountry, setRadarCountry] = useState("US");
+  const [radarCountry, setRadarCountry] = useState("KR");
   const [radarLoading, setRadarLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -34,12 +32,11 @@ export default function HomePage() {
     Promise.all([
       api.getCountries().then(setCountries).catch(console.error),
       api.getMarketIndicators().then(setIndicators).catch(console.error),
-      api.getDiagnostics().then(setDiagnostics).catch(console.error),
     ]).finally(() => setLoading(false));
-    api.getMarketMovers("US").then(setMovers).catch(console.error);
+    api.getMarketMovers("KR").then(setMovers).catch(console.error);
     setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
-    loadHeatmap("US");
-    loadRadar("US");
+    loadHeatmap("KR");
+    loadRadar("KR");
   }, []);
 
   const loadHeatmap = (code: string) => {
@@ -67,6 +64,11 @@ export default function HomePage() {
     "US 10Y": "%",
   };
 
+  const orderedCountries = [...countries].sort((a, b) => {
+    const priority: Record<string, number> = { KR: 0, US: 1, JP: 2 };
+    return (priority[a.code] ?? 9) - (priority[b.code] ?? 9);
+  });
+
   const fmtIndicator = (indicator: MarketIndicator) => {
     const unit = indicatorUnit[indicator.name];
     const value = (indicator.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -79,17 +81,20 @@ export default function HomePage() {
     <div className="max-w-6xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Stock Predict</h1>
-        {lastUpdated && <span className="text-xs text-text-secondary ml-2">마지막 갱신: {lastUpdated}</span>}
-        <p className="text-text-secondary mt-1">미국, 한국, 일본 시장을 한 화면에서 읽는 AI 주식 분석 워크스테이션</p>
+        <div className="flex flex-wrap items-center gap-3 mt-1">
+          {lastUpdated ? <span className="text-xs text-text-secondary">마지막 갱신: {lastUpdated}</span> : null}
+          <Link href="/settings" className="text-xs text-accent hover:underline">
+            설정 및 시스템 보기
+          </Link>
+        </div>
+        <p className="text-text-secondary mt-1">한국 시장을 중심으로 미국·일본까지 함께 읽는 AI 주식 분석 워크스테이션</p>
       </div>
-
-      {diagnostics ? <SystemStatusCard diagnostics={diagnostics} /> : null}
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-lg">지금 가장 강한 셋업</h2>
-            <p className="text-sm text-text-secondary mt-1">단기 기대수익과 시장 체제를 함께 반영해 각 시장의 핵심 기회를 추립니다.</p>
+            <p className="text-sm text-text-secondary mt-1">기본값은 한국 시장이며, 단기 기대수익과 시장 체제를 함께 반영해 핵심 기회를 추립니다.</p>
           </div>
           <div className="flex gap-1.5">
             {["US", "KR", "JP"].map((code) => (
@@ -128,7 +133,7 @@ export default function HomePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {countries.map((country) => (
+          {orderedCountries.map((country) => (
             <Link
               key={country.code}
               href={`/country/${country.code}`}
@@ -190,7 +195,7 @@ export default function HomePage() {
       {movers && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="card !p-4">
-            <h3 className="font-semibold text-sm mb-3 text-positive">상승 상위</h3>
+            <h3 className="font-semibold text-sm mb-3 text-positive">한국 시장 상승 상위</h3>
             <div className="space-y-2">
               {movers.gainers.map((stock) => (
                 <Link key={stock.ticker} href={`/stock/${stock.ticker}`} className="flex justify-between items-center text-sm hover:text-accent transition-colors">
@@ -204,7 +209,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="card !p-4">
-            <h3 className="font-semibold text-sm mb-3 text-negative">하락 상위</h3>
+            <h3 className="font-semibold text-sm mb-3 text-negative">한국 시장 하락 상위</h3>
             <div className="space-y-2">
               {movers.losers.map((stock) => (
                 <Link key={stock.ticker} href={`/stock/${stock.ticker}`} className="flex justify-between items-center text-sm hover:text-accent transition-colors">

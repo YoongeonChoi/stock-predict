@@ -107,6 +107,7 @@ SP_5005 = lambda d="": AppError("SP-5005", "Cache operation failed", d)
 SP_5006 = lambda d="": AppError("SP-5006", "System diagnostics failed", d)
 SP_5007 = lambda d="": AppError("SP-5007", "Prediction research query failed", d)
 SP_5008 = lambda d="": AppError("SP-5008", "Portfolio analytics failed", d)
+SP_5009 = lambda d="": AppError("SP-5009", "External research archive sync failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -124,6 +125,11 @@ SP_6007 = lambda field="period": AppError(
     "SP-6007",
     f"Invalid calendar parameter: {field}",
     "Provide month 1-12 and year between 2000 and 2100.",
+)
+SP_6008 = lambda field="region_code": AppError(
+    "SP-6008",
+    f"Invalid research archive parameter: {field}",
+    "Allowed region_code values are US, KR, JP, GLOBAL.",
 )
 
 # ---------------------------------------------------------------------------

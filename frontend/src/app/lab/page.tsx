@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 
-import PredictionLabDashboard from "@/components/PredictionLabDashboard";
 import ErrorBanner from "@/components/ErrorBanner";
+import PredictionLabDashboard from "@/components/PredictionLabDashboard";
 import { api } from "@/lib/api";
 import type { PredictionLabResponse } from "@/lib/api";
 
@@ -31,26 +31,23 @@ export default function LabPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Prediction Lab</h1>
-        <p className="text-text-secondary mt-1">실전 예측 엔진의 검증, 보정, 연구 지표를 한곳에서 확인하는 공간입니다.</p>
+        <h1 className="text-2xl font-bold tracking-tight">예측 연구실</h1>
+        <p className="text-text-secondary mt-1">예측 방향 적중률, 밴드 적중률, 평균 오차, 보정 상태를 한 화면에서 점검합니다.</p>
       </div>
 
       {error ? <ErrorBanner error={error} onRetry={() => window.location.reload()} /> : null}
 
       {loading ? (
         <div className="space-y-4 animate-pulse">
-          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
-            {[1, 2, 3, 4, 5].map((item) => <div key={item} className="h-28 bg-border rounded-xl" />)}
-          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">{[1, 2, 3, 4, 5].map((item) => <div key={item} className="h-28 bg-border rounded-xl" />)}</div>
           <div className="h-96 bg-border rounded-xl" />
           <div className="h-96 bg-border rounded-xl" />
         </div>
       ) : data ? (
         <PredictionLabDashboard data={data} />
       ) : (
-        <div className="card text-text-secondary">Prediction Lab 데이터가 아직 준비되지 않았습니다.</div>
+        <div className="card text-text-secondary">예측 연구실 데이터를 아직 불러오지 못했습니다.</div>
       )}
     </div>
   );
 }
-

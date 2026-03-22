@@ -31,6 +31,33 @@ CREATE TABLE IF NOT EXISTS archive_reports (
     created_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS research_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    region_code TEXT NOT NULL,
+    organization_type TEXT NOT NULL,
+    language TEXT NOT NULL,
+    category TEXT,
+    title TEXT NOT NULL,
+    summary TEXT,
+    published_at TEXT NOT NULL,
+    report_url TEXT NOT NULL,
+    pdf_url TEXT,
+    metadata_json TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_research_reports_unique
+ON research_reports(source_id, report_url);
+
+CREATE INDEX IF NOT EXISTS idx_research_reports_region
+ON research_reports(region_code, published_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_research_reports_published
+ON research_reports(published_at DESC, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS forecast_accuracy (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     report_id INTEGER REFERENCES archive_reports(id),
@@ -221,6 +248,143 @@ class Database:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def research_report_upsert(self, report: dict):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                INSERT INTO research_reports (
+                    source_id, source_name, region_code, organization_type, language,
+                    category, title, summary, published_at, report_url, pdf_url,
+                    metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_id, report_url)
+                DO UPDATE SET
+                    source_name = excluded.source_name,
+                    region_code = excluded.region_code,
+                    organization_type = excluded.organization_type,
+                    language = excluded.language,
+                    category = excluded.category,
+                    title = excluded.title,
+                    summary = excluded.summary,
+                    published_at = excluded.published_at,
+                    pdf_url = excluded.pdf_url,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    report["source_id"],
+                    report["source_name"],
+                    report["region_code"],
+                    report["organization_type"],
+                    report["language"],
+                    report.get("category"),
+                    report["title"],
+                    report.get("summary"),
+                    report["published_at"],
+                    report["report_url"],
+                    report.get("pdf_url"),
+                    json.dumps(report.get("metadata"), ensure_ascii=False, default=str),
+                    time.time(),
+                    time.time(),
+                ),
+            )
+            await conn.commit()
+
+    async def research_report_list(
+        self,
+        region_code: str | None = None,
+        source_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            clauses, params = ["1=1"], []
+            if region_code:
+                clauses.append("region_code = ?")
+                params.append(region_code)
+            if source_id:
+                clauses.append("source_id = ?")
+                params.append(source_id)
+            params.append(limit)
+            cur = await conn.execute(
+                f"""
+                SELECT *
+                FROM research_reports
+                WHERE {' AND '.join(clauses)}
+                ORDER BY published_at DESC, updated_at DESC
+                LIMIT ?
+                """,
+                params,
+            )
+            rows = [dict(r) for r in await cur.fetchall()]
+            for row in rows:
+                if row.get("metadata_json"):
+                    try:
+                        row["metadata"] = json.loads(row["metadata_json"])
+                    except json.JSONDecodeError:
+                        row["metadata"] = {}
+                else:
+                    row["metadata"] = {}
+            return rows
+
+    async def research_report_status(self, today_iso: str) -> dict:
+        async with aiosqlite.connect(self.db_path) as conn:
+            total_cur = await conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_reports,
+                    COUNT(DISTINCT source_id) AS source_count,
+                    MAX(updated_at) AS last_synced_at
+                FROM research_reports
+                """
+            )
+            total_row = await total_cur.fetchone()
+
+            today_cur = await conn.execute(
+                """
+                SELECT COUNT(*) AS todays_reports
+                FROM research_reports
+                WHERE substr(published_at, 1, 10) = ?
+                """,
+                (today_iso,),
+            )
+            today_row = await today_cur.fetchone()
+
+            region_cur = await conn.execute(
+                """
+                SELECT region_code, COUNT(*) AS total
+                FROM research_reports
+                GROUP BY region_code
+                ORDER BY total DESC
+                """
+            )
+            region_rows = await region_cur.fetchall()
+
+            source_cur = await conn.execute(
+                """
+                SELECT source_id, source_name, COUNT(*) AS total
+                FROM research_reports
+                GROUP BY source_id, source_name
+                ORDER BY total DESC, source_name ASC
+                """
+            )
+            source_rows = await source_cur.fetchall()
+
+            return {
+                "total_reports": total_row[0] or 0,
+                "source_count": total_row[1] or 0,
+                "last_synced_at": total_row[2],
+                "todays_reports": today_row[0] or 0,
+                "regions": [
+                    {"region_code": row[0], "total": row[1]}
+                    for row in region_rows
+                ],
+                "sources": [
+                    {"source_id": row[0], "source_name": row[1], "total": row[2]}
+                    for row in source_rows
+                ],
+            }
 
     # ── forecast accuracy ──────────────────────────────────
 

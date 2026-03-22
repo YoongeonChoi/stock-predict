@@ -238,6 +238,69 @@ export interface PredictionAccuracyStats {
   avg_confidence: number;
 }
 
+export interface ArchiveEntry {
+  id: number;
+  report_type: string;
+  country_code?: string | null;
+  sector_id?: string | null;
+  ticker?: string | null;
+  created_at: number;
+  preview: string;
+}
+
+export interface ResearchArchiveSourceResult {
+  source_id: string;
+  source_name: string;
+  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  count: number;
+}
+
+export interface ResearchArchiveSourceCount {
+  source_id: string;
+  source_name: string;
+  total: number;
+}
+
+export interface ResearchArchiveRegionCount {
+  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  total: number;
+}
+
+export interface ResearchArchiveStatus {
+  refreshed_on?: string | null;
+  refreshed_at?: string | null;
+  processed_total: number;
+  error_count: number;
+  total_reports: number;
+  source_count: number;
+  todays_reports: number;
+  last_synced_at?: number | null;
+  source_results: ResearchArchiveSourceResult[];
+  sources: ResearchArchiveSourceCount[];
+  regions: ResearchArchiveRegionCount[];
+  errors: { source_id: string; source_name: string; detail: string }[];
+}
+
+export interface ResearchArchiveEntry {
+  id: number;
+  source_id: string;
+  source_name: string;
+  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  organization_type: string;
+  language: string;
+  category?: string | null;
+  title: string;
+  summary?: string | null;
+  published_at: string;
+  report_url: string;
+  pdf_url?: string | null;
+  has_pdf: boolean;
+  is_new_today: boolean;
+  metadata: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface PredictionBreakdownRow {
   label: string;
   total: number;
@@ -334,6 +397,8 @@ export interface SystemDiagnostics {
   forecast_models: ForecastModelSummary[];
   prediction_accuracy?: PredictionAccuracyStats | null;
   prediction_accuracy_error?: string | null;
+  research_archive?: ResearchArchiveStatus | null;
+  research_archive_error?: string | null;
 }
 
 export interface CalendarMajorEvent {
@@ -411,9 +476,19 @@ export const api = {
   addWatchlist: (ticker: string, country_code = "US") => post(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
-  getArchive: () => get<unknown[]>("/api/archive"),
+  getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
   getPredictionAccuracy: () => get<PredictionAccuracyStats>("/api/archive/accuracy/stats"),
+  getResearchArchive: (regionCode?: "US" | "KR" | "JP" | "GLOBAL", limit = 40, autoRefresh = true) => {
+    const qs = new URLSearchParams();
+    if (regionCode) qs.set("region_code", regionCode);
+    qs.set("limit", String(limit));
+    qs.set("auto_refresh", String(autoRefresh));
+    return get<ResearchArchiveEntry[]>(`/api/archive/research?${qs.toString()}`);
+  },
+  getResearchArchiveStatus: (refreshIfMissing = false) =>
+    get<ResearchArchiveStatus>(`/api/archive/research/status?refresh_if_missing=${refreshIfMissing}`),
+  refreshResearchArchive: () => post("/api/archive/research/refresh"),
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
   getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),

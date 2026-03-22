@@ -9,7 +9,7 @@ from app.database import db
 from app.errors import SP_9999
 from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
-from app.services import archive_service
+from app.services import archive_service, research_archive_service
 from app.version import APP_VERSION
 
 logging.basicConfig(
@@ -43,6 +43,22 @@ async def lifespan(app: FastAPI):
         )
     else:
         upsert_startup_task("prediction_accuracy_refresh", "ok", "Prediction accuracy refresh completed.")
+
+    upsert_startup_task("research_archive_sync", "running", "Syncing curated public research archive.")
+    try:
+        await asyncio.wait_for(
+            research_archive_service.sync_public_research_reports(force=False),
+            timeout=35,
+        )
+    except Exception as exc:
+        startup_log.warning("Research archive sync failed during startup: %s", exc, exc_info=True)
+        upsert_startup_task(
+            "research_archive_sync",
+            "warning",
+            f"Startup continued without external research refresh: {exc}",
+        )
+    else:
+        upsert_startup_task("research_archive_sync", "ok", "Curated research archive refresh completed.")
     yield
 
 

@@ -64,7 +64,7 @@ function impactLabel(impact: CalendarEvent["impact"]) {
 
 export default function CalendarPage() {
   const today = new Date();
-  const [country, setCountry] = useState("US");
+  const [country, setCountry] = useState("KR");
   const [data, setData] = useState<CalendarResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -132,7 +132,7 @@ export default function CalendarPage() {
       <div className="relative overflow-hidden rounded-[28px] border border-border bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_35%),radial-gradient(circle_at_top_right,rgba(244,114,182,0.14),transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.78))] px-6 py-6">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
           <div className="max-w-2xl">
-            <div className="text-xs uppercase tracking-[0.22em] text-sky-200/80">Monthly Market Calendar</div>
+            <div className="text-xs uppercase tracking-[0.22em] text-sky-200/80">?? ?? ???</div>
             <h1 className="text-3xl font-bold mt-2">시장 일정 캘린더</h1>
             <p className="text-sm text-slate-300 mt-3 leading-relaxed">
               월을 넘길 때마다 해당 월의 경제 일정과 실적 일정을 다시 동기화합니다. 색상과 칩만 봐도 정책 일정, 경제지표, 실적 이벤트를 한눈에 구분할 수 있게 구성했습니다.

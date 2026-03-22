@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.config import get_settings
 from app.runtime import get_runtime_state
-from app.services import archive_service
+from app.services import archive_service, research_archive_service
 from app.version import APP_VERSION
 
 
@@ -30,10 +30,19 @@ async def get_diagnostics() -> dict:
 
     accuracy = None
     accuracy_error = None
+    research_archive = None
+    research_archive_error = None
     try:
         accuracy = await archive_service.get_accuracy(refresh=False)
     except Exception as exc:
         accuracy_error = str(exc)
+
+    try:
+        research_archive = await research_archive_service.get_public_research_status(
+            refresh_if_missing=False
+        )
+    except Exception as exc:
+        research_archive_error = str(exc)
 
     data_sources = [
         _source(
@@ -74,10 +83,17 @@ async def get_diagnostics() -> dict:
             "한국 시장에서만 사용하며 데이터가 비면 모델이 자동으로 중립 처리합니다.",
             status="best_effort",
         ),
+        _source(
+            "공식 기관 리서치 아카이브",
+            True,
+            "Fed·KDI·한국은행·BOJ·BIS 공식 리포트 큐레이션",
+            "하루 한 번 동기화하며 PDF가 있으면 바로 연결하고, 없으면 원문 링크를 제공합니다.",
+            status="available" if research_archive else "best_effort",
+        ),
     ]
 
     status = runtime_state["status"]
-    if accuracy_error and status == "ok":
+    if (accuracy_error or research_archive_error) and status == "ok":
         status = "degraded"
 
     return {
@@ -110,5 +126,7 @@ async def get_diagnostics() -> dict:
         ],
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,
+        "research_archive": research_archive,
+        "research_archive_error": research_archive_error,
     }
 

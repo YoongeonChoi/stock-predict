@@ -8,16 +8,30 @@ interface Props {
 }
 
 function tone(status: string) {
-  if (status === "risk_on" || status === "bullish" || status === "strong" || status === "uptrend") {
-    return "text-positive bg-positive/10";
-  }
-  if (status === "risk_off" || status === "bearish" || status === "weak" || status === "downtrend") {
-    return "text-negative bg-negative/10";
-  }
+  if (["risk_on", "bullish", "strong", "uptrend"].includes(status)) return "text-positive bg-positive/10";
+  if (["risk_off", "bearish", "weak", "downtrend", "high"].includes(status)) return "text-negative bg-negative/10";
   return "text-warning bg-warning/10";
 }
 
-export default function MarketRegimeCard({ regime, title = "Market Regime" }: Props) {
+function label(status: string) {
+  if (status === "risk_on") return "위험 선호";
+  if (status === "risk_off") return "위험 회피";
+  if (status === "bullish") return "강세";
+  if (status === "bearish") return "약세";
+  if (status === "neutral") return "중립";
+  if (status === "strong") return "강함";
+  if (status === "weak") return "약함";
+  if (status === "uptrend") return "상승 추세";
+  if (status === "range") return "박스권";
+  if (status === "downtrend") return "하락 추세";
+  if (status === "high") return "높음";
+  if (status === "normal") return "보통";
+  if (status === "low") return "낮음";
+  if (status === "mixed") return "혼조";
+  return status.replaceAll("_", " ");
+}
+
+export default function MarketRegimeCard({ regime, title = "시장 국면" }: Props) {
   return (
     <div className="card">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
@@ -27,55 +41,41 @@ export default function MarketRegimeCard({ regime, title = "Market Regime" }: Pr
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold">{regime.score.toFixed(1)}</div>
-          <div className="text-xs text-text-secondary">Conviction {regime.conviction.toFixed(0)} / 100</div>
+          <div className="text-xs text-text-secondary">확신도 {regime.conviction.toFixed(0)} / 100</div>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
-        <span className={`px-2 py-1 rounded-full uppercase tracking-wide font-semibold ${tone(regime.stance)}`}>
-          {regime.label}
-        </span>
-        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.trend)}`}>Trend {regime.trend}</span>
-        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.volatility === "high" ? "risk_off" : regime.volatility === "low" ? "risk_on" : "neutral")}`}>
-          Volatility {regime.volatility}
-        </span>
-        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.breadth)}`}>Breadth {regime.breadth}</span>
+        <span className={`px-2 py-1 rounded-full uppercase tracking-wide font-semibold ${tone(regime.stance)}`}>국면 {label(regime.stance)}</span>
+        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.trend)}`}>추세 {label(regime.trend)}</span>
+        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.volatility === "high" ? "risk_off" : regime.volatility === "low" ? "risk_on" : "neutral")}`}>변동성 {label(regime.volatility)}</span>
+        <span className={`px-2 py-1 rounded-full font-medium ${tone(regime.breadth)}`}>시장 폭 {label(regime.breadth)}</span>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div>
-          <div className="text-xs font-medium text-text-secondary mb-2">Playbook</div>
+          <div className="text-xs font-medium text-text-secondary mb-2">실행 플레이북</div>
           <div className="space-y-2">
-            {regime.playbook.map((item) => (
-              <div key={item} className="rounded-lg border border-border px-3 py-2 text-sm">
-                {item}
-              </div>
-            ))}
+            {regime.playbook.map((item) => <div key={item} className="rounded-lg border border-border px-3 py-2 text-sm">{item}</div>)}
           </div>
           {regime.warnings.length > 0 ? (
             <div className="mt-4">
-              <div className="text-xs font-medium text-text-secondary mb-2">Warnings</div>
+              <div className="text-xs font-medium text-text-secondary mb-2">경고 신호</div>
               <div className="space-y-2">
-                {regime.warnings.map((item) => (
-                  <div key={item} className="rounded-lg bg-negative/10 text-sm px-3 py-2 text-negative">
-                    {item}
-                  </div>
-                ))}
+                {regime.warnings.map((item) => <div key={item} className="rounded-lg bg-negative/10 text-sm px-3 py-2 text-negative">{item}</div>)}
               </div>
             </div>
           ) : null}
         </div>
 
         <div>
-          <div className="text-xs font-medium text-text-secondary mb-2">Signal Stack</div>
+          <div className="text-xs font-medium text-text-secondary mb-2">세부 신호</div>
           <div className="space-y-2">
             {regime.signals.map((signal) => (
               <div key={signal.name} className="rounded-lg border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium">{signal.name}</span>
-                  <span className={`text-[11px] px-2 py-0.5 rounded-full uppercase tracking-wide font-semibold ${tone(signal.signal)}`}>
-                    {signal.signal}
-                  </span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full uppercase tracking-wide font-semibold ${tone(signal.signal)}`}>{label(signal.signal)}</span>
                 </div>
                 <div className="text-xs text-text-secondary mt-1">{signal.detail}</div>
               </div>

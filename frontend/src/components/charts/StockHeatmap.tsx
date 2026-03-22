@@ -79,7 +79,7 @@ export default function StockHeatmap({ data, loading }: Props) {
   }
 
   if (!data || !data.children?.length) {
-    return <p className="text-sm text-text-secondary text-center py-8">Loading heatmap data...</p>;
+    return <p className="text-sm text-text-secondary text-center py-8">??? ???? ???? ????...</p>;
   }
 
   const flat = data.children.flatMap((sector) =>

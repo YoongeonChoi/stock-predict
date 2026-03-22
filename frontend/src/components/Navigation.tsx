@@ -16,6 +16,7 @@ const NAV = [
   { href: "/compare", label: "비교", icon: "⇄" },
   { href: "/archive", label: "아카이브", icon: "▤" },
   { href: "/calendar", label: "캘린더", icon: "▦" },
+  { href: "/settings", label: "설정", icon: "◌" },
 ];
 
 export default function Navigation() {

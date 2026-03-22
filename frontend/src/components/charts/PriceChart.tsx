@@ -92,9 +92,9 @@ export default function PriceChart({ data, ma20, ma60, buyZone, sellZone, fairVa
               />
             </>
           )}
-          {fairValue && <ReferenceLine y={fairValue} stroke="#22c55e" strokeDasharray="6 3" label={{ value: "Fair", fill: "#22c55e", fontSize: 10 }} />}
-          {buyZone && <ReferenceLine y={buyZone.high} stroke="#3b82f6" strokeDasharray="4 4" label={{ value: "Buy", fill: "#3b82f6", fontSize: 10 }} />}
-          {sellZone && <ReferenceLine y={sellZone.low} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "Sell", fill: "#ef4444", fontSize: 10 }} />}
+          {fairValue && <ReferenceLine y={fairValue} stroke="#22c55e" strokeDasharray="6 3" label={{ value: "???", fill: "#22c55e", fontSize: 10 }} />}
+          {buyZone && <ReferenceLine y={buyZone.high} stroke="#3b82f6" strokeDasharray="4 4" label={{ value: "??", fill: "#3b82f6", fontSize: 10 }} />}
+          {sellZone && <ReferenceLine y={sellZone.low} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "??", fill: "#ef4444", fontSize: 10 }} />}
         </LineChart>
       </ResponsiveContainer>
     </div>
