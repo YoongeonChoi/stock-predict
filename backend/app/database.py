@@ -41,6 +41,42 @@ CREATE TABLE IF NOT EXISTS forecast_accuracy (
     checked_at REAL
 );
 
+CREATE TABLE IF NOT EXISTS prediction_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    country_code TEXT,
+    prediction_type TEXT NOT NULL,
+    target_date TEXT NOT NULL,
+    reference_date TEXT,
+    reference_price REAL NOT NULL,
+    predicted_close REAL NOT NULL,
+    predicted_low REAL,
+    predicted_high REAL,
+    up_probability REAL,
+    confidence REAL,
+    direction TEXT,
+    drivers_json TEXT,
+    model_version TEXT,
+    created_at REAL NOT NULL,
+    actual_close REAL,
+    actual_low REAL,
+    actual_high REAL,
+    evaluated_at REAL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_records_unique
+ON prediction_records(scope, symbol, prediction_type, target_date);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_records_target_date
+ON prediction_records(prediction_type, target_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_records_country
+ON prediction_records(country_code, prediction_type, target_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_records_model
+ON prediction_records(model_version, prediction_type, target_date DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -226,6 +262,377 @@ class Database:
                 "accuracy_rate": (row[1] or 0) / total if total > 0 else 0,
                 "avg_error_pct": round((row[2] or 0) * 100, 2),
             }
+
+    async def prediction_upsert(
+        self,
+        *,
+        scope: str,
+        symbol: str,
+        country_code: str | None,
+        prediction_type: str,
+        target_date: str,
+        reference_date: str | None,
+        reference_price: float,
+        predicted_close: float,
+        predicted_low: float | None,
+        predicted_high: float | None,
+        up_probability: float | None,
+        confidence: float | None,
+        direction: str | None,
+        drivers_json: list[dict] | None,
+        model_version: str | None,
+    ):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                INSERT INTO prediction_records (
+                    scope, symbol, country_code, prediction_type, target_date,
+                    reference_date, reference_price, predicted_close, predicted_low,
+                    predicted_high, up_probability, confidence, direction,
+                    drivers_json, model_version, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, symbol, prediction_type, target_date)
+                DO UPDATE SET
+                    country_code = excluded.country_code,
+                    reference_date = excluded.reference_date,
+                    reference_price = excluded.reference_price,
+                    predicted_close = excluded.predicted_close,
+                    predicted_low = excluded.predicted_low,
+                    predicted_high = excluded.predicted_high,
+                    up_probability = excluded.up_probability,
+                    confidence = excluded.confidence,
+                    direction = excluded.direction,
+                    drivers_json = excluded.drivers_json,
+                    model_version = excluded.model_version,
+                    created_at = excluded.created_at
+                """,
+                (
+                    scope,
+                    symbol,
+                    country_code,
+                    prediction_type,
+                    target_date,
+                    reference_date,
+                    reference_price,
+                    predicted_close,
+                    predicted_low,
+                    predicted_high,
+                    up_probability,
+                    confidence,
+                    direction,
+                    json.dumps(drivers_json, default=str) if drivers_json else None,
+                    model_version,
+                    time.time(),
+                ),
+            )
+            await conn.commit()
+
+    async def prediction_pending(self, target_date_to: str, limit: int = 200) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT * FROM prediction_records
+                WHERE actual_close IS NULL AND target_date <= ?
+                ORDER BY target_date ASC, created_at ASC
+                LIMIT ?
+                """,
+                (target_date_to, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_update_actual(
+        self,
+        *,
+        record_id: int,
+        actual_close: float,
+        actual_low: float | None,
+        actual_high: float | None,
+    ):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                UPDATE prediction_records
+                SET actual_close = ?, actual_low = ?, actual_high = ?, evaluated_at = ?
+                WHERE id = ?
+                """,
+                (actual_close, actual_low, actual_high, time.time(), record_id),
+            )
+            await conn.commit()
+
+    async def prediction_stats(self, prediction_type: str = "next_day") -> dict:
+        async with aiosqlite.connect(self.db_path) as conn:
+            total_cur = await conn.execute(
+                """
+                SELECT COUNT(*) AS stored_total,
+                       SUM(CASE WHEN actual_close IS NULL THEN 1 ELSE 0 END) AS pending_total
+                FROM prediction_records
+                WHERE prediction_type = ?
+                """,
+                (prediction_type,),
+            )
+            total_row = await total_cur.fetchone()
+
+            cur = await conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN actual_close BETWEEN predicted_low AND predicted_high THEN 1 ELSE 0 END) AS within_range,
+                    SUM(
+                        CASE
+                            WHEN direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN direction = 'flat' AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    AVG(ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE actual_close IS NOT NULL AND prediction_type = ?
+                """,
+                (prediction_type,),
+            )
+            row = await cur.fetchone()
+            total = row[0] or 0
+            within_range = row[1] or 0
+            direction_hits = row[2] or 0
+            return {
+                "stored_predictions": total_row[0] or 0,
+                "pending_predictions": total_row[1] or 0,
+                "total_predictions": total,
+                "within_range": within_range,
+                "within_range_rate": round(within_range / total, 4) if total else 0,
+                "direction_hits": direction_hits,
+                "direction_accuracy": round(direction_hits / total, 4) if total else 0,
+                "avg_error_pct": round((row[3] or 0) * 100, 2),
+                "avg_confidence": round(row[4] or 0, 2),
+            }
+
+    async def prediction_recent(self, prediction_type: str = "next_day", limit: int = 40) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM prediction_records
+                WHERE prediction_type = ?
+                ORDER BY COALESCE(evaluated_at, created_at) DESC, created_at DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    target_date,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN actual_close IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error
+                FROM prediction_records
+                WHERE prediction_type = ?
+                GROUP BY target_date
+                ORDER BY target_date DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_country_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    COALESCE(country_code, 'N/A') AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY COALESCE(country_code, 'N/A')
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_scope_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    scope AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY scope
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_model_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    COALESCE(model_version, 'unknown') AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY COALESCE(model_version, 'unknown')
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_confidence_buckets(self, prediction_type: str = "next_day") -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    bucket,
+                    COUNT(*) AS total,
+                    AVG(confidence) AS avg_confidence,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close > reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL THEN 0.0
+                        END
+                    ) AS realized_up_rate,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 100.0
+                            WHEN actual_close IS NOT NULL THEN 0.0
+                        END
+                    ) AS direction_accuracy,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0) * 100.0
+                        END
+                    ) AS avg_error_pct
+                FROM (
+                    SELECT *,
+                        CASE
+                            WHEN confidence < 45 THEN '0-44'
+                            WHEN confidence < 55 THEN '45-54'
+                            WHEN confidence < 65 THEN '55-64'
+                            WHEN confidence < 75 THEN '65-74'
+                            ELSE '75+'
+                        END AS bucket
+                    FROM prediction_records
+                    WHERE prediction_type = ? AND actual_close IS NOT NULL
+                )
+                GROUP BY bucket
+                ORDER BY CASE bucket
+                    WHEN '0-44' THEN 1
+                    WHEN '45-54' THEN 2
+                    WHEN '55-64' THEN 3
+                    WHEN '65-74' THEN 4
+                    ELSE 5
+                END
+                """,
+                (prediction_type,),
+            )
+            return [dict(r) for r in await cur.fetchall()]
 
 
     # ── portfolio ────────────────────────────────────────────

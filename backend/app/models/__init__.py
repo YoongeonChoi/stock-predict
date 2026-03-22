@@ -6,6 +6,14 @@ from app.models.stock import (
     QuarterlyFinancial, PeerComparison, AnalystRatings, EarningsEvent,
     PricePoint, TechnicalIndicators,
 )
-from app.models.forecast import IndexForecast, ForecastScenario, FearGreedIndex
+from app.models.forecast import (
+    ForecastDriver,
+    ForecastScenario,
+    FlowSignal,
+    IndexForecast,
+    NextDayForecast,
+    FearGreedIndex,
+)
+from app.models.market import MarketRegime, MarketRegimeSignal, TradePlan, OpportunityItem, OpportunityRadarResponse
 from app.models.watchlist import WatchlistItem
 from app.models.archive import ArchiveEntry, AccuracyStats

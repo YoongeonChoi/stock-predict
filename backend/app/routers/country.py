@@ -1,11 +1,11 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from app.models.country import COUNTRY_REGISTRY
 from app.data import yfinance_client
 from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
-from app.services import archive_service, export_service
+from app.services import archive_service, export_service, market_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005
 
 router = APIRouter(prefix="/api", tags=["country"])
@@ -308,3 +308,13 @@ async def get_market_movers(code: str):
     }
     await data_cache.set(cache_key, result, 900)
     return result
+
+
+@router.get("/market/opportunities/{code}")
+async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20)):
+    code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+    return await market_service.get_market_opportunities(code, limit)

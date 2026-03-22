@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { HeatmapData, MarketMovers } from "@/lib/api";
-import type { CountryListItem } from "@/lib/types";
+import type { HeatmapData, MarketMovers, SystemDiagnostics } from "@/lib/api";
+import type { CountryListItem, OpportunityRadarResponse } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
 import StockHeatmap from "@/components/charts/StockHeatmap";
+import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
+import SystemStatusCard from "@/components/SystemStatusCard";
 
 interface MarketIndicator {
   name: string;
@@ -21,6 +23,10 @@ export default function HomePage() {
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [activeCountry, setActiveCountry] = useState("US");
   const [movers, setMovers] = useState<MarketMovers | null>(null);
+  const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
+  const [radarData, setRadarData] = useState<OpportunityRadarResponse | null>(null);
+  const [radarCountry, setRadarCountry] = useState("US");
+  const [radarLoading, setRadarLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
@@ -28,10 +34,12 @@ export default function HomePage() {
     Promise.all([
       api.getCountries().then(setCountries).catch(console.error),
       api.getMarketIndicators().then(setIndicators).catch(console.error),
+      api.getDiagnostics().then(setDiagnostics).catch(console.error),
     ]).finally(() => setLoading(false));
     api.getMarketMovers("US").then(setMovers).catch(console.error);
     setLastUpdated(new Date().toLocaleTimeString());
     loadHeatmap("US");
+    loadRadar("US");
   }, []);
 
   const loadHeatmap = (code: string) => {
@@ -41,6 +49,15 @@ export default function HomePage() {
       .then(setHeatmapData)
       .catch(console.error)
       .finally(() => setHeatmapLoading(false));
+  };
+
+  const loadRadar = (code: string) => {
+    setRadarCountry(code);
+    setRadarLoading(true);
+    api.getMarketOpportunities(code, 6)
+      .then(setRadarData)
+      .catch(console.error)
+      .finally(() => setRadarLoading(false));
   };
 
   const flags: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
@@ -64,6 +81,31 @@ export default function HomePage() {
         <h1 className="text-2xl font-bold tracking-tight">Stock Predict</h1>
         {lastUpdated && <span className="text-xs text-text-secondary ml-2">Last updated: {lastUpdated}</span>}
         <p className="text-text-secondary mt-1">AI-powered market analysis for US, KR, JP</p>
+      </div>
+
+      {diagnostics ? <SystemStatusCard diagnostics={diagnostics} /> : null}
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-lg">Best Setups Right Now</h2>
+            <p className="text-sm text-text-secondary mt-1">Opportunity radar surfaces the strongest short-horizon setups across each market.</p>
+          </div>
+          <div className="flex gap-1.5">
+            {["US", "KR", "JP"].map((code) => (
+              <button
+                key={code}
+                onClick={() => loadRadar(code)}
+                className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                  radarCountry === code ? "bg-accent text-white" : "bg-surface border border-border hover:border-accent/50"
+                }`}
+              >
+                {flags[code]} {code}
+              </button>
+            ))}
+          </div>
+        </div>
+        {radarLoading ? <div className="card animate-pulse h-72" /> : radarData ? <OpportunityRadarBoard data={radarData} compact /> : null}
       </div>
 
       {/* Global Market Indicators */}

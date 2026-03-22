@@ -1,17 +1,36 @@
 """Country-level analysis: aggregates data, calls LLM, builds report."""
 
+import asyncio
 from datetime import datetime
-from app.data import yfinance_client, fred_client, ecos_client, boj_client, news_client, cache
-from app.analysis.llm_client import ask_json
-from app.analysis.prompts import country_report_prompt
+
 from app.analysis.forecast_engine import forecast_index
+from app.analysis.llm_client import ask_json
+from app.analysis.market_regime import build_market_regime
+from app.analysis.next_day_forecast import forecast_next_day
+from app.analysis.prompts import country_report_prompt
 from app.analysis.sentiment import get_news_sentiment_for_country
-from app.scoring.country_scorer import build_country_score
-from app.scoring.stock_scorer import score_stock
-from app.scoring.fear_greed import calculate_fear_greed
-from app.models.country import COUNTRY_REGISTRY, CountryReport, StockSummaryRef, NewsItem, InstitutionalAnalysis, InstitutionView
 from app.config import get_settings
+from app.data import (
+    boj_client,
+    cache,
+    ecos_client,
+    fred_client,
+    investor_flow_client,
+    news_client,
+    yfinance_client,
+)
 from app.errors import SP_2005, SP_3004, SP_6001
+from app.models.country import (
+    COUNTRY_REGISTRY,
+    InstitutionalAnalysis,
+    InstitutionView,
+    NewsItem,
+    StockSummaryRef,
+)
+from app.scoring.country_scorer import build_country_score
+from app.scoring.fear_greed import calculate_fear_greed
+from app.scoring.stock_scorer import score_stock
+from app.utils.async_tools import gather_limited
 
 TICKER_FALLBACK = {
     "삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "네이버": "035420.KS",
@@ -32,7 +51,7 @@ TICKER_FALLBACK = {
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
-    cache_key = f"country_report:{country_code}"
+    cache_key = f"country_report:v4:{country_code}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -43,25 +62,33 @@ async def analyze_country(country_code: str) -> dict:
         err.log()
         return err.to_dict()
 
-    economic_data = await _get_economic_data(country_code)
+    market_tasks = [yfinance_client.get_index_quote(idx.ticker) for idx in country.indices]
+    economic_task = _get_economic_data(country_code)
+    news_by_inst_task = news_client.get_all_institution_news(country.research_institutions, country_code)
+    market_news_task = news_client.get_market_news(country_code)
+
+    market_quotes, economic_data, news_by_inst, market_news = await asyncio.gather(
+        asyncio.gather(*market_tasks, return_exceptions=True),
+        economic_task,
+        news_by_inst_task,
+        market_news_task,
+    )
+
     market_data = {}
-    for idx in country.indices:
-        try:
-            q = await yfinance_client.get_index_quote(idx.ticker)
-            market_data[idx.name] = q
-        except Exception as e:
+    for idx, quote in zip(country.indices, market_quotes):
+        if isinstance(quote, Exception):
             SP_2005(idx.ticker).log("warning")
             market_data[idx.name] = {"price": 0, "change_pct": 0}
-
-    news_by_inst = await news_client.get_all_institution_news(
-        country.research_institutions, country_code
-    )
-    market_news = await news_client.get_market_news(country_code)
+        else:
+            market_data[idx.name] = quote
 
     system, user = country_report_prompt(
-        country.name, country_code,
+        country.name,
+        country_code,
         country.research_institutions,
-        economic_data, news_by_inst, market_data,
+        economic_data,
+        news_by_inst,
+        market_data,
     )
     llm_result = await ask_json(system, user)
     llm_failed = "error_code" in llm_result or "error" in llm_result
@@ -71,17 +98,19 @@ async def analyze_country(country_code: str) -> dict:
 
     if llm_failed:
         institutional_analysis = InstitutionalAnalysis(
-            policy_institutions=[], sell_side=[],
-            policy_sellside_aligned=False, consensus_count=0,
+            policy_institutions=[],
+            sell_side=[],
+            policy_sellside_aligned=False,
+            consensus_count=0,
             consensus_summary="LLM analysis unavailable - showing data only.",
         )
     else:
         inst_raw = llm_result.get("institutional_analysis", {})
         institutional_analysis = InstitutionalAnalysis(
             policy_institutions=[
-                InstitutionView(**i) for i in inst_raw.get("policy_institutions", [])
+                InstitutionView(**item) for item in inst_raw.get("policy_institutions", [])
             ],
-            sell_side=[InstitutionView(**i) for i in inst_raw.get("sell_side", [])],
+            sell_side=[InstitutionView(**item) for item in inst_raw.get("sell_side", [])],
             policy_sellside_aligned=inst_raw.get("policy_sellside_aligned", False),
             consensus_count=inst_raw.get("consensus_count", 0),
             consensus_summary=inst_raw.get("consensus_summary", ""),
@@ -91,43 +120,85 @@ async def analyze_country(country_code: str) -> dict:
     if not llm_failed:
         raw_tickers = llm_result.get("top_5_tickers", [])
         top_reasons = llm_result.get("top_5_reasons", [])
-        for i, t in enumerate(raw_tickers[:5]):
-            resolved = TICKER_FALLBACK.get(t, t)
+        for i, raw_ticker in enumerate(raw_tickers[:5]):
+            resolved = TICKER_FALLBACK.get(raw_ticker, raw_ticker)
             llm_reasons[resolved] = top_reasons[i] if i < len(top_reasons) else ""
 
     top_stocks = await _score_top_stocks(country_code, llm_reasons)
 
     key_news = [
-        NewsItem(title=n["title"], source=n.get("source", ""), url=n.get("url", ""),
-                 published=n.get("published", ""))
-        for n in market_news[:10]
+        NewsItem(
+            title=item["title"],
+            source=item.get("source", ""),
+            url=item.get("url", ""),
+            published=item.get("published", ""),
+        )
+        for item in market_news[:10]
     ]
 
     primary_index = country.indices[0]
-    price_hist = await yfinance_client.get_price_history(primary_index.ticker, period="1y")
+    primary_index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
 
     sentiment = await get_news_sentiment_for_country(market_news)
     vix_val = economic_data.get("vix") if country_code == "US" else None
     spread = economic_data.get("treasury_spread")
 
     fear_greed = calculate_fear_greed(
-        price_hist, vix_value=vix_val, news_sentiment=sentiment,
-        treasury_spread=spread, country_code=country_code,
+        primary_index_history,
+        vix_value=vix_val,
+        news_sentiment=sentiment,
+        treasury_spread=spread,
+        country_code=country_code,
     )
 
-    news_summary = "\n".join(n["title"] for n in market_news[:10])
+    flow_signal = await investor_flow_client.get_flow_signal(
+        country_code,
+        ticker=primary_index.ticker,
+        market=primary_index.name,
+        reference_date=primary_index_history[-1]["date"] if primary_index_history else None,
+        price_history=primary_index_history,
+    )
+
+    next_day = forecast_next_day(
+        ticker=primary_index.ticker,
+        name=primary_index.name,
+        country_code=country_code,
+        price_history=primary_index_history,
+        news_items=market_news,
+        flow_signal=flow_signal,
+        context_bias=((country_score.total - 50) / 50) + ((fear_greed.score - 50) / 100),
+        asset_type="index",
+    )
+    breadth_ratio = (
+        sum(1 for stock in top_stocks if stock.change_pct > 0) / len(top_stocks)
+        if top_stocks
+        else None
+    )
+    market_regime = build_market_regime(
+        country_code=country_code,
+        name=primary_index.name,
+        price_history=primary_index_history,
+        fear_greed=fear_greed,
+        next_day_forecast=next_day,
+        economic_data=economic_data,
+        breadth_ratio=breadth_ratio,
+    )
+
+    news_summary = "\n".join(item["title"] for item in market_news[:10])
     try:
         forecast = await forecast_index(
             primary_index.ticker, primary_index.name, economic_data, news_summary
         )
         forecast_data = forecast.model_dump()
-    except Exception as e:
-        SP_3004(str(e)[:150]).log("warning")
+    except Exception as exc:
+        SP_3004(str(exc)[:150]).log("warning")
         forecast_data = {"scenarios": [], "current_price": 0, "index_name": primary_index.name}
 
     market_summary = llm_result.get("market_summary", "")
     if llm_failed:
-        market_summary = llm_result.get("message", llm_result.get("error", "Analysis temporarily unavailable."))
+        market_summary = llm_result.get(
+            "message", llm_result.get("error", "Analysis temporarily unavailable.")
+        )
 
     errors = []
     if llm_failed:
@@ -137,11 +208,14 @@ async def analyze_country(country_code: str) -> dict:
         "country": country.model_dump(),
         "score": country_score.model_dump(),
         "market_summary": market_summary,
-        "key_news": [n.model_dump() for n in key_news],
+        "key_news": [item.model_dump() for item in key_news],
         "institutional_analysis": institutional_analysis.model_dump(),
-        "top_stocks": [s.model_dump() for s in top_stocks],
+        "top_stocks": [stock.model_dump() for stock in top_stocks],
         "fear_greed": fear_greed.model_dump(),
         "forecast": forecast_data,
+        "next_day_forecast": next_day.model_dump(),
+        "market_regime": market_regime.model_dump(),
+        "primary_index_history": primary_index_history,
         "market_data": market_data,
         "llm_available": not llm_failed,
         "errors": errors,
@@ -158,36 +232,44 @@ async def _score_top_stocks(
 ) -> list[StockSummaryRef]:
     """Score a broad sample of stocks from the country and return top 5 by score."""
     from app.data.universe_data import get_universe
+
     universe = await get_universe(country_code)
     all_tickers: list[str] = []
     for sector_tickers in universe.values():
-        all_tickers.extend(sector_tickers[:20])
+        all_tickers.extend(sector_tickers[:10])
+
+    async def _score_ticker(ticker: str):
+        info, prices, analyst_raw = await asyncio.gather(
+            yfinance_client.get_stock_info(ticker),
+            yfinance_client.get_price_history(ticker, period="3mo"),
+            yfinance_client.get_analyst_ratings(ticker),
+        )
+        if not info.get("current_price"):
+            return None
+        quant = score_stock(info, price_hist=prices, analyst_counts=analyst_raw)
+        return quant.total, ticker, info
 
     scored: list[tuple[float, str, dict]] = []
-    for ticker in all_tickers:
-        try:
-            info = await yfinance_client.get_stock_info(ticker)
-            if not info.get("current_price"):
-                continue
-            prices = await yfinance_client.get_price_history(ticker, period="3mo")
-            analyst_raw = await yfinance_client.get_analyst_ratings(ticker)
-            qs = score_stock(info, price_hist=prices, analyst_counts=analyst_raw)
-            scored.append((qs.total, ticker, info))
-        except Exception:
+    for item in await gather_limited(all_tickers, _score_ticker, limit=8):
+        if isinstance(item, Exception) or item is None:
             continue
+        scored.append(item)
 
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(key=lambda row: row[0], reverse=True)
 
     top_stocks = []
     for rank, (total_score, ticker, info) in enumerate(scored[:5], start=1):
         price = info.get("current_price", 0)
         prev = info.get("prev_close", price)
-        chg = ((price - prev) / prev * 100) if prev else 0
+        change_pct = ((price - prev) / prev * 100) if prev else 0
         reason = llm_reasons.get(ticker, f"Score: {total_score:.1f}/100")
         top_stocks.append(StockSummaryRef(
-            rank=rank, ticker=ticker,
-            name=info.get("name", ticker), score=round(total_score, 1),
-            current_price=round(price, 2), change_pct=round(chg, 2),
+            rank=rank,
+            ticker=ticker,
+            name=info.get("name", ticker),
+            score=round(total_score, 1),
+            current_price=round(price, 2),
+            change_pct=round(change_pct, 2),
             reason=reason,
         ))
 
@@ -200,8 +282,8 @@ async def _get_economic_data(country_code: str) -> dict:
         spread = await fred_client.get_treasury_spread()
         data["treasury_spread"] = spread
         return data
-    elif country_code == "KR":
+    if country_code == "KR":
         return await ecos_client.get_kr_economic_snapshot()
-    elif country_code == "JP":
+    if country_code == "JP":
         return await boj_client.get_jp_economic_snapshot()
     return {}
