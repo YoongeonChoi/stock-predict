@@ -11,6 +11,9 @@ interface Props {
 
 export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: Props) {
   const flow = forecast.flow_signal;
+  const rangePct = forecast.reference_price
+    ? ((forecast.predicted_high - forecast.predicted_low) / forecast.reference_price) * 100
+    : 0;
   const directionTone =
     forecast.direction === "up"
       ? "text-positive"
@@ -35,6 +38,18 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
             Confidence {forecast.confidence.toFixed(0)} / 100
           </div>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
+        <span className="px-2 py-1 rounded-full bg-border/50 text-text-secondary">
+          Model {forecast.model_version}
+        </span>
+        <span className="px-2 py-1 rounded-full bg-border/50 text-text-secondary">
+          Expected range {rangePct.toFixed(2)}%
+        </span>
+        <span className="px-2 py-1 rounded-full bg-border/50 text-text-secondary">
+          Flow {flow?.available ? "verified" : "neutralized"}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">

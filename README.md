@@ -93,8 +93,10 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **국가 리포트** | 100점 만점 6항목 채점, 리서치 기관 컨센서스 분석, Top 5 종목 (점수 기반) |
 | **지수 예측** | Monte Carlo 시뮬레이션 + LLM 보정, 1개월 상단/기본/하단 확률% |
 | **다음 거래일 예측** | 정량 신호 엔진 기반 방향/상승확률/예상 종가/예상 고가·저가를 계산 |
+| **시장 국면 분석** | 국가별 대표 지수의 추세/변동성/브레드스/단기 확률을 종합해 Risk-On, Rangebound, Risk-Off 같은 실행 컨텍스트 제공 |
 | **섹터 분석** | 섹터별 100점 채점, Top 10 종목 장단점/점수/매수매도가 |
 | **종목 상세** | 캔들스틱/라인 차트, Buy/Sell Zone, 재무 상세, 52주 범위 |
+| **트레이드 플랜** | 종목 상세에서 진입 구간, 손절, 1차/2차 목표가, 무효화 조건, 보유 예상 기간까지 자동 제시 |
 | **Fear & Greed** | 5개 지표 복합 게이지 (모멘텀, 주가강도, 변동성, 안전자산, 센티먼트) |
 
 ### 투자 도구 (Investing.com / TradingView / Yahoo Finance 스타일)
@@ -104,6 +106,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **Technical Analysis Summary** | Investing.com 스타일 — SMA/EMA(5~200), RSI, MACD, Stochastic, CCI, ADX, Williams %R, Bollinger Bands 기반 종합 Buy/Sell 게이지 |
 | **Stock Screener** | 국가/섹터/P·E/배당수익률/시총 등 조건 필터링, 정렬 가능한 결과 테이블 |
 | **Portfolio Tracker** | 보유 종목 CRUD, 실시간 P&L 계산, 섹터·국가별 자산 배분 파이차트 |
+| **Portfolio Risk Coach** | 포지션별 위험 점수, 포트폴리오 베타/집중도/변동성, 국가별 시장 국면, 스트레스 테스트, 실행 플레이북 제공 |
 | **Candlestick Chart** | TradingView 스타일 OHLC 캔들스틱 + 라인 차트 전환, 기간 선택 (1M/3M/6M/1Y) |
 | **Pivot Points** | Classic + Fibonacci Pivot, Support/Resistance 레벨 (S1~S3, R1~R3) |
 | **Analyst Consensus** | Buy/Hold/Sell 비율 시각화, 목표가 범위 (Low/Mean/High vs 현재가) |
@@ -111,6 +114,9 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **52-Week Range** | 현재가의 52주 범위 내 위치를 프로그레스 바로 표시 |
 | **Prediction Overlay** | 라인 차트 위에 다음 거래일 예상 종가/상단/하단 경로를 오버레이 |
 | **Top Gainers/Losers** | 대시보드에 시장별 당일 상승/하락 Top 5 종목 표시 |
+| **System Readiness** | 홈 화면에서 startup 작업 상태, 데이터 소스 설정 여부, 예측 정확도 스냅샷을 한 번에 확인 |
+| **Opportunity Radar** | 시장별 상위 셋업을 자동 스캔해서 Radar Score, 실행 액션, 진입/손절/목표가와 함께 정렬 |
+| **Prediction Lab** | 예측 방향 적중률, 밴드 적중률, confidence calibration, 국가/모델별 breakdown, 최근 miss audit까지 시각화 |
 
 ### 시장 데이터
 
@@ -118,6 +124,8 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 |------|------|
 | **Market Heatmap** | Treemap 기반 종목별 시총/등락률 히트맵 (US/KR/JP) |
 | **Global Indicators** | VIX, DXY, Gold, Oil, US 10Y, Bitcoin 실시간 지표 |
+| **Diagnostics API** | `/api/system/diagnostics` 에서 예측 엔진 버전, startup 상태, 데이터 소스 readiness 확인 |
+| **Radar API** | `/api/market/opportunities/{code}` 에서 국가별 시장 국면과 상위 기회 종목을 한 번에 반환 |
 | **Exchange Rates** | USD/KRW, USD/JPY, EUR/USD 환율 위젯 |
 | **경제 캘린더** | FOMC/BOK금통위/BOJ회의 + 어닝 일정 |
 
@@ -129,6 +137,7 @@ OpenAI GPT-4o를 활용하여 리서치 기관 보고서를 종합 분석하고,
 | **워치리스트** | 인라인 추가, 실시간 점수/가격 업데이트, 통화 단위 자동 적용 |
 | **비교 모드** | 2~4개 종목 나란히 비교 테이블 (통화 단위 자동) |
 | **아카이브** | 과거 리포트 저장, 다음 거래일 예측 정확도 자동 누적 |
+| **Research API** | `/api/research/predictions` 에서 최근 예측 성과, calibration, breakdown, recent records를 한 번에 반환 |
 | **PDF/CSV** | 모든 리포트 내보내기 (CJK 폰트 지원) |
 
 ### UX
@@ -234,6 +243,8 @@ cd frontend
 npx tsc --noEmit
 npm run build
 ```
+
+> `npx tsc --noEmit` 는 `npm run build` 와 동시에 돌리면 `.next/types` 재생성 타이밍 때문에 false negative가 날 수 있습니다. 순차적으로 실행하세요.
 
 ### 3. API 키 설정 (최초 1회)
 
@@ -623,9 +634,10 @@ stock-predict/
 │   │   │   └── sentiment.py        # 뉴스 감성 분석
 │   │   ├── services/               # 비즈니스 로직
 │   │   │   ├── archive_service.py  # 리포트 아카이빙/정확도
-│   │   │   ├── watchlist_service.py
-│   │   │   ├── compare_service.py
-│   │   │   ├── calendar_service.py
+│   │   │   ├── market_service.py   # Opportunity Radar
+│   │   │   ├── portfolio_service.py# Portfolio risk coach + stress test
+│   │   │   ├── research_service.py # Prediction Lab / validation analytics
+│   │   │   ├── system_service.py   # Diagnostics / readiness
 │   │   │   └── export_service.py   # PDF/CSV 생성
 │   │   └── routers/                # FastAPI 라우터 (14개 엔드포인트)
 │   │       ├── country.py
@@ -640,13 +652,14 @@ stock-predict/
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                    # Next.js App Router (8 routes)
+│   │   ├── app/                    # Next.js App Router
 │   │   │   ├── page.tsx            # 대시보드 (국가 선택)
 │   │   │   ├── country/[code]/     # 국가 리포트 + 지수 예측
 │   │   │   │   └── sector/[id]/    # 섹터 분석
+│   │   │   ├── radar/              # Opportunity Radar
+│   │   │   ├── lab/                # Prediction Lab
 │   │   │   ├── stock/[ticker]/     # 종목 상세 (차트 + 매수/매도가)
-│   │   │   ├── watchlist/          # 워치리스트
-│   │   │   ├── compare/            # 비교 모드
+│   │   │   ├── portfolio/          # 포트폴리오 리스크 코치
 │   │   │   ├── archive/            # 아카이브
 │   │   │   └── calendar/           # 경제 캘린더
 │   │   ├── components/             # React 컴포넌트

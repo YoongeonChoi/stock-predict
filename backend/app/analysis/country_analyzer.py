@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.analysis.forecast_engine import forecast_index
 from app.analysis.llm_client import ask_json
+from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import country_report_prompt
 from app.analysis.sentiment import get_news_sentiment_for_country
@@ -50,7 +51,7 @@ TICKER_FALLBACK = {
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
-    cache_key = f"country_report:v3:{country_code}"
+    cache_key = f"country_report:v4:{country_code}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -168,6 +169,20 @@ async def analyze_country(country_code: str) -> dict:
         context_bias=((country_score.total - 50) / 50) + ((fear_greed.score - 50) / 100),
         asset_type="index",
     )
+    breadth_ratio = (
+        sum(1 for stock in top_stocks if stock.change_pct > 0) / len(top_stocks)
+        if top_stocks
+        else None
+    )
+    market_regime = build_market_regime(
+        country_code=country_code,
+        name=primary_index.name,
+        price_history=primary_index_history,
+        fear_greed=fear_greed,
+        next_day_forecast=next_day,
+        economic_data=economic_data,
+        breadth_ratio=breadth_ratio,
+    )
 
     news_summary = "\n".join(item["title"] for item in market_news[:10])
     try:
@@ -199,6 +214,7 @@ async def analyze_country(country_code: str) -> dict:
         "fear_greed": fear_greed.model_dump(),
         "forecast": forecast_data,
         "next_day_forecast": next_day.model_dump(),
+        "market_regime": market_regime.model_dump(),
         "primary_index_history": primary_index_history,
         "market_data": market_data,
         "llm_available": not llm_failed,

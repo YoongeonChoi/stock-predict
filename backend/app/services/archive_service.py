@@ -129,6 +129,7 @@ async def refresh_prediction_accuracy(limit: int = 200):
         )
 
 
-async def get_accuracy() -> dict:
-    await refresh_prediction_accuracy()
+async def get_accuracy(refresh: bool = True) -> dict:
+    if refresh:
+        await refresh_prediction_accuracy()
     return await db.prediction_stats("next_day")

@@ -68,6 +68,15 @@ CREATE TABLE IF NOT EXISTS prediction_records (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_records_unique
 ON prediction_records(scope, symbol, prediction_type, target_date);
 
+CREATE INDEX IF NOT EXISTS idx_prediction_records_target_date
+ON prediction_records(prediction_type, target_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_records_country
+ON prediction_records(country_code, prediction_type, target_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_records_model
+ON prediction_records(model_version, prediction_type, target_date DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -399,6 +408,231 @@ class Database:
                 "avg_error_pct": round((row[3] or 0) * 100, 2),
                 "avg_confidence": round(row[4] or 0, 2),
             }
+
+    async def prediction_recent(self, prediction_type: str = "next_day", limit: int = 40) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM prediction_records
+                WHERE prediction_type = ?
+                ORDER BY COALESCE(evaluated_at, created_at) DESC, created_at DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    target_date,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN actual_close IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error
+                FROM prediction_records
+                WHERE prediction_type = ?
+                GROUP BY target_date
+                ORDER BY target_date DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_country_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    COALESCE(country_code, 'N/A') AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY COALESCE(country_code, 'N/A')
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_scope_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    scope AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY scope
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_model_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    COALESCE(model_version, 'unknown') AS label,
+                    COUNT(*) AS total,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 1
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                            ELSE 0
+                        END
+                    ) AS direction_hits,
+                    SUM(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close BETWEEN predicted_low AND predicted_high THEN 1
+                            ELSE 0
+                        END
+                    ) AS within_range,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)
+                        END
+                    ) AS avg_abs_error,
+                    AVG(confidence) AS avg_confidence
+                FROM prediction_records
+                WHERE prediction_type = ? AND actual_close IS NOT NULL
+                GROUP BY COALESCE(model_version, 'unknown')
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_confidence_buckets(self, prediction_type: str = "next_day") -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT
+                    bucket,
+                    COUNT(*) AS total,
+                    AVG(confidence) AS avg_confidence,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND actual_close > reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL THEN 0.0
+                        END
+                    ) AS realized_up_rate,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL AND direction = 'up' AND actual_close > reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL AND direction = 'down' AND actual_close < reference_price THEN 100.0
+                            WHEN actual_close IS NOT NULL AND direction = 'flat'
+                                 AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 100.0
+                            WHEN actual_close IS NOT NULL THEN 0.0
+                        END
+                    ) AS direction_accuracy,
+                    AVG(
+                        CASE
+                            WHEN actual_close IS NOT NULL THEN ABS(actual_close - predicted_close) / NULLIF(reference_price, 0) * 100.0
+                        END
+                    ) AS avg_error_pct
+                FROM (
+                    SELECT *,
+                        CASE
+                            WHEN confidence < 45 THEN '0-44'
+                            WHEN confidence < 55 THEN '45-54'
+                            WHEN confidence < 65 THEN '55-64'
+                            WHEN confidence < 75 THEN '65-74'
+                            ELSE '75+'
+                        END AS bucket
+                    FROM prediction_records
+                    WHERE prediction_type = ? AND actual_close IS NOT NULL
+                )
+                GROUP BY bucket
+                ORDER BY CASE bucket
+                    WHEN '0-44' THEN 1
+                    WHEN '45-54' THEN 2
+                    WHEN '55-64' THEN 3
+                    WHEN '65-74' THEN 4
+                    ELSE 5
+                END
+                """,
+                (prediction_type,),
+            )
+            return [dict(r) for r in await cur.fetchall()]
 
 
     # ── portfolio ────────────────────────────────────────────

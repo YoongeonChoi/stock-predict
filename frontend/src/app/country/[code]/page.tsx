@@ -8,11 +8,13 @@ import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 import FearGreedGauge from "@/components/charts/FearGreedGauge";
 import ForecastBand from "@/components/charts/ForecastBand";
 import NextDayForecastCard from "@/components/charts/NextDayForecastCard";
+import MarketRegimeCard from "@/components/MarketRegimeCard";
+import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 import PriceChart from "@/components/charts/PriceChart";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import { api } from "@/lib/api";
-import type { CountryReport, ScoreItem, SectorListItem } from "@/lib/types";
+import type { CountryReport, OpportunityRadarResponse, ScoreItem, SectorListItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 function toError(error: unknown): Error {
@@ -24,6 +26,7 @@ export default function CountryPage() {
   const { code } = useParams<{ code: string }>();
   const [report, setReport] = useState<CountryReport | null>(null);
   const [sectors, setSectors] = useState<SectorListItem[]>([]);
+  const [opportunities, setOpportunities] = useState<OpportunityRadarResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -40,8 +43,9 @@ export default function CountryPage() {
       });
 
     const loadSectors = api.getSectors(code).then(setSectors).catch(console.error);
+    const loadOpportunities = api.getMarketOpportunities(code, 8).then(setOpportunities).catch(console.error);
 
-    Promise.all([loadReport, loadSectors]).finally(() => setLoading(false));
+    Promise.all([loadReport, loadSectors, loadOpportunities]).finally(() => setLoading(false));
   }, [code]);
 
   if (loading) {
@@ -156,12 +160,21 @@ export default function CountryPage() {
         />
       ) : null}
 
+      {report.market_regime ? (
+        <MarketRegimeCard
+          regime={report.market_regime}
+          title={`${primaryIndex?.name || report.country?.name || "Market"} Regime`}
+        />
+      ) : null}
+
       {report.forecast && report.forecast.scenarios?.length > 0 ? (
         <div className="card">
           <h2 className="font-semibold mb-3">1-Month Index Forecast</h2>
           <ForecastBand forecast={report.forecast} />
         </div>
       ) : null}
+
+      {opportunities ? <OpportunityRadarBoard data={opportunities} compact /> : null}
 
       {news.length > 0 ? (
         <div className="card">

@@ -13,6 +13,10 @@ async def set(key: str, value, ttl: int | None = None):
     await db.cache_set(key, value, ttl)
 
 
+async def invalidate(pattern: str):
+    await db.cache_invalidate(pattern)
+
+
 async def get_or_fetch(key: str, fetcher, ttl: int | None = None):
     cached = await get(key)
     if cached is not None:

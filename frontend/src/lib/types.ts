@@ -86,6 +86,78 @@ export interface NextDayForecast {
   model_version: string;
 }
 
+export interface MarketRegimeSignal {
+  name: string;
+  value: number;
+  signal: "bullish" | "bearish" | "neutral";
+  detail: string;
+}
+
+export interface MarketRegime {
+  label: string;
+  stance: "risk_on" | "neutral" | "risk_off";
+  trend: "uptrend" | "range" | "downtrend";
+  volatility: "low" | "normal" | "high";
+  breadth: "strong" | "mixed" | "weak";
+  score: number;
+  conviction: number;
+  summary: string;
+  playbook: string[];
+  warnings: string[];
+  signals: MarketRegimeSignal[];
+}
+
+export interface TradePlan {
+  setup_label: string;
+  action: "accumulate" | "breakout_watch" | "wait_pullback" | "reduce_risk" | "avoid";
+  conviction: number;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop_loss?: number | null;
+  take_profit_1?: number | null;
+  take_profit_2?: number | null;
+  expected_holding_days: number;
+  risk_reward_estimate: number;
+  thesis: string[];
+  invalidation: string;
+}
+
+export interface OpportunityItem {
+  rank: number;
+  ticker: string;
+  name: string;
+  sector: string;
+  country_code: string;
+  current_price: number;
+  change_pct: number;
+  opportunity_score: number;
+  quant_score: number;
+  up_probability: number;
+  confidence: number;
+  predicted_return_pct: number;
+  setup_label: string;
+  action: string;
+  regime_tailwind: string;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop_loss?: number | null;
+  take_profit_1?: number | null;
+  take_profit_2?: number | null;
+  risk_reward_estimate: number;
+  thesis: string[];
+  forecast_date: string;
+}
+
+export interface OpportunityRadarResponse {
+  country_code: string;
+  generated_at: string;
+  market_regime: MarketRegime;
+  total_scanned: number;
+  actionable_count: number;
+  bullish_count: number;
+  opportunities: OpportunityItem[];
+}
+
 export interface FearGreedComponent {
   name: string;
   value: number;
@@ -157,6 +229,7 @@ export interface CountryReport {
   fear_greed: FearGreedIndex;
   forecast: IndexForecast;
   next_day_forecast?: NextDayForecast;
+  market_regime?: MarketRegime;
   primary_index_history?: PricePoint[];
   market_data: Record<string, { price: number; change_pct: number }>;
   generated_at: string;
@@ -279,6 +352,8 @@ export interface StockDetail {
   score: StockScore;
   buy_sell_guide: BuySellGuide;
   next_day_forecast?: NextDayForecast;
+  market_regime?: MarketRegime;
+  trade_plan?: TradePlan;
   analysis_summary?: string;
   key_risks?: string[];
   key_catalysts?: string[];

@@ -156,12 +156,65 @@ export interface PortfolioHolding {
   id: number; ticker: string; name: string; country_code: string; sector: string;
   buy_price: number; current_price: number; quantity: number; buy_date: string;
   invested: number; current_value: number; pnl: number; pnl_pct: number;
+  weight_pct: number;
+  realized_volatility_pct: number;
+  max_drawdown_pct: number;
+  beta?: number | null;
+  risk_score: number;
+  risk_level: "low" | "medium" | "high";
+  up_probability?: number | null;
+  predicted_return_pct?: number | null;
+  forecast_date?: string | null;
+  trade_action?: string | null;
+  trade_setup?: string | null;
+  trade_conviction?: number | null;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop_loss?: number | null;
+  take_profit_1?: number | null;
+  take_profit_2?: number | null;
+  market_regime_label?: string | null;
+  market_regime_stance?: string | null;
+  thesis: string[];
+}
+
+export interface PortfolioStressScenario {
+  name: string;
+  description: string;
+  projected_portfolio_pct: number;
+  projected_pnl: number;
+}
+
+export interface PortfolioRiskRegime {
+  country_code: string;
+  weight: number;
+  label: string;
+  stance: "risk_on" | "neutral" | "risk_off";
+  conviction: number;
+}
+
+export interface PortfolioRiskSnapshot {
+  overall_label: "empty" | "balanced" | "moderate" | "elevated" | "aggressive";
+  score: number;
+  diversification_score: number;
+  concentration_hhi: number;
+  top_holding_weight: number;
+  avg_volatility_pct: number;
+  portfolio_beta: number;
+  portfolio_up_probability: number;
+  projected_next_day_return_pct: number;
+  warning_count: number;
+  warnings: string[];
+  playbook: string[];
+  regimes: PortfolioRiskRegime[];
 }
 
 export interface PortfolioData {
   holdings: PortfolioHolding[];
   summary: { total_invested: number; total_current: number; total_pnl: number; total_pnl_pct: number; holding_count: number };
   allocation: { by_sector: { name: string; value: number }[]; by_country: { name: string; value: number }[] };
+  risk: PortfolioRiskSnapshot;
+  stress_test: PortfolioStressScenario[];
 }
 
 export interface MarketMovers {
@@ -179,6 +232,104 @@ export interface PredictionAccuracyStats {
   direction_accuracy: number;
   avg_error_pct: number;
   avg_confidence: number;
+}
+
+export interface PredictionBreakdownRow {
+  label: string;
+  total: number;
+  direction_accuracy: number;
+  within_range_rate: number;
+  avg_error_pct: number;
+  avg_confidence: number;
+}
+
+export interface PredictionCalibrationBucket {
+  bucket: string;
+  total: number;
+  avg_confidence: number;
+  realized_up_rate: number;
+  direction_accuracy: number;
+  avg_error_pct: number;
+}
+
+export interface PredictionTrendPoint {
+  target_date: string;
+  total: number;
+  evaluated_total: number;
+  direction_accuracy: number;
+  within_range_rate: number;
+  avg_error_pct: number;
+}
+
+export interface PredictionRecentRecord {
+  id: number;
+  scope: string;
+  symbol: string;
+  country_code?: string | null;
+  target_date: string;
+  reference_date?: string | null;
+  reference_price: number;
+  predicted_close: number;
+  predicted_low?: number | null;
+  predicted_high?: number | null;
+  actual_close?: number | null;
+  direction: "up" | "down" | "flat";
+  direction_hit?: boolean | null;
+  within_range?: boolean | null;
+  abs_error_pct?: number | null;
+  confidence: number;
+  up_probability: number;
+  model_version: string;
+  created_at: number;
+  evaluated_at?: number | null;
+}
+
+export interface PredictionLabResponse {
+  generated_at: string;
+  accuracy: PredictionAccuracyStats;
+  breakdown: {
+    by_country: PredictionBreakdownRow[];
+    by_scope: PredictionBreakdownRow[];
+    by_model: PredictionBreakdownRow[];
+  };
+  calibration: PredictionCalibrationBucket[];
+  recent_trend: PredictionTrendPoint[];
+  recent_records: PredictionRecentRecord[];
+  insights: string[];
+}
+
+export interface StartupTaskStatus {
+  name: string;
+  status: "ok" | "warning" | "error" | "running";
+  detail: string;
+  updated_at: string;
+}
+
+export interface DataSourceStatus {
+  name: string;
+  configured: boolean;
+  status: string;
+  purpose: string;
+  note: string;
+}
+
+export interface ForecastModelSummary {
+  name: string;
+  version: string;
+  markets: string[];
+  signals: string[];
+  notes: string[];
+}
+
+export interface SystemDiagnostics {
+  status: "ok" | "degraded" | "starting";
+  version: string;
+  started_at: string;
+  startup_tasks: StartupTaskStatus[];
+  data_sources: DataSourceStatus[];
+  forecast_models: ForecastModelSummary[];
+  prediction_accuracy?: PredictionAccuracyStats | null;
+  prediction_accuracy_error?: string | null;
 }
 
 export interface SearchResult {
@@ -207,6 +358,11 @@ export const api = {
   getArchive: () => get<unknown[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
   getPredictionAccuracy: () => get<PredictionAccuracyStats>("/api/archive/accuracy/stats"),
+  getPredictionLab: (limitRecent = 40, refresh = true) =>
+    get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
+  getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),
+  getMarketOpportunities: (code: string, limit = 12) =>
+    get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`),
   getCalendar: (code: string) => get<unknown>(`/api/calendar/${code}`),
   getScreener: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import ErrorBanner from "@/components/ErrorBanner";
 import type { PredictionAccuracyStats } from "@/lib/api";
@@ -41,7 +42,17 @@ export default function ArchivePage() {
       {error ? <ErrorBanner error={error} onRetry={() => window.location.reload()} /> : null}
 
       {accuracy && accuracy.stored_predictions > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface/60 px-4 py-3">
+            <div>
+              <div className="font-medium">Need deeper validation?</div>
+              <div className="text-sm text-text-secondary mt-1">Prediction Lab tracks calibration, recent misses, and model-level reliability.</div>
+            </div>
+            <Link href="/lab" className="px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90">
+              Open Lab
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="card">
             <div className="text-xs text-text-secondary">Stored Predictions</div>
             <div className="text-xl font-bold mt-1">{accuracy.stored_predictions}</div>
@@ -59,6 +70,7 @@ export default function ArchivePage() {
             <div className="text-xs text-text-secondary">Avg Error</div>
             <div className="text-xl font-bold mt-1">{accuracy.avg_error_pct.toFixed(2)}%</div>
           </div>
+        </div>
         </div>
       ) : null}
 

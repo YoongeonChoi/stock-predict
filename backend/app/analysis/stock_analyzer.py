@@ -9,10 +9,13 @@ from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
 from app.analysis.llm_client import ask_json
+from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import stock_analysis_prompt
+from app.analysis.trade_planner import build_trade_plan
 from app.config import get_settings
 from app.data import cache, fmp_client, investor_flow_client, news_client, yfinance_client
+from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import (
     AnalystRatings,
     BuySellGuide,
@@ -32,7 +35,7 @@ from app.utils.async_tools import gather_limited
 
 async def analyze_stock(ticker: str) -> dict:
     settings = get_settings()
-    cache_key = f"stock_detail:v3:{ticker}"
+    cache_key = f"stock_detail:v4:{ticker}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -42,6 +45,7 @@ async def analyze_stock(ticker: str) -> dict:
         info,
         prices_raw,
         prices_6mo,
+        market_prices,
         financials_raw,
         analyst_raw,
         earnings_raw,
@@ -50,6 +54,7 @@ async def analyze_stock(ticker: str) -> dict:
         yfinance_client.get_stock_info(ticker),
         yfinance_client.get_price_history(ticker, period="3mo"),
         yfinance_client.get_price_history(ticker, period="6mo"),
+        yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="6mo"),
         yfinance_client.get_financials(ticker),
         yfinance_client.get_analyst_ratings(ticker),
         yfinance_client.get_earnings_history(ticker),
@@ -120,6 +125,27 @@ async def analyze_stock(ticker: str) -> dict:
         context_bias=((composite.total if composite else quant_score.total) - 50) / 50,
         asset_type="stock",
     )
+    market_regime = build_market_regime(
+        country_code=country_code,
+        name=COUNTRY_REGISTRY[country_code].indices[0].name,
+        price_history=market_prices,
+        next_day_forecast=forecast_next_day(
+            ticker=COUNTRY_REGISTRY[country_code].indices[0].ticker,
+            name=COUNTRY_REGISTRY[country_code].indices[0].name,
+            country_code=country_code,
+            price_history=market_prices,
+            asset_type="index",
+        ),
+    )
+    trade_plan = build_trade_plan(
+        ticker=ticker,
+        current_price=round(price, 2),
+        price_history=price_history,
+        technical=technical,
+        buy_sell_guide=buy_sell,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+    )
 
     detail = StockDetail(
         ticker=ticker,
@@ -155,6 +181,8 @@ async def analyze_stock(ticker: str) -> dict:
         score=quant_score,
         buy_sell_guide=buy_sell,
         next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+        trade_plan=trade_plan,
     )
 
     result = detail.model_dump()

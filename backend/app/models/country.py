@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.models.score import CountryScore
 from app.models.forecast import NextDayForecast
+from app.models.market import MarketRegime
 from app.models.stock import PricePoint
 
 
@@ -63,6 +64,7 @@ class CountryReport(BaseModel):
     top_stocks: list["StockSummaryRef"]
     primary_index_history: list[PricePoint] = []
     next_day_forecast: NextDayForecast | None = None
+    market_regime: MarketRegime | None = None
     generated_at: datetime
 
 

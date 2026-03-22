@@ -13,6 +13,8 @@ import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import MarketRegimeCard from "@/components/MarketRegimeCard";
+import TradePlanCard from "@/components/TradePlanCard";
 import { api } from "@/lib/api";
 import type { CompositeScore, PivotPoints, TechSummary } from "@/lib/api";
 import type { PricePoint, StockDetail } from "@/lib/types";
@@ -196,6 +198,13 @@ export default function StockPage() {
 
       {stock.next_day_forecast ? (
         <NextDayForecastCard forecast={stock.next_day_forecast} assetLabel={stock.name} priceKey={stock.ticker} />
+      ) : null}
+
+      {(stock.market_regime || stock.trade_plan) ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {stock.market_regime ? <MarketRegimeCard regime={stock.market_regime} title="Market Context" /> : null}
+          {stock.trade_plan ? <TradePlanCard plan={stock.trade_plan} priceKey={stock.ticker} /> : null}
+        </div>
       ) : null}
 
       <div className="card">
