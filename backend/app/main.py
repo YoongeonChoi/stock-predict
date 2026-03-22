@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import db
-from app.errors import AppError
+from app.errors import SP_9999
 from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
 from app.services import archive_service
@@ -67,13 +67,10 @@ app.add_middleware(
 async def global_exception_handler(request: Request, exc: Exception):
     log = logging.getLogger("stock_predict.unhandled")
     log.error(f"[SP-9999] Unhandled: {request.url.path} -> {exc}", exc_info=True)
+    err = SP_9999(str(exc)[:300])
     return JSONResponse(
         status_code=500,
-        content={
-            "error_code": "SP-9999",
-            "message": "Unexpected server error",
-            "detail": str(exc)[:300],
-        },
+        content=err.to_dict(),
     )
 
 
