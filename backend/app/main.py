@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -60,6 +60,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -96,3 +97,4 @@ async def health():
         "version": APP_VERSION,
         "startup_tasks": runtime_state["startup_tasks"],
     }
+

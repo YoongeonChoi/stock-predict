@@ -1,4 +1,4 @@
-from typing import Literal
+﻿from typing import Literal
 
 from pydantic import BaseModel
 
@@ -56,7 +56,7 @@ class NextDayForecast(BaseModel):
     raw_signal: float = 0
     flow_signal: FlowSignal | None = None
     drivers: list[ForecastDriver] = []
-    model_version: str = "signal-v2"
+    model_version: str = "signal-v2.3"
 
 
 class FearGreedComponent(BaseModel):
@@ -71,3 +71,4 @@ class FearGreedIndex(BaseModel):
     label: str
     components: list[FearGreedComponent]
     country_code: str
+

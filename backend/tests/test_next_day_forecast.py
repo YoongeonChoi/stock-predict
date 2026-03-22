@@ -50,6 +50,57 @@ class NextDayForecastTests(unittest.TestCase):
         self.assertTrue(35 <= forecast.confidence <= 92)
         self.assertGreater(len(forecast.drivers), 0)
 
+    def test_bullish_inputs_score_higher_than_bearish_inputs(self):
+        bullish = forecast_next_day(
+            ticker="TEST",
+            name="Synthetic Corp",
+            country_code="US",
+            price_history=_sample_prices(),
+            news_items=[
+                {"title": "Synthetic Corp beats estimates and raises growth outlook"},
+                {"title": "Synthetic Corp 상향 and resilient demand surprise"},
+            ],
+            analyst_context={"buy": 10, "hold": 1, "sell": 0, "target_mean": 121},
+            flow_signal=FlowSignal(
+                available=True,
+                source="test",
+                market="US",
+                unit="shares",
+                foreign_net_buy=120_000,
+                institutional_net_buy=80_000,
+                retail_net_buy=-50_000,
+            ),
+            context_bias=0.4,
+            asset_type="stock",
+        )
+
+        bearish = forecast_next_day(
+            ticker="TEST",
+            name="Synthetic Corp",
+            country_code="US",
+            price_history=_sample_prices(),
+            news_items=[
+                {"title": "Synthetic Corp misses estimates and issues warning"},
+                {"title": "Synthetic Corp 하향 amid slowdown fears"},
+            ],
+            analyst_context={"buy": 1, "hold": 3, "sell": 8, "target_mean": 92},
+            flow_signal=FlowSignal(
+                available=True,
+                source="test",
+                market="US",
+                unit="shares",
+                foreign_net_buy=-130_000,
+                institutional_net_buy=-90_000,
+                retail_net_buy=70_000,
+            ),
+            context_bias=-0.4,
+            asset_type="stock",
+        )
+
+        self.assertGreater(bullish.up_probability, bearish.up_probability)
+        self.assertGreater(bullish.predicted_return_pct, bearish.predicted_return_pct)
+        self.assertGreater(bullish.news_sentiment, bearish.news_sentiment)
+
 
 if __name__ == "__main__":
     unittest.main()

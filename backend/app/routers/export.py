@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 from fastapi.responses import Response, JSONResponse
 from app.services import archive_service, export_service
 from app.errors import SP_6005, SP_6006, SP_5004
@@ -30,7 +30,7 @@ async def export_report(fmt: str, report_id: int):
                 headers={"Content-Disposition": f"attachment; filename=report_{report_id}.csv"},
             )
 
-        pdf_bytes = export_service.export_pdf(data, title=f"Report #{report_id}")
+        pdf_bytes = export_service.export_pdf(data, title=f"리포트 #{report_id}")
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
@@ -40,3 +40,4 @@ async def export_report(fmt: str, report_id: int):
         err = SP_5004(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
+
