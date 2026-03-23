@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import PageHeader from "@/components/PageHeader";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import { api } from "@/lib/api";
@@ -96,38 +97,55 @@ export default function PortfolioPage() {
   const summary = data?.summary;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">포트폴리오</h1>
-        <p className="text-text-secondary mt-1">보유 종목 손익과 위험도를 함께 보고, 다음 거래일 시그널까지 한 번에 점검합니다.</p>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Portfolio Workspace"
+        title="포트폴리오"
+        description="보유 종목 손익, 위험도, 다음 거래일 시그널을 한 화면에서 보고 실제 운영과 리밸런싱까지 이어지도록 정리했습니다."
+        meta={
+          <>
+            <span className="info-chip">보유 종목 {summary?.holding_count ?? 0}개</span>
+            <span className="info-chip">리스크 + 모델 비중 동시 확인</span>
+          </>
+        }
+      />
 
-      <div className="card !p-4 flex flex-wrap gap-3 items-end">
+      <div className="card !p-5">
         <div>
-          <label className="text-xs text-text-secondary block mb-1">티커</label>
-          <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="005930" className="w-28 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm" />
+          <h2 className="section-title">보유 종목 추가</h2>
+          <p className="section-copy">티커, 매수가, 수량을 입력하면 손익과 다음 거래일 시그널을 바로 포트폴리오에 반영합니다.</p>
         </div>
-        <div>
-          <label className="text-xs text-text-secondary block mb-1">매수가</label>
-          <input value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="70000" type="number" className="w-28 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm" />
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.1fr_1fr_0.8fr_1.1fr_0.7fr_auto]">
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">티커</label>
+            <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="005930" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수가</label>
+            <input value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} placeholder="70000" type="number" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">수량</label>
+            <input value={qty} onChange={(e) => setQty(e.target.value)} placeholder="10" type="number" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수일</label>
+            <input value={buyDate} onChange={(e) => setBuyDate(e.target.value)} type="date" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">국가</label>
+            <select value={countryCode} onChange={(e) => setCountryCode(e.target.value)} className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm">
+              <option value="KR">KR</option>
+              <option value="US">US</option>
+              <option value="JP">JP</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button onClick={addHolding} className="action-chip-primary w-full justify-center xl:w-auto">
+              보유 종목 추가
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-text-secondary block mb-1">수량</label>
-          <input value={qty} onChange={(e) => setQty(e.target.value)} placeholder="10" type="number" className="w-24 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-text-secondary block mb-1">매수일</label>
-          <input value={buyDate} onChange={(e) => setBuyDate(e.target.value)} type="date" className="px-3 py-1.5 rounded-lg bg-surface border border-border text-sm" />
-        </div>
-        <div>
-          <label className="text-xs text-text-secondary block mb-1">국가</label>
-          <select value={countryCode} onChange={(e) => setCountryCode(e.target.value)} className="px-3 py-1.5 rounded-lg bg-surface border border-border text-sm">
-            <option value="KR">KR</option>
-            <option value="US">US</option>
-            <option value="JP">JP</option>
-          </select>
-        </div>
-        <button onClick={addHolding} className="px-6 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90">보유 종목 추가</button>
       </div>
 
       {summary && summary.holding_count > 0 ? (

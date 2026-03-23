@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
@@ -18,12 +19,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ToastProvider>
             <div className="flex min-h-screen">
               <Navigation />
-              <main className="flex-1 overflow-auto">
-                <div className="px-6 lg:px-8 pt-4 pb-2">
-                  <SearchBar />
-                </div>
-                <div className="px-6 lg:px-8 pb-8">{children}</div>
-              </main>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <header className="sticky top-0 z-30 border-b border-border/70 bg-bg/78 backdrop-blur-2xl">
+                  <div className="mx-auto flex w-full max-w-[1500px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:px-10">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary xl:block">
+                        Market Workspace
+                      </div>
+                      <SearchBar />
+                    </div>
+                    <div className="hidden items-center gap-2 xl:flex">
+                      <Link href="/portfolio" className="action-chip-secondary">
+                        포트폴리오
+                      </Link>
+                      <Link href="/radar" className="action-chip-secondary">
+                        레이더
+                      </Link>
+                    </div>
+                  </div>
+                </header>
+                <main className="flex-1">
+                  <div className="mx-auto w-full max-w-[1500px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 xl:px-10">
+                    {children}
+                  </div>
+                </main>
+              </div>
             </div>
           </ToastProvider>
         </ThemeProvider>

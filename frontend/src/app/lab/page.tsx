@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import ErrorBanner from "@/components/ErrorBanner";
+import PageHeader from "@/components/PageHeader";
 import PredictionLabDashboard from "@/components/PredictionLabDashboard";
 import { api } from "@/lib/api";
 import type { PredictionLabResponse } from "@/lib/api";
@@ -29,19 +30,27 @@ export default function LabPage() {
   }, []);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">예측 연구실</h1>
-        <p className="text-text-secondary mt-1">예측 방향 적중률, 밴드 적중률, 평균 오차, 보정 상태를 한 화면에서 점검합니다.</p>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Prediction Lab"
+        title="예측 연구실"
+        description="예측 방향 적중률, 밴드 적중률, 평균 오차, 보정 상태를 같은 기준으로 묶어 사후 검증 흐름을 더 또렷하게 정리했습니다."
+        meta={
+          <>
+            <span className="info-chip">방향 적중률</span>
+            <span className="info-chip">밴드 적중률</span>
+            <span className="info-chip">Calibration 추적</span>
+          </>
+        }
+      />
 
       {error ? <ErrorBanner error={error} onRetry={() => window.location.reload()} /> : null}
 
       {loading ? (
-        <div className="space-y-4 animate-pulse">
-          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">{[1, 2, 3, 4, 5].map((item) => <div key={item} className="h-28 bg-border rounded-xl" />)}</div>
-          <div className="h-96 bg-border rounded-xl" />
-          <div className="h-96 bg-border rounded-xl" />
+        <div className="animate-pulse space-y-4">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">{[1, 2, 3, 4, 5].map((item) => <div key={item} className="h-28 rounded-xl bg-border" />)}</div>
+          <div className="h-96 rounded-xl bg-border" />
+          <div className="h-96 rounded-xl bg-border" />
         </div>
       ) : data ? (
         <PredictionLabDashboard data={data} />
