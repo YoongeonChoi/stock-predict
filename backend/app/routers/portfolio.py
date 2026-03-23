@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.errors import SP_5008
-from app.services import portfolio_service
+from app.services import ideal_portfolio_service, portfolio_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -19,6 +19,20 @@ class HoldingCreate(BaseModel):
 async def get_portfolio():
     try:
         data = await portfolio_service.get_portfolio()
+        return data
+    except Exception as e:
+        err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/ideal")
+async def get_ideal_portfolio(refresh: bool = False, history_limit: int = 10):
+    try:
+        data = await ideal_portfolio_service.get_daily_ideal_portfolio(
+            force_refresh=refresh,
+            history_limit=max(3, min(history_limit, 30)),
+        )
         return data
     except Exception as e:
         err = SP_5008(str(e)[:200])

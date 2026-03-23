@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 from collections import defaultdict
+from datetime import datetime
 
 from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
@@ -13,6 +14,7 @@ from app.data import cache, yfinance_client
 from app.database import db
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
+from app.services import market_service
 from app.utils.async_tools import gather_limited
 
 
@@ -232,9 +234,620 @@ def _stress_scenarios(
     return scenarios
 
 
+def _portfolio_model_defaults(note: str) -> dict:
+    return {
+        "as_of": datetime.now().isoformat(),
+        "objective": "예측 시나리오, 실행 바이어스, 포지션 캡을 함께 반영한 모델 포트폴리오 제안입니다.",
+        "risk_budget": {
+            "style": "balanced",
+            "style_label": "균형형",
+            "recommended_equity_pct": 0.0,
+            "cash_buffer_pct": 100.0,
+            "target_position_count": 0,
+            "max_single_weight_pct": 0.0,
+            "max_country_weight_pct": 0.0,
+            "max_sector_weight_pct": 0.0,
+        },
+        "summary": {
+            "selected_count": 0,
+            "new_position_count": 0,
+            "trim_count": 0,
+            "watchlist_focus_count": 0,
+            "model_up_probability": 0.0,
+            "model_predicted_return_pct": 0.0,
+        },
+        "allocation": {
+            "by_country": [],
+            "by_sector": [],
+        },
+        "recommended_holdings": [],
+        "rebalance_actions": [],
+        "candidate_pipeline": [],
+        "notes": [note],
+    }
+
+
+def _model_budget(
+    *,
+    overall_label: str,
+    portfolio_up_probability: float,
+    risk_off_weight: float,
+    downside_watch_weight: float,
+) -> dict:
+    cash_buffer = 10.0
+    style = "offensive"
+    style_label = "공격형"
+
+    if overall_label == "aggressive":
+        cash_buffer = 26.0
+        style = "defensive"
+        style_label = "방어형"
+    elif overall_label == "elevated":
+        cash_buffer = 20.0
+        style = "defensive"
+        style_label = "방어형"
+    elif overall_label == "moderate":
+        cash_buffer = 14.0
+        style = "balanced"
+        style_label = "균형형"
+
+    if portfolio_up_probability <= 47.0:
+        cash_buffer += 4.0
+    elif portfolio_up_probability >= 57.0:
+        cash_buffer -= 2.0
+
+    if risk_off_weight >= 35.0:
+        cash_buffer += 5.0
+    if downside_watch_weight >= 40.0:
+        cash_buffer += 4.0
+
+    cash_buffer = round(_clip(cash_buffer, 6.0, 32.0), 2)
+    recommended_equity_pct = round(100.0 - cash_buffer, 2)
+    target_position_count = 5 if cash_buffer >= 24.0 else 6 if cash_buffer >= 18.0 else 7 if cash_buffer >= 12.0 else 8
+    max_single_weight_pct = 13.0 if cash_buffer >= 24.0 else 14.5 if cash_buffer >= 18.0 else 16.0
+    max_country_weight_pct = 42.0 if cash_buffer >= 24.0 else 46.0 if cash_buffer >= 18.0 else 52.0
+    max_sector_weight_pct = 24.0 if cash_buffer >= 24.0 else 28.0 if cash_buffer >= 18.0 else 32.0
+
+    return {
+        "style": style,
+        "style_label": style_label,
+        "recommended_equity_pct": recommended_equity_pct,
+        "cash_buffer_pct": cash_buffer,
+        "target_position_count": target_position_count,
+        "max_single_weight_pct": max_single_weight_pct,
+        "max_country_weight_pct": max_country_weight_pct,
+        "max_sector_weight_pct": max_sector_weight_pct,
+    }
+
+
+def _supplement_scan_countries(country_codes: list[str]) -> list[str]:
+    ordered: list[str] = []
+    for code in country_codes:
+        if code in COUNTRY_REGISTRY and code not in ordered:
+            ordered.append(code)
+
+    for fallback in ["KR", "US", "JP"]:
+        if fallback not in ordered:
+            ordered.append(fallback)
+        if len(ordered) >= 2:
+            break
+
+    return ordered[:2]
+
+
+def _candidate_action(
+    *,
+    current_weight_pct: float,
+    target_weight_pct: float,
+) -> str:
+    delta = target_weight_pct - current_weight_pct
+    if current_weight_pct > 0.0 and target_weight_pct < 1.0:
+        return "exit"
+    if current_weight_pct <= 0.1 and target_weight_pct >= 3.0:
+        return "new"
+    if delta >= 3.5:
+        return "add"
+    if delta <= -4.0:
+        return "trim"
+    return "hold"
+
+
+def _priority_label(priority_score: float) -> str:
+    if priority_score >= 18.0:
+        return "high"
+    if priority_score >= 10.0:
+        return "medium"
+    return "low"
+
+
+def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tuple[float, list[str]]:
+    up_probability = float(holding.get("up_probability") or (radar_match or {}).get("up_probability") or 50.0)
+    predicted_return_pct = float(holding.get("predicted_return_pct") or (radar_match or {}).get("predicted_return_pct") or 0.0)
+    trade_conviction = float(holding.get("trade_conviction") or 50.0)
+    risk_score = float(holding.get("risk_score") or 50.0)
+    bear_probability = float(holding.get("bear_probability") or (radar_match or {}).get("bear_probability") or 0.0)
+    execution_bias = holding.get("execution_bias") or (radar_match or {}).get("execution_bias") or "stay_selective"
+    trade_action = holding.get("trade_action") or (radar_match or {}).get("action") or "wait_pullback"
+
+    score = 50.0
+    score += (up_probability - 50.0) * 0.85
+    score += predicted_return_pct * 6.0
+    score += (trade_conviction - 50.0) * 0.22
+    score += {
+        "press_long": 12.0,
+        "lean_long": 7.0,
+        "stay_selective": 2.0,
+        "reduce_risk": -8.0,
+        "capital_preservation": -14.0,
+    }.get(execution_bias, 0.0)
+    score += {
+        "accumulate": 8.0,
+        "breakout_watch": 5.0,
+        "wait_pullback": 1.5,
+        "reduce_risk": -6.0,
+        "avoid": -8.0,
+    }.get(trade_action, 0.0)
+    score -= max(risk_score - 55.0, 0.0) * 0.55
+    score -= max(bear_probability - 24.0, 0.0) * 0.65
+
+    if holding.get("market_regime_stance") == "risk_on":
+        score += 4.0
+    elif holding.get("market_regime_stance") == "risk_off":
+        score -= 5.5
+
+    if radar_match:
+        score += max(float(radar_match.get("opportunity_score") or 0.0) - 60.0, 0.0) * 0.12
+
+    notes = [
+        f"다음 거래일 상승 확률 {up_probability:.1f}%, 예상 수익률 {predicted_return_pct:+.2f}%를 반영했습니다.",
+        f"실행 바이어스는 `{execution_bias}`이며 현재 셋업은 `{trade_action}` 기준으로 해석했습니다.",
+    ]
+    risk_flags = holding.get("risk_flags") or []
+    thesis = holding.get("thesis") or []
+    if risk_flags:
+        notes.append(risk_flags[0])
+    elif thesis:
+        notes.append(thesis[0])
+
+    return round(_clip(score, 0.0, 100.0), 1), notes[:3]
+
+
+def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[float, list[str], str]:
+    watchlist_key = f"{opportunity.get('country_code', 'US')}:{opportunity.get('ticker')}"
+    is_watchlist = watchlist_key in watchlist_keys
+    execution_bias = opportunity.get("execution_bias") or "stay_selective"
+    action = opportunity.get("action") or "wait_pullback"
+
+    score = float(opportunity.get("opportunity_score") or 0.0)
+    if is_watchlist:
+        score += 5.0
+    if action in {"accumulate", "breakout_watch"}:
+        score += 3.5
+    if execution_bias in {"reduce_risk", "capital_preservation"}:
+        score -= 6.0
+    if opportunity.get("regime_tailwind") == "tailwind":
+        score += 3.0
+    elif opportunity.get("regime_tailwind") == "headwind":
+        score -= 2.5
+
+    notes = [
+        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 상승 확률 {float(opportunity.get('up_probability') or 0.0):.1f}%입니다.",
+        f"실행 바이어스 `{execution_bias}`와 액션 `{action}` 기준으로 신규 편입 후보로 평가했습니다.",
+    ]
+    if is_watchlist:
+        notes.append("워치리스트에 있던 종목이라 우선순위를 한 단계 높였습니다.")
+    risk_flags = opportunity.get("risk_flags") or []
+    thesis = opportunity.get("thesis") or []
+    if risk_flags:
+        notes.append(risk_flags[0])
+    elif thesis:
+        notes.append(thesis[0])
+
+    return round(_clip(score, 0.0, 100.0), 1), notes[:3], "watchlist" if is_watchlist else "radar"
+
+
+def _select_model_candidates(candidates: list[dict], target_count: int) -> list[dict]:
+    ordered = sorted(
+        candidates,
+        key=lambda item: (
+            item.get("model_score", 0.0)
+            + (3.0 if item.get("source") == "holding" else 0.0)
+            + (2.0 if item.get("in_watchlist") else 0.0)
+        ),
+        reverse=True,
+    )
+
+    selected: list[dict] = []
+    country_counts: dict[str, int] = defaultdict(int)
+    sector_counts: dict[str, int] = defaultdict(int)
+    seen_keys: set[str] = set()
+
+    for candidate in ordered:
+        if len(selected) >= target_count:
+            break
+        key = candidate["key"]
+        if key in seen_keys:
+            continue
+        if candidate.get("source") != "holding" and candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"}:
+            continue
+        minimum_score = 48.0 if candidate.get("source") == "holding" else 56.0
+        if float(candidate.get("model_score") or 0.0) < minimum_score:
+            continue
+        if country_counts[candidate["country_code"]] >= 3:
+            continue
+        if sector_counts[candidate["sector"]] >= 2:
+            continue
+
+        selected.append(candidate)
+        seen_keys.add(key)
+        country_counts[candidate["country_code"]] += 1
+        sector_counts[candidate["sector"]] += 1
+
+    minimum_fill = min(target_count, max(4, min(len(ordered), 4)))
+    if len(selected) < minimum_fill:
+        for candidate in ordered:
+            if len(selected) >= minimum_fill:
+                break
+            key = candidate["key"]
+            if key in seen_keys or float(candidate.get("model_score") or 0.0) < 45.0:
+                continue
+            if country_counts[candidate["country_code"]] >= 4:
+                continue
+            selected.append(candidate)
+            seen_keys.add(key)
+            country_counts[candidate["country_code"]] += 1
+
+    return selected
+
+
+def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[dict], float]:
+    if not selected:
+        return [], 0.0
+
+    target_equity_pct = float(budget["recommended_equity_pct"])
+    max_single = float(budget["max_single_weight_pct"])
+    max_country = float(budget["max_country_weight_pct"])
+    max_sector = float(budget["max_sector_weight_pct"])
+
+    targets: dict[str, float] = {item["key"]: 0.0 for item in selected}
+    country_alloc: dict[str, float] = defaultdict(float)
+    sector_alloc: dict[str, float] = defaultdict(float)
+
+    min_position = max(min(target_equity_pct * 0.58 / max(len(selected), 1), 8.0), 4.0)
+    for item in sorted(selected, key=lambda entry: entry.get("model_score", 0.0), reverse=True):
+        remaining_total = target_equity_pct - sum(targets.values())
+        if remaining_total <= 0.25:
+            break
+        country_room = max_country - country_alloc[item["country_code"]]
+        sector_room = max_sector - sector_alloc[item["sector"]]
+        room = min(max_single - targets[item["key"]], country_room, sector_room, remaining_total)
+        if room <= 0.25:
+            continue
+        add_weight = min(min_position, room)
+        targets[item["key"]] += add_weight
+        country_alloc[item["country_code"]] += add_weight
+        sector_alloc[item["sector"]] += add_weight
+
+    remaining = target_equity_pct - sum(targets.values())
+    for _ in range(6):
+        if remaining <= 0.25:
+            break
+        active: list[tuple[dict, float]] = []
+        for item in selected:
+            country_room = max_country - country_alloc[item["country_code"]]
+            sector_room = max_sector - sector_alloc[item["sector"]]
+            room = min(max_single - targets[item["key"]], country_room, sector_room, remaining)
+            if room > 0.1:
+                active.append((item, room))
+        if not active:
+            break
+
+        total_weight_score = sum(max(float(item.get("weight_score") or 0.0), 1.0) for item, _ in active)
+        distributed = 0.0
+        for item, room in active:
+            share = remaining * max(float(item.get("weight_score") or 0.0), 1.0) / total_weight_score
+            add_weight = min(share, room)
+            if add_weight <= 0.05:
+                continue
+            targets[item["key"]] += add_weight
+            country_alloc[item["country_code"]] += add_weight
+            sector_alloc[item["sector"]] += add_weight
+            distributed += add_weight
+        remaining -= distributed
+        if distributed <= 0.1:
+            break
+
+    rounded_selected: list[dict] = []
+    for item in selected:
+        target_weight_pct = round(targets[item["key"]], 2)
+        current_weight_pct = round(float(item.get("current_weight_pct") or 0.0), 2)
+        delta_weight_pct = round(target_weight_pct - current_weight_pct, 2)
+        action = _candidate_action(
+            current_weight_pct=current_weight_pct,
+            target_weight_pct=target_weight_pct,
+        )
+        priority_score = abs(delta_weight_pct) * 2.0 + max(float(item.get("model_score") or 0.0) - 55.0, 0.0) * 0.2
+        if action in {"exit", "trim"} and item.get("execution_bias") in {"reduce_risk", "capital_preservation"}:
+            priority_score += 8.0
+        if action in {"new", "add"} and float(item.get("model_score") or 0.0) >= 65.0:
+            priority_score += 6.0
+
+        rounded_selected.append(
+            {
+                **item,
+                "target_weight_pct": target_weight_pct,
+                "current_weight_pct": current_weight_pct,
+                "delta_weight_pct": delta_weight_pct,
+                "action": action,
+                "priority": _priority_label(priority_score),
+                "priority_score": round(priority_score, 2),
+            }
+        )
+
+    actual_equity_pct = round(sum(item["target_weight_pct"] for item in rounded_selected), 2)
+    return rounded_selected, actual_equity_pct
+
+
+def _allocation_breakdown(items: list[dict], field: str) -> list[dict]:
+    grouped: dict[str, float] = defaultdict(float)
+    for item in items:
+        target_weight_pct = float(item.get("target_weight_pct") or 0.0)
+        if target_weight_pct <= 0:
+            continue
+        grouped[str(item.get(field) or "Other")] += target_weight_pct
+    return [
+        {"name": key, "value": round(value, 2)}
+        for key, value in sorted(grouped.items(), key=lambda entry: entry[1], reverse=True)
+    ]
+
+
+async def _build_model_portfolio(
+    *,
+    holdings: list[dict],
+    risk: dict,
+    country_context: dict[str, dict],
+    country_weights: dict[str, float],
+    risk_off_weight: float,
+) -> dict:
+    if not holdings:
+        return _portfolio_model_defaults("보유 종목이나 워치리스트를 추가하면 권장 비중과 리밸런싱 큐를 자동으로 계산합니다.")
+
+    budget = _model_budget(
+        overall_label=str(risk.get("overall_label") or "moderate"),
+        portfolio_up_probability=float(risk.get("portfolio_up_probability") or 50.0),
+        risk_off_weight=risk_off_weight,
+        downside_watch_weight=float(risk.get("downside_watch_weight") or 0.0),
+    )
+
+    watchlist_rows = await db.watchlist_list()
+    watchlist_keys = {
+        f"{row.get('country_code', 'US')}:{row.get('ticker')}"
+        for row in watchlist_rows
+        if row.get("ticker")
+    }
+
+    base_scan_countries = [item.get("country_code", "US") for item in holdings]
+    base_scan_countries.extend(row.get("country_code", "US") for row in watchlist_rows)
+    scan_countries = _supplement_scan_countries(base_scan_countries)
+    radar_responses = await gather_limited(
+        scan_countries,
+        lambda code: market_service.get_market_opportunities(code, limit=6),
+        limit=2,
+    )
+    radar_items = [
+        opportunity
+        for response in radar_responses
+        if not isinstance(response, Exception)
+        for opportunity in response.get("opportunities", [])
+    ]
+    radar_lookup = {
+        f"{item.get('country_code', 'US')}:{item.get('ticker')}": item
+        for item in radar_items
+        if item.get("ticker")
+    }
+
+    candidates: list[dict] = []
+    holding_keys = set()
+    for holding in holdings:
+        key = f"{holding['country_code']}:{holding['ticker']}"
+        holding_keys.add(key)
+        radar_match = radar_lookup.get(key)
+        model_score, notes = _holding_model_score(holding, radar_match=radar_match)
+        candidates.append(
+            {
+                "key": key,
+                "ticker": holding["ticker"],
+                "name": holding["name"],
+                "country_code": holding["country_code"],
+                "sector": holding["sector"],
+                "source": "holding",
+                "in_watchlist": key in watchlist_keys,
+                "current_weight_pct": round(float(holding.get("weight_pct") or 0.0), 2),
+                "model_score": model_score,
+                "weight_score": max(model_score - 42.0, 6.0) + 2.0,
+                "up_probability": holding.get("up_probability"),
+                "predicted_return_pct": holding.get("predicted_return_pct"),
+                "bull_probability": holding.get("bull_probability"),
+                "bear_probability": holding.get("bear_probability"),
+                "execution_bias": holding.get("execution_bias"),
+                "setup_label": holding.get("trade_setup"),
+                "rationale": notes,
+                "risk_flags": list(holding.get("risk_flags") or []),
+            }
+        )
+
+    for opportunity in radar_items:
+        key = f"{opportunity.get('country_code', 'US')}:{opportunity.get('ticker')}"
+        if key in holding_keys:
+            continue
+        model_score, notes, source = _radar_model_score(opportunity, watchlist_keys)
+        if model_score < 52.0 and source != "watchlist":
+            continue
+        candidates.append(
+            {
+                "key": key,
+                "ticker": opportunity.get("ticker"),
+                "name": opportunity.get("name"),
+                "country_code": opportunity.get("country_code", "US"),
+                "sector": opportunity.get("sector", "Other"),
+                "source": source,
+                "in_watchlist": source == "watchlist",
+                "current_weight_pct": 0.0,
+                "model_score": model_score,
+                "weight_score": max(model_score - 48.0, 4.0),
+                "up_probability": opportunity.get("up_probability"),
+                "predicted_return_pct": opportunity.get("predicted_return_pct"),
+                "bull_probability": opportunity.get("bull_probability"),
+                "bear_probability": opportunity.get("bear_probability"),
+                "execution_bias": opportunity.get("execution_bias"),
+                "setup_label": opportunity.get("setup_label"),
+                "rationale": notes,
+                "risk_flags": list(opportunity.get("risk_flags") or []),
+            }
+        )
+
+    selected = _select_model_candidates(candidates, int(budget["target_position_count"]))
+    recommended_holdings, actual_equity_pct = _allocate_model_weights(selected, budget)
+    budget["recommended_equity_pct"] = actual_equity_pct
+    budget["cash_buffer_pct"] = round(100.0 - actual_equity_pct, 2)
+
+    recommended_lookup = {item["key"]: item for item in recommended_holdings}
+    rebalance_actions: list[dict] = []
+    for holding in holdings:
+        key = f"{holding['country_code']}:{holding['ticker']}"
+        item = recommended_lookup.get(key)
+        target_weight_pct = float(item.get("target_weight_pct") or 0.0) if item else 0.0
+        current_weight_pct = round(float(holding.get("weight_pct") or 0.0), 2)
+        delta_weight_pct = round(target_weight_pct - current_weight_pct, 2)
+        action = _candidate_action(
+            current_weight_pct=current_weight_pct,
+            target_weight_pct=target_weight_pct,
+        )
+        priority_score = abs(delta_weight_pct) * 2.4 + max(float(holding.get("risk_score") or 0.0) - 60.0, 0.0) * 0.15
+        if action in {"exit", "trim"}:
+            priority_score += 5.0
+        if holding.get("execution_bias") in {"reduce_risk", "capital_preservation"}:
+            priority_score += 4.0
+        rebalance_actions.append(
+            {
+                "ticker": holding["ticker"],
+                "name": holding["name"],
+                "country_code": holding["country_code"],
+                "sector": holding["sector"],
+                "source": "holding",
+                "in_watchlist": key in watchlist_keys,
+                "current_weight_pct": current_weight_pct,
+                "target_weight_pct": round(target_weight_pct, 2),
+                "delta_weight_pct": delta_weight_pct,
+                "model_score": round(float((item or {}).get("model_score") or 0.0), 1),
+                "action": action,
+                "priority": _priority_label(priority_score),
+                "priority_score": round(priority_score, 2),
+                "up_probability": holding.get("up_probability"),
+                "predicted_return_pct": holding.get("predicted_return_pct"),
+                "bull_probability": holding.get("bull_probability"),
+                "bear_probability": holding.get("bear_probability"),
+                "execution_bias": holding.get("execution_bias"),
+                "setup_label": holding.get("trade_setup"),
+                "rationale": list((item or {}).get("rationale") or holding.get("thesis") or []),
+                "risk_flags": list(holding.get("risk_flags") or []),
+            }
+        )
+
+    for item in recommended_holdings:
+        if item.get("current_weight_pct", 0.0) <= 0.1 and item.get("target_weight_pct", 0.0) >= 3.0:
+            priority_score = abs(float(item["delta_weight_pct"])) * 2.1 + max(float(item["model_score"]) - 60.0, 0.0) * 0.22 + 4.0
+            rebalance_actions.append(
+                {
+                    **item,
+                    "priority": _priority_label(priority_score),
+                    "priority_score": round(priority_score, 2),
+                }
+            )
+
+    rebalance_actions.sort(key=lambda item: item.get("priority_score", 0.0), reverse=True)
+
+    recommended_holdings.sort(
+        key=lambda item: (
+            item.get("target_weight_pct", 0.0),
+            item.get("model_score", 0.0),
+        ),
+        reverse=True,
+    )
+
+    pipeline = [
+        {
+            **item,
+            "priority": _priority_label(max(float(item.get("model_score") or 0.0) - 45.0, 0.0)),
+            "target_weight_pct": 0.0,
+            "delta_weight_pct": 0.0,
+            "action": "watch",
+        }
+        for item in sorted(
+            (
+                candidate for candidate in candidates
+                if candidate["source"] != "holding" and candidate["key"] not in recommended_lookup
+            ),
+            key=lambda entry: entry.get("model_score", 0.0),
+            reverse=True,
+        )[:4]
+    ]
+
+    recommendation_total = sum(float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings)
+    weighted_up_probability = (
+        sum(float(item.get("up_probability") or 50.0) * float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings) / recommendation_total
+        if recommendation_total else 0.0
+    )
+    weighted_predicted_return = (
+        sum(float(item.get("predicted_return_pct") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings) / recommendation_total
+        if recommendation_total else 0.0
+    )
+
+    top_country = _allocation_breakdown(recommended_holdings, "country_code")
+    top_sector = _allocation_breakdown(recommended_holdings, "sector")
+    trim_count = sum(1 for item in rebalance_actions if item.get("action") in {"trim", "exit"})
+    new_position_count = sum(1 for item in recommended_holdings if item.get("current_weight_pct", 0.0) <= 0.1)
+    watchlist_focus_count = sum(1 for item in recommended_holdings if item.get("in_watchlist"))
+
+    notes = [
+        f"현재 추천안은 `{budget['style_label']}` 운영을 기준으로 주식 {actual_equity_pct:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
+        f"권장 포지션 수는 {len(recommended_holdings)}개이며 단일 종목 상단은 {budget['max_single_weight_pct']:.1f}%로 제한했습니다.",
+    ]
+    if trim_count > 0:
+        notes.append(f"현재 보유 종목 중 {trim_count}개는 방어 신호 또는 과대 비중 때문에 먼저 줄이는 편이 좋습니다.")
+    if new_position_count > 0:
+        notes.append(f"신규 편입 후보 {new_position_count}개를 레이더와 워치리스트에서 추려 모델 포트폴리오에 반영했습니다.")
+    if top_country:
+        notes.append(f"국가 비중은 {top_country[0]['name']} {top_country[0]['value']:.1f}% 수준에서 관리하도록 설계했습니다.")
+    elif not recommended_holdings:
+        notes.append("현재 데이터 기준으로 신규 추천안을 구성할 만한 확신 높은 후보가 부족합니다.")
+
+    return {
+        "as_of": datetime.now().isoformat(),
+        "objective": "예측 시나리오, 실행 바이어스, 포지션 캡을 동시에 반영해 실제 매매 비중 제안으로 연결한 모델 포트폴리오입니다.",
+        "risk_budget": budget,
+        "summary": {
+            "selected_count": len(recommended_holdings),
+            "new_position_count": new_position_count,
+            "trim_count": trim_count,
+            "watchlist_focus_count": watchlist_focus_count,
+            "model_up_probability": round(weighted_up_probability, 2),
+            "model_predicted_return_pct": round(weighted_predicted_return, 2),
+        },
+        "allocation": {
+            "by_country": top_country,
+            "by_sector": top_sector,
+        },
+        "recommended_holdings": recommended_holdings,
+        "rebalance_actions": rebalance_actions[:6],
+        "candidate_pipeline": pipeline,
+        "notes": notes[:5],
+    }
+
+
 async def get_portfolio():
     """Get portfolio with current prices, risk context, and execution guidance."""
-    cache_key = "portfolio_overview:v4"
+    cache_key = "portfolio_overview:v5"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -274,6 +887,9 @@ async def get_portfolio():
                 "action_queue": [],
             },
             "stress_test": [],
+            "model_portfolio": _portfolio_model_defaults(
+                "보유 종목이나 워치리스트를 추가하면 권장 비중과 리밸런싱 큐를 자동으로 계산합니다."
+            ),
         }
         await cache.set(cache_key, empty, 60)
         return empty
@@ -573,6 +1189,13 @@ async def get_portfolio():
         },
         "stress_test": stress_test,
     }
+    response["model_portfolio"] = await _build_model_portfolio(
+        holdings=enriched,
+        risk=response["risk"],
+        country_context=country_context,
+        country_weights=country_weights,
+        risk_off_weight=risk_off_weight,
+    )
     await cache.set(cache_key, response, 90)
     return response
 

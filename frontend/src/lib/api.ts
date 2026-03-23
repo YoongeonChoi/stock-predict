@@ -241,12 +241,159 @@ export interface PortfolioRiskSnapshot {
   action_queue: PortfolioActionQueueItem[];
 }
 
+export interface PortfolioModelBudget {
+  style: "defensive" | "balanced" | "offensive";
+  style_label: string;
+  recommended_equity_pct: number;
+  cash_buffer_pct: number;
+  target_position_count: number;
+  max_single_weight_pct: number;
+  max_country_weight_pct: number;
+  max_sector_weight_pct: number;
+}
+
+export interface PortfolioModelSummary {
+  selected_count: number;
+  new_position_count: number;
+  trim_count: number;
+  watchlist_focus_count: number;
+  model_up_probability: number;
+  model_predicted_return_pct: number;
+}
+
+export interface PortfolioModelAllocationItem {
+  name: string;
+  value: number;
+}
+
+export interface PortfolioModelItem {
+  ticker: string;
+  name: string;
+  country_code: string;
+  sector: string;
+  source: "holding" | "radar" | "watchlist";
+  in_watchlist: boolean;
+  current_weight_pct: number;
+  target_weight_pct: number;
+  delta_weight_pct: number;
+  model_score: number;
+  action: "new" | "add" | "hold" | "trim" | "exit" | "watch";
+  priority: "high" | "medium" | "low";
+  up_probability?: number | null;
+  predicted_return_pct?: number | null;
+  bull_probability?: number | null;
+  bear_probability?: number | null;
+  execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
+  setup_label?: string | null;
+  rationale: string[];
+  risk_flags: string[];
+}
+
+export interface PortfolioModelPortfolio {
+  as_of: string;
+  objective: string;
+  risk_budget: PortfolioModelBudget;
+  summary: PortfolioModelSummary;
+  allocation: {
+    by_country: PortfolioModelAllocationItem[];
+    by_sector: PortfolioModelAllocationItem[];
+  };
+  recommended_holdings: PortfolioModelItem[];
+  rebalance_actions: PortfolioModelItem[];
+  candidate_pipeline: PortfolioModelItem[];
+  notes: string[];
+}
+
+export interface DailyIdealPortfolioTargetDate {
+  country_code: string;
+  target_date: string;
+}
+
+export interface DailyIdealPortfolioMarketView {
+  country_code: string;
+  label: string;
+  stance: "risk_on" | "neutral" | "risk_off";
+  conviction: number;
+  actionable_count: number;
+  bullish_count: number;
+  summary: string;
+}
+
+export interface DailyIdealPortfolioPosition {
+  rank: number;
+  ticker: string;
+  name: string;
+  country_code: string;
+  sector: string;
+  reference_price: number;
+  target_date: string;
+  target_weight_pct: number;
+  selection_score: number;
+  opportunity_score: number;
+  up_probability: number;
+  confidence: number;
+  predicted_return_pct: number;
+  bull_case_price?: number | null;
+  base_case_price?: number | null;
+  bear_case_price?: number | null;
+  bull_probability?: number | null;
+  base_probability?: number | null;
+  bear_probability?: number | null;
+  setup_label?: string | null;
+  action?: string | null;
+  execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
+  execution_note?: string | null;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop_loss?: number | null;
+  take_profit_1?: number | null;
+  take_profit_2?: number | null;
+  risk_reward_estimate?: number | null;
+  thesis: string[];
+  risk_flags: string[];
+  market_stance: "risk_on" | "neutral" | "risk_off";
+}
+
+export interface DailyIdealPortfolioHistoryEntry {
+  reference_date: string;
+  generated_at: string;
+  predicted_portfolio_return_pct: number;
+  realized_portfolio_return_pct?: number | null;
+  evaluated: boolean;
+  hit_rate?: number | null;
+  direction_accuracy?: number | null;
+  selected_count: number;
+  top_tickers: string[];
+}
+
+export interface DailyIdealPortfolio {
+  reference_date: string;
+  generated_at: string;
+  objective: string;
+  target_dates: DailyIdealPortfolioTargetDate[];
+  risk_budget: PortfolioModelBudget;
+  market_view: DailyIdealPortfolioMarketView[];
+  summary: {
+    selected_count: number;
+    predicted_portfolio_return_pct: number;
+    portfolio_up_probability: number;
+  };
+  allocation: {
+    by_country: PortfolioModelAllocationItem[];
+    by_sector: PortfolioModelAllocationItem[];
+  };
+  positions: DailyIdealPortfolioPosition[];
+  playbook: string[];
+  history: DailyIdealPortfolioHistoryEntry[];
+}
+
 export interface PortfolioData {
   holdings: PortfolioHolding[];
   summary: { total_invested: number; total_current: number; total_pnl: number; total_pnl_pct: number; holding_count: number };
   allocation: { by_sector: { name: string; value: number }[]; by_country: { name: string; value: number }[] };
   risk: PortfolioRiskSnapshot;
   stress_test: PortfolioStressScenario[];
+  model_portfolio: PortfolioModelPortfolio;
 }
 
 export interface MarketMovers {
@@ -534,6 +681,8 @@ export const api = {
     return get<ScreenerResponse>(`/api/screener?${qs}`);
   },
   getPortfolio: () => get<PortfolioData>("/api/portfolio"),
+  getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
+    get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
   addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
     post("/api/portfolio/holdings", data),
   removePortfolioHolding: (id: number) => del(`/api/portfolio/holdings/${id}`),

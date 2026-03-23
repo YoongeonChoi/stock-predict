@@ -166,6 +166,8 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["summary"]["holding_count"], 0)
         self.assertEqual(result["risk"]["overall_label"], "empty")
         self.assertTrue(result["risk"]["playbook"])
+        self.assertIn("model_portfolio", result)
+        self.assertTrue(result["model_portfolio"]["notes"])
 
     async def test_portfolio_surfaces_execution_mix_and_action_queue(self):
         index_forecast = NextDayForecast(
@@ -252,6 +254,59 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             macd_hist=[],
             dates=[],
         )
+        radar_response = {
+            "country_code": "US",
+            "generated_at": "2026-03-29T08:00:00",
+            "market_regime": market_regime.model_dump(),
+            "total_scanned": 4,
+            "actionable_count": 1,
+            "bullish_count": 1,
+            "opportunities": [
+                {
+                    "rank": 1,
+                    "ticker": "ALLY",
+                    "name": "Ally Tech",
+                    "sector": "Financials",
+                    "country_code": "US",
+                    "current_price": 55.0,
+                    "change_pct": 1.2,
+                    "opportunity_score": 77.0,
+                    "quant_score": 74.0,
+                    "up_probability": 62.0,
+                    "confidence": 69.0,
+                    "predicted_return_pct": 2.3,
+                    "bull_case_price": 57.0,
+                    "base_case_price": 56.2,
+                    "bear_case_price": 53.5,
+                    "bull_probability": 31.0,
+                    "base_probability": 45.0,
+                    "bear_probability": 24.0,
+                    "setup_label": "Constructive Pullback",
+                    "action": "accumulate",
+                    "execution_bias": "lean_long",
+                    "execution_note": "추세 재가속을 보는 구간입니다.",
+                    "regime_tailwind": "mixed",
+                    "entry_low": 54.0,
+                    "entry_high": 55.5,
+                    "stop_loss": 52.0,
+                    "take_profit_1": 58.0,
+                    "take_profit_2": 60.0,
+                    "risk_reward_estimate": 2.1,
+                    "thesis": ["실적 모멘텀이 회복되는 흐름입니다."],
+                    "risk_flags": [],
+                    "forecast_date": "2026-03-30",
+                }
+            ],
+        }
+        empty_radar_response = {
+            "country_code": "KR",
+            "generated_at": "2026-03-29T08:00:00",
+            "market_regime": market_regime.model_dump(),
+            "total_scanned": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "opportunities": [],
+        }
 
         with (
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
@@ -273,6 +328,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
+                "app.services.portfolio_service.db.watchlist_list",
+                new=AsyncMock(return_value=[{"ticker": "ALLY", "country_code": "US"}]),
+            ),
+            patch(
                 "app.services.portfolio_service.yfinance_client.get_price_history",
                 new=AsyncMock(side_effect=[_sample_price_history(), _sample_price_history()]),
             ),
@@ -289,6 +348,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.portfolio_service._annualized_volatility", return_value=26.5),
             patch("app.services.portfolio_service._max_drawdown", return_value=12.4),
             patch("app.services.portfolio_service._beta", return_value=1.18),
+            patch(
+                "app.services.portfolio_service.market_service.get_market_opportunities",
+                new=AsyncMock(side_effect=[radar_response, empty_radar_response]),
+            ),
         ):
             result = await portfolio_service.get_portfolio()
 
@@ -299,3 +362,6 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(result["risk"]["bearish_scenario_exposure"], 0)
         self.assertTrue(result["risk"]["execution_mix"])
         self.assertEqual(result["risk"]["action_queue"][0]["execution_bias"], "capital_preservation")
+        self.assertTrue(result["model_portfolio"]["recommended_holdings"])
+        self.assertIn("ALLY", [item["ticker"] for item in result["model_portfolio"]["recommended_holdings"]])
+        self.assertTrue(result["model_portfolio"]["rebalance_actions"])

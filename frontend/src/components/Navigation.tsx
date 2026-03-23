@@ -24,6 +24,11 @@ export default function Navigation() {
   const { theme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   const navLinks = (
     <>
       {NAV.map((item) => (
@@ -33,7 +38,7 @@ export default function Navigation() {
           onClick={() => setMobileOpen(false)}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-            pathname === item.href
+            isActive(item.href)
               ? "bg-accent/10 text-accent font-medium"
               : "text-text-secondary hover:text-text hover:bg-surface"
           )}

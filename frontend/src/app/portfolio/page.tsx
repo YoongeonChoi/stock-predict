@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import PortfolioModelPanel from "@/components/PortfolioModelPanel";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import { api } from "@/lib/api";
 import type { PortfolioData } from "@/lib/api";
@@ -151,6 +152,7 @@ export default function PortfolioPage() {
           </div>
 
           <PortfolioRiskPanel risk={data!.risk} stressTest={data!.stress_test} />
+          <PortfolioModelPanel model={data!.model_portfolio} />
         </>
       ) : null}
 
@@ -278,9 +280,12 @@ export default function PortfolioPage() {
           </div>
         </div>
       ) : (
-        <div className="card text-center text-text-secondary py-12">
-          <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
-          <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
+        <div className="space-y-5">
+          <div className="card text-center text-text-secondary py-12">
+            <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
+            <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
+          </div>
+          {data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
         </div>
       )}
     </div>

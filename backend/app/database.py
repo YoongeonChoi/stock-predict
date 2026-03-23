@@ -114,6 +114,19 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     buy_date TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS ideal_portfolio_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference_date TEXT NOT NULL UNIQUE,
+    portfolio_json TEXT NOT NULL,
+    evaluation_json TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    evaluated_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ideal_portfolio_reference_date
+ON ideal_portfolio_snapshots(reference_date DESC);
 """
 
 
@@ -823,6 +836,98 @@ class Database:
     async def portfolio_delete(self, holding_id: int):
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute("DELETE FROM portfolio_holdings WHERE id = ?", (holding_id,))
+            await conn.commit()
+
+    # ── ideal portfolio snapshots ──────────────────────────
+
+    async def ideal_portfolio_get(self, reference_date: str) -> dict | None:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                "SELECT * FROM ideal_portfolio_snapshots WHERE reference_date = ?",
+                (reference_date,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["portfolio"] = json.loads(result["portfolio_json"])
+            result["evaluation"] = json.loads(result["evaluation_json"]) if result.get("evaluation_json") else None
+            return result
+
+    async def ideal_portfolio_upsert(self, reference_date: str, portfolio: dict):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                INSERT INTO ideal_portfolio_snapshots (
+                    reference_date, portfolio_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(reference_date)
+                DO UPDATE SET
+                    portfolio_json = excluded.portfolio_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    reference_date,
+                    json.dumps(portfolio, ensure_ascii=False, default=str),
+                    time.time(),
+                    time.time(),
+                ),
+            )
+            await conn.commit()
+
+    async def ideal_portfolio_list(self, limit: int = 10) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM ideal_portfolio_snapshots
+                ORDER BY reference_date DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = [dict(r) for r in await cur.fetchall()]
+            for row in rows:
+                row["portfolio"] = json.loads(row["portfolio_json"])
+                row["evaluation"] = json.loads(row["evaluation_json"]) if row.get("evaluation_json") else None
+            return rows
+
+    async def ideal_portfolio_pending(self, reference_date_to: str, limit: int = 20) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM ideal_portfolio_snapshots
+                WHERE evaluated_at IS NULL AND reference_date <= ?
+                ORDER BY reference_date ASC
+                LIMIT ?
+                """,
+                (reference_date_to, limit),
+            )
+            rows = [dict(r) for r in await cur.fetchall()]
+            for row in rows:
+                row["portfolio"] = json.loads(row["portfolio_json"])
+                row["evaluation"] = json.loads(row["evaluation_json"]) if row.get("evaluation_json") else None
+            return rows
+
+    async def ideal_portfolio_set_evaluation(self, reference_date: str, evaluation: dict):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                UPDATE ideal_portfolio_snapshots
+                SET evaluation_json = ?, evaluated_at = ?, updated_at = ?
+                WHERE reference_date = ?
+                """,
+                (
+                    json.dumps(evaluation, ensure_ascii=False, default=str),
+                    time.time(),
+                    time.time(),
+                    reference_date,
+                ),
+            )
             await conn.commit()
 
 
