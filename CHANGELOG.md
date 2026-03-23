@@ -2,6 +2,15 @@
 
 All notable changes to this project are tracked here.
 
+## v2.9.1 - 2026-03-24
+
+- FMP Stock Screener가 401/403/429를 반환할 때 거래소별 probe 후 즉시 fallback 유니버스로 전환하고, 일정 시간 재시도를 멈추도록 정리해 Opportunity Radar 로그 폭주를 크게 줄였습니다.
+- Opportunity Radar 응답에 `universe_source`, `universe_note`를 추가하고 프론트 카드에도 fallback 상태를 노출해 실시간 유니버스 제한 여부를 바로 알 수 있도록 개선했습니다.
+- FMP peers/calendar/dcf 같은 보조 엔드포인트도 권한 제한을 한 번 감지하면 조용히 fallback 하도록 만들어 종목 상세 진입 시 반복 403 에러 로그를 줄였습니다.
+- PDF 내보내기에서 `bytearray` 응답으로 실패하던 버그를 수정해 국가 리포트 PDF와 아카이브 PDF export가 안정적으로 동작하도록 고쳤습니다.
+- 한국 수급 보조 입력의 `pykrx` 내부 logging 충돌을 우회하고, 확인된 무효 KR 티커를 기본 유니버스에서 추가로 제거해 스크리너/히트맵/레이더 잡음을 낮췄습니다.
+- FastAPI TestClient 기반으로 32개 핵심 API 스모크를 돌려 health, 국가/섹터/종목, radar, portfolio, archive, diagnostics, export 전 구간이 200/정상 계약으로 응답하는 것을 확인했습니다.
+
 ## v2.9.0 - 2026-03-23
 
 - 한국·미국·일본 Opportunity Radar를 묶어 다음 거래일 기준의 `일일 이상적 포트폴리오`를 생성하고, 목표 비중·현금 버퍼·국가/섹터 상단 캡까지 함께 제안하는 기능을 추가했습니다.

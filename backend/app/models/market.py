@@ -81,4 +81,6 @@ class OpportunityRadarResponse(BaseModel):
     total_scanned: int
     actionable_count: int
     bullish_count: int
+    universe_source: Literal["dynamic", "fallback"] = "fallback"
+    universe_note: str = ""
     opportunities: list[OpportunityItem]

@@ -7,7 +7,9 @@ Dynamic data is cached for 24h so it doesn't burn API calls.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
+from app.config import get_settings
 from app.utils.async_tools import gather_limited
 
 log = logging.getLogger("stock_predict.universe")
@@ -25,7 +27,22 @@ EXCHANGE_MAP = {
 }
 
 SUFFIX_MAP = {"KR": ".KS", "JP": ".T"}
-INVALID_TICKERS = {"091990.KS"}
+INVALID_TICKERS = {
+    "091990.KS",
+    "098560.KS",
+    "042670.KS",
+    "006390.KS",
+    "119860.KS",
+    "002270.KS",
+    "049770.KS",
+}
+
+
+@dataclass(slots=True)
+class UniverseSelection:
+    sectors: dict[str, list[str]]
+    source: str
+    note: str = ""
 
 
 def _sanitize_tickers(tickers: list[str]) -> list[str]:
@@ -52,6 +69,23 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
         if not exchanges:
             return None
 
+        market_cap_min = 500_000_000 if country_code == "US" else 100_000_000
+        probe_results = await gather_limited(
+            exchanges,
+            lambda exchange: fmp_client.probe_stock_screener(
+                exchange=exchange,
+                market_cap_min=market_cap_min,
+            ),
+            limit=max(1, min(3, len(exchanges))),
+        )
+        available_exchanges = [
+            exchange
+            for exchange, allowed in zip(exchanges, probe_results)
+            if not isinstance(allowed, Exception) and allowed
+        ]
+        if not available_exchanges:
+            return None
+
         result: dict[str, list[str]] = {}
         suffix = SUFFIX_MAP.get(country_code, "")
 
@@ -60,10 +94,10 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
             tasks = [
                 fmp_client.screen_stocks(
                     exchange=exchange, sector=sector,
-                    market_cap_min=500_000_000 if country_code == "US" else 100_000_000,
+                    market_cap_min=market_cap_min,
                     limit=60,
                 )
-                for exchange in exchanges
+                for exchange in available_exchanges
             ]
             for fetched in await asyncio.gather(*tasks, return_exceptions=True):
                 if isinstance(fetched, Exception):
@@ -96,13 +130,36 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
 
 async def get_universe(country_code: str) -> dict[str, list[str]]:
     """Get stock universe: dynamic first, hardcoded fallback."""
-    dynamic = await fetch_dynamic_universe(country_code)
-    if dynamic:
-        return {sector: _sanitize_tickers(tickers) for sector, tickers in dynamic.items()}
+    return (await resolve_universe(country_code)).sectors
+
+
+def _fallback_universe(country_code: str) -> dict[str, list[str]]:
     return {
         sector: _sanitize_tickers(tickers)
         for sector, tickers in UNIVERSE.get(country_code, {}).items()
     }
+
+
+def _fallback_note() -> str:
+    settings = get_settings()
+    if not settings.fmp_api_key:
+        return "FMP API 키가 없어 검증된 기본 종목군으로 추천 중입니다."
+    return "실시간 FMP 스크리너 연결이 제한돼 검증된 기본 종목군으로 추천 중입니다."
+
+
+async def resolve_universe(country_code: str) -> UniverseSelection:
+    """Return universe data with source metadata."""
+    dynamic = await fetch_dynamic_universe(country_code)
+    if dynamic:
+        return UniverseSelection(
+            sectors={sector: _sanitize_tickers(tickers) for sector, tickers in dynamic.items()},
+            source="dynamic",
+        )
+    return UniverseSelection(
+        sectors=_fallback_universe(country_code),
+        source="fallback",
+        note=_fallback_note(),
+    )
 
 US = {
     "Energy": [

@@ -11,7 +11,7 @@ from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.analysis.stock_analyzer import _calc_technicals
 from app.data import cache, yfinance_client
-from app.data.universe_data import get_universe
+from app.data.universe_data import resolve_universe
 from app.models.country import COUNTRY_REGISTRY
 from app.models.market import OpportunityItem, OpportunityRadarResponse
 from app.models.stock import PricePoint, TechnicalIndicators
@@ -40,7 +40,7 @@ def _scenario_snapshot(forecast) -> dict:
 
 async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v2:{country_code}:{limit}"
+    cache_key = f"opportunity_radar:v3:{country_code}:{limit}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -73,7 +73,8 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
         next_day_forecast=regime_forecast,
     )
 
-    universe = await get_universe(country_code)
+    universe_selection = await resolve_universe(country_code)
+    universe = universe_selection.sectors
     candidates: list[tuple[str, str]] = []
     for sector, tickers in universe.items():
         for ticker in tickers[:3]:
@@ -194,6 +195,8 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
         total_scanned=len(candidates),
         actionable_count=sum(1 for item in ranked if item.action in {"accumulate", "breakout_watch"}),
         bullish_count=sum(1 for item in ranked if item.up_probability >= 55),
+        universe_source=universe_selection.source,
+        universe_note=universe_selection.note,
         opportunities=ranked,
     ).model_dump()
     await cache.set(cache_key, response, 900)

@@ -73,7 +73,15 @@ def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: dat
     query = market or _normalize_kr_ticker(ticker or "")
 
     try:
-        df = pykrx_stock.get_market_trading_value_by_date(start_date, end_date, query)
+        root_logger = logging.getLogger()
+        previous_level = root_logger.level
+        if previous_level <= logging.INFO:
+            root_logger.setLevel(logging.WARNING)
+        try:
+            df = pykrx_stock.get_market_trading_value_by_date(start_date, end_date, query)
+        finally:
+            if root_logger.level != previous_level:
+                root_logger.setLevel(previous_level)
     except Exception as exc:
         log.warning("investor flow fetch failed for %s: %s", query, exc)
         return FlowSignal(
