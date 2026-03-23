@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.errors import SP_5008
+from app.errors import SP_5008, SP_6009
 from app.services import ideal_portfolio_service, portfolio_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
@@ -43,10 +43,14 @@ async def get_ideal_portfolio(refresh: bool = False, history_limit: int = 10):
 @router.post("/portfolio/holdings")
 async def add_holding(body: HoldingCreate):
     try:
-        await portfolio_service.add_holding(
+        saved = await portfolio_service.add_holding(
             body.ticker, body.buy_price, body.quantity, body.buy_date, body.country_code
         )
-        return {"status": "ok"}
+        return {"status": "ok", **saved}
+    except ValueError as e:
+        err = SP_6009(str(e)[:200])
+        err.log("warning")
+        return JSONResponse(status_code=400, content=err.to_dict())
     except Exception as e:
         err = SP_5008(str(e)[:200])
         err.log()
