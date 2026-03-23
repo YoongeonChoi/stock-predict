@@ -36,7 +36,7 @@ from app.utils.async_tools import gather_limited
 
 async def analyze_stock(ticker: str) -> dict:
     settings = get_settings()
-    cache_key = f"stock_detail:v6:{ticker}"
+    cache_key = f"stock_detail:v7:{ticker}"
     cached = await cache.get(cache_key)
     if cached:
         return cached

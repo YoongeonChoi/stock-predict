@@ -81,6 +81,15 @@ export interface NextDayForecast {
   confidence_note: string;
   news_sentiment: number;
   raw_signal: number;
+  scenarios?: ForecastScenario[];
+  risk_flags?: string[];
+  execution_bias?:
+    | "press_long"
+    | "lean_long"
+    | "stay_selective"
+    | "reduce_risk"
+    | "capital_preservation";
+  execution_note?: string;
   flow_signal?: FlowSignal | null;
   drivers: ForecastDriver[];
   model_version: string;
@@ -193,8 +202,16 @@ export interface OpportunityItem {
   up_probability: number;
   confidence: number;
   predicted_return_pct: number;
+  bull_case_price?: number | null;
+  base_case_price?: number | null;
+  bear_case_price?: number | null;
+  bull_probability?: number | null;
+  base_probability?: number | null;
+  bear_probability?: number | null;
   setup_label: string;
   action: string;
+  execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation";
+  execution_note?: string;
   regime_tailwind: string;
   entry_low?: number | null;
   entry_high?: number | null;
@@ -203,6 +220,7 @@ export interface OpportunityItem {
   take_profit_2?: number | null;
   risk_reward_estimate: number;
   thesis: string[];
+  risk_flags: string[];
   forecast_date: string;
 }
 

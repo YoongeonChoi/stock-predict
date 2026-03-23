@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import PortfolioModelPanel from "@/components/PortfolioModelPanel";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import { api } from "@/lib/api";
 import type { PortfolioData } from "@/lib/api";
@@ -24,6 +25,22 @@ function tradeActionLabel(action?: string | null) {
   if (action === "wait_pullback") return "눌림 대기";
   if (action === "avoid") return "관망";
   return "없음";
+}
+
+function executionBiasLabel(bias?: string | null) {
+  if (bias === "press_long") return "추세 대응";
+  if (bias === "lean_long") return "상방 우세";
+  if (bias === "reduce_risk") return "리스크 관리";
+  if (bias === "capital_preservation") return "방어 우선";
+  return "선별 대응";
+}
+
+function executionBiasTone(bias?: string | null) {
+  if (bias === "press_long") return "text-positive bg-positive/10";
+  if (bias === "lean_long") return "text-emerald-500 bg-emerald-500/10";
+  if (bias === "reduce_risk") return "text-amber-500 bg-amber-500/10";
+  if (bias === "capital_preservation") return "text-negative bg-negative/10";
+  return "text-text-secondary bg-surface";
 }
 
 export default function PortfolioPage() {
@@ -135,6 +152,7 @@ export default function PortfolioPage() {
           </div>
 
           <PortfolioRiskPanel risk={data!.risk} stressTest={data!.stress_test} />
+          <PortfolioModelPanel model={data!.model_portfolio} />
         </>
       ) : null}
 
@@ -176,7 +194,7 @@ export default function PortfolioPage() {
             <p className="text-xs text-text-secondary mt-1">각 종목의 손익, 위험도, 단기 시그널, 실행 아이디어를 한 표에서 비교합니다.</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1120px]">
+            <table className="w-full text-sm min-w-[1280px]">
               <thead>
                 <tr className="text-left text-text-secondary border-b border-border bg-surface/40">
                   <th className="px-4 py-3">종목</th>
@@ -221,10 +239,21 @@ export default function PortfolioPage() {
                       <div className={`font-semibold ${changeColor(holding.predicted_return_pct ?? 0)}`}>{holding.predicted_return_pct != null ? formatPct(holding.predicted_return_pct) : "없음"}</div>
                       <div className="text-[11px] text-text-secondary mt-1">{holding.up_probability != null ? `상승 확률 ${holding.up_probability.toFixed(1)}%` : "예측 없음"}</div>
                       <div className="text-[11px] text-text-secondary mt-1">{holding.forecast_date ?? ""}</div>
+                      <div className={`inline-flex mt-2 px-2 py-1 rounded-full text-[11px] font-medium ${executionBiasTone(holding.execution_bias)}`}>
+                        {executionBiasLabel(holding.execution_bias)}
+                      </div>
+                      {(holding.bull_probability != null || holding.bear_probability != null) ? (
+                        <div className="text-[11px] text-text-secondary mt-2">
+                          상방 {holding.bull_probability?.toFixed(1) ?? "-"}% / 하방 {holding.bear_probability?.toFixed(1) ?? "-"}%
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold">{tradeActionLabel(holding.trade_action)}</div>
                       <div className="text-[11px] text-text-secondary mt-1">{holding.trade_setup || "설정된 셋업 없음"}</div>
+                      {holding.risk_flags.length > 0 ? (
+                        <div className="text-[11px] text-amber-600 mt-2 max-w-[220px]">{holding.risk_flags[0]}</div>
+                      ) : null}
                       {holding.thesis.length > 0 ? <div className="text-[11px] text-text-secondary mt-2 max-w-[220px]">{holding.thesis[0]}</div> : null}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -232,6 +261,14 @@ export default function PortfolioPage() {
                       <div className="font-mono text-xs">{holding.entry_low != null && holding.entry_high != null ? `${formatPrice(holding.entry_low, holding.country_code)} - ${formatPrice(holding.entry_high, holding.country_code)}` : "미정"}</div>
                       <div className="text-[11px] text-text-secondary mt-2">손절 / 1차 목표</div>
                       <div className="font-mono text-xs">{holding.stop_loss != null ? formatPrice(holding.stop_loss, holding.country_code) : "미정"} / {holding.take_profit_1 != null ? formatPrice(holding.take_profit_1, holding.country_code) : "미정"}</div>
+                      {(holding.bull_case_price != null || holding.bear_case_price != null) ? (
+                        <>
+                          <div className="text-[11px] text-text-secondary mt-2">상방 / 기준 / 하방</div>
+                          <div className="font-mono text-xs">
+                            {holding.bull_case_price != null ? formatPrice(holding.bull_case_price, holding.country_code) : "미정"} / {holding.base_case_price != null ? formatPrice(holding.base_case_price, holding.country_code) : "미정"} / {holding.bear_case_price != null ? formatPrice(holding.bear_case_price, holding.country_code) : "미정"}
+                          </div>
+                        </>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => remove(holding.id)} className="text-xs text-negative hover:underline">삭제</button>
@@ -243,9 +280,12 @@ export default function PortfolioPage() {
           </div>
         </div>
       ) : (
-        <div className="card text-center text-text-secondary py-12">
-          <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
-          <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
+        <div className="space-y-5">
+          <div className="card text-center text-text-secondary py-12">
+            <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
+            <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
+          </div>
+          {data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
         </div>
       )}
     </div>

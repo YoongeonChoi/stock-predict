@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { NextDayForecast } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
@@ -21,8 +21,34 @@ function signalLabel(signal: "bullish" | "bearish" | "neutral") {
   return "중립";
 }
 
+function scenarioLabel(name: string) {
+  if (name === "Bull") return "상방";
+  if (name === "Bear") return "하방";
+  if (name === "Base") return "기준";
+  return name;
+}
+
+function executionBiasMeta(bias: NextDayForecast["execution_bias"]) {
+  if (bias === "press_long") {
+    return { label: "추세 대응", tone: "bg-positive/10 text-positive" };
+  }
+  if (bias === "lean_long") {
+    return { label: "상방 우세", tone: "bg-emerald-500/10 text-emerald-500" };
+  }
+  if (bias === "reduce_risk") {
+    return { label: "리스크 관리", tone: "bg-amber-500/10 text-amber-500" };
+  }
+  if (bias === "capital_preservation") {
+    return { label: "방어 우선", tone: "bg-negative/10 text-negative" };
+  }
+  return { label: "선별 대응", tone: "bg-border/60 text-text-secondary" };
+}
+
 export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: Props) {
   const flow = forecast.flow_signal;
+  const scenarios = forecast.scenarios ?? [];
+  const riskFlags = forecast.risk_flags ?? [];
+  const execution = executionBiasMeta(forecast.execution_bias);
   const rangePct = forecast.reference_price
     ? ((forecast.predicted_high - forecast.predicted_low) / forecast.reference_price) * 100
     : 0;
@@ -59,6 +85,9 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
         <span className="px-2 py-1 rounded-full bg-border/50 text-text-secondary">
           예상 변동 폭 {rangePct.toFixed(2)}%
         </span>
+        <span className={`px-2 py-1 rounded-full ${execution.tone}`}>
+          실행 바이어스 {execution.label}
+        </span>
         <span className="px-2 py-1 rounded-full bg-border/50 text-text-secondary">
           수급 {flow?.available ? "검증 반영" : "중립 처리"}
         </span>
@@ -92,6 +121,34 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
         </div>
       </div>
 
+      {scenarios.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          {scenarios.map((scenario) => {
+            const scenarioReturnPct = forecast.reference_price
+              ? ((scenario.price / forecast.reference_price) - 1) * 100
+              : 0;
+
+            return (
+              <div key={scenario.name} className="rounded-lg border border-border px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs text-text-secondary">{scenarioLabel(scenario.name)} 시나리오</div>
+                    <div className="font-bold mt-1">{formatPrice(scenario.price, priceKey)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold">{scenario.probability.toFixed(1)}%</div>
+                    <div className={`text-[11px] mt-1 ${changeColor(scenarioReturnPct)}`}>
+                      {formatPct(scenarioReturnPct)}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs text-text-secondary mt-2 leading-relaxed">{scenario.description}</div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
           <div className="text-xs font-medium text-text-secondary mb-2">핵심 드라이버</div>
@@ -100,13 +157,15 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
               <div key={driver.name} className="rounded-lg border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium">{driver.name}</span>
-                  <span className={`text-xs font-medium ${
-                    driver.signal === "bullish"
-                      ? "text-positive"
-                      : driver.signal === "bearish"
-                        ? "text-negative"
-                        : "text-warning"
-                  }`}>
+                  <span
+                    className={`text-xs font-medium ${
+                      driver.signal === "bullish"
+                        ? "text-positive"
+                        : driver.signal === "bearish"
+                          ? "text-negative"
+                          : "text-warning"
+                    }`}
+                  >
                     {signalLabel(driver.signal)}
                   </span>
                 </div>
@@ -121,9 +180,34 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
 
         <div className="space-y-3">
           <div className="rounded-lg border border-border px-3 py-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-xs font-medium text-text-secondary">{assetLabel} 실행 해석</div>
+              <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${execution.tone}`}>
+                {execution.label}
+              </span>
+            </div>
+            <div className="text-sm leading-relaxed text-text-secondary">
+              {forecast.execution_note || "방향성 우위가 크지 않아 확인 신호가 더 필요합니다."}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border px-3 py-3">
             <div className="text-xs font-medium text-text-secondary mb-1">{assetLabel} 모델 메모</div>
             <div className="text-sm leading-relaxed text-text-secondary">{forecast.confidence_note}</div>
           </div>
+
+          {riskFlags.length > 0 ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3">
+              <div className="text-xs font-medium text-amber-600 mb-2">리스크 플래그</div>
+              <div className="space-y-2">
+                {riskFlags.map((flag) => (
+                  <div key={flag} className="text-sm text-text-secondary">
+                    {flag}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-lg border border-border px-3 py-3">
             <div className="text-xs font-medium text-text-secondary mb-2">뉴스 / 수급 신호</div>
@@ -145,4 +229,3 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
     </div>
   );
 }
-

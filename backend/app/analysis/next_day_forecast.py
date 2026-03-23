@@ -11,10 +11,10 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator, MACD
 from ta.volatility import AverageTrueRange
 
-from app.models.forecast import FlowSignal, ForecastDriver, NextDayForecast
+from app.models.forecast import FlowSignal, ForecastDriver, ForecastScenario, NextDayForecast
 from app.utils.market_calendar import next_trading_day
 
-MODEL_VERSION = "signal-v2.3"
+MODEL_VERSION = "signal-v2.4"
 
 POSITIVE_NEWS = {
     "beat": 0.8,
@@ -244,8 +244,156 @@ def _build_driver(name: str, value: float, weight: float, detail: str) -> Foreca
     )
 
 
+def _return_cap(asset_type: str) -> float:
+    return 3.6 if asset_type == "index" else 4.8
+
+
+def _normalize_probabilities(*values: float) -> list[float]:
+    cleaned = [max(float(value), 0.0) for value in values]
+    total = sum(cleaned) or 1.0
+    normalized = [round(value / total * 100.0, 1) for value in cleaned]
+    drift = round(100.0 - sum(normalized), 1)
+    if normalized:
+        anchor = 1 if len(normalized) > 1 else 0
+        normalized[anchor] = round(normalized[anchor] + drift, 1)
+    return normalized
+
+
+def _build_scenarios(
+    *,
+    current_price: float,
+    expected_return_pct: float,
+    daily_vol_pct: float,
+    atr_pct: float,
+    confidence: float,
+    up_probability: float,
+    disagreement_penalty: float,
+    volatility_regime: float,
+    asset_type: str,
+    drivers: list[ForecastDriver],
+) -> list[ForecastScenario]:
+    cap = _return_cap(asset_type)
+    scenario_span = max(daily_vol_pct * 0.82, atr_pct * 0.68, 0.45 if asset_type == "index" else 0.72)
+    scenario_span *= 1.0 + disagreement_penalty * 0.22 + max(volatility_regime - 1.0, 0.0) * 0.28
+    skew = _clip((up_probability - 50.0) / 50.0, -1.0, 1.0)
+    bull_return = _clip(expected_return_pct + scenario_span * (0.72 + max(skew, 0.0) * 0.16), -cap, cap)
+    bear_return = _clip(expected_return_pct - scenario_span * (0.72 + max(-skew, 0.0) * 0.16), -cap, cap)
+
+    base_prob = _clip(
+        40.0 + confidence * 0.12 - disagreement_penalty * 12.0 - max(volatility_regime - 1.0, 0.0) * 7.0,
+        34.0,
+        56.0,
+    )
+    tail_prob = max(100.0 - base_prob, 10.0)
+    bull_prob = tail_prob * _clip(0.5 + skew * 0.32, 0.12, 0.88)
+    bear_prob = max(tail_prob - bull_prob, 4.0)
+    bull_prob, base_prob, bear_prob = _normalize_probabilities(bull_prob, base_prob, bear_prob)
+
+    positive_driver = next((driver for driver in drivers if driver.contribution > 0), None)
+    negative_driver = next((driver for driver in drivers if driver.contribution < 0), None)
+    dominant_driver = drivers[0] if drivers else None
+
+    return [
+        ForecastScenario(
+            name="Bull",
+            price=round(current_price * (1.0 + bull_return / 100.0), 2),
+            probability=bull_prob,
+            description=(
+                f"{positive_driver.name if positive_driver else '상방 신호'}가 유지되면 "
+                f"{bull_return:+.2f}% 강세 경로가 열릴 수 있습니다."
+            ),
+        ),
+        ForecastScenario(
+            name="Base",
+            price=round(current_price * (1.0 + expected_return_pct / 100.0), 2),
+            probability=base_prob,
+            description=(
+                f"현재 신호 조합의 중심 경로입니다. "
+                f"{dominant_driver.name if dominant_driver else '합성 신호'} 기준 {expected_return_pct:+.2f}%를 반영합니다."
+            ),
+        ),
+        ForecastScenario(
+            name="Bear",
+            price=round(current_price * (1.0 + bear_return / 100.0), 2),
+            probability=bear_prob,
+            description=(
+                f"{negative_driver.name if negative_driver else '변동성 압력'}이 커지면 "
+                f"{bear_return:+.2f}% 약세 시나리오도 열어둬야 합니다."
+            ),
+        ),
+    ]
+
+
+def _build_risk_flags(
+    *,
+    volatility_regime: float,
+    disagreement_penalty: float,
+    news_score: float,
+    volume_z: float,
+    flow_signal: FlowSignal | None,
+) -> list[str]:
+    flags: list[str] = []
+    if volatility_regime >= 1.25:
+        flags.append("고변동성 구간이라 장중 밴드가 평소보다 넓게 형성될 수 있습니다.")
+    if disagreement_penalty >= 0.45:
+        flags.append("신호 간 충돌이 커서 한 방향으로 밀어붙이기엔 확신도가 낮습니다.")
+    if abs(news_score) >= 0.55:
+        flags.append("헤드라인 영향 비중이 높아 장중 뉴스 업데이트에 민감할 수 있습니다.")
+    if volume_z <= -0.75:
+        flags.append("거래량 확인이 약해 추세 지속 여부를 보수적으로 볼 필요가 있습니다.")
+    if flow_signal and not flow_signal.available:
+        flags.append("검증 가능한 수급 데이터가 없어 수급은 중립 가정으로 처리했습니다.")
+    return flags[:4]
+
+
+def _build_execution_bias(
+    *,
+    direction: str,
+    up_probability: float,
+    expected_return_pct: float,
+    confidence: float,
+    disagreement_penalty: float,
+    volatility_regime: float,
+) -> tuple[str, str]:
+    if (
+        direction == "up"
+        and up_probability >= 64.0
+        and confidence >= 72.0
+        and disagreement_penalty < 0.34
+        and volatility_regime < 1.25
+    ):
+        return "press_long", "신호 정렬이 좋아 추세 지속 대응이 우세합니다. 다만 시가 갭이 크면 추격보다 첫 눌림 확인이 좋습니다."
+    if direction != "down" and up_probability >= 56.0 and expected_return_pct >= 0.35:
+        return "lean_long", "상방 우위는 있지만 변동성을 감안해 분할 접근이나 눌림 매수 쪽이 더 안정적입니다."
+    if direction == "down" and up_probability <= 36.0 and confidence >= 68.0:
+        return "capital_preservation", "방어가 우선입니다. 신규 노출 확대보다 현금 비중과 손절 규율을 먼저 챙기는 편이 좋습니다."
+    if direction == "down" or up_probability <= 44.0:
+        return "reduce_risk", "하방 리스크 관리가 우선이며, 반등 신호가 재확인되기 전까지는 비중을 가볍게 보는 편이 좋습니다."
+    return "stay_selective", "방향성 우위가 크지 않아 확인 신호를 더 기다리면서 선별적으로 대응하는 편이 좋습니다."
+
+
 def _fallback_forecast(ticker: str, country_code: str, current_price: float, reference_date: str) -> NextDayForecast:
     target_date = next_trading_day(country_code, reference_date).isoformat()
+    scenarios = [
+        ForecastScenario(
+            name="Bull",
+            price=round(current_price * 1.01, 2) if current_price else 0.0,
+            probability=25.0,
+            description="가격 이력이 짧아 제한적인 상방 보정만 적용했습니다.",
+        ),
+        ForecastScenario(
+            name="Base",
+            price=round(current_price, 2),
+            probability=50.0,
+            description="보수적인 기준 시나리오입니다.",
+        ),
+        ForecastScenario(
+            name="Bear",
+            price=round(current_price * 0.99, 2) if current_price else 0.0,
+            probability=25.0,
+            description="가격 이력이 짧아 제한적인 하방 보정만 적용했습니다.",
+        ),
+    ]
     return NextDayForecast(
         target_date=target_date,
         reference_date=reference_date,
@@ -261,6 +409,10 @@ def _fallback_forecast(ticker: str, country_code: str, current_price: float, ref
         confidence_note=f"{ticker}는 학습에 필요한 가격 이력이 충분하지 않아 보수적인 중립 추정치를 사용했습니다.",
         news_sentiment=0.0,
         raw_signal=0.0,
+        scenarios=scenarios,
+        risk_flags=["가격 이력이 짧아 다음 거래일 예측을 보수적으로 해석해야 합니다."],
+        execution_bias="stay_selective",
+        execution_note="가격 이력이 짧아 방향 베팅보다 관찰과 추가 데이터 확보가 우선입니다.",
         flow_signal=None,
         drivers=[],
         model_version=MODEL_VERSION,
@@ -378,7 +530,7 @@ def forecast_next_day(
     expected_return_pct = drift_pct * 0.18 + signal_strength * base_move * 1.18 * scale + last_body_pct * 0.12
     expected_return_pct *= 1.0 - disagreement_penalty * 0.16
     expected_return_pct *= 1.0 - volatility_penalty * 0.10
-    expected_return_pct = _clip(expected_return_pct, -3.6 if asset_type == "index" else -4.8, 3.6 if asset_type == "index" else 4.8)
+    expected_return_pct = _clip(expected_return_pct, -_return_cap(asset_type), _return_cap(asset_type))
 
     up_probability = _clip(
         _sigmoid(signal_strength * 3.2 + regime_score * 0.9 + expected_return_pct / max(daily_vol_pct, 0.55) - disagreement_penalty * 0.8) * 100.0,
@@ -404,6 +556,33 @@ def forecast_next_day(
     coverage = len(drivers) / 10.0
     confidence = 47.0 + abs(signal_strength) * 28.0 + coverage * 10.0 - volatility_penalty * 8.0 - disagreement_penalty * 10.0
     confidence = _clip(confidence, 34.0, 93.0)
+    scenarios = _build_scenarios(
+        current_price=current_price,
+        expected_return_pct=expected_return_pct,
+        daily_vol_pct=daily_vol_pct,
+        atr_pct=atr_pct,
+        confidence=confidence,
+        up_probability=up_probability,
+        disagreement_penalty=disagreement_penalty,
+        volatility_regime=volatility_regime,
+        asset_type=asset_type,
+        drivers=drivers,
+    )
+    risk_flags = _build_risk_flags(
+        volatility_regime=volatility_regime,
+        disagreement_penalty=disagreement_penalty,
+        news_score=news_score,
+        volume_z=volume_z,
+        flow_signal=flow_signal,
+    )
+    execution_bias, execution_note = _build_execution_bias(
+        direction=direction,
+        up_probability=up_probability,
+        expected_return_pct=expected_return_pct,
+        confidence=confidence,
+        disagreement_penalty=disagreement_penalty,
+        volatility_regime=volatility_regime,
+    )
 
     note_parts = [
         f"{ticker} {('지수' if asset_type == 'index' else '종목')}에 대해 추세, 과열도, 수급, 뉴스 심리를 합성한 다음 거래일 모델입니다.",
@@ -433,6 +612,10 @@ def forecast_next_day(
         confidence_note=" ".join(note_parts),
         news_sentiment=round(news_score, 3),
         raw_signal=round(signal_strength, 3),
+        scenarios=scenarios,
+        risk_flags=risk_flags,
+        execution_bias=execution_bias,
+        execution_note=execution_note,
         flow_signal=flow_signal,
         drivers=ranked_drivers,
         model_version=MODEL_VERSION,

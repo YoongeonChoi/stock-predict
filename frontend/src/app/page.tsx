@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { HeatmapData, MarketMovers } from "@/lib/api";
+import type { DailyIdealPortfolio, HeatmapData, MarketMovers } from "@/lib/api";
 import type { CountryListItem, OpportunityRadarResponse } from "@/lib/types";
 import { formatPct, changeColor } from "@/lib/utils";
+import DailyIdealPortfolioPanel from "@/components/DailyIdealPortfolioPanel";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 
@@ -26,6 +27,8 @@ export default function HomePage() {
   const [radarData, setRadarData] = useState<OpportunityRadarResponse | null>(null);
   const [radarCountry, setRadarCountry] = useState("KR");
   const [radarLoading, setRadarLoading] = useState(true);
+  const [idealPortfolio, setIdealPortfolio] = useState<DailyIdealPortfolio | null>(null);
+  const [idealLoading, setIdealLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
@@ -38,6 +41,7 @@ export default function HomePage() {
       api.getMarketIndicators().then(setIndicators).catch(console.error),
     ]).finally(() => setLoading(false));
     api.getMarketMovers("KR").then(setMovers).catch(console.error);
+    api.getDailyIdealPortfolio(false, 8).then(setIdealPortfolio).catch(console.error).finally(() => setIdealLoading(false));
     setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
     loadHeatmap("KR");
     loadRadar("KR");
@@ -92,6 +96,14 @@ export default function HomePage() {
           </Link>
         </div>
         <p className="text-text-secondary mt-1">한국 시장을 중심으로 미국·일본까지 함께 읽는 AI 주식 분석 워크스테이션</p>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <h2 className="font-semibold text-lg">내일 바로 볼 추천 포트폴리오</h2>
+          <p className="text-sm text-text-secondary mt-1">매일 다음 거래일 기준으로 가장 이상적인 종목 조합을 만들고, 이전 추천안 성과도 같이 추적합니다.</p>
+        </div>
+        {idealLoading ? <div className="card animate-pulse h-80" /> : idealPortfolio ? <DailyIdealPortfolioPanel data={idealPortfolio} compact /> : null}
       </div>
 
       <div className="space-y-3">
