@@ -122,36 +122,50 @@ export default function HomePage() {
         }
       />
 
-      <section className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-        <div className="min-w-0 space-y-4">
-          <div>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        <div className="min-w-0 card !p-0 overflow-hidden">
+          <div className="border-b border-border px-5 py-4">
             <h2 className="section-title">내일 바로 볼 추천 포트폴리오</h2>
-            <p className="section-copy">다음 거래일 기준으로 가장 이상적인 종목 조합을 만들고, 이전 추천안 성과까지 같이 추적합니다.</p>
+            <p className="section-copy">다음 거래일 기준으로 가장 이상적인 종목 조합과 최근 추적 결과를 같은 화면 폭 안에서 읽기 좋게 묶었습니다.</p>
           </div>
-          {idealLoading ? <div className="card h-80 animate-pulse" /> : idealPortfolio ? <DailyIdealPortfolioPanel data={idealPortfolio} compact /> : null}
+          <div className="px-5 py-5">
+            {idealLoading ? (
+              <div className="h-80 rounded-[22px] bg-border/20 animate-pulse" />
+            ) : idealPortfolio ? (
+              <DailyIdealPortfolioPanel data={idealPortfolio} compact embedded />
+            ) : null}
+          </div>
         </div>
 
-        <div className="min-w-0 space-y-4">
-          <div className="section-heading">
-            <div>
-              <h2 className="section-title">지금 가장 강한 셋업</h2>
-              <p className="section-copy">단기 기대수익과 시장 체제를 함께 반영해 지금 당장 볼 만한 기회를 추립니다.</p>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {["US", "KR", "JP"].map((code) => (
-                <button
-                  key={code}
-                  onClick={() => loadRadar(code)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                    radarCountry === code ? "bg-accent text-white" : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
-                  }`}
-                >
-                  {flags[code]} {code}
-                </button>
-              ))}
+        <div className="min-w-0 card !p-0 overflow-hidden">
+          <div className="border-b border-border px-5 py-4">
+            <div className="section-heading gap-4">
+              <div className="min-w-0">
+                <h2 className="section-title">지금 가장 강한 셋업</h2>
+                <p className="section-copy">단기 기대수익과 시장 체제를 함께 반영해 지금 당장 볼 만한 기회를 추립니다.</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {["US", "KR", "JP"].map((code) => (
+                  <button
+                    key={code}
+                    onClick={() => loadRadar(code)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                      radarCountry === code ? "bg-accent text-white" : "border border-border bg-surface text-text-secondary hover:border-accent/40 hover:text-text"
+                    }`}
+                  >
+                    {flags[code]} {code}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          {radarLoading ? <div className="card h-72 animate-pulse" /> : radarData ? <OpportunityRadarBoard data={radarData} compact /> : null}
+          <div className="px-5 py-5">
+            {radarLoading ? (
+              <div className="h-72 rounded-[22px] bg-border/20 animate-pulse" />
+            ) : radarData ? (
+              <OpportunityRadarBoard data={radarData} compact embedded />
+            ) : null}
+          </div>
         </div>
       </section>
 

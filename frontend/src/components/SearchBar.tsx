@@ -60,8 +60,8 @@ export default function SearchBar() {
         className={cn(
           "flex items-center gap-3 rounded-[22px] border px-4 py-3 transition-all",
           focused || open
-            ? "border-accent/35 bg-white/75 shadow-[0_22px_45px_-34px_rgba(56,189,248,0.65)] dark:bg-slate-900/70"
-            : "border-border bg-white/58 dark:bg-slate-900/52"
+            ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(56,189,248,0.42)]"
+            : "border-border bg-surface"
         )}
       >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
@@ -101,7 +101,7 @@ export default function SearchBar() {
       )}
 
       {open && query.length > 0 && (
-        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[22px] border border-border bg-surface/98 shadow-[0_24px_50px_-34px_rgba(15,23,42,0.42)]">
+        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[22px] border border-border bg-surface shadow-[0_20px_42px_-30px_rgba(15,23,42,0.24)]">
           <div className="border-b border-border/70 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
             검색 결과
           </div>
