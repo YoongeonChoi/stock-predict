@@ -91,3 +91,5 @@ npx tsc --noEmit
 - 파괴적인 git 명령은 사용하지 않습니다.
 - 사용자가 요청하지 않은 리셋, 강제 체크아웃, 히스토리 재작성은 금지합니다.
 - 커밋 메시지는 기능 범위가 드러나게 작성합니다.
+- 브랜치 머지는 fast-forward로 처리하지 않고 항상 명시적 merge commit을 남깁니다.
+- 머지 시 기본 원칙은 `git merge --no-ff <branch>` 이며, 가능하면 `Merge branch '<branch>'` 형태의 메시지를 사용합니다.
