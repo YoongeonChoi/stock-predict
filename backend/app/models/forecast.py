@@ -1,6 +1,6 @@
 ﻿from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ForecastScenario(BaseModel):
@@ -54,9 +54,19 @@ class NextDayForecast(BaseModel):
     confidence_note: str = ""
     news_sentiment: float = 0
     raw_signal: float = 0
+    scenarios: list[ForecastScenario] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    execution_bias: Literal[
+        "press_long",
+        "lean_long",
+        "stay_selective",
+        "reduce_risk",
+        "capital_preservation",
+    ] = "stay_selective"
+    execution_note: str = ""
     flow_signal: FlowSignal | None = None
-    drivers: list[ForecastDriver] = []
-    model_version: str = "signal-v2.3"
+    drivers: list[ForecastDriver] = Field(default_factory=list)
+    model_version: str = "signal-v2.4"
 
 
 class HistoricalForecastHorizon(BaseModel):

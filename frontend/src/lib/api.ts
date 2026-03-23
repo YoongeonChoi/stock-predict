@@ -169,6 +169,15 @@ export interface PortfolioHolding {
   up_probability?: number | null;
   predicted_return_pct?: number | null;
   forecast_date?: string | null;
+  execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
+  execution_note?: string | null;
+  risk_flags: string[];
+  bull_case_price?: number | null;
+  base_case_price?: number | null;
+  bear_case_price?: number | null;
+  bull_probability?: number | null;
+  base_probability?: number | null;
+  bear_probability?: number | null;
   trade_action?: string | null;
   trade_setup?: string | null;
   trade_conviction?: number | null;
@@ -197,6 +206,21 @@ export interface PortfolioRiskRegime {
   conviction: number;
 }
 
+export interface PortfolioExecutionMixItem {
+  bias: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation";
+  count: number;
+  weight: number;
+}
+
+export interface PortfolioActionQueueItem {
+  ticker: string;
+  name: string;
+  action: string;
+  execution_bias: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation";
+  weight_pct: number;
+  reason: string;
+}
+
 export interface PortfolioRiskSnapshot {
   overall_label: "empty" | "balanced" | "moderate" | "elevated" | "aggressive";
   score: number;
@@ -207,10 +231,14 @@ export interface PortfolioRiskSnapshot {
   portfolio_beta: number;
   portfolio_up_probability: number;
   projected_next_day_return_pct: number;
+  downside_watch_weight: number;
+  bearish_scenario_exposure: number;
   warning_count: number;
   warnings: string[];
   playbook: string[];
   regimes: PortfolioRiskRegime[];
+  execution_mix: PortfolioExecutionMixItem[];
+  action_queue: PortfolioActionQueueItem[];
 }
 
 export interface PortfolioData {

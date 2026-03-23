@@ -51,7 +51,7 @@ TICKER_FALLBACK = {
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
-    cache_key = f"country_report:v4:{country_code}"
+    cache_key = f"country_report:v5:{country_code}"
     cached = await cache.get(cache_key)
     if cached:
         return cached

@@ -80,6 +80,93 @@ def _risk_level(score: float) -> str:
     return "low"
 
 
+def _scenario_snapshot(forecast) -> dict[str, float | None]:
+    scenarios = {item.name: item for item in getattr(forecast, "scenarios", [])}
+    bull = scenarios.get("Bull")
+    base = scenarios.get("Base")
+    bear = scenarios.get("Bear")
+    return {
+        "bull_case_price": bull.price if bull else None,
+        "base_case_price": base.price if base else None,
+        "bear_case_price": bear.price if bear else None,
+        "bull_probability": bull.probability if bull else None,
+        "base_probability": base.probability if base else None,
+        "bear_probability": bear.probability if bear else None,
+    }
+
+
+def _execution_mix(holdings: list[dict]) -> list[dict]:
+    ordering = [
+        "press_long",
+        "lean_long",
+        "stay_selective",
+        "reduce_risk",
+        "capital_preservation",
+    ]
+    grouped: dict[str, dict] = {}
+    for holding in holdings:
+        bias = holding.get("execution_bias") or "stay_selective"
+        bucket = grouped.setdefault(bias, {"bias": bias, "count": 0, "weight": 0.0})
+        bucket["count"] += 1
+        bucket["weight"] += float(holding.get("weight_pct") or 0.0)
+
+    results = []
+    for bias in ordering:
+        if bias in grouped:
+            item = grouped[bias]
+            item["weight"] = round(item["weight"], 2)
+            results.append(item)
+    return results
+
+
+def _action_queue(holdings: list[dict]) -> list[dict]:
+    candidates: list[tuple[float, dict]] = []
+    for holding in holdings:
+        execution_bias = holding.get("execution_bias") or "stay_selective"
+        action = holding.get("trade_action") or "wait_pullback"
+        risk_score = float(holding.get("risk_score") or 0.0)
+        conviction = float(holding.get("trade_conviction") or 0.0)
+        predicted_return = abs(float(holding.get("predicted_return_pct") or 0.0))
+        priority = predicted_return + conviction * 0.2
+        if execution_bias == "capital_preservation":
+            priority += 90.0 + risk_score
+        elif execution_bias == "reduce_risk":
+            priority += 70.0 + risk_score * 0.4
+        elif action in {"accumulate", "breakout_watch"}:
+            priority += 55.0
+        elif execution_bias == "lean_long":
+            priority += 36.0
+        else:
+            priority += 18.0
+
+        reason = ""
+        risk_flags = holding.get("risk_flags") or []
+        thesis = holding.get("thesis") or []
+        if risk_flags:
+            reason = risk_flags[0]
+        elif thesis:
+            reason = thesis[0]
+        elif holding.get("execution_note"):
+            reason = holding["execution_note"]
+
+        candidates.append(
+            (
+                priority,
+                {
+                    "ticker": holding.get("ticker"),
+                    "name": holding.get("name"),
+                    "action": action,
+                    "execution_bias": execution_bias,
+                    "weight_pct": round(float(holding.get("weight_pct") or 0.0), 2),
+                    "reason": reason,
+                },
+            )
+        )
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [item for _, item in candidates[:4]]
+
+
 def _regime_weight_summary(country_context: dict, country_weights: dict[str, float]) -> list[dict]:
     summary = []
     for country_code, weight in sorted(country_weights.items(), key=lambda item: item[1], reverse=True):
@@ -147,7 +234,7 @@ def _stress_scenarios(
 
 async def get_portfolio():
     """Get portfolio with current prices, risk context, and execution guidance."""
-    cache_key = "portfolio_overview:v3"
+    cache_key = "portfolio_overview:v4"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -181,6 +268,10 @@ async def get_portfolio():
                 "warnings": [],
                 "playbook": ["Add holdings to unlock risk coaching, stress testing, and live execution guidance."],
                 "regimes": [],
+                "downside_watch_weight": 0.0,
+                "bearish_scenario_exposure": 0.0,
+                "execution_mix": [],
+                "action_queue": [],
             },
             "stress_test": [],
         }
@@ -273,6 +364,7 @@ async def get_portfolio():
             next_day_forecast=next_day_forecast,
             market_regime=market_regime,
         ) if price_points else None
+        scenario_snapshot = _scenario_snapshot(next_day_forecast) if next_day_forecast else {}
 
         realized_volatility_pct = _annualized_volatility(price_history)
         max_drawdown_pct = _max_drawdown(price_history)
@@ -313,6 +405,15 @@ async def get_portfolio():
             "up_probability": round(next_day_forecast.up_probability, 2) if next_day_forecast else None,
             "predicted_return_pct": round(next_day_forecast.predicted_return_pct, 2) if next_day_forecast else None,
             "forecast_date": next_day_forecast.target_date if next_day_forecast else None,
+            "execution_bias": next_day_forecast.execution_bias if next_day_forecast else None,
+            "execution_note": next_day_forecast.execution_note if next_day_forecast else None,
+            "risk_flags": (next_day_forecast.risk_flags[:2] if next_day_forecast else []),
+            "bull_case_price": scenario_snapshot.get("bull_case_price"),
+            "base_case_price": scenario_snapshot.get("base_case_price"),
+            "bear_case_price": scenario_snapshot.get("bear_case_price"),
+            "bull_probability": scenario_snapshot.get("bull_probability"),
+            "base_probability": scenario_snapshot.get("base_probability"),
+            "bear_probability": scenario_snapshot.get("bear_probability"),
             "trade_action": trade_plan.action if trade_plan else None,
             "trade_setup": trade_plan.setup_label if trade_plan else None,
             "trade_conviction": trade_plan.conviction if trade_plan else None,
@@ -360,6 +461,16 @@ async def get_portfolio():
     )
     portfolio_up_probability = sum((item["up_probability"] or 50.0) * item["current_value"] for item in enriched) / total_current if total_current else 50.0
     projected_next_day_pct = sum((item["predicted_return_pct"] or 0.0) * item["current_value"] for item in enriched) / total_current if total_current else 0.0
+    bearish_scenario_exposure = (
+        sum((item.get("bear_probability") or 0.0) * item["current_value"] for item in enriched) / total_current
+        if total_current else 0.0
+    )
+    downside_watch_weight = sum(
+        item["weight_pct"]
+        for item in enriched
+        if item.get("execution_bias") in {"reduce_risk", "capital_preservation"}
+        or (item.get("bear_probability") or 0.0) >= 28.0
+    )
 
     warnings: list[str] = []
     if top_holding_weight >= 35:
@@ -378,6 +489,10 @@ async def get_portfolio():
     high_risk_count = sum(1 for item in enriched if item["risk_level"] == "high")
     if high_risk_count >= max(2, math.ceil(len(enriched) / 2)):
         warnings.append("A large share of holdings now fall into the high-risk bucket based on volatility, drawdown, and market backdrop.")
+    if downside_watch_weight >= 35:
+        warnings.append(f"{downside_watch_weight:.1f}% of the portfolio sits in names that currently lean defensive on the execution layer.")
+    if bearish_scenario_exposure >= 26:
+        warnings.append(f"Bear-case probability exposure is elevated at {bearish_scenario_exposure:.1f}%, so downside scenarios deserve active monitoring.")
 
     playbook: list[str] = []
     if top_holding_weight >= 30:
@@ -390,8 +505,12 @@ async def get_portfolio():
         playbook.append("Stay size-aware and demand clean entries; avoid chasing names already above their preferred buy bands.")
     if largest_sector_weight >= 40:
         playbook.append("Use new capital to diversify away from the dominant sector instead of averaging deeper into the same theme.")
+    if downside_watch_weight >= 35:
+        playbook.append("Prioritize the defensive queue first: review names flagged for reduce-risk or capital-preservation before adding new exposure.")
 
     concentration_penalty = max(top_holding_weight / 100.0 - 0.22, 0.0)
+    execution_mix = _execution_mix(enriched)
+    action_queue = _action_queue(enriched)
     stress_test = _stress_scenarios(
         total_current=total_current,
         total_invested=total_invested,
@@ -447,6 +566,10 @@ async def get_portfolio():
             "warnings": warnings,
             "playbook": playbook,
             "regimes": _regime_weight_summary(country_context, country_weights),
+            "downside_watch_weight": round(downside_watch_weight, 2),
+            "bearish_scenario_exposure": round(bearish_scenario_exposure, 2),
+            "execution_mix": execution_mix,
+            "action_queue": action_queue,
         },
         "stress_test": stress_test,
     }

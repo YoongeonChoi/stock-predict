@@ -118,9 +118,13 @@ async def get_diagnostics() -> dict:
                     "localized_news_sentiment",
                     "regime_overlay",
                     "investor_flow_best_effort",
+                    "bull_base_bear_scenarios",
+                    "execution_bias",
+                    "risk_flags",
                 ],
                 "notes": [
                     "한국 수급 데이터는 PyKRX 커버리지가 있는 구간에서 가장 강하게 작동합니다.",
+                    "signal-v2.4부터 다음 거래일 예측은 상방/기준/하방 시나리오와 실행 바이어스를 함께 제공합니다.",
                     "예측 정확도 추적은 아카이브된 다음 거래일 예측을 기준으로 누적됩니다.",
                 ],
             },

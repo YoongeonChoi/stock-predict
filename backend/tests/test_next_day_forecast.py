@@ -49,6 +49,27 @@ class NextDayForecastTests(unittest.TestCase):
         self.assertTrue(0 <= forecast.up_probability <= 100)
         self.assertTrue(35 <= forecast.confidence <= 92)
         self.assertGreater(len(forecast.drivers), 0)
+        self.assertEqual(len(forecast.scenarios), 3)
+        self.assertAlmostEqual(sum(item.probability for item in forecast.scenarios), 100.0, places=1)
+        self.assertIn(
+            forecast.execution_bias,
+            {"press_long", "lean_long", "stay_selective", "reduce_risk", "capital_preservation"},
+        )
+        self.assertTrue(forecast.execution_note)
+
+    def test_short_history_fallback_keeps_scenario_shape(self):
+        forecast = forecast_next_day(
+            ticker="TEST",
+            name="Synthetic Corp",
+            country_code="US",
+            price_history=_sample_prices(10),
+            asset_type="stock",
+        )
+
+        self.assertEqual(forecast.direction, "flat")
+        self.assertEqual(len(forecast.scenarios), 3)
+        self.assertEqual(forecast.execution_bias, "stay_selective")
+        self.assertGreaterEqual(len(forecast.risk_flags), 1)
 
     def test_bullish_inputs_score_higher_than_bearish_inputs(self):
         bullish = forecast_next_day(
@@ -100,6 +121,7 @@ class NextDayForecastTests(unittest.TestCase):
         self.assertGreater(bullish.up_probability, bearish.up_probability)
         self.assertGreater(bullish.predicted_return_pct, bearish.predicted_return_pct)
         self.assertGreater(bullish.news_sentiment, bearish.news_sentiment)
+        self.assertGreater(bullish.scenarios[0].price, bearish.scenarios[0].price)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import type { PortfolioRiskSnapshot, PortfolioStressScenario } from "@/lib/api";
 import { changeColor, formatPct } from "@/lib/utils";
 
@@ -32,10 +34,26 @@ function regimeStanceLabel(stance: string) {
   return stance.replaceAll("_", " ");
 }
 
+function executionBiasLabel(bias: string) {
+  if (bias === "press_long") return "추세 대응";
+  if (bias === "lean_long") return "상방 우세";
+  if (bias === "reduce_risk") return "리스크 관리";
+  if (bias === "capital_preservation") return "방어 우선";
+  return "선별 대응";
+}
+
+function executionBiasTone(bias: string) {
+  if (bias === "press_long") return "text-positive bg-positive/10";
+  if (bias === "lean_long") return "text-emerald-500 bg-emerald-500/10";
+  if (bias === "reduce_risk") return "text-amber-500 bg-amber-500/10";
+  if (bias === "capital_preservation") return "text-negative bg-negative/10";
+  return "text-text-secondary bg-surface";
+}
+
 export default function PortfolioRiskPanel({ risk, stressTest }: Props) {
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <div className="card !p-4">
           <div className="text-xs text-text-secondary">전체 리스크</div>
           <div className={`inline-flex mt-2 px-2.5 py-1 rounded-full text-xs font-semibold ${labelTone(risk.overall_label)}`}>{overallLabel(risk.overall_label)}</div>
@@ -60,6 +78,16 @@ export default function PortfolioRiskPanel({ risk, stressTest }: Props) {
           <div className="text-xs text-text-secondary">경고 수</div>
           <div className="text-2xl font-bold mt-3">{risk.warning_count}</div>
           <div className="text-[11px] text-text-secondary mt-1">HHI {risk.concentration_hhi.toFixed(3)}</div>
+        </div>
+        <div className="card !p-4">
+          <div className="text-xs text-text-secondary">방어 노출</div>
+          <div className="text-2xl font-bold mt-3">{risk.downside_watch_weight.toFixed(1)}%</div>
+          <div className="text-[11px] text-text-secondary mt-1">방어 바이어스 비중</div>
+        </div>
+        <div className="card !p-4">
+          <div className="text-xs text-text-secondary">약세 시나리오 노출</div>
+          <div className="text-2xl font-bold mt-3">{risk.bearish_scenario_exposure.toFixed(1)}%</div>
+          <div className="text-[11px] text-text-secondary mt-1">가중 약세 확률</div>
         </div>
       </div>
 
@@ -108,6 +136,50 @@ export default function PortfolioRiskPanel({ risk, stressTest }: Props) {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="card !p-4 space-y-3">
+            <div>
+              <h3 className="font-semibold text-sm">실행 믹스와 우선순위</h3>
+              <p className="text-xs text-text-secondary mt-1">예측 엔진의 실행 바이어스를 포지션 운영 큐로 묶어 보여줍니다.</p>
+            </div>
+            {risk.execution_mix.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {risk.execution_mix.map((item) => (
+                  <div key={item.bias} className={`rounded-full px-3 py-1.5 text-xs font-medium ${executionBiasTone(item.bias)}`}>
+                    {executionBiasLabel(item.bias)} {item.count}개 · {item.weight.toFixed(1)}%
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-text-secondary">실행 믹스를 계산할 보유 종목이 아직 없습니다.</div>
+            )}
+            {risk.action_queue.length > 0 ? (
+              <div className="space-y-2">
+                {risk.action_queue.map((item) => (
+                  <div key={`${item.ticker}-${item.action}`} className="rounded-xl border border-border/70 px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link href={`/stock/${encodeURIComponent(item.ticker)}`} className="font-medium hover:text-accent">
+                            {item.name}
+                          </Link>
+                          <span className="text-[11px] text-text-secondary">{item.ticker}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] ${executionBiasTone(item.execution_bias)}`}>
+                            {executionBiasLabel(item.execution_bias)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-text-secondary mt-1">{item.reason}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-semibold">{item.weight_pct.toFixed(1)}%</div>
+                        <div className="text-[11px] text-text-secondary">{item.action.replaceAll("_", " ")}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="card !p-4 space-y-3">

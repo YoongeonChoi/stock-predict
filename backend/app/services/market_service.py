@@ -23,9 +23,24 @@ def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def _scenario_snapshot(forecast) -> dict:
+    scenarios = {item.name: item for item in getattr(forecast, "scenarios", [])}
+    bull = scenarios.get("Bull")
+    base = scenarios.get("Base")
+    bear = scenarios.get("Bear")
+    return {
+        "bull_case_price": bull.price if bull else None,
+        "base_case_price": base.price if base else None,
+        "bear_case_price": bear.price if bear else None,
+        "bull_probability": bull.probability if bull else None,
+        "base_probability": base.probability if base else None,
+        "bear_probability": bear.probability if bear else None,
+    }
+
+
 async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v1:{country_code}:{limit}"
+    cache_key = f"opportunity_radar:v2:{country_code}:{limit}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -116,8 +131,18 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
             + (6.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.5)
             + _clip(valuation_gap, -20.0, 20.0) * 0.18
         )
+        execution_bias_bonus = {
+            "press_long": 7.0,
+            "lean_long": 4.0,
+            "stay_selective": 1.0,
+            "reduce_risk": -4.0,
+            "capital_preservation": -8.0,
+        }.get(forecast.execution_bias, 0.0)
+        opportunity_score += execution_bias_bonus
+        opportunity_score -= len(forecast.risk_flags[:2]) * 1.2
         opportunity_score = round(_clip(opportunity_score, 0.0, 100.0), 1)
         regime_tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed"
+        scenario_snapshot = _scenario_snapshot(forecast)
 
         return OpportunityItem(
             rank=0,
@@ -132,8 +157,16 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
             up_probability=round(forecast.up_probability, 1),
             confidence=round(forecast.confidence, 1),
             predicted_return_pct=round(forecast.predicted_return_pct, 2),
+            bull_case_price=scenario_snapshot["bull_case_price"],
+            base_case_price=scenario_snapshot["base_case_price"],
+            bear_case_price=scenario_snapshot["bear_case_price"],
+            bull_probability=scenario_snapshot["bull_probability"],
+            base_probability=scenario_snapshot["base_probability"],
+            bear_probability=scenario_snapshot["bear_probability"],
             setup_label=trade_plan.setup_label,
             action=trade_plan.action,
+            execution_bias=forecast.execution_bias,
+            execution_note=forecast.execution_note,
             regime_tailwind=regime_tailwind,
             entry_low=trade_plan.entry_low,
             entry_high=trade_plan.entry_high,
@@ -142,6 +175,7 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
             take_profit_2=trade_plan.take_profit_2,
             risk_reward_estimate=trade_plan.risk_reward_estimate,
             thesis=trade_plan.thesis[:2],
+            risk_flags=forecast.risk_flags[:2],
             forecast_date=forecast.target_date,
         )
 
