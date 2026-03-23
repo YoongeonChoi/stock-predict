@@ -2,10 +2,13 @@
 
 import csv
 import io
+import logging
 import os
 import platform
 
 from fpdf import FPDF
+
+logging.getLogger("fontTools.subset").setLevel(logging.WARNING)
 
 
 SECTION_TITLES = {
@@ -50,6 +53,20 @@ def _sanitize_for_latin(text: str) -> str:
     return "".join(c if ord(c) < 256 else "?" for c in text)
 
 
+def _sanitize_for_pdf(text: str) -> str:
+    replacements = {
+        "✅": "[OK]",
+        "⚠️": "[주의]",
+        "⚠": "[주의]",
+        "❌": "[X]",
+        "•": "-",
+    }
+    cleaned = str(text or "")
+    for source, target in replacements.items():
+        cleaned = cleaned.replace(source, target)
+    return cleaned
+
+
 def export_csv(data: dict) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -90,8 +107,8 @@ class UnicodePDF(FPDF):
         font_path = _find_unicode_font()
         if font_path:
             try:
-                self.add_font("Unicode", "", font_path, uni=True)
-                self.add_font("Unicode", "B", font_path, uni=True)
+                self.add_font("Unicode", "", font_path)
+                self.add_font("Unicode", "B", font_path)
                 self._unicode_ready = True
             except Exception:
                 pass
@@ -103,11 +120,13 @@ class UnicodePDF(FPDF):
             self.set_font("Helvetica", style, size)
 
     def safe_cell(self, w, h, txt, **kwargs):
+        txt = _sanitize_for_pdf(txt)
         if not self._unicode_ready:
             txt = _sanitize_for_latin(txt)
         self.cell(w, h, txt, **kwargs)
 
     def safe_multi_cell(self, w, h, txt, **kwargs):
+        txt = _sanitize_for_pdf(txt)
         if not self._unicode_ready:
             txt = _sanitize_for_latin(txt)
         self.multi_cell(w, h, txt, **kwargs)
@@ -210,5 +229,10 @@ def export_pdf(data: dict, title: str = "주식 분석 리포트") -> bytes:
         for news in data["key_news"][:8]:
             pdf.safe_cell(0, 4, f"- [{news.get('source', '')}] {news.get('title', '')}", new_x="LMARGIN", new_y="NEXT")
 
-    return pdf.output()
+    rendered = pdf.output()
+    if isinstance(rendered, bytes):
+        return rendered
+    if isinstance(rendered, bytearray):
+        return bytes(rendered)
+    return str(rendered).encode("latin-1", errors="ignore")
 

@@ -3,37 +3,163 @@
 @tailwind utilities;
 
 :root {
-  --bg: #fafafa;
+  --bg: #f3f6fb;
   --surface: #ffffff;
-  --border: #e5e7eb;
-  --text: #111827;
-  --text-secondary: #6b7280;
-  --accent: #3b82f6;
+  --border: rgba(148, 163, 184, 0.26);
+  --text: #0f172a;
+  --text-secondary: #5b6475;
+  --accent: #0f766e;
   --positive: #10b981;
   --negative: #ef4444;
   --warning: #f59e0b;
+  --card-top: rgba(255, 255, 255, 0.92);
+  --card-bottom: rgba(255, 255, 255, 0.76);
+  --card-shadow: rgba(15, 23, 42, 0.08);
+  --hero-top: rgba(255, 255, 255, 0.9);
+  --hero-bottom: rgba(255, 255, 255, 0.7);
 }
 
 .dark {
-  --bg: #0a0a0a;
-  --surface: #141414;
-  --border: #262626;
-  --text: #f5f5f5;
-  --text-secondary: #a3a3a3;
-  --accent: #60a5fa;
+  --bg: #09111f;
+  --surface: #0f172a;
+  --border: rgba(148, 163, 184, 0.18);
+  --text: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --accent: #38bdf8;
   --positive: #34d399;
   --negative: #f87171;
   --warning: #fbbf24;
+  --card-top: rgba(15, 23, 42, 0.92);
+  --card-bottom: rgba(15, 23, 42, 0.74);
+  --card-shadow: rgba(2, 6, 23, 0.38);
+  --hero-top: rgba(15, 23, 42, 0.9);
+  --hero-bottom: rgba(15, 23, 42, 0.68);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--bg);
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
+    var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 90%);
 }
 
 .card {
-  @apply bg-surface border border-border rounded-xl p-5;
+  @apply rounded-[24px] border p-5;
+  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
+  border-color: var(--border);
+  box-shadow:
+    0 22px 48px -34px var(--card-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.page-shell {
+  @apply w-full space-y-8;
+}
+
+.page-header-panel {
+  @apply rounded-[28px] border px-6 py-6 sm:px-8 sm:py-8;
+  background: linear-gradient(135deg, var(--hero-top), var(--hero-bottom));
+  border-color: var(--border);
+  box-shadow:
+    0 24px 56px -40px var(--card-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+}
+
+.page-eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.22em] text-text-secondary;
+}
+
+.page-title {
+  @apply mt-3 text-3xl font-semibold tracking-tight sm:text-4xl;
+}
+
+.page-description {
+  @apply mt-3 max-w-3xl text-sm leading-6 text-text-secondary sm:text-base;
+}
+
+.section-heading {
+  @apply flex flex-col gap-3 md:flex-row md:items-end md:justify-between;
+}
+
+.section-title {
+  @apply text-lg font-semibold tracking-tight;
+}
+
+.section-copy {
+  @apply mt-1 text-sm leading-6 text-text-secondary;
+}
+
+.info-chip {
+  @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.dark .info-chip {
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.action-chip {
+  @apply inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-all;
+}
+
+.action-chip-primary {
+  @apply action-chip text-white;
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+  box-shadow: 0 18px 36px -24px rgba(37, 99, 235, 0.55);
+}
+
+.action-chip-secondary {
+  @apply action-chip border text-text;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.dark .action-chip-secondary {
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.metric-card {
+  @apply rounded-2xl border px-4 py-4;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.dark .metric-card {
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.surface-muted {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.dark .surface-muted {
+  background: rgba(15, 23, 42, 0.44);
 }
 
 @keyframes slide-in {

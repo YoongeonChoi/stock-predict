@@ -49,6 +49,7 @@ function priceRange(low?: number | null, high?: number | null, key = "US") {
 
 export default function OpportunityRadarBoard({ data, compact = false }: Props) {
   const items = compact ? data.opportunities.slice(0, 6) : data.opportunities;
+  const usingFallbackUniverse = data.universe_source === "fallback";
 
   return (
     <div className="card">
@@ -56,6 +57,15 @@ export default function OpportunityRadarBoard({ data, compact = false }: Props) 
         <div>
           <h2 className="font-semibold">기회 레이더</h2>
           <p className="text-sm text-text-secondary mt-1">총 {data.total_scanned}개 종목을 스캔했고, 실행 가능한 후보 {data.actionable_count}개 중 강세 우위 {data.bullish_count}개가 추려졌습니다.</p>
+          {usingFallbackUniverse ? (
+            <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
+              {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
+            </div>
+          ) : (
+            <div className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
+              실시간 유니버스 기반 추천
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-3 gap-2 text-center shrink-0">
           <div className="rounded-lg bg-border/40 px-3 py-2"><div className="text-[11px] text-text-secondary">스캔 수</div><div className="font-bold">{data.total_scanned}</div></div>

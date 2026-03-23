@@ -231,6 +231,8 @@ export interface OpportunityRadarResponse {
   total_scanned: number;
   actionable_count: number;
   bullish_count: number;
+  universe_source?: "dynamic" | "fallback";
+  universe_note?: string;
   opportunities: OpportunityItem[];
 }
 
