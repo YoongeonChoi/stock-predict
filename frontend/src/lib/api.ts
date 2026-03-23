@@ -37,7 +37,7 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
-async function post(path: string, body?: unknown) {
+async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(apiPath(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -55,7 +55,7 @@ async function post(path: string, body?: unknown) {
   return res.json();
 }
 
-async function del(path: string) {
+async function del<T>(path: string): Promise<T> {
   const res = await fetch(apiPath(path), { method: "DELETE" });
   if (!res.ok) {
     let info: ApiErrorInfo;
@@ -396,6 +396,14 @@ export interface PortfolioData {
   model_portfolio: PortfolioModelPortfolio;
 }
 
+export interface PortfolioHoldingCreateResponse {
+  status: "ok";
+  ticker: string;
+  name: string;
+  country_code: string;
+  buy_date: string;
+}
+
 export interface MarketMovers {
   gainers: { ticker: string; name: string; price: number; change_pct: number }[];
   losers: { ticker: string; name: string; price: number; change_pct: number }[];
@@ -684,8 +692,8 @@ export const api = {
   getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
     get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
   addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
-    post("/api/portfolio/holdings", data),
-  removePortfolioHolding: (id: number) => del(`/api/portfolio/holdings/${id}`),
+    post<PortfolioHoldingCreateResponse>("/api/portfolio/holdings", data),
+  removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
   getMarketMovers: (code: string) => get<MarketMovers>(`/api/market/movers/${code}`),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
 };

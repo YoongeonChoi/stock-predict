@@ -25,6 +25,57 @@ def _sample_price_history(days: int = 25) -> list[dict]:
 
 
 class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
+    def test_validate_portfolio_holding_input_normalizes_local_tickers(self):
+        kr = portfolio_service.validate_portfolio_holding_input(
+            "196170",
+            120000,
+            3,
+            "2026-03-24",
+            "KR",
+        )
+        jp = portfolio_service.validate_portfolio_holding_input(
+            "7203",
+            2800,
+            2,
+            "2026-03-24",
+            "JP",
+        )
+        us = portfolio_service.validate_portfolio_holding_input(
+            "aapl",
+            190,
+            5,
+            "2026-03-24",
+            "US",
+        )
+
+        self.assertEqual(kr["ticker"], "196170.KQ")
+        self.assertEqual(jp["ticker"], "7203.T")
+        self.assertEqual(us["ticker"], "AAPL")
+
+    async def test_portfolio_add_holding_saves_normalized_ticker(self):
+        db_add = AsyncMock()
+        cache_invalidate = AsyncMock()
+        get_stock_info = AsyncMock(return_value={"name": "Samsung Electronics"})
+
+        with (
+            patch("app.services.portfolio_service.db.portfolio_add", new=db_add),
+            patch("app.services.portfolio_service.cache.invalidate", new=cache_invalidate),
+            patch("app.services.portfolio_service.yfinance_client.get_stock_info", new=get_stock_info),
+        ):
+            result = await portfolio_service.add_holding("005930", 70000, 10, "2026-03-24", "KR")
+
+        self.assertEqual(result["ticker"], "005930.KS")
+        self.assertEqual(result["name"], "Samsung Electronics")
+        db_add.assert_awaited_once_with(
+            "005930.KS",
+            "Samsung Electronics",
+            "KR",
+            70000.0,
+            10.0,
+            "2026-03-24",
+        )
+        cache_invalidate.assert_awaited_once_with("portfolio_overview:%")
+
     async def test_prediction_lab_normalizes_breakdowns(self):
         with (
             patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),

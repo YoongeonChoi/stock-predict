@@ -53,7 +53,7 @@ function executionBiasTone(bias: string) {
 export default function PortfolioRiskPanel({ risk, stressTest }: Props) {
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-7">
         <div className="card !p-4">
           <div className="text-xs text-text-secondary">전체 리스크</div>
           <div className={`inline-flex mt-2 px-2.5 py-1 rounded-full text-xs font-semibold ${labelTone(risk.overall_label)}`}>{overallLabel(risk.overall_label)}</div>

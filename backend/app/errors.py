@@ -132,6 +132,11 @@ SP_6008 = lambda field="region_code": AppError(
     f"Invalid research archive parameter: {field}",
     "Allowed region_code values are US, KR, JP, GLOBAL.",
 )
+SP_6009 = lambda d="": AppError(
+    "SP-6009",
+    "Invalid portfolio holding input",
+    d or "Provide a ticker, positive buy price and quantity, and a valid buy date.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors
