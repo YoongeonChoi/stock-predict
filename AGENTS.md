@@ -88,6 +88,10 @@ npx tsc --noEmit
 
 ## Git 주의사항
 
+- 기본 작업 브랜치는 `dev`입니다. 기능 개발, 문서 수정, 검증은 `dev`에서 진행하고, 배포 기준 브랜치는 `main`으로 유지합니다.
 - 파괴적인 git 명령은 사용하지 않습니다.
 - 사용자가 요청하지 않은 리셋, 강제 체크아웃, 히스토리 재작성은 금지합니다.
 - 커밋 메시지는 기능 범위가 드러나게 작성합니다.
+- 브랜치 머지는 fast-forward로 처리하지 않고 항상 명시적 merge commit을 남깁니다.
+- 머지 시 기본 원칙은 `git merge --no-ff <branch>` 이며, 가능하면 `Merge branch '<branch>'` 형태의 메시지를 사용합니다.
+- 특별한 지시가 없으면 작업 흐름은 `dev에서 작업 -> 검증 -> origin/dev 푸시 -> main에 --no-ff merge -> origin/main 푸시` 순서를 따릅니다.
