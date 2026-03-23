@@ -101,7 +101,7 @@ export default function SearchBar() {
       )}
 
       {open && query.length > 0 && (
-        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[22px] border border-border bg-surface/96 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.5)] backdrop-blur-2xl">
+        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[22px] border border-border bg-surface/98 shadow-[0_24px_50px_-34px_rgba(15,23,42,0.42)]">
           <div className="border-b border-border/70 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
             검색 결과
           </div>

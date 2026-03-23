@@ -123,7 +123,7 @@ export default function HomePage() {
       />
 
       <section className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div>
             <h2 className="section-title">내일 바로 볼 추천 포트폴리오</h2>
             <p className="section-copy">다음 거래일 기준으로 가장 이상적인 종목 조합을 만들고, 이전 추천안 성과까지 같이 추적합니다.</p>
@@ -131,7 +131,7 @@ export default function HomePage() {
           {idealLoading ? <div className="card h-80 animate-pulse" /> : idealPortfolio ? <DailyIdealPortfolioPanel data={idealPortfolio} compact /> : null}
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="section-heading">
             <div>
               <h2 className="section-title">지금 가장 강한 셋업</h2>

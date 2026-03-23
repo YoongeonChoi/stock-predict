@@ -118,7 +118,7 @@ export default function Navigation() {
   return (
     <>
       <aside className="hidden lg:flex lg:w-[300px] lg:shrink-0">
-        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/70 bg-surface/78 px-4 py-6 backdrop-blur-2xl">
+        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/70 bg-surface/92 px-4 py-6 shadow-[0_24px_48px_-42px_rgba(15,23,42,0.45)]">
           <Link href="/" className="card !p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -160,7 +160,7 @@ export default function Navigation() {
         </div>
       </aside>
 
-      <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border/70 bg-bg/88 px-4 py-3 backdrop-blur-2xl lg:hidden">
+      <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border/70 bg-bg/94 px-4 py-3 shadow-[0_20px_40px_-38px_rgba(15,23,42,0.45)] lg:hidden">
         <Link href="/" className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-secondary">Stock Predict</div>
           <div className="mt-1 text-sm font-semibold text-text">투자 워크스페이스</div>
@@ -182,7 +182,7 @@ export default function Navigation() {
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-bg/94 pt-[76px] backdrop-blur-2xl lg:hidden">
+        <div className="fixed inset-0 z-40 bg-bg/96 pt-[76px] lg:hidden">
           <div className="h-full overflow-y-auto px-4 pb-6">
             <div className="card !p-5">
               <div className="text-sm font-semibold text-text">메뉴</div>

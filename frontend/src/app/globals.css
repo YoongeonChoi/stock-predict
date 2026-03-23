@@ -108,15 +108,15 @@ body {
 
 body::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   background-image:
     linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 90%);
+  background-size: 96px 96px;
+  opacity: 0.55;
 }
 
 .card {
@@ -124,9 +124,8 @@ body::before {
   background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
   border-color: var(--border);
   box-shadow:
-    0 22px 48px -34px var(--card-shadow),
+    0 18px 40px -34px var(--card-shadow),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(18px);
 }
 
 .page-shell {
@@ -138,9 +137,8 @@ body::before {
   background: linear-gradient(135deg, var(--hero-top), var(--hero-bottom));
   border-color: var(--border);
   box-shadow:
-    0 24px 56px -40px var(--card-shadow),
+    0 20px 46px -38px var(--card-shadow),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(20px);
 }
 
 .page-eyebrow {

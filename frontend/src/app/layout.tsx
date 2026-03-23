@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex min-h-screen">
               <Navigation />
               <div className="flex min-w-0 flex-1 flex-col">
-                <header className="sticky top-0 z-30 border-b border-border/70 bg-bg/78 backdrop-blur-2xl">
+                <header className="sticky top-0 z-30 border-b border-border/70 bg-bg/94 shadow-[0_20px_40px_-38px_rgba(15,23,42,0.45)]">
                   <div className="mx-auto flex w-full max-w-[1500px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:px-10">
                     <div className="min-w-0 flex-1">
                       <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary xl:block">

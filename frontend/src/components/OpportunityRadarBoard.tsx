@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import type { OpportunityRadarResponse } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 interface Props {
@@ -48,13 +49,13 @@ function priceRange(low?: number | null, high?: number | null, key = "US") {
 }
 
 export default function OpportunityRadarBoard({ data, compact = false }: Props) {
-  const items = compact ? data.opportunities.slice(0, 6) : data.opportunities;
+  const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
   const usingFallbackUniverse = data.universe_source === "fallback";
 
   return (
-    <div className="card">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
-        <div>
+    <div className={cn("card min-w-0", compact && "!p-4")}>
+      <div className={cn("mb-4 flex gap-4", compact ? "flex-col" : "flex-col lg:flex-row lg:items-start lg:justify-between")}>
+        <div className="min-w-0">
           <h2 className="font-semibold">기회 레이더</h2>
           <p className="text-sm text-text-secondary mt-1">총 {data.total_scanned}개 종목을 스캔했고, 실행 가능한 후보 {data.actionable_count}개 중 강세 우위 {data.bullish_count}개가 추려졌습니다.</p>
           {usingFallbackUniverse ? (
@@ -67,24 +68,31 @@ export default function OpportunityRadarBoard({ data, compact = false }: Props) 
             </div>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center shrink-0">
+        <div className={cn("grid grid-cols-3 gap-2 text-center", compact ? "w-full" : "shrink-0")}>
           <div className="rounded-lg bg-border/40 px-3 py-2"><div className="text-[11px] text-text-secondary">스캔 수</div><div className="font-bold">{data.total_scanned}</div></div>
           <div className="rounded-lg bg-positive/10 px-3 py-2"><div className="text-[11px] text-text-secondary">실행 후보</div><div className="font-bold text-positive">{data.actionable_count}</div></div>
           <div className="rounded-lg bg-accent/10 px-3 py-2"><div className="text-[11px] text-text-secondary">강세 우위</div><div className="font-bold text-accent">{data.bullish_count}</div></div>
         </div>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 xl:grid-cols-2">
+      <div className={cn("grid grid-cols-1 gap-4", compact ? "" : "xl:grid-cols-2")}>
         {items.map((item) => (
-          <Link key={item.ticker} href={`/stock/${encodeURIComponent(item.ticker)}`} className="rounded-xl border border-border p-4 hover:border-accent/50 transition-colors">
+          <Link
+            key={item.ticker}
+            href={`/stock/${encodeURIComponent(item.ticker)}`}
+            className={cn(
+              "min-w-0 rounded-[20px] border border-border transition-colors hover:border-accent/50",
+              compact ? "px-4 py-4" : "p-4"
+            )}
+          >
             <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-text-secondary">#{item.rank}</span>
-                  <span className="font-semibold">{item.name}</span>
+                  <span className="min-w-0 truncate font-semibold">{item.name}</span>
                   <span className="text-xs text-text-secondary">{item.ticker}</span>
                 </div>
-                <div className="text-xs text-text-secondary mt-1">{item.sector}</div>
+                <div className="mt-1 truncate text-xs text-text-secondary">{item.sector}</div>
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold">{item.opportunity_score.toFixed(1)}</div>
@@ -95,11 +103,11 @@ export default function OpportunityRadarBoard({ data, compact = false }: Props) 
             <div className="flex flex-wrap gap-2 mb-3 text-[11px]">
               <span className={`px-2 py-1 rounded-full font-semibold uppercase tracking-wide ${actionTone(item.action)}`}>{actionLabel(item.action)}</span>
               <span className="px-2 py-1 rounded-full bg-border/40 text-text-secondary">{item.setup_label}</span>
-              <span className="px-2 py-1 rounded-full bg-border/40 text-text-secondary">{item.regime_tailwind}</span>
+              {!compact ? <span className="px-2 py-1 rounded-full bg-border/40 text-text-secondary">{item.regime_tailwind}</span> : null}
               <span className={`px-2 py-1 rounded-full ${executionBiasTone(item.execution_bias)}`}>{executionBiasLabel(item.execution_bias)}</span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div className={cn("mb-3 grid gap-3", compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-4")}>
               <div>
                 <div className="text-[11px] text-text-secondary">현재가</div>
                 <div className="font-semibold">{formatPrice(item.current_price, item.country_code)}</div>
@@ -122,7 +130,7 @@ export default function OpportunityRadarBoard({ data, compact = false }: Props) 
             </div>
 
             {(item.bull_case_price != null || item.bear_case_price != null) ? (
-              <div className="grid grid-cols-3 gap-2 mb-3 text-[11px]">
+              <div className={cn("mb-3 grid grid-cols-3 gap-2 text-[11px]", compact && "text-[10px]")}>
                 <div className="rounded-lg bg-positive/5 px-2 py-2">
                   <div className="text-text-secondary">상방</div>
                   <div className="font-semibold text-positive">{item.bull_case_price != null ? formatPrice(item.bull_case_price, item.country_code) : "미정"}</div>
@@ -141,7 +149,13 @@ export default function OpportunityRadarBoard({ data, compact = false }: Props) 
               </div>
             ) : null}
 
-            <div className="space-y-2 text-sm">{item.thesis.map((point) => <div key={point} className="text-text-secondary">{point}</div>)}</div>
+            <div className="space-y-2 text-sm">
+              {(compact ? item.thesis.slice(0, 1) : item.thesis).map((point) => (
+                <div key={point} className={cn("text-text-secondary", compact && "line-clamp-2 text-[13px] leading-5")}>
+                  {point}
+                </div>
+              ))}
+            </div>
             {item.execution_note ? <div className="text-xs text-text-secondary mt-3">{item.execution_note}</div> : null}
             {item.risk_flags.length > 0 ? (
               <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
