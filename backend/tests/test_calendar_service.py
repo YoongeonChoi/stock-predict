@@ -34,6 +34,36 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(event["type"] in {"economic", "policy"} for event in result["events"]))
         self.assertTrue(all("description" in event for event in result["events"]))
 
+    async def test_recurring_monthly_events_do_not_repeat_across_multiple_days(self):
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("US", year=2026, month=3)
+
+        cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
+        self.assertEqual(cpi_dates, ["2026-03-10"])
+
+    async def test_actual_economic_event_replaces_monthly_recurring_estimate(self):
+        economic_rows = [
+            {"date": "2026-03-12", "event": "CPI Release", "country": "US"},
+        ]
+
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("US", year=2026, month=3)
+
+        cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
+        self.assertEqual(cpi_dates, ["2026-03-12"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -184,6 +184,49 @@ def _month_window(year: int, month: int) -> tuple[datetime, datetime, datetime, 
     return month_start, month_end, grid_start, grid_end
 
 
+def _iter_month_starts(from_date: datetime, to_date: datetime) -> list[datetime]:
+    cursor = datetime(from_date.year, from_date.month, 1)
+    end = datetime(to_date.year, to_date.month, 1)
+    months: list[datetime] = []
+    while cursor <= end:
+        months.append(cursor)
+        if cursor.month == 12:
+            cursor = datetime(cursor.year + 1, 1, 1)
+        else:
+            cursor = datetime(cursor.year, cursor.month + 1, 1)
+    return months
+
+
+def _pick_rule_date(
+    year: int,
+    month: int,
+    start_day: int,
+    end_day: int,
+    allowed_weekdays: set[int] | None = None,
+) -> datetime | None:
+    last_day = monthrange(year, month)[1]
+    start = max(1, min(start_day, last_day))
+    end = max(start, min(end_day, last_day))
+
+    for day in range(start, end + 1):
+        current = datetime(year, month, day)
+        if current.weekday() >= 5:
+            continue
+        if allowed_weekdays is not None and current.weekday() not in allowed_weekdays:
+            continue
+        return current
+
+    for day in range(end + 1, last_day + 1):
+        current = datetime(year, month, day)
+        if current.weekday() >= 5:
+            continue
+        if allowed_weekdays is not None and current.weekday() not in allowed_weekdays:
+            continue
+        return current
+
+    return None
+
+
 def _infer_category(title: str) -> str:
     lower = title.lower()
     if any(token in lower for token in ("fomc", "rate decision", "금통위", "boj", "policy meeting", "interest rate")):
@@ -341,10 +384,28 @@ def _normalize_earnings_event(raw: dict, country_code: str) -> dict | None:
     }
 
 
+def _event_identity(event: dict) -> tuple[str, str, str, str]:
+    return (
+        event.get("date", ""),
+        event.get("title_en") or event.get("title") or event.get("id", ""),
+        event.get("country_code", ""),
+        event.get("type", ""),
+    )
+
+
+def _month_identity(event: dict) -> tuple[str, str, str, str]:
+    return (
+        event.get("date", "")[:7],
+        event.get("title_en") or event.get("title") or event.get("id", ""),
+        event.get("country_code", ""),
+        event.get("type", ""),
+    )
+
+
 def _merge_events(events: list[dict]) -> list[dict]:
-    merged: dict[tuple[str, str], dict] = {}
+    merged: dict[tuple[str, str, str, str], dict] = {}
     for event in events:
-        key = (event.get("date", ""), event.get("title_en") or event.get("title") or event.get("id"))
+        key = _event_identity(event)
         if key not in merged:
             merged[key] = event
             continue
@@ -354,45 +415,49 @@ def _merge_events(events: list[dict]) -> list[dict]:
     return sorted(merged.values(), key=_sort_key)
 
 
+def _merge_economic_events(primary_events: list[dict], fallback_events: list[dict]) -> list[dict]:
+    primary_month_keys = {_month_identity(event) for event in primary_events}
+    merged = list(primary_events)
+    for event in fallback_events:
+        if _month_identity(event) in primary_month_keys:
+            continue
+        merged.append(event)
+    return _merge_events(merged)
+
+
 def _generate_recurring_events(country_code: str, from_date: datetime, to_date: datetime) -> list[dict]:
     events = []
-    current = from_date
+    for month_start in _iter_month_starts(from_date, to_date):
+        year = month_start.year
+        month = month_start.month
 
-    while current <= to_date:
-        day = current.day
-        weekday = current.weekday()
-        month = current.month
-        date_str = current.strftime("%Y-%m-%d")
-
+        month_rules: list[tuple[str, datetime | None]] = []
         if country_code == "US":
-            if day <= 7 and weekday == 4:
-                events.append({"date": date_str, "event": "Non-Farm Payrolls", "country": "US"})
-            if 10 <= day <= 14 and weekday in (1, 2, 3):
-                events.append({"date": date_str, "event": "CPI Release", "country": "US"})
-            if 14 <= day <= 18 and weekday in (2, 3):
-                events.append({"date": date_str, "event": "Retail Sales", "country": "US"})
-            if 25 <= day <= 31 and weekday == 4 and month in (1, 4, 7, 10):
-                events.append({"date": date_str, "event": "GDP Report", "country": "US"})
+            month_rules = [
+                ("Non-Farm Payrolls", _pick_rule_date(year, month, 1, 7, {4})),
+                ("CPI Release", _pick_rule_date(year, month, 10, 14, {1, 2, 3})),
+                ("Retail Sales", _pick_rule_date(year, month, 14, 18, {2, 3})),
+                ("GDP Report", _pick_rule_date(year, month, 25, 31, {4}) if month in (1, 4, 7, 10) else None),
+            ]
         elif country_code == "KR":
-            if day == 1 and weekday < 5:
-                events.append({"date": date_str, "event": "Exports / Imports", "country": "KR"})
-            if 2 <= day <= 5 and weekday < 5:
-                events.append({"date": date_str, "event": "CPI Release", "country": "KR"})
-            if 10 <= day <= 15 and weekday < 5 and month in (1, 4, 7, 10):
-                events.append({"date": date_str, "event": "GDP Release", "country": "KR"})
-            if 13 <= day <= 17 and weekday < 5:
-                events.append({"date": date_str, "event": "Employment Report", "country": "KR"})
+            month_rules = [
+                ("Exports / Imports", _pick_rule_date(year, month, 1, 3)),
+                ("CPI Release", _pick_rule_date(year, month, 2, 5)),
+                ("GDP Release", _pick_rule_date(year, month, 10, 15) if month in (1, 4, 7, 10) else None),
+                ("Employment Report", _pick_rule_date(year, month, 13, 17)),
+            ]
         elif country_code == "JP":
-            if 18 <= day <= 22 and weekday in (3, 4):
-                events.append({"date": date_str, "event": "CPI Release", "country": "JP"})
-            if day == 1 and month in (1, 4, 7, 10) and weekday < 5:
-                events.append({"date": date_str, "event": "Tankan Survey", "country": "JP"})
-            if 13 <= day <= 16 and weekday < 5 and month in (2, 5, 8, 11):
-                events.append({"date": date_str, "event": "GDP Release", "country": "JP"})
-            if 27 <= day <= 30 and weekday < 5:
-                events.append({"date": date_str, "event": "Industrial Production", "country": "JP"})
+            month_rules = [
+                ("CPI Release", _pick_rule_date(year, month, 18, 22, {3, 4})),
+                ("Tankan Survey", _pick_rule_date(year, month, 1, 3) if month in (1, 4, 7, 10) else None),
+                ("GDP Release", _pick_rule_date(year, month, 13, 16) if month in (2, 5, 8, 11) else None),
+                ("Industrial Production", _pick_rule_date(year, month, 27, 30)),
+            ]
 
-        current += timedelta(days=1)
+        for event_name, event_date in month_rules:
+            if event_date is None or event_date < from_date or event_date > to_date:
+                continue
+            events.append({"date": event_date.strftime("%Y-%m-%d"), "event": event_name, "country": country_code})
 
     return events
 
@@ -448,7 +513,7 @@ async def get_calendar(country_code: str, year: int | None = None, month: int | 
     ]
     fallback_economic = [event for event in fallback_economic if event]
 
-    economic_events = _merge_events([*normalized_economic, *fallback_economic])
+    economic_events = _merge_economic_events(normalized_economic, fallback_economic)
     earnings_events = _merge_events([
         event
         for event in (_normalize_earnings_event(item, country_code) for item in earnings_raw)
