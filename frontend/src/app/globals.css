@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  --bg-rgb: 243 246 251;
+  --surface-rgb: 255 255 255;
+  --border-rgb: 148 163 184;
+  --text-rgb: 15 23 42;
+  --text-secondary-rgb: 91 100 117;
+  --accent-rgb: 15 118 110;
+  --positive-rgb: 16 185 129;
+  --negative-rgb: 239 68 68;
+  --warning-rgb: 245 158 11;
   --bg: #f3f6fb;
   --surface: #ffffff;
   --border: rgba(148, 163, 184, 0.26);
@@ -20,6 +29,15 @@
 }
 
 .dark {
+  --bg-rgb: 9 17 31;
+  --surface-rgb: 15 23 42;
+  --border-rgb: 148 163 184;
+  --text-rgb: 226 232 240;
+  --text-secondary-rgb: 148 163 184;
+  --accent-rgb: 56 189 248;
+  --positive-rgb: 52 211 153;
+  --negative-rgb: 248 113 113;
+  --warning-rgb: 251 191 36;
   --bg: #09111f;
   --surface: #0f172a;
   --border: rgba(148, 163, 184, 0.18);
@@ -38,6 +56,41 @@
 
 html {
   scroll-behavior: smooth;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--text-secondary-rgb) / 0.34) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-track-piece {
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(var(--text-secondary-rgb) / 0.32);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--text-secondary-rgb) / 0.48);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
