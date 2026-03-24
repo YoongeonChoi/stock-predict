@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.errors import SP_5008, SP_5013, SP_6009
-from app.services import ideal_portfolio_service, portfolio_service, portfolio_event_service
+from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_6009
+from app.services import ideal_portfolio_service, portfolio_service, portfolio_event_service, portfolio_recommendation_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -46,6 +46,42 @@ async def get_portfolio_event_radar(days: int = 14):
         return await portfolio_event_service.get_portfolio_event_radar(days)
     except Exception as e:
         err = SP_5013(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/recommendations/conditional")
+async def get_conditional_portfolio_recommendations(
+    country_code: str = "ALL",
+    sector: str = "ALL",
+    style: str = "balanced",
+    max_items: int = 5,
+    min_up_probability: float = 54.0,
+    exclude_holdings: bool = True,
+    watchlist_only: bool = False,
+):
+    try:
+        return await portfolio_recommendation_service.get_conditional_recommendations(
+            country_code=country_code,
+            sector=sector,
+            style=style,
+            max_items=max_items,
+            min_up_probability=min_up_probability,
+            exclude_holdings=exclude_holdings,
+            watchlist_only=watchlist_only,
+        )
+    except Exception as e:
+        err = SP_5015(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/recommendations/optimal")
+async def get_optimal_portfolio_recommendation():
+    try:
+        return await portfolio_recommendation_service.get_optimal_recommendation()
+    except Exception as e:
+        err = SP_5016(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
