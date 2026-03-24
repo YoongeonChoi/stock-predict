@@ -2,7 +2,7 @@
 
 AI 기반 주식 시장 분석 플랫폼 — 미국, 한국, 일본 시장을 커버합니다.
 
-현재 릴리즈: `v2.10.5`
+현재 릴리즈: `v2.10.7`
 
 OpenAI API 기반 LLM과 정량 엔진을 함께 사용해 리서치 기관 보고서를 종합 분석하고, 엄격한 루브릭 기반 100점 만점 스코어링 시스템으로 국가/섹터/종목을 평가합니다.
 
@@ -270,8 +270,7 @@ cd stock-predict
 ```powershell
 # Windows PowerShell
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r backend\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
 ```bash
@@ -288,20 +287,22 @@ pip install -r backend/requirements.txt
 개발 후 가장 먼저 아래 원클릭 검증을 권장합니다.
 
 ```powershell
-.\verify.ps1
+& .\venv\Scripts\python.exe .\verify.py
 ```
 
 프론트만 잠시 건너뛰고 백엔드만 빠르게 검증하려면:
 
 ```powershell
-.\verify.ps1 -SkipFrontend
+& .\venv\Scripts\python.exe .\verify.py --skip-frontend
 ```
 
 실제 주요 API 기능을 한 번 더 전수 스모크 점검하려면:
 
 ```powershell
-.\verify.ps1 -LiveApiSmoke
+& .\venv\Scripts\python.exe .\verify.py --live-api-smoke
 ```
+
+실행 정책이나 `cmd` 자동 실행 훅 때문에 래퍼가 불안정한 환경이면 위 Python 직접 실행 방식을 우선 사용하세요. `verify.cmd`와 `verify.ps1`는 같은 검증 런처를 감싸는 편의용 래퍼입니다.
 
 개별 명령으로 확인할 때는 아래 순서를 사용합니다.
 
@@ -351,19 +352,40 @@ cd ..
 
 아래 단계는 **서버를 켤 때마다** 실행합니다.
 
-**방법 A: PowerShell 원클릭 실행 (Windows)**
+**방법 A: Python 직접 실행 (Windows, 권장)**
 
 ```powershell
-.\start.ps1
+& .\venv\Scripts\python.exe .\start.py
 ```
 
-**방법 B: 수동 실행 (터미널 2개)**
+PowerShell 실행 정책 때문에 `.\start.ps1` 가 막히는 환경에서도 위 Python 직접 실행 방식은 그대로 사용할 수 있습니다.
+
+**방법 B: CMD 래퍼 실행**
+
+```powershell
+.\start.cmd
+```
+
+**방법 C: PowerShell 실행 (정책 우회 포함)**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+빠르게 환경만 점검하려면:
+
+```powershell
+& .\venv\Scripts\python.exe .\start.py --check
+```
+
+필요하면 `.\start.cmd --check` 도 같은 점검을 실행합니다.
+
+**방법 D: 수동 실행 (터미널 2개)**
 
 터미널 1 — 백엔드:
 ```powershell
-.\venv\Scripts\Activate.ps1          # 가상환경 활성화 (매번 필요)
 cd backend
-uvicorn app.main:app --reload --port 8000
+..\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
 터미널 2 — 프론트엔드:
@@ -389,7 +411,7 @@ npm run dev
 | `pip install -r requirements.txt` | O | 패키지 변경 시만 |
 | `.env` 파일 생성 + API 키 입력 | O | X |
 | `npm install` | O | package.json 변경 시만 |
-| 가상환경 활성화 (`Activate.ps1`) | - | **O (매번)** |
+| `python .\start.py` 또는 래퍼 실행 | - | **O (매번)** |
 | `uvicorn` 백엔드 실행 | - | **O (매번)** |
 | `npm run dev` 프론트엔드 실행 | - | **O (매번)** |
 
@@ -757,7 +779,11 @@ stock-predict/
 │   │       └── utils.ts            # 포맷팅 유틸
 │   ├── package.json
 │   └── tailwind.config.ts
-├── start.ps1                       # 원클릭 실행 스크립트 (Windows)
+├── start.cmd                       # Windows 편의용 런처
+├── start.ps1                       # PowerShell 래퍼
+├── start.py                        # 공용 개발 서버 런처
+├── verify.cmd                      # Windows 편의용 검증 래퍼
+├── verify.py                       # 공용 검증 런처
 ├── .gitignore
 └── README.md
 ```

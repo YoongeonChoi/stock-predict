@@ -111,20 +111,22 @@
 가장 먼저 아래 원클릭 검증을 권장합니다.
 
 ```powershell
-.\verify.ps1
+& .\venv\Scripts\python.exe .\verify.py
 ```
 
 프론트 수정이 없거나 백엔드만 빠르게 점검할 때는 아래처럼 실행합니다.
 
 ```powershell
-.\verify.ps1 -SkipFrontend
+& .\venv\Scripts\python.exe .\verify.py --skip-frontend
 ```
 
 주요 API 기능을 실제 엔드포인트 기준으로 전수 스모크 점검하려면 아래 옵션을 사용합니다.
 
 ```powershell
-.\verify.ps1 -LiveApiSmoke
+& .\venv\Scripts\python.exe .\verify.py --live-api-smoke
 ```
+
+Windows PowerShell 실행 정책이나 `cmd` 자동 실행 훅이 있는 환경에서는 `start.py`, `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본 사용 경로로 봅니다.
 
 ### Backend
 
