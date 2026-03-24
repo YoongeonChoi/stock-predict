@@ -120,6 +120,12 @@
 .\verify.ps1 -SkipFrontend
 ```
 
+주요 API 기능을 실제 엔드포인트 기준으로 전수 스모크 점검하려면 아래 옵션을 사용합니다.
+
+```powershell
+.\verify.ps1 -LiveApiSmoke
+```
+
 ### Backend
 
 ```powershell

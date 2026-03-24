@@ -2,11 +2,13 @@
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.database import db
-from app.errors import SP_9999
+from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
 from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
 from app.services import archive_service, research_archive_service
@@ -89,6 +91,42 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content=err.to_dict(),
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    detail_parts = []
+    for item in exc.errors():
+        location = " > ".join(str(part) for part in item.get("loc", []) if part != "body")
+        message = item.get("msg", "Invalid input")
+        detail_parts.append(f"{location}: {message}" if location else message)
+    detail = "; ".join(detail_parts)[:300]
+
+    if request.url.path.startswith("/api/portfolio/holdings"):
+        err = SP_6009(detail)
+    else:
+        err = SP_6010(detail)
+    err.log("warning")
+    return JSONResponse(status_code=422, content=err.to_dict())
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if not request.url.path.startswith("/api/"):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    if exc.status_code == 404:
+        err = SP_6011(request.url.path)
+        err.log("warning")
+        return JSONResponse(status_code=404, content=err.to_dict())
+    if exc.status_code == 405:
+        err = SP_6012(f"{request.method} {request.url.path}")
+        err.log("warning")
+        return JSONResponse(status_code=405, content=err.to_dict())
+
+    err = SP_6010(str(exc.detail)[:300])
+    err.log("warning")
+    return JSONResponse(status_code=exc.status_code, content=err.to_dict())
 
 
 app.include_router(country.router)

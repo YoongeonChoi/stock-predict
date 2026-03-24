@@ -1,11 +1,13 @@
 import logging
 from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse
 from app.data import yfinance_client, cache
-from app.data.universe_data import UNIVERSE, get_universe
+from app.data.universe_data import get_universe
 from app.scoring.stock_scorer import score_stock
+from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["screener"])
+
+ALLOWED_SORT_FIELDS = {"market_cap", "pe_ratio", "change_pct", "dividend_yield", "score", "current_price"}
 
 
 @router.get("/screener")
@@ -24,7 +26,7 @@ async def screen_stocks(
 ):
     """Screen stocks by various criteria."""
     country = country.upper()
-    cache_key = f"screener:{country}:{sector}:{market_cap_min}:{market_cap_max}:{pe_min}:{pe_max}:{dividend_yield_min}:{score_min}:{sort_by}:{sort_dir}:{limit}"
+    cache_key = f"screener:v2:{country}:{sector}:{market_cap_min}:{market_cap_max}:{pe_min}:{pe_max}:{dividend_yield_min}:{score_min}:{sort_by}:{sort_dir}:{limit}"
     
     cached = await cache.get(cache_key)
     if cached:
@@ -32,36 +34,48 @@ async def screen_stocks(
 
     universe = await get_universe(country)
     tickers = []
+    seen = set()
     if sector:
-        tickers = universe.get(sector, [])
+        for ticker in universe.get(sector, []):
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            tickers.append(ticker)
     else:
         for sec_tickers in universe.values():
-            tickers.extend(sec_tickers)
+            for ticker in sec_tickers:
+                if ticker in seen:
+                    continue
+                seen.add(ticker)
+                tickers.append(ticker)
 
-    results = []
-    for ticker in tickers[:200]:
+    async def _screen_ticker(ticker: str):
         try:
-            info = await yfinance_client.get_stock_info(ticker)
-            if not info.get("current_price"):
-                continue
+            snapshot = await yfinance_client.get_market_snapshot(ticker, period="6mo")
+            if not snapshot.get("valid"):
+                return None
 
-            mc = info.get("market_cap") or 0
+            info = await yfinance_client.get_stock_info(ticker)
+            price = float(info.get("current_price") or snapshot.get("current_price") or 0.0)
+            if price <= 0:
+                return None
+
+            mc = float(info.get("market_cap") or snapshot.get("market_cap") or 0.0)
             pe = info.get("pe_ratio")
             dy = info.get("dividend_yield")
             
             if market_cap_min and mc < market_cap_min:
-                continue
+                return None
             if market_cap_max and mc > market_cap_max:
-                continue
+                return None
             if pe_min and (pe is None or pe < pe_min):
-                continue
+                return None
             if pe_max and (pe is None or pe > pe_max):
-                continue
+                return None
             if dividend_yield_min and (dy is None or dy < dividend_yield_min):
-                continue
+                return None
 
-            price = info.get("current_price", 0)
-            prev = info.get("prev_close", price)
+            prev = float(info.get("prev_close") or snapshot.get("prev_close") or price)
             change_pct = ((price - prev) / prev * 100) if prev else 0
             
             high_52w = info.get("52w_high") or price
@@ -75,13 +89,13 @@ async def screen_stocks(
                     qs = score_stock(info, price_hist=prices)
                     score_total = round(qs.total, 1)
                     if score_total < score_min:
-                        continue
+                        return None
                 except Exception:
                     pass
-            
-            results.append({
+
+            return {
                 "ticker": ticker,
-                "name": info.get("name", ticker),
+                "name": info.get("name") or snapshot.get("name") or ticker,
                 "sector": info.get("sector", "N/A"),
                 "industry": info.get("industry", "N/A"),
                 "market_cap": mc,
@@ -96,13 +110,16 @@ async def screen_stocks(
                 "pct_from_52w_high": round(pct_from_52w_high, 2),
                 "score": score_total,
                 "country_code": country,
-            })
+            }
         except Exception as e:
             logging.warning("screener: failed %s: %s", ticker, e)
-            continue
+            return None
+
+    screened = await gather_limited(tickers[:200], _screen_ticker, limit=6)
+    results = [item for item in screened if not isinstance(item, Exception) and item is not None]
 
     reverse = sort_dir == "desc"
-    sort_key = sort_by if sort_by in ("market_cap", "pe_ratio", "change_pct", "dividend_yield", "score", "current_price") else "market_cap"
+    sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
     results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
     results = results[:limit]
 

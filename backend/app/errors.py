@@ -137,6 +137,21 @@ SP_6009 = lambda d="": AppError(
     "Invalid portfolio holding input",
     d or "Provide a ticker, positive buy price and quantity, and a valid buy date.",
 )
+SP_6010 = lambda d="": AppError(
+    "SP-6010",
+    "Request validation failed",
+    d or "Check query parameters and request body fields, then try again.",
+)
+SP_6011 = lambda path="": AppError(
+    "SP-6011",
+    "API route not found",
+    path or "Check the API path and try again.",
+)
+SP_6012 = lambda method="": AppError(
+    "SP-6012",
+    "HTTP method not allowed",
+    method or "Check the supported HTTP method for this API.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors

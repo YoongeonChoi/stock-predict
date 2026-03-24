@@ -45,7 +45,20 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         flattened = [ticker for tickers in universe.values() for ticker in tickers]
         self.assertNotIn("091990.KS", flattened)
         self.assertNotIn("098560.KS", flattened)
+        self.assertNotIn("002550.KS", flattened)
+        self.assertNotIn("003410.KS", flattened)
+        self.assertNotIn("010620.KS", flattened)
         self.assertIn("196170.KQ", universe["Health Care"])
+
+        with patch(
+            "app.data.fmp_client.probe_stock_screener",
+            new=AsyncMock(return_value=False),
+        ):
+            us_universe = await get_universe("US")
+        us_flattened = [ticker for tickers in us_universe.values() for ticker in tickers]
+        self.assertNotIn("HES", us_flattened)
+        self.assertNotIn("PXD", us_flattened)
+        self.assertNotIn("WRK", us_flattened)
 
     async def test_probe_stock_screener_disables_exchange_after_403(self):
         class FailingAsyncClient:
