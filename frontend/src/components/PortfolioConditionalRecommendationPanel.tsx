@@ -32,8 +32,8 @@ export default function PortfolioConditionalRecommendationPanel({
 
   const controls = (
     <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 space-y-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[140px_minmax(180px,1fr)_160px_140px_160px]">
-        <div>
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        <div className="min-w-0">
           <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">국가</label>
           <select
             value={filters.country_code}
@@ -47,7 +47,7 @@ export default function PortfolioConditionalRecommendationPanel({
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">섹터</label>
           <select
             value={filters.sector}
@@ -61,7 +61,7 @@ export default function PortfolioConditionalRecommendationPanel({
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">운영 성향</label>
           <select
             value={filters.style}
@@ -73,7 +73,7 @@ export default function PortfolioConditionalRecommendationPanel({
             <option value="offensive">공격형</option>
           </select>
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">추천 수</label>
           <select
             value={filters.max_items}
@@ -85,7 +85,7 @@ export default function PortfolioConditionalRecommendationPanel({
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 상승 확률</label>
           <select
             value={filters.min_up_probability}
@@ -99,7 +99,7 @@ export default function PortfolioConditionalRecommendationPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-3 text-sm text-text-secondary">
           <label className="inline-flex items-center gap-2">
             <input
@@ -118,7 +118,11 @@ export default function PortfolioConditionalRecommendationPanel({
             워치리스트만 보기
           </label>
         </div>
-        <button onClick={onRun} disabled={running} className="action-chip-primary disabled:cursor-not-allowed disabled:opacity-60">
+        <button
+          onClick={onRun}
+          disabled={running}
+          className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+        >
           {running ? "조건 추천 계산 중..." : "조건 추천 실행"}
         </button>
       </div>

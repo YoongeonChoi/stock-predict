@@ -172,14 +172,14 @@ export default function PortfolioModelPanel({ model }: Props) {
       </div>
 
       {hasIdeas ? (
-        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)]">
+        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.82fr)] 2xl:items-start">
           <div className="min-w-0 card !p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h3 className="font-semibold">권장 비중 테이블</h3>
               <p className="text-xs text-text-secondary mt-1">현재 보유 비중과 목표 비중의 차이를 바로 확인하고, 어떤 종목을 늘리거나 줄일지 결정할 수 있습니다.</p>
             </div>
-            <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
-              <table className="w-full text-sm min-w-[860px]">
+            <div className="w-full overflow-x-auto px-2 pb-2 pt-1 md:px-3">
+              <table className="w-full min-w-[940px] text-sm">
                 <thead>
                   <tr className="text-left text-text-secondary border-b border-border bg-surface/40">
                     <th className="px-4 py-3">종목</th>

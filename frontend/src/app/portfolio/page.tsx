@@ -418,16 +418,20 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <PortfolioConditionalRecommendationPanel
-              data={conditionalRecommendation}
-              filters={conditionalFilters}
-              loading={conditionalLoading}
-              running={conditionalRunning}
-              onChange={setConditionalFilters}
-              onRun={runConditionalRecommendation}
-            />
-            <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.16fr)_minmax(320px,0.84fr)] 2xl:items-start">
+            <div className="min-w-0">
+              <PortfolioConditionalRecommendationPanel
+                data={conditionalRecommendation}
+                filters={conditionalFilters}
+                loading={conditionalLoading}
+                running={conditionalRunning}
+                onChange={setConditionalFilters}
+                onRun={runConditionalRecommendation}
+              />
+            </div>
+            <div className="min-w-0">
+              <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+            </div>
           </div>
 
           <PortfolioRiskPanel risk={data!.risk} stressTest={data!.stress_test} />
@@ -565,16 +569,20 @@ export default function PortfolioPage() {
             <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
             <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
           </div>
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <PortfolioConditionalRecommendationPanel
-              data={conditionalRecommendation}
-              filters={conditionalFilters}
-              loading={conditionalLoading}
-              running={conditionalRunning}
-              onChange={setConditionalFilters}
-              onRun={runConditionalRecommendation}
-            />
-            <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.16fr)_minmax(320px,0.84fr)] 2xl:items-start">
+            <div className="min-w-0">
+              <PortfolioConditionalRecommendationPanel
+                data={conditionalRecommendation}
+                filters={conditionalFilters}
+                loading={conditionalLoading}
+                running={conditionalRunning}
+                onChange={setConditionalFilters}
+                onRun={runConditionalRecommendation}
+              />
+            </div>
+            <div className="min-w-0">
+              <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+            </div>
           </div>
           {data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
         </div>
