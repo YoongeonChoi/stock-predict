@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.10.11 - 2026-03-24
+
+- 실행/검증 명령은 상대경로 기준으로 반드시 `C:\clone_repo\stock-predict` 안에서만 동작한다는 점을 README에 명확히 적고, 상위 폴더 `C:\clone_repo` 에 있을 때 바로 쓸 수 있는 `.\stock-predict\...` 예시와 절대경로 예시를 추가했습니다.
+- `start.py --check`가 이제 프로젝트 루트와 함께 `프로젝트 루트 기준`, `상위 폴더 기준`, `절대경로 기준` 명령 예시를 바로 출력해 현재 위치가 잘못됐을 때 즉시 복구할 수 있도록 보강했습니다.
+- 이 환경의 `cmd` AutoRun/Clink 훅 때문에 `.cmd` 실행이 불안정할 수 있다는 점을 문서에 반영하고, 기본 실행 경로를 다시 `python.exe start.py` 방식으로 정리했습니다.
+- 상위 폴더에 잘못 생성된 `package-lock.json` 찌꺼기를 정리해 실행 흐름과 파일 목록 혼선을 줄였습니다.
+
 ## v2.10.10 - 2026-03-24
 
 - 저장소 루트에 `package.json`과 절대경로 기반 `scripts/frontend_npm.js`를 추가해 `npm install`을 루트에서 실행해도 자동으로 `frontend` 의존성 설치까지 이어지도록 정리했습니다.

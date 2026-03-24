@@ -24,6 +24,23 @@ BACKEND_URL = "http://127.0.0.1:8000/api/health"
 FRONTEND_URL = "http://127.0.0.1:3000"
 
 
+def repo_relative_python_command(script_name: str, *args: str) -> str:
+    command = [r".\venv\Scripts\python.exe", rf".\{script_name}", *args]
+    return "& " + " ".join(command)
+
+
+def parent_relative_python_command(script_name: str, *args: str) -> str:
+    command = [r".\stock-predict\venv\Scripts\python.exe", rf".\stock-predict\{script_name}", *args]
+    return "& " + " ".join(command)
+
+
+def absolute_python_command(script_name: str, *args: str) -> str:
+    python_path = display_path(ROOT / "venv" / "Scripts" / "python.exe")
+    script_path = display_path(ROOT / script_name)
+    command = [f'"{python_path}"', f'"{script_path}"', *args]
+    return "& " + " ".join(command)
+
+
 def runtime_paths() -> dict[str, Path]:
     runtime_dir = ensure_runtime_dir()
     return {
@@ -151,6 +168,10 @@ def run_check() -> int:
     failures: list[str] = []
 
     print("[check] 개발 런처 환경 점검")
+    print(f"[ok] 프로젝트 루트: {display_path(ROOT)}")
+    print("[hint] 상대경로 명령은 현재 위치가 이 프로젝트 루트일 때만 그대로 동작합니다.")
+    print(f"[hint] 상위 폴더(C:\\clone_repo)에서는: {parent_relative_python_command('start.py', '--check')}")
+    print(f"[hint] 어느 폴더에서든 절대경로로는: {absolute_python_command('start.py', '--check')}")
 
     if python_path:
         print(f"[ok] 가상환경 Python: {python_path}")
@@ -350,8 +371,10 @@ def launch_services() -> int:
         print(f"프론트 로그: {display_path(paths['frontend_log'])}")
         print("현재 프롬프트로 바로 돌아왔다면 정상이며, 같은 터미널에서 다른 명령을 계속 입력해도 됩니다.")
         print("")
-        print("상태 확인: & .\\venv\\Scripts\\python.exe .\\start.py --status")
-        print("서버 종료: & .\\venv\\Scripts\\python.exe .\\start.py --stop")
+        print(f"상태 확인(프로젝트 루트): {repo_relative_python_command('start.py', '--status')}")
+        print(f"상태 확인(상위 폴더): {parent_relative_python_command('start.py', '--status')}")
+        print(f"서버 종료(프로젝트 루트): {repo_relative_python_command('start.py', '--stop')}")
+        print(f"서버 종료(상위 폴더): {parent_relative_python_command('start.py', '--stop')}")
         return 0
     finally:
         if frontend_stream is not None:
