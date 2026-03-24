@@ -19,8 +19,8 @@ async def get_watchlist():
 @router.post("/watchlist/{ticker}")
 async def add_watchlist(ticker: str, country_code: str = "US"):
     try:
-        await watchlist_service.add_to_watchlist(ticker, country_code)
-        return {"status": "added", "ticker": ticker}
+        resolution = await watchlist_service.add_to_watchlist(ticker, country_code)
+        return {"status": "added", "ticker": resolution["ticker"], "country_code": resolution["country_code"], "note": resolution["note"]}
     except Exception as e:
         err = SP_5003(f"add({ticker}): {e}")
         err.log()

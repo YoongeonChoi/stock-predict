@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.errors import SP_5008, SP_6009
-from app.services import ideal_portfolio_service, portfolio_service
+from app.errors import SP_5008, SP_5013, SP_6009
+from app.services import ideal_portfolio_service, portfolio_service, portfolio_event_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -36,6 +36,16 @@ async def get_ideal_portfolio(refresh: bool = False, history_limit: int = 10):
         return data
     except Exception as e:
         err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/event-radar")
+async def get_portfolio_event_radar(days: int = 14):
+    try:
+        return await portfolio_event_service.get_portfolio_event_radar(days)
+    except Exception as e:
+        err = SP_5013(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 

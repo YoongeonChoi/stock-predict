@@ -109,6 +109,11 @@ SP_5006 = lambda d="": AppError("SP-5006", "System diagnostics failed", d)
 SP_5007 = lambda d="": AppError("SP-5007", "Prediction research query failed", d)
 SP_5008 = lambda d="": AppError("SP-5008", "Portfolio analytics failed", d)
 SP_5009 = lambda d="": AppError("SP-5009", "External research archive sync failed", d)
+SP_5010 = lambda d="": AppError("SP-5010", "Ticker resolution failed", d)
+SP_5011 = lambda d="": AppError("SP-5011", "Daily briefing failed", d)
+SP_5012 = lambda d="": AppError("SP-5012", "Market session summary failed", d)
+SP_5013 = lambda d="": AppError("SP-5013", "Portfolio event radar failed", d)
+SP_5014 = lambda d="": AppError("SP-5014", "Forecast drift query failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation

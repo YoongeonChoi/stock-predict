@@ -122,8 +122,9 @@ export default function SearchBar() {
                       </span>
                     </div>
                     <div className="mt-1 truncate text-xs text-text-secondary">{r.name}</div>
+                    {r.resolution_note ? <div className="mt-1 truncate text-[11px] text-text-secondary">{r.resolution_note}</div> : null}
                   </div>
-                  <span className="text-[11px] text-text-secondary">열기</span>
+                  <span className="text-[11px] text-text-secondary">{r.match_basis === "partial_ticker" ? "검색" : "해석"}</span>
                 </button>
               ))}
             </div>

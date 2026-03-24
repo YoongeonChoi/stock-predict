@@ -6,8 +6,8 @@ from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
 from ta.volatility import BollingerBands
 from app.analysis.stock_analyzer import analyze_stock
 from app.data import yfinance_client, cache
-from app.services import archive_service
-from app.errors import SP_3003, SP_6003, SP_2005, SP_5002
+from app.services import archive_service, ticker_resolver_service, forecast_monitor_service
+from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014
 
 router = APIRouter(prefix="/api", tags=["stock"])
 
@@ -237,26 +237,7 @@ async def get_pivot_points(ticker: str):
 
 @router.get("/search")
 async def search_stocks(q: str = Query(..., min_length=1)):
-    """Search stocks by ticker or name."""
-    from app.data.universe_data import UNIVERSE
-    q_upper = q.strip().upper()
-    results = []
-    seen = set()
-
-    for country_code, sectors in UNIVERSE.items():
-        for sector_name, tickers in sectors.items():
-            for ticker in tickers:
-                if ticker in seen:
-                    continue
-                t_upper = ticker.upper()
-                if q_upper in t_upper or q_upper in t_upper.split(".")[0]:
-                    seen.add(ticker)
-                    results.append({
-                        "ticker": ticker,
-                        "country_code": country_code,
-                        "sector": sector_name,
-                    })
-
+    results = await ticker_resolver_service.search_candidates(q, limit=15)
     for item in results[:10]:
         try:
             info = await yfinance_client.get_stock_info(item["ticker"])
@@ -265,3 +246,31 @@ async def search_stocks(q: str = Query(..., min_length=1)):
             item["name"] = item["ticker"]
 
     return results[:15]
+
+
+@router.get("/ticker/resolve")
+async def resolve_ticker(query: str = Query(..., min_length=1), country_code: str = "US"):
+    try:
+        resolution = ticker_resolver_service.resolve_ticker(query, country_code)
+        if resolution.get("ticker"):
+            try:
+                info = await yfinance_client.get_stock_info(resolution["ticker"])
+                resolution["name"] = info.get("name", resolution["ticker"])
+            except Exception:
+                resolution["name"] = resolution["ticker"]
+        return resolution
+    except Exception as exc:
+        err = SP_5010(str(exc)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/stock/{ticker}/forecast-delta")
+async def get_stock_forecast_delta(ticker: str, limit: int = 8):
+    try:
+        resolution = ticker_resolver_service.resolve_ticker(ticker)
+        return await forecast_monitor_service.get_stock_forecast_delta(resolution["ticker"], limit=limit)
+    except Exception as exc:
+        err = SP_5014(str(exc)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())

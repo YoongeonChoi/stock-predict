@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
+import type { TickerResolution } from "@/lib/api";
 import type { WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -13,6 +15,7 @@ export default function WatchlistPage() {
   const [loading, setLoading] = useState(true);
   const [ticker, setTicker] = useState("");
   const [country, setCountry] = useState("KR");
+  const [resolution, setResolution] = useState<TickerResolution | null>(null);
   const { toast } = useToast();
 
   const load = () => {
@@ -22,12 +25,26 @@ export default function WatchlistPage() {
 
   useEffect(load, []);
 
+  useEffect(() => {
+    const trimmed = ticker.trim();
+    if (!trimmed) {
+      setResolution(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      api.resolveTicker(trimmed, country).then(setResolution).catch(() => setResolution(null));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [ticker, country]);
+
   const add = async () => {
     if (!ticker.trim()) return;
     try {
-      await api.addWatchlist(ticker.trim().toUpperCase(), country);
-      toast(`${ticker.toUpperCase()} 종목을 워치리스트에 추가했습니다.`, "success");
+      const saved = await api.addWatchlist(ticker.trim().toUpperCase(), country);
+      toast(`${saved.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
       setTicker("");
+      setResolution(null);
       load();
     } catch {
       toast("워치리스트 추가에 실패했습니다.", "error");
@@ -60,6 +77,8 @@ export default function WatchlistPage() {
         <button onClick={add} className="px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90">추가</button>
       </div>
 
+      <TickerResolutionHint resolution={resolution} />
+
       {loading ? (
         <div className="animate-pulse space-y-3">{[1, 2, 3].map((item) => <div key={item} className="h-16 bg-border rounded" />)}</div>
       ) : items.length === 0 ? (
@@ -74,6 +93,7 @@ export default function WatchlistPage() {
               <Link href={`/stock/${item.ticker}`} className="flex-1 hover:text-accent transition-colors">
                 <div className="font-medium">{item.name || item.ticker}</div>
                 <div className="text-xs text-text-secondary">{item.ticker} · {item.country_code}</div>
+                {item.resolution_note ? <div className="mt-1 text-[11px] text-text-secondary">{item.resolution_note}</div> : null}
               </Link>
               <div className="text-right mr-4">
                 <div className="font-mono">{formatPrice(item.current_price, item.country_code)}</div>

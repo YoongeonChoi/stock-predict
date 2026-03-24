@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Archive, ArrowRight, BriefcaseBusiness, Crosshair, FlaskConical } from "lucide-react";
 
+import DailyBriefingPanel from "@/components/DailyBriefingPanel";
 import DailyIdealPortfolioPanel from "@/components/DailyIdealPortfolioPanel";
+import MarketSessionPanel from "@/components/MarketSessionPanel";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 import PageHeader from "@/components/PageHeader";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import { api } from "@/lib/api";
-import type { DailyIdealPortfolio, HeatmapData, MarketMovers } from "@/lib/api";
+import type { DailyBriefingResponse, DailyIdealPortfolio, HeatmapData, MarketMovers } from "@/lib/api";
 import type { CountryListItem, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
 
@@ -32,6 +34,8 @@ export default function HomePage() {
   const [radarLoading, setRadarLoading] = useState(true);
   const [idealPortfolio, setIdealPortfolio] = useState<DailyIdealPortfolio | null>(null);
   const [idealLoading, setIdealLoading] = useState(true);
+  const [briefing, setBriefing] = useState<DailyBriefingResponse | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
@@ -46,6 +50,7 @@ export default function HomePage() {
 
     api.getMarketMovers("KR").then(setMovers).catch(console.error);
     api.getDailyIdealPortfolio(false, 8).then(setIdealPortfolio).catch(console.error).finally(() => setIdealLoading(false));
+    api.getDailyBriefing().then(setBriefing).catch(console.error).finally(() => setBriefingLoading(false));
     setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
     loadHeatmap("KR");
     loadRadar("KR");
@@ -121,6 +126,23 @@ export default function HomePage() {
           </>
         }
       />
+
+      <section className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+        <div className="min-w-0">
+          {briefingLoading ? (
+            <div className="card h-[420px] animate-pulse" />
+          ) : briefing ? (
+            <DailyBriefingPanel data={briefing} />
+          ) : null}
+        </div>
+        <div className="min-w-0">
+          {briefingLoading ? (
+            <div className="card h-[420px] animate-pulse" />
+          ) : briefing ? (
+            <MarketSessionPanel sessions={briefing.sessions} />
+          ) : null}
+        </div>
+      </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
         <div className="min-w-0 card !p-0 overflow-hidden">

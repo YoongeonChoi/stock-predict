@@ -188,6 +188,18 @@ class Database:
             await conn.execute("DELETE FROM watchlist WHERE ticker = ?", (ticker,))
             await conn.commit()
 
+    async def watchlist_update(self, item_id: int, ticker: str, country_code: str):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                UPDATE watchlist
+                SET ticker = ?, country_code = ?
+                WHERE id = ?
+                """,
+                (ticker, country_code, item_id),
+            )
+            await conn.commit()
+
     async def watchlist_list(self) -> list[dict]:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -601,6 +613,28 @@ class Database:
             )
             return [dict(r) for r in await cur.fetchall()]
 
+    async def prediction_symbol_history(
+        self,
+        *,
+        symbol: str,
+        scope: str = "stock",
+        prediction_type: str = "next_day",
+        limit: int = 8,
+    ) -> list[dict]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM prediction_records
+                WHERE prediction_type = ? AND scope = ? AND symbol = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (prediction_type, scope, symbol, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
     async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -836,6 +870,18 @@ class Database:
     async def portfolio_delete(self, holding_id: int):
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute("DELETE FROM portfolio_holdings WHERE id = ?", (holding_id,))
+            await conn.commit()
+
+    async def portfolio_update_identity(self, holding_id: int, ticker: str, country_code: str):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                UPDATE portfolio_holdings
+                SET ticker = ?, country_code = ?
+                WHERE id = ?
+                """,
+                (ticker, country_code, holding_id),
+            )
             await conn.commit()
 
     # ── ideal portfolio snapshots ──────────────────────────

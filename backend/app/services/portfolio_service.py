@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -12,19 +11,11 @@ from app.analysis.stock_analyzer import _calc_technicals
 from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.data import cache, yfinance_client
-from app.data.universe_data import UNIVERSE
 from app.database import db
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
-from app.services import market_service
+from app.services import market_service, ticker_resolver_service
 from app.utils.async_tools import gather_limited
-
-
-_KR_TICKER_BY_BASE = {
-    re.sub(r"\.(KS|KQ|KR)$", "", ticker, flags=re.IGNORECASE).upper(): ticker.upper()
-    for tickers in UNIVERSE.get("KR", {}).values()
-    for ticker in tickers
-}
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -32,33 +23,20 @@ def _clip(value: float, low: float, high: float) -> float:
 
 
 def _normalize_country_code(country_code: str | None) -> str:
-    return str(country_code or "US").strip().upper() or "US"
+    return ticker_resolver_service.normalize_country_code(country_code)
 
 
 def _normalize_kr_portfolio_ticker(raw_ticker: str) -> str:
-    base = re.sub(r"\.(KS|KQ|KR)$", "", raw_ticker, flags=re.IGNORECASE).upper()
-    if not re.fullmatch(r"\d{6}", base):
-        return raw_ticker.upper()
-    return _KR_TICKER_BY_BASE.get(base, f"{base}.KS")
+    return ticker_resolver_service.resolve_ticker(raw_ticker, "KR")["ticker"]
 
 
 def _normalize_jp_portfolio_ticker(raw_ticker: str) -> str:
-    base = re.sub(r"\.T$", "", raw_ticker, flags=re.IGNORECASE).upper()
-    if not re.fullmatch(r"\d{4}", base):
-        return raw_ticker.upper()
-    return f"{base}.T"
+    return ticker_resolver_service.resolve_ticker(raw_ticker, "JP")["ticker"]
 
 
 def normalize_portfolio_ticker(ticker: str, country_code: str = "US") -> str:
-    normalized_ticker = str(ticker or "").strip().upper()
-    normalized_country = _normalize_country_code(country_code)
-    if not normalized_ticker:
-        return ""
-    if normalized_country == "KR":
-        return _normalize_kr_portfolio_ticker(normalized_ticker)
-    if normalized_country == "JP":
-        return _normalize_jp_portfolio_ticker(normalized_ticker)
-    return normalized_ticker
+    resolution = ticker_resolver_service.resolve_ticker(ticker, country_code)
+    return resolution["ticker"]
 
 
 def validate_portfolio_holding_input(
@@ -72,7 +50,8 @@ def validate_portfolio_holding_input(
     if normalized_country not in COUNTRY_REGISTRY:
         raise ValueError("지원하지 않는 국가 코드입니다. US, KR, JP 중에서 선택해 주세요.")
 
-    normalized_ticker = normalize_portfolio_ticker(ticker, normalized_country)
+    resolution = ticker_resolver_service.resolve_ticker(ticker, normalized_country)
+    normalized_ticker = resolution["ticker"]
     if not normalized_ticker:
         raise ValueError("티커를 입력해 주세요.")
 
@@ -101,7 +80,7 @@ def validate_portfolio_holding_input(
         "buy_price": parsed_buy_price,
         "quantity": parsed_quantity,
         "buy_date": normalized_buy_date,
-        "country_code": normalized_country,
+        "country_code": resolution["country_code"],
     }
 
 
@@ -1014,6 +993,11 @@ async def get_portfolio():
     async def _enrich_holding(holding: dict) -> dict:
         country_code = _normalize_country_code(holding.get("country_code", "US"))
         ticker = normalize_portfolio_ticker(holding["ticker"], country_code)
+        if ticker != holding.get("ticker") or country_code != holding.get("country_code"):
+            try:
+                await db.portfolio_update_identity(holding["id"], ticker, country_code)
+            except Exception:
+                pass
         context = country_context.get(country_code)
         benchmark_history = context.get("benchmark_history") if context else []
         market_regime = context.get("market_regime") if context else None
