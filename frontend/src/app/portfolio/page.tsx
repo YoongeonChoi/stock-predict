@@ -5,16 +5,34 @@ import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import PageHeader from "@/components/PageHeader";
+import PortfolioConditionalRecommendationPanel from "@/components/PortfolioConditionalRecommendationPanel";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
 import PortfolioEventRadar from "@/components/PortfolioEventRadar";
+import PortfolioOptimalRecommendationPanel from "@/components/PortfolioOptimalRecommendationPanel";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import { ApiError, api } from "@/lib/api";
-import type { PortfolioData, PortfolioEventRadarResponse, TickerResolution } from "@/lib/api";
+import type {
+  PortfolioConditionalRecommendationFilters,
+  PortfolioConditionalRecommendationResponse,
+  PortfolioData,
+  PortfolioEventRadarResponse,
+  PortfolioOptimalRecommendationResponse,
+  TickerResolution,
+} from "@/lib/api";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 const COLORS = ["#0f766e", "#2563eb", "#f59e0b", "#ef4444", "#7c3aed", "#ec4899", "#0891b2", "#65a30d"];
+const DEFAULT_RECOMMENDATION_FILTERS: PortfolioConditionalRecommendationFilters = {
+  country_code: "KR",
+  sector: "ALL",
+  style: "balanced",
+  max_items: 5,
+  min_up_probability: 54,
+  exclude_holdings: true,
+  watchlist_only: false,
+};
 
 const TICKER_GUIDE = {
   KR: {
@@ -90,6 +108,12 @@ export default function PortfolioPage() {
   const [countryCode, setCountryCode] = useState("KR");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
   const [eventRadar, setEventRadar] = useState<PortfolioEventRadarResponse | null>(null);
+  const [conditionalFilters, setConditionalFilters] = useState<PortfolioConditionalRecommendationFilters>(DEFAULT_RECOMMENDATION_FILTERS);
+  const [conditionalRecommendation, setConditionalRecommendation] = useState<PortfolioConditionalRecommendationResponse | null>(null);
+  const [optimalRecommendation, setOptimalRecommendation] = useState<PortfolioOptimalRecommendationResponse | null>(null);
+  const [conditionalLoading, setConditionalLoading] = useState(true);
+  const [conditionalRunning, setConditionalRunning] = useState(false);
+  const [optimalLoading, setOptimalLoading] = useState(true);
   const { toast } = useToast();
 
   const load = async (showFailureToast = false) => {
@@ -114,6 +138,14 @@ export default function PortfolioPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
     api.getPortfolioEventRadar(14).then(setEventRadar).catch(console.error);
+    api.getPortfolioConditionalRecommendation(DEFAULT_RECOMMENDATION_FILTERS)
+      .then(setConditionalRecommendation)
+      .catch(console.error)
+      .finally(() => setConditionalLoading(false));
+    api.getPortfolioOptimalRecommendation()
+      .then(setOptimalRecommendation)
+      .catch(console.error)
+      .finally(() => setOptimalLoading(false));
   }, []);
 
   useEffect(() => {
@@ -168,6 +200,10 @@ export default function PortfolioPage() {
       await load();
       const radar = await api.getPortfolioEventRadar(14).catch(() => null);
       if (radar) setEventRadar(radar);
+      const nextConditional = await api.getPortfolioConditionalRecommendation(conditionalFilters).catch(() => null);
+      if (nextConditional) setConditionalRecommendation(nextConditional);
+      const nextOptimal = await api.getPortfolioOptimalRecommendation().catch(() => null);
+      if (nextOptimal) setOptimalRecommendation(nextOptimal);
       setResolution(null);
       toast(`${saved.name} (${saved.ticker}) 종목을 포트폴리오에 추가했습니다.`, "success");
     } catch (error) {
@@ -187,9 +223,28 @@ export default function PortfolioPage() {
       await load();
       const radar = await api.getPortfolioEventRadar(14).catch(() => null);
       if (radar) setEventRadar(radar);
+      const nextConditional = await api.getPortfolioConditionalRecommendation(conditionalFilters).catch(() => null);
+      if (nextConditional) setConditionalRecommendation(nextConditional);
+      const nextOptimal = await api.getPortfolioOptimalRecommendation().catch(() => null);
+      if (nextOptimal) setOptimalRecommendation(nextOptimal);
     } catch (error) {
       console.error(error);
       toast(getApiErrorMessage(error, "보유 종목을 삭제하지 못했습니다."), "error");
+    }
+  };
+
+  const runConditionalRecommendation = async () => {
+    setConditionalRunning(true);
+    setConditionalLoading(true);
+    try {
+      const response = await api.getPortfolioConditionalRecommendation(conditionalFilters);
+      setConditionalRecommendation(response);
+    } catch (error) {
+      console.error(error);
+      toast(getApiErrorMessage(error, "조건 추천을 계산하지 못했습니다."), "error");
+    } finally {
+      setConditionalRunning(false);
+      setConditionalLoading(false);
     }
   };
 
@@ -209,7 +264,7 @@ export default function PortfolioPage() {
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Portfolio Workspace"
+        eyebrow="포트폴리오 워크스페이스"
         title="포트폴리오"
         description="보유 종목 손익, 위험도, 다음 거래일 시그널을 한 화면에서 보고 실제 운영과 리밸런싱까지 이어지도록 정리했습니다."
         meta={
@@ -363,6 +418,18 @@ export default function PortfolioPage() {
             </div>
           </div>
 
+          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <PortfolioConditionalRecommendationPanel
+              data={conditionalRecommendation}
+              filters={conditionalFilters}
+              loading={conditionalLoading}
+              running={conditionalRunning}
+              onChange={setConditionalFilters}
+              onRun={runConditionalRecommendation}
+            />
+            <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+          </div>
+
           <PortfolioRiskPanel risk={data!.risk} stressTest={data!.stress_test} />
           <PortfolioModelPanel model={data!.model_portfolio} />
           {eventRadar ? <PortfolioEventRadar data={eventRadar} /> : null}
@@ -497,6 +564,17 @@ export default function PortfolioPage() {
           <div className="card text-center text-text-secondary py-12">
             <p className="text-lg mb-2">아직 등록된 보유 종목이 없습니다</p>
             <p className="text-sm">위 입력창으로 종목을 추가하면 손익, 위험도, 포지션 관리 시그널을 함께 볼 수 있습니다.</p>
+          </div>
+          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <PortfolioConditionalRecommendationPanel
+              data={conditionalRecommendation}
+              filters={conditionalFilters}
+              loading={conditionalLoading}
+              running={conditionalRunning}
+              onChange={setConditionalFilters}
+              onRun={runConditionalRecommendation}
+            />
+            <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
           </div>
           {data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
         </div>

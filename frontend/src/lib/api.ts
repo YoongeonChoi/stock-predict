@@ -304,6 +304,108 @@ export interface PortfolioModelPortfolio {
   notes: string[];
 }
 
+export type PortfolioRecommendationStyle = "defensive" | "balanced" | "offensive";
+
+export interface PortfolioRecommendationBudget {
+  style: PortfolioRecommendationStyle;
+  style_label: string;
+  recommended_equity_pct: number;
+  cash_buffer_pct: number;
+  target_position_count: number;
+  max_single_weight_pct: number;
+  max_country_weight_pct: number;
+  max_sector_weight_pct: number;
+}
+
+export interface PortfolioRecommendationSummary {
+  selected_count: number;
+  candidate_count: number;
+  watchlist_focus_count: number;
+  existing_overlap_count: number;
+  model_up_probability: number;
+  model_predicted_return_pct: number;
+  focus_country?: string | null;
+  focus_sector?: string | null;
+}
+
+export interface PortfolioRecommendationMarketView {
+  country_code: string;
+  label?: string | null;
+  stance?: "risk_on" | "neutral" | "risk_off" | null;
+  actionable_count: number;
+  universe_note?: string | null;
+}
+
+export interface PortfolioRecommendationItem {
+  key: string;
+  ticker: string;
+  name: string;
+  country_code: string;
+  sector: string;
+  source: "holding" | "watchlist" | "radar";
+  in_watchlist: boolean;
+  current_weight_pct: number;
+  current_country_exposure_pct: number;
+  current_sector_exposure_pct: number;
+  target_weight_pct: number;
+  delta_weight_pct: number;
+  model_score: number;
+  opportunity_score: number;
+  up_probability: number;
+  predicted_return_pct: number;
+  confidence: number;
+  bull_probability?: number | null;
+  bear_probability?: number | null;
+  execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
+  setup_label?: string | null;
+  action?: string | null;
+  entry_low?: number | null;
+  entry_high?: number | null;
+  stop_loss?: number | null;
+  take_profit_1?: number | null;
+  take_profit_2?: number | null;
+  risk_reward_estimate?: number | null;
+  rationale: string[];
+  risk_flags: string[];
+  priority?: "high" | "medium" | "low";
+}
+
+export interface PortfolioConditionalRecommendationFilters {
+  country_code: string;
+  sector: string;
+  style: PortfolioRecommendationStyle;
+  max_items: number;
+  min_up_probability: number;
+  exclude_holdings: boolean;
+  watchlist_only: boolean;
+}
+
+export interface PortfolioConditionalRecommendationResponse {
+  generated_at: string;
+  filters: PortfolioConditionalRecommendationFilters;
+  options: {
+    countries: string[];
+    sectors: string[];
+    styles: PortfolioRecommendationStyle[];
+  };
+  budget: PortfolioRecommendationBudget;
+  summary: PortfolioRecommendationSummary;
+  recommendations: PortfolioRecommendationItem[];
+  notes: string[];
+  market_view: PortfolioRecommendationMarketView[];
+}
+
+export interface PortfolioOptimalRecommendationResponse {
+  generated_at: string;
+  objective: string;
+  style: PortfolioRecommendationStyle;
+  budget: PortfolioRecommendationBudget;
+  summary: PortfolioRecommendationSummary;
+  recommendations: PortfolioRecommendationItem[];
+  notes: string[];
+  market_view: PortfolioRecommendationMarketView[];
+}
+
 export interface DailyIdealPortfolioTargetDate {
   country_code: string;
   target_date: string;
@@ -846,6 +948,26 @@ export const api = {
     return get<ScreenerResponse>(`/api/screener?${qs}`);
   },
   getPortfolio: () => get<PortfolioData>("/api/portfolio"),
+  getPortfolioConditionalRecommendation: (params: {
+    country_code?: string;
+    sector?: string;
+    style?: PortfolioRecommendationStyle;
+    max_items?: number;
+    min_up_probability?: number;
+    exclude_holdings?: boolean;
+    watchlist_only?: boolean;
+  }) => {
+    const search = new URLSearchParams();
+    if (params.country_code) search.set("country_code", params.country_code);
+    if (params.sector) search.set("sector", params.sector);
+    if (params.style) search.set("style", params.style);
+    if (params.max_items != null) search.set("max_items", String(params.max_items));
+    if (params.min_up_probability != null) search.set("min_up_probability", String(params.min_up_probability));
+    if (params.exclude_holdings != null) search.set("exclude_holdings", String(params.exclude_holdings));
+    if (params.watchlist_only != null) search.set("watchlist_only", String(params.watchlist_only));
+    return get<PortfolioConditionalRecommendationResponse>(`/api/portfolio/recommendations/conditional?${search.toString()}`);
+  },
+  getPortfolioOptimalRecommendation: () => get<PortfolioOptimalRecommendationResponse>("/api/portfolio/recommendations/optimal"),
   getPortfolioEventRadar: (days = 14) => get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`),
   getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
     get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),

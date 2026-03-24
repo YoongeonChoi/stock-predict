@@ -114,6 +114,8 @@ SP_5011 = lambda d="": AppError("SP-5011", "Daily briefing failed", d)
 SP_5012 = lambda d="": AppError("SP-5012", "Market session summary failed", d)
 SP_5013 = lambda d="": AppError("SP-5013", "Portfolio event radar failed", d)
 SP_5014 = lambda d="": AppError("SP-5014", "Forecast drift query failed", d)
+SP_5015 = lambda d="": AppError("SP-5015", "Conditional portfolio recommendation failed", d)
+SP_5016 = lambda d="": AppError("SP-5016", "Optimal portfolio recommendation failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
