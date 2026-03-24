@@ -1,24 +1,24 @@
-# Stock Predict - Start Backend + Frontend
-Write-Host "Starting Stock Predict..." -ForegroundColor Cyan
+param(
+    [switch]$Check
+)
 
-# Start Backend
-Write-Host "Starting Backend (FastAPI) on port 8000..." -ForegroundColor Yellow
-$backend = Start-Process powershell -ArgumentList "-NoProfile -Command cd backend; ..\venv\Scripts\Activate.ps1; uvicorn app.main:app --reload --port 8000" -PassThru -WindowStyle Normal
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$python = Join-Path $root 'venv\Scripts\python.exe'
+$launcher = Join-Path $root 'start.py'
 
-Start-Sleep -Seconds 3
+if (-not (Test-Path $launcher)) {
+    throw "런처 파일을 찾을 수 없습니다: $launcher"
+}
 
-# Start Frontend
-Write-Host "Starting Frontend (Next.js) on port 3000..." -ForegroundColor Yellow
-$frontend = Start-Process powershell -ArgumentList "-NoProfile -Command cd frontend; npm run dev" -PassThru -WindowStyle Normal
+if (-not (Test-Path $python)) {
+    throw "가상환경 Python을 찾을 수 없습니다: $python"
+}
 
-Write-Host ""
-Write-Host "Backend:  http://localhost:8000" -ForegroundColor Green
-Write-Host "Frontend: http://localhost:3000" -ForegroundColor Green
-Write-Host "API Docs: http://localhost:8000/docs" -ForegroundColor Green
-Write-Host ""
-Write-Host "Press any key to stop both servers..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+$arguments = @($launcher)
+if ($Check) {
+    $arguments += '--check'
+}
 
-Stop-Process $backend -ErrorAction SilentlyContinue
-Stop-Process $frontend -ErrorAction SilentlyContinue
-Write-Host "Stopped." -ForegroundColor Red
+& $python @arguments
+exit $LASTEXITCODE

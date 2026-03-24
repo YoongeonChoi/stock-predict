@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.10.7 - 2026-03-24
+
+- Windows PowerShell 실행 정책 때문에 `start.ps1` 가 서명 오류로 막히는 환경을 위해, 실행 정책 영향을 받지 않는 `start.cmd`와 공용 Python 런처 `start.py`를 추가했습니다.
+- 기존 `start.ps1`는 직접 `Activate.ps1`를 호출하지 않고 `start.py`를 실행하는 얇은 래퍼로 바꿔, 우회 실행 시에도 다시 실행 정책에 걸리지 않도록 정리했습니다.
+- 검증 스크립트도 `verify.py`, `verify.cmd`, `start.py --check` 경로를 추가해, 시작 전 가상환경·npm·핵심 패키지 상태를 먼저 확인하도록 강화했습니다.
+- README, AGENTS, CONTRIBUTING 문서를 모두 새 실행 진입점 기준으로 맞추고, Windows 사용자는 `start.py` / `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본값으로 사용하도록 안내를 정리했습니다.
+
 ## v2.10.6 - 2026-03-24
 
 - FastAPI 기본 검증 오류와 잘못된 경로/메서드 오류를 구조화된 앱 에러 응답으로 감싸 `SP-6009`, `SP-6010`, `SP-6011`, `SP-6012` 코드가 일관되게 반환되도록 정리했습니다.
