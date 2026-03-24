@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 import warnings
 
@@ -8,6 +8,15 @@ CALENDAR_BY_COUNTRY = {
     "US": "XNYS",
     "KR": "XKRX",
     "JP": "XTKS",
+}
+
+COUNTRY_BY_INDEX_TICKER = {
+    "^GSPC": "US",
+    "^DJI": "US",
+    "^IXIC": "US",
+    "^KS11": "KR",
+    "^KQ11": "KR",
+    "^N225": "JP",
 }
 
 
@@ -36,6 +45,91 @@ def _normalize_date(value: date | datetime | str | None) -> date:
     if isinstance(value, date):
         return value
     return datetime.fromisoformat(str(value)[:10]).date()
+
+
+def _normalize_datetime(value: date | datetime | str | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def market_country_code_for_ticker(ticker: str) -> str:
+    normalized = str(ticker or "").upper()
+    if normalized.endswith(".KS") or normalized.endswith(".KQ"):
+        return "KR"
+    if normalized.endswith(".T"):
+        return "JP"
+    return COUNTRY_BY_INDEX_TICKER.get(normalized, "US")
+
+
+def latest_closed_trading_day(
+    country_code: str,
+    reference_time: date | datetime | str | None = None,
+) -> date:
+    now_utc = _normalize_datetime(reference_time)
+    start = (now_utc - timedelta(days=15)).date()
+    end = (now_utc + timedelta(days=1)).date()
+
+    try:
+        schedule = _get_calendar(country_code).schedule(
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+        )
+        if not schedule.empty:
+            closed = schedule[schedule["market_close"] <= now_utc]
+            if not closed.empty:
+                return closed.index[-1].date()
+    except Exception:
+        pass
+
+    cursor = now_utc.date()
+    while cursor.weekday() >= 5:
+        cursor -= timedelta(days=1)
+    return cursor
+
+
+def is_market_open(
+    country_code: str,
+    reference_time: date | datetime | str | None = None,
+) -> bool:
+    now_utc = _normalize_datetime(reference_time)
+    start = (now_utc - timedelta(days=1)).date()
+    end = (now_utc + timedelta(days=1)).date()
+    try:
+        schedule = _get_calendar(country_code).schedule(
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+        )
+        if schedule.empty:
+            return False
+        current = schedule[
+            (schedule["market_open"] <= now_utc)
+            & (schedule["market_close"] > now_utc)
+        ]
+        return not current.empty
+    except Exception:
+        return False
+
+
+def market_session_cache_token(
+    *,
+    country_code: str | None = None,
+    ticker: str | None = None,
+    reference_time: date | datetime | str | None = None,
+) -> str:
+    resolved_country = country_code or market_country_code_for_ticker(ticker or "")
+    closed_day = latest_closed_trading_day(resolved_country, reference_time).isoformat()
+    state = "open" if is_market_open(resolved_country, reference_time) else "closed"
+    return f"{closed_day}:{state}"
 
 
 def next_trading_day(country_code: str, reference_date: date | datetime | str | None) -> date:

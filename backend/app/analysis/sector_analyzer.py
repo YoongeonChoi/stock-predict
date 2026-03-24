@@ -11,19 +11,21 @@ from app.models.country import COUNTRY_REGISTRY
 from app.scoring.sector_scorer import build_sector_score
 from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
+from app.utils.market_calendar import latest_closed_trading_day
 
 
 async def analyze_sector(country_code: str, sector_name: str) -> dict:
     settings = get_settings()
     sector_id = sector_name.lower().replace(" ", "_")
-    cache_key = f"sector_report:v2:{country_code}:{sector_id}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
-
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
         return {"error": f"Unknown country: {country_code}"}
+
+    session_stamp = latest_closed_trading_day(country_code).isoformat()
+    cache_key = f"sector_report:v3:{country_code}:{sector_id}:{session_stamp}"
+    cached = await cache.get(cache_key)
+    if cached:
+        return cached
 
     tickers = await yfinance_client.get_sector_tickers(country_code, sector_name)
     if not tickers:
