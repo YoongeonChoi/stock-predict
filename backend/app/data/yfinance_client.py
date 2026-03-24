@@ -10,6 +10,11 @@ import yfinance as yf
 from app.config import get_settings
 from app.data import cache
 from app.data.universe_data import UNIVERSE
+from app.utils.market_calendar import (
+    latest_closed_trading_day,
+    market_country_code_for_ticker,
+    market_session_cache_token,
+)
 
 log = logging.getLogger("stock_predict.yfinance")
 
@@ -105,6 +110,10 @@ def _coalesce(*values, default=None):
     return default
 
 
+def _fresh_price_ttl(default_ttl: int) -> int:
+    return max(60, min(default_ttl, 300))
+
+
 def _format_rows(df: pd.DataFrame) -> list[dict]:
     if df is None or df.empty:
         return []
@@ -121,6 +130,20 @@ def _format_rows(df: pd.DataFrame) -> list[dict]:
             }
         )
     return rows
+
+
+def _completed_history_df(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    latest_closed = latest_closed_trading_day(market_country_code_for_ticker(ticker))
+    mask = [pd.Timestamp(index).date() <= latest_closed for index in df.index]
+    return df.loc[mask]
+
+
+def _last_history_date(df: pd.DataFrame) -> str | None:
+    if df is None or df.empty:
+        return None
+    return pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")
 
 
 def _history_sync(
@@ -141,7 +164,7 @@ def _history_sync(
         try:
             df = ticker_obj.history(**{k: v for k, v in params.items() if v is not None})
             if df is not None and not df.empty:
-                return df
+                return _completed_history_df(df, ticker)
         except Exception as exc:
             log.debug("history fetch failed for %s with %s: %s", ticker, params, exc)
     return pd.DataFrame()
@@ -149,10 +172,10 @@ def _history_sync(
 
 def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
     if df.empty:
-        return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0}
+        return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0, "session_date": None}
     closes = df["Close"].dropna()
     if closes.empty:
-        return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0}
+        return {"ticker": ticker, "price": 0.0, "prev_close": 0.0, "change_pct": 0.0, "session_date": None}
     price = float(closes.iloc[-1])
     prev = float(closes.iloc[-2]) if len(closes) >= 2 else price
     return {
@@ -160,6 +183,7 @@ def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
         "price": round(price, 2),
         "prev_close": round(prev, 2),
         "change_pct": round(((price - prev) / prev * 100.0) if prev else 0.0, 2),
+        "session_date": _last_history_date(df),
     }
 
 
@@ -221,6 +245,26 @@ def _resolve_number(
     return _coalesce(*values, default=_safe_float(fallback))
 
 
+def _resolve_market_number(
+    snapshot: _TickerSnapshot,
+    *,
+    info_keys: tuple[str, ...] = (),
+    fast_key: str | None = None,
+    metadata_keys: tuple[str, ...] = (),
+    fallback=None,
+) -> float | None:
+    values = []
+    if fast_key:
+        values.append(_safe_float(_fast_get(snapshot.fast_info, fast_key)))
+    for key in metadata_keys:
+        values.append(_safe_float(snapshot.metadata.get(key)))
+    if fallback is not None:
+        values.append(_safe_float(fallback))
+    for key in info_keys:
+        values.append(_safe_float(snapshot.info.get(key)))
+    return _coalesce(*values, default=_safe_float(fallback))
+
+
 def _resolve_text(
     snapshot: _TickerSnapshot,
     *,
@@ -244,14 +288,14 @@ def _history_stat(rows: list[dict], key: str, *, window: int, reducer):
 
 
 def _snapshot_to_market_snapshot(snapshot: _TickerSnapshot) -> dict:
-    current_price = _resolve_number(
+    current_price = _resolve_market_number(
         snapshot,
         info_keys=("currentPrice", "regularMarketPrice"),
         fast_key="lastPrice",
         metadata_keys=("regularMarketPrice",),
         fallback=snapshot.quote["price"],
     ) or 0.0
-    prev_close = _resolve_number(
+    prev_close = _resolve_market_number(
         snapshot,
         info_keys=("previousClose",),
         fast_key="previousClose",
@@ -278,12 +322,14 @@ def _snapshot_to_market_snapshot(snapshot: _TickerSnapshot) -> dict:
         "change_pct": round(((float(current_price) - float(prev_close)) / float(prev_close) * 100.0) if prev_close else 0.0, 2),
         "market_cap": round(float(market_cap), 2),
         "current_price": round(float(current_price), 2),
+        "session_date": snapshot.quote.get("session_date"),
         "valid": bool(current_price > 0),
     }
 
 
 async def get_market_snapshot(ticker: str, *, period: str = "6mo") -> dict:
     settings = get_settings()
+    session_token = market_session_cache_token(ticker=ticker)
 
     async def _fetch():
         def _sync():
@@ -296,14 +342,15 @@ async def get_market_snapshot(ticker: str, *, period: str = "6mo") -> dict:
         return await asyncio.to_thread(_sync)
 
     return await cache.get_or_fetch(
-        f"market_snapshot:{ticker}:{period}",
+        f"market_snapshot:{ticker}:{period}:{session_token}",
         _fetch,
-        settings.cache_ttl_price,
+        _fresh_price_ttl(settings.cache_ttl_price),
     )
 
 
 async def get_index_quote(ticker: str) -> dict:
     settings = get_settings()
+    session_token = market_session_cache_token(ticker=ticker)
 
     async def _fetch():
         def _sync():
@@ -321,29 +368,52 @@ async def get_index_quote(ticker: str) -> dict:
 
         return await asyncio.to_thread(_sync)
 
-    return await cache.get_or_fetch(f"index:{ticker}", _fetch, settings.cache_ttl_price)
+    return await cache.get_or_fetch(
+        f"index:{ticker}:{session_token}",
+        _fetch,
+        _fresh_price_ttl(settings.cache_ttl_price),
+    )
 
 
-async def get_stock_info(ticker: str) -> dict:
+async def get_stock_quote(ticker: str) -> dict:
+    settings = get_settings()
+    session_token = market_session_cache_token(ticker=ticker)
+
+    async def _fetch():
+        def _sync():
+            snapshot = _load_snapshot(ticker, history_period="5d", include_info=False)
+            market_snapshot = _snapshot_to_market_snapshot(snapshot)
+            if not market_snapshot["valid"] and not snapshot.history_rows:
+                return {
+                    "ticker": ticker,
+                    "current_price": 0.0,
+                    "prev_close": 0.0,
+                    "change_pct": 0.0,
+                    "session_date": None,
+                }
+            return {
+                "ticker": ticker,
+                "current_price": market_snapshot["current_price"],
+                "prev_close": market_snapshot["prev_close"],
+                "change_pct": market_snapshot["change_pct"],
+                "session_date": market_snapshot.get("session_date"),
+            }
+
+        return await asyncio.to_thread(_sync)
+
+    return await cache.get_or_fetch(
+        f"stock_quote:{ticker}:{session_token}",
+        _fetch,
+        _fresh_price_ttl(settings.cache_ttl_price),
+    )
+
+
+async def _get_stock_fundamentals(ticker: str) -> dict:
     settings = get_settings()
 
     async def _fetch():
         def _sync():
             snapshot = _load_snapshot(ticker, history_period="6mo", include_info=True)
-            current_price = _resolve_number(
-                snapshot,
-                info_keys=("currentPrice", "regularMarketPrice"),
-                fast_key="lastPrice",
-                metadata_keys=("regularMarketPrice",),
-                fallback=snapshot.quote["price"],
-            ) or 0.0
-            prev_close = _resolve_number(
-                snapshot,
-                info_keys=("previousClose",),
-                fast_key="previousClose",
-                metadata_keys=("previousClose",),
-                fallback=snapshot.quote["prev_close"],
-            )
             week52_high = _resolve_number(
                 snapshot,
                 info_keys=("fiftyTwoWeekHigh",),
@@ -374,8 +444,6 @@ async def get_stock_info(ticker: str) -> dict:
                 "sector": snapshot.info.get("sector") or "N/A",
                 "industry": snapshot.info.get("industry") or "N/A",
                 "market_cap": _resolve_number(snapshot, info_keys=("marketCap",), fast_key="marketCap", fallback=0.0) or 0.0,
-                "current_price": round(current_price, 2),
-                "prev_close": round(float(prev_close or current_price), 2),
                 "pe_ratio": _resolve_number(snapshot, info_keys=("trailingPE",)),
                 "forward_pe": _resolve_number(snapshot, info_keys=("forwardPE",)),
                 "pb_ratio": _resolve_number(snapshot, info_keys=("priceToBook",)),
@@ -407,12 +475,31 @@ async def get_stock_info(ticker: str) -> dict:
         return await asyncio.to_thread(_sync)
 
     return await cache.get_or_fetch(
-        f"stock_info:{ticker}", _fetch, settings.cache_ttl_fundamentals
+        f"stock_fundamentals:{ticker}",
+        _fetch,
+        settings.cache_ttl_fundamentals,
     )
+
+
+async def get_stock_info(ticker: str) -> dict:
+    fundamentals, quote = await asyncio.gather(
+        _get_stock_fundamentals(ticker),
+        get_stock_quote(ticker),
+    )
+    current_price = float(quote.get("current_price") or 0.0)
+    prev_close = float(quote.get("prev_close") or current_price)
+    return {
+        **fundamentals,
+        "current_price": round(current_price, 2),
+        "prev_close": round(prev_close, 2),
+        "change_pct": round(((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0, 2),
+        "quote_session_date": quote.get("session_date"),
+    }
 
 
 async def get_price_history(ticker: str, period: str = "3mo") -> list[dict]:
     settings = get_settings()
+    session_token = market_session_cache_token(ticker=ticker)
 
     async def _fetch():
         def _sync():
@@ -421,7 +508,9 @@ async def get_price_history(ticker: str, period: str = "3mo") -> list[dict]:
         return await asyncio.to_thread(_sync)
 
     return await cache.get_or_fetch(
-        f"price_hist:{ticker}:{period}", _fetch, settings.cache_ttl_chart
+        f"price_hist:{ticker}:{period}:{session_token}",
+        _fetch,
+        _fresh_price_ttl(settings.cache_ttl_chart),
     )
 
 

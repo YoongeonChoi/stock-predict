@@ -9,7 +9,11 @@ from app.data import yfinance_client
 class _FakeTicker:
     def __init__(self, ticker: str):
         self.ticker = ticker
-        self.info = {}
+        self.info = {
+            "currentPrice": 99.0,
+            "regularMarketPrice": 99.0,
+            "previousClose": 98.5,
+        }
         self.fast_info = {"lastPrice": 101.5, "previousClose": 100.0, "marketCap": 123456789}
         self.history_metadata = {
             "shortName": "Fallback Corp",
@@ -71,6 +75,24 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info["prev_close"], 100.0)
         self.assertEqual(info["52w_high"], 123.4)
         self.assertEqual(info["52w_low"], 87.6)
+
+    def test_completed_history_df_drops_unfinished_daily_bar(self):
+        history = pd.DataFrame(
+            {
+                "Open": [98.0, 100.0, 105.0],
+                "High": [102.0, 104.0, 106.0],
+                "Low": [97.0, 99.0, 103.0],
+                "Close": [100.0, 101.5, 104.5],
+                "Volume": [1_200_000, 1_400_000, 900_000],
+            },
+            index=pd.to_datetime(["2026-03-20", "2026-03-23", "2026-03-24"]),
+        )
+
+        with patch("app.data.yfinance_client.latest_closed_trading_day", return_value=pd.Timestamp("2026-03-23").date()):
+            filtered = yfinance_client._completed_history_df(history, "AAPL")
+
+        self.assertEqual(len(filtered), 2)
+        self.assertEqual(filtered.index[-1].strftime("%Y-%m-%d"), "2026-03-23")
 
     async def test_get_earnings_history_falls_back_to_calendar_without_lxml(self):
         with (

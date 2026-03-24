@@ -36,24 +36,24 @@ from app.utils.async_tools import gather_limited
 
 async def analyze_stock(ticker: str) -> dict:
     settings = get_settings()
-    cache_key = f"stock_detail:v7:{ticker}"
+    country_code = _detect_country(ticker)
+    prices_full, market_prices_full = await asyncio.gather(
+        yfinance_client.get_price_history(ticker, period="2y"),
+        yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="2y"),
+    )
+    cache_key = f"stock_detail:v8:{ticker}:{_latest_price_stamp(prices_full)}"
     cached = await cache.get(cache_key)
     if cached:
-        return cached
+        return await _refresh_cached_stock_detail(cached, ticker)
 
-    country_code = _detect_country(ticker)
     (
         info,
-        prices_full,
-        market_prices_full,
         financials_raw,
         analyst_raw,
         earnings_raw,
         peers,
     ) = await asyncio.gather(
         yfinance_client.get_stock_info(ticker),
-        yfinance_client.get_price_history(ticker, period="2y"),
-        yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="2y"),
         yfinance_client.get_financials(ticker),
         yfinance_client.get_analyst_ratings(ticker),
         yfinance_client.get_earnings_history(ticker),
@@ -227,6 +227,22 @@ async def analyze_stock(ticker: str) -> dict:
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
     return result
+
+
+async def _refresh_cached_stock_detail(cached: dict, ticker: str) -> dict:
+    info = await yfinance_client.get_stock_info(ticker)
+    refreshed = dict(cached)
+    current_price = float(info.get("current_price") or refreshed.get("current_price") or 0.0)
+    prev_close = float(info.get("prev_close") or current_price)
+    refreshed["current_price"] = round(current_price, 2)
+    refreshed["change_pct"] = round(((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0, 2)
+    return refreshed
+
+
+def _latest_price_stamp(prices: list[dict]) -> str:
+    if not prices:
+        return datetime.now().date().isoformat()
+    return str(prices[-1].get("date") or datetime.now().date().isoformat())
 
 
 def _calc_technicals(prices: list[dict]) -> TechnicalIndicators:

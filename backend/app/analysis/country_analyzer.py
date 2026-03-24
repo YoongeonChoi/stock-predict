@@ -51,16 +51,18 @@ TICKER_FALLBACK = {
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
-    cache_key = f"country_report:v5:{country_code}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
-
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
         err = SP_6001(country_code)
         err.log()
         return err.to_dict()
+
+    primary_index = country.indices[0]
+    primary_index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
+    cache_key = f"country_report:v6:{country_code}:{_latest_price_stamp(primary_index_history)}"
+    cached = await cache.get(cache_key)
+    if cached:
+        return cached
 
     market_tasks = [yfinance_client.get_index_quote(idx.ticker) for idx in country.indices]
     economic_task = _get_economic_data(country_code)
@@ -135,9 +137,6 @@ async def analyze_country(country_code: str) -> dict:
         )
         for item in market_news[:10]
     ]
-
-    primary_index = country.indices[0]
-    primary_index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
 
     sentiment = await get_news_sentiment_for_country(market_news)
     vix_val = economic_data.get("vix") if country_code == "US" else None
@@ -225,6 +224,12 @@ async def analyze_country(country_code: str) -> dict:
     ttl = settings.cache_ttl_report if not llm_failed else 120
     await cache.set(cache_key, report, ttl)
     return report
+
+
+def _latest_price_stamp(prices: list[dict]) -> str:
+    if not prices:
+        return datetime.now().date().isoformat()
+    return str(prices[-1].get("date") or datetime.now().date().isoformat())
 
 
 async def _score_top_stocks(
