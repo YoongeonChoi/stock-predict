@@ -450,4 +450,5 @@ export interface WatchlistItem {
   current_price?: number;
   change_pct?: number;
   score_total?: number;
+  resolution_note?: string;
 }

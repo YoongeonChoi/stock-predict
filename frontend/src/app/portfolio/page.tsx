@@ -6,10 +6,12 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import PageHeader from "@/components/PageHeader";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
+import PortfolioEventRadar from "@/components/PortfolioEventRadar";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
+import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import { ApiError, api } from "@/lib/api";
-import type { PortfolioData } from "@/lib/api";
+import type { PortfolioData, PortfolioEventRadarResponse, TickerResolution } from "@/lib/api";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 const COLORS = ["#0f766e", "#2563eb", "#f59e0b", "#ef4444", "#7c3aed", "#ec4899", "#0891b2", "#65a30d"];
@@ -86,6 +88,8 @@ export default function PortfolioPage() {
   const [qty, setQty] = useState("");
   const [buyDate, setBuyDate] = useState(new Date().toISOString().slice(0, 10));
   const [countryCode, setCountryCode] = useState("KR");
+  const [resolution, setResolution] = useState<TickerResolution | null>(null);
+  const [eventRadar, setEventRadar] = useState<PortfolioEventRadarResponse | null>(null);
   const { toast } = useToast();
 
   const load = async (showFailureToast = false) => {
@@ -109,7 +113,20 @@ export default function PortfolioPage() {
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
+    api.getPortfolioEventRadar(14).then(setEventRadar).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    const trimmed = ticker.trim();
+    if (!trimmed) {
+      setResolution(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api.resolveTicker(trimmed, countryCode).then(setResolution).catch(() => setResolution(null));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [ticker, countryCode]);
 
   const addHolding = async () => {
     const trimmedTicker = ticker.trim();
@@ -149,6 +166,9 @@ export default function PortfolioPage() {
       setBuyPrice("");
       setQty("");
       await load();
+      const radar = await api.getPortfolioEventRadar(14).catch(() => null);
+      if (radar) setEventRadar(radar);
+      setResolution(null);
       toast(`${saved.name} (${saved.ticker}) 종목을 포트폴리오에 추가했습니다.`, "success");
     } catch (error) {
       console.error(error);
@@ -165,6 +185,8 @@ export default function PortfolioPage() {
       await api.removePortfolioHolding(id);
       toast("보유 종목을 삭제했습니다.", "info");
       await load();
+      const radar = await api.getPortfolioEventRadar(14).catch(() => null);
+      if (radar) setEventRadar(radar);
     } catch (error) {
       console.error(error);
       toast(getApiErrorMessage(error, "보유 종목을 삭제하지 못했습니다."), "error");
@@ -281,6 +303,7 @@ export default function PortfolioPage() {
                 한국은 `005930`, 일본은 `7203`, 미국은 `AAPL`처럼 입력하면 저장 시 Yahoo 조회 형식으로 자동 맞춰집니다.
               </div>
             )}
+            <TickerResolutionHint resolution={resolution} />
             <div className="flex justify-end">
               <button
                 onClick={addHolding}
@@ -342,6 +365,7 @@ export default function PortfolioPage() {
 
           <PortfolioRiskPanel risk={data!.risk} stressTest={data!.stress_test} />
           <PortfolioModelPanel model={data!.model_portfolio} />
+          {eventRadar ? <PortfolioEventRadar data={eventRadar} /> : null}
         </>
       ) : null}
 

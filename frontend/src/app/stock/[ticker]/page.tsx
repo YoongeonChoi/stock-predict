@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import ForecastDeltaCard from "@/components/ForecastDeltaCard";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import MetricValueCard from "@/components/MetricValueCard";
@@ -20,7 +21,7 @@ import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { api } from "@/lib/api";
-import type { CompositeScore, PivotPoints, TechSummary } from "@/lib/api";
+import type { CompositeScore, ForecastDeltaResponse, PivotPoints, TechSummary } from "@/lib/api";
 import type { PricePoint, StockDetail } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export default function StockPage() {
   const [error, setError] = useState<Error | null>(null);
   const [techSummary, setTechSummary] = useState<TechSummary | null>(null);
   const [pivotPoints, setPivotPoints] = useState<PivotPoints | null>(null);
+  const [forecastDelta, setForecastDelta] = useState<ForecastDeltaResponse | null>(null);
   const [chartPeriod, setChartPeriod] = useState("3mo");
   const [chartType, setChartType] = useState<"line" | "candle">("line");
   const [chartData, setChartData] = useState<PricePoint[]>([]);
@@ -56,6 +58,7 @@ export default function StockPage() {
 
     api.getTechSummary(decodedTicker).then(setTechSummary).catch(console.error);
     api.getPivotPoints(decodedTicker).then(setPivotPoints).catch(console.error);
+    api.getStockForecastDelta(decodedTicker).then(setForecastDelta).catch(console.error);
   }, [ticker]);
 
   const changeChartPeriod = async (period: string) => {
@@ -223,6 +226,7 @@ export default function StockPage() {
       </div>
 
       {stock.next_day_forecast ? <NextDayForecastCard forecast={stock.next_day_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
+      {forecastDelta ? <ForecastDeltaCard data={forecastDelta} /> : null}
 
       {stock.historical_pattern_warning ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">

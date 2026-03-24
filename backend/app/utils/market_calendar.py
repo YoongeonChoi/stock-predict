@@ -132,6 +132,60 @@ def market_session_cache_token(
     return f"{closed_day}:{state}"
 
 
+def market_session_snapshot(
+    country_code: str,
+    reference_time: date | datetime | str | None = None,
+) -> dict:
+    now_utc = _normalize_datetime(reference_time)
+    start = (now_utc - timedelta(days=3)).date()
+    end = (now_utc + timedelta(days=10)).date()
+
+    latest_closed = latest_closed_trading_day(country_code, now_utc)
+    next_day = next_trading_day(country_code, now_utc.date())
+    snapshot = {
+        "country_code": country_code,
+        "is_open": False,
+        "trading_day_today": False,
+        "latest_closed_date": latest_closed.isoformat(),
+        "next_trading_day": next_day.isoformat(),
+        "opened_at": None,
+        "closed_at": None,
+        "next_open_at": None,
+        "next_close_at": None,
+        "next_event": "open",
+        "session_token": market_session_cache_token(country_code=country_code, reference_time=now_utc),
+    }
+
+    try:
+        schedule = _get_calendar(country_code).schedule(
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+        )
+        if schedule.empty:
+            return snapshot
+
+        same_day = schedule[schedule.index.date == now_utc.date()]
+        if not same_day.empty:
+            row = same_day.iloc[0]
+            market_open = row["market_open"].to_pydatetime().astimezone(timezone.utc)
+            market_close = row["market_close"].to_pydatetime().astimezone(timezone.utc)
+            snapshot["trading_day_today"] = True
+            snapshot["opened_at"] = market_open
+            snapshot["closed_at"] = market_close
+            snapshot["is_open"] = market_open <= now_utc < market_close
+            snapshot["next_event"] = "close" if snapshot["is_open"] else "open"
+
+        future = schedule[schedule["market_open"] > now_utc]
+        if not future.empty:
+            next_row = future.iloc[0]
+            snapshot["next_open_at"] = next_row["market_open"].to_pydatetime().astimezone(timezone.utc)
+            snapshot["next_close_at"] = next_row["market_close"].to_pydatetime().astimezone(timezone.utc)
+    except Exception:
+        pass
+
+    return snapshot
+
+
 def next_trading_day(country_code: str, reference_date: date | datetime | str | None) -> date:
     """Return the next trading day for a market, falling back to weekdays."""
     anchor = _normalize_date(reference_date)

@@ -404,6 +404,13 @@ export interface PortfolioHoldingCreateResponse {
   buy_date: string;
 }
 
+export interface WatchlistAddResponse {
+  status: "added";
+  ticker: string;
+  country_code: string;
+  note: string;
+}
+
 export interface MarketMovers {
   gainers: { ticker: string; name: string; price: number; change_pct: number }[];
   losers: { ticker: string; name: string; price: number; change_pct: number }[];
@@ -637,7 +644,155 @@ export interface CalendarResponse {
 }
 
 export interface SearchResult {
-  ticker: string; name: string; country_code: string; sector: string;
+  ticker: string;
+  name: string;
+  country_code: string;
+  sector: string;
+  match_basis?: string;
+  resolution_note?: string;
+}
+
+export interface TickerResolution {
+  input_ticker: string;
+  normalized_input: string;
+  ticker: string;
+  country_code: string;
+  sector: string;
+  match_basis: string;
+  confidence: "low" | "medium" | "high";
+  matched: boolean;
+  note: string;
+  name?: string;
+}
+
+export interface MarketSessionItem {
+  country_code: string;
+  name: string;
+  name_local: string;
+  currency: string;
+  phase: string;
+  is_open: boolean;
+  trading_day_today: boolean;
+  latest_closed_date: string;
+  next_trading_day: string;
+  session_token: string;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  next_open_at?: string | null;
+  next_close_at?: string | null;
+  after_hours_supported: boolean;
+  provider_note: string;
+  forecast_ready_note: string;
+}
+
+export interface MarketSessionsResponse {
+  generated_at: string;
+  sessions: MarketSessionItem[];
+}
+
+export interface DailyBriefingMarketView {
+  country_code: string;
+  label: string;
+  stance: "risk_on" | "neutral" | "risk_off";
+  conviction: number;
+  actionable_count: number;
+  bullish_count: number;
+  summary: string;
+}
+
+export interface DailyBriefingFocusCard {
+  country_code: string;
+  ticker: string;
+  name: string;
+  sector: string;
+  action: string;
+  up_probability: number;
+  confidence: number;
+  predicted_return_pct: number;
+  execution_note?: string | null;
+}
+
+export interface DailyBriefingEvent {
+  date: string;
+  country_code: string;
+  title: string;
+  subtitle?: string | null;
+  impact: "high" | "medium" | "low";
+  type: string;
+  summary: string;
+}
+
+export interface DailyBriefingResponse {
+  generated_at: string;
+  sessions: MarketSessionItem[];
+  market_view: DailyBriefingMarketView[];
+  focus_cards: DailyBriefingFocusCard[];
+  upcoming_events: DailyBriefingEvent[];
+  research_archive: {
+    todays_reports: number;
+    total_reports: number;
+    source_count: number;
+    last_synced_at?: string | null;
+  };
+  priorities: string[];
+}
+
+export interface PortfolioEventRadarEvent {
+  id: string;
+  date: string;
+  country_code: string;
+  title: string;
+  subtitle?: string | null;
+  impact: "high" | "medium" | "low";
+  type: string;
+  portfolio_weight: number;
+  country_weight: number;
+  affected_holdings: {
+    ticker: string;
+    name: string;
+    weight_pct: number;
+  }[];
+  summary: string;
+}
+
+export interface PortfolioEventRadarResponse {
+  generated_at: string;
+  window_days: number;
+  events: PortfolioEventRadarEvent[];
+}
+
+export interface ForecastDeltaHistoryItem {
+  target_date: string;
+  reference_date?: string | null;
+  reference_price: number;
+  predicted_close: number;
+  predicted_low?: number | null;
+  predicted_high?: number | null;
+  up_probability: number;
+  confidence: number;
+  direction?: string | null;
+  direction_label: string;
+  actual_close?: number | null;
+  direction_hit?: boolean | null;
+  model_version: string;
+  created_at: number;
+}
+
+export interface ForecastDeltaResponse {
+  generated_at: string;
+  ticker: string;
+  summary: {
+    available: boolean;
+    current_direction?: string | null;
+    current_direction_label?: string;
+    up_probability_delta?: number;
+    confidence_delta?: number;
+    predicted_close_delta_pct?: number;
+    direction_changed?: boolean;
+    hit_rate?: number | null;
+    message: string;
+  };
+  history: ForecastDeltaHistoryItem[];
 }
 
 export const api = {
@@ -656,7 +811,7 @@ export const api = {
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${ticker}/technical-summary`),
   getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${ticker}/pivot-points`),
   getWatchlist: () => get<import("./types").WatchlistItem[]>("/api/watchlist"),
-  addWatchlist: (ticker: string, country_code = "US") => post(`/api/watchlist/${ticker}?country_code=${country_code}`),
+  addWatchlist: (ticker: string, country_code = "US") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
@@ -675,6 +830,8 @@ export const api = {
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
   getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),
+  getDailyBriefing: () => get<DailyBriefingResponse>("/api/briefing/daily"),
+  getMarketSessions: () => get<MarketSessionsResponse>("/api/market/sessions"),
   getMarketOpportunities: (code: string, limit = 12) =>
     get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`),
   getCalendar: (code: string, year?: number, month?: number) => {
@@ -689,6 +846,7 @@ export const api = {
     return get<ScreenerResponse>(`/api/screener?${qs}`);
   },
   getPortfolio: () => get<PortfolioData>("/api/portfolio"),
+  getPortfolioEventRadar: (days = 14) => get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`),
   getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
     get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
   addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
@@ -696,4 +854,8 @@ export const api = {
   removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
   getMarketMovers: (code: string) => get<MarketMovers>(`/api/market/movers/${code}`),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
+  resolveTicker: (query: string, countryCode = "US") =>
+    get<TickerResolution>(`/api/ticker/resolve?query=${encodeURIComponent(query)}&country_code=${countryCode}`),
+  getStockForecastDelta: (ticker: string, limit = 8) =>
+    get<ForecastDeltaResponse>(`/api/stock/${encodeURIComponent(ticker)}/forecast-delta?limit=${limit}`),
 };

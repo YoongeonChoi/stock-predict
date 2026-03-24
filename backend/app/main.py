@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.database import db
 from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
-from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research
+from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research, briefing
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
 from app.services import archive_service, research_archive_service
 from app.version import APP_VERSION
@@ -141,6 +141,7 @@ app.include_router(screener.router)
 app.include_router(portfolio.router)
 app.include_router(system.router)
 app.include_router(research.router)
+app.include_router(briefing.router)
 
 
 @app.get("/api/health")
