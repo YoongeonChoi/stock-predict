@@ -40,7 +40,7 @@ def _scenario_snapshot(forecast) -> dict:
 
 async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v3:{country_code}:{limit}"
+    cache_key = f"opportunity_radar:v4:{country_code}:{limit}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -82,12 +82,16 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
 
     async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
         sector, ticker = candidate
+        snapshot = await yfinance_client.get_market_snapshot(ticker, period="6mo")
+        if not snapshot.get("valid"):
+            return None
+
         info, prices, analyst_raw = await asyncio.gather(
             yfinance_client.get_stock_info(ticker),
             yfinance_client.get_price_history(ticker, period="6mo"),
             yfinance_client.get_analyst_ratings(ticker),
         )
-        current_price = float(info.get("current_price") or 0)
+        current_price = float(info.get("current_price") or snapshot.get("current_price") or 0)
         if current_price <= 0 or len(prices) < 40:
             return None
 
@@ -148,7 +152,7 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
         return OpportunityItem(
             rank=0,
             ticker=ticker,
-            name=info.get("name", ticker),
+            name=info.get("name") or snapshot.get("name") or ticker,
             sector=sector,
             country_code=country_code,
             current_price=round(current_price, 2),

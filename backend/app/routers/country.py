@@ -206,42 +206,42 @@ async def get_market_indicators():
 
 @router.get("/country/{code}/sector-performance")
 async def get_sector_performance(code: str):
-    """Sector performance heatmap data using sector ETFs."""
+    """Sector performance heatmap data using live sector constituents."""
     code = code.upper()
+    if code not in COUNTRY_REGISTRY:
+        err = SP_6001(code)
+        err.log()
+        return JSONResponse(status_code=404, content=err.to_dict())
+
     from app.data import cache as data_cache
-    cache_key = f"sector_perf:{code}"
+    cache_key = f"sector_perf:v2:{code}"
     cached = await data_cache.get(cache_key)
     if cached:
         return cached
 
-    sector_etfs = {
-        "US": {
-            "Energy": "XLE", "Materials": "XLB", "Industrials": "XLI",
-            "Consumer Disc.": "XLY", "Consumer Stap.": "XLP", "Health Care": "XLV",
-            "Financials": "XLF", "IT": "XLK", "Communication": "XLC",
-            "Utilities": "XLU", "Real Estate": "XLRE",
-        },
-        "KR": {
-            "KOSPI 200": "069500.KS", "IT": "091160.KS", "Financials": "091170.KS",
-            "Industrials": "091180.KS", "Health Care": "227540.KS",
-            "Consumer": "098560.KS", "Materials": "091220.KS",
-        },
-        "JP": {
-            "TOPIX": "1306.T", "Nikkei 225": "1321.T",
-            "Banks": "1615.T", "IT": "1627.T",
-        },
-    }
-    etfs = sector_etfs.get(code, {})
+    from app.data.universe_data import get_universe
+    universe = await get_universe(code)
     results = []
-    for sector_name, etf_ticker in etfs.items():
-        try:
-            q = await yfinance_client.get_index_quote(etf_ticker)
-            results.append({
-                "sector": sector_name, "ticker": etf_ticker,
-                "price": q.get("price", 0), "change_pct": q.get("change_pct", 0),
-            })
-        except Exception:
-            results.append({"sector": sector_name, "ticker": etf_ticker, "price": 0, "change_pct": 0})
+    for sector_name, tickers in universe.items():
+        fetched = await gather_limited(tickers[:8], lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=4)
+        valid = [item for item in fetched if not isinstance(item, Exception) and item is not None]
+        if not valid:
+            continue
+
+        leader = max(valid, key=lambda item: float(item.get("market_cap") or item.get("current_price") or 0.0))
+        avg_change = sum(float(item.get("change_pct") or 0.0) for item in valid) / len(valid)
+        results.append(
+            {
+                "sector": sector_name,
+                "ticker": leader["ticker"],
+                "price": round(float(leader.get("price") or 0.0), 2),
+                "change_pct": round(avg_change, 2),
+                "breadth": len(valid),
+                "leader_name": leader.get("name", leader["ticker"]),
+            }
+        )
+
+    results.sort(key=lambda item: item["change_pct"], reverse=True)
 
     await data_cache.set(cache_key, results, 300)
     return results
