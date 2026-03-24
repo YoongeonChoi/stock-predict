@@ -77,6 +77,7 @@
 ```
 
 PowerShell 실행 정책이나 `cmd` 자동 실행 훅이 있는 Windows 환경에서는 `start.py`, `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본 진입점으로 사용합니다.
+프론트 의존성 설치는 저장소 루트에서 `npm install`을 기본 진입점으로 사용해도 되며, 이 경우 `frontend` 설치까지 자동 위임되고 PowerShell provider path 환경에서도 같은 흐름이 유지되도록 관리합니다.
 
 ### Backend
 
