@@ -2,7 +2,7 @@
 
 AI 기반 주식 시장 분석 플랫폼 — 미국, 한국, 일본 시장을 커버합니다.
 
-현재 릴리즈: `v2.10.11`
+현재 릴리즈: `v2.10.12`
 
 OpenAI API 기반 LLM과 정량 엔진을 함께 사용해 리서치 기관 보고서를 종합 분석하고, 엄격한 루브릭 기반 100점 만점 스코어링 시스템으로 국가/섹터/종목을 평가합니다.
 
@@ -340,113 +340,27 @@ Copy-Item backend\.env.example backend\.env
 
 ### 4. 프론트엔드 설정 (최초 1회)
 
-먼저 현재 위치를 확인합니다. 아래 상대경로 명령은 프롬프트가 반드시 `C:\clone_repo\stock-predict>` 에 있을 때만 그대로 동작합니다.
-
-```powershell
-Get-Location
-Set-Location C:\clone_repo\stock-predict
-```
-
 ```powershell
 npm install
 ```
 
-위 명령은 이제 저장소 루트에서 실행해도 자동으로 `frontend` 의존성 설치까지 이어지며, PowerShell provider path(`\\?\C:\...`) 환경에서도 같은 방식으로 동작하도록 정리했습니다.
-기존 방식이 익숙하면 아래처럼 실행해도 됩니다.
-
-```powershell
-cd frontend
-npm install
-cd ..
-```
-
-> `frontend/package.json`이 변경된 경우에만 `npm install`을 다시 실행하세요.
+`frontend/package.json`이 변경된 경우에만 다시 실행하면 됩니다.
 
 ### 5. 실행 (매번)
 
-아래 단계는 **서버를 켤 때마다** 실행합니다.
-
-**방법 A: 프로젝트 루트에서 Python 직접 실행 (Windows, 권장)**
-
-```powershell
-& .\venv\Scripts\python.exe .\start.py
-```
-
-PowerShell 실행 정책 때문에 `.\start.ps1` 가 막히는 환경에서도 위 Python 직접 실행 방식은 그대로 사용할 수 있습니다.
-단, `.\start.ps1` 를 직접 입력하는 방식은 로컬 PC의 실행 정책이 막고 있으면 계속 차단될 수 있습니다. 이 경우는 코드 문제가 아니라 Windows 보안 정책이므로 `start.py`, `start.cmd`, 또는 `powershell -ExecutionPolicy Bypass -File .\start.ps1` 경로를 사용해야 합니다.
-이 명령은 이제 서버를 백그라운드로 띄우고 바로 프롬프트를 돌려줍니다.
-프롬프트가 곧바로 돌아오면 정상이며, 그 상태에서 브라우저를 열거나 `--status`, `--stop` 명령을 바로 입력하면 됩니다.
-
-**방법 B: 상위 폴더(`C:\clone_repo`)에 있을 때 바로 실행**
-
-```powershell
-& .\stock-predict\venv\Scripts\python.exe .\stock-predict\start.py
-```
-
-**방법 C: 어느 폴더에서든 절대경로로 실행**
+실행 명령은 아래 한 줄만 쓰면 됩니다.
 
 ```powershell
 & "C:\clone_repo\stock-predict\venv\Scripts\python.exe" "C:\clone_repo\stock-predict\start.py"
 ```
 
-빠르게 환경만 점검하려면:
+이 명령은 현재 위치와 무관하게 동작합니다.
+`--status`, `--stop`, `--check`가 필요할 때는 같은 명령 뒤에 옵션만 붙이면 됩니다.
+
+예시:
 
 ```powershell
-& .\venv\Scripts\python.exe .\start.py --check
-```
-
-상위 폴더(`C:\clone_repo`)에 있을 때는 아래처럼 실행합니다.
-
-```powershell
-& .\stock-predict\venv\Scripts\python.exe .\stock-predict\start.py --check
-```
-
-어느 폴더에서든 아래 절대경로도 항상 사용할 수 있습니다.
-
-```powershell
-& "C:\clone_repo\stock-predict\venv\Scripts\python.exe" "C:\clone_repo\stock-predict\start.py" --check
-```
-
-`start.py`는 현재 터미널을 유지한 채 백엔드와 프론트를 백그라운드로 띄우고, 실행 로그를 `.run/backend.log`, `.run/frontend.log`에 기록합니다. 서버가 실제로 뜨기 전에 상태 확인을 먼저 하기 때문에, 포트가 안 열렸는데 URL만 먼저 출력되는 문제를 줄였습니다.
-
-실행 상태 확인:
-
-```powershell
-& .\venv\Scripts\python.exe .\start.py --status
-```
-
-상위 폴더(`C:\clone_repo`)에 있을 때:
-
-```powershell
-& .\stock-predict\venv\Scripts\python.exe .\stock-predict\start.py --status
-```
-
-실행 중인 개발 서버 종료:
-
-```powershell
-& .\venv\Scripts\python.exe .\start.py --stop
-```
-
-상위 폴더(`C:\clone_repo`)에 있을 때:
-
-```powershell
-& .\stock-predict\venv\Scripts\python.exe .\stock-predict\start.py --stop
-```
-
-> 참고: 이 환경에서는 `.\start.cmd` 같은 `.cmd` 직접 실행이 `cmd` AutoRun/Clink 설정 때문에 불안정할 수 있습니다. 기본 경로는 `python.exe start.py` 방식으로 사용하세요.
-
-**방법 D: 수동 실행 (터미널 2개, 프로젝트 루트에서만)**
-
-터미널 1 — 백엔드:
-```powershell
-cd backend
-..\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-```
-
-터미널 2 — 프론트엔드:
-```powershell
-cd frontend
-npm run dev
+& "C:\clone_repo\stock-predict\venv\Scripts\python.exe" "C:\clone_repo\stock-predict\start.py" --stop
 ```
 
 ### 6. 접속
@@ -465,12 +379,9 @@ npm run dev
 | `python -m venv venv` | O | X |
 | `pip install -r requirements.txt` | O | 패키지 변경 시만 |
 | `.env` 파일 생성 + API 키 입력 | O | X |
-| `npm install` | O | 루트에서 실행 가능, `frontend` 의존성까지 자동 반영 |
-| `python .\start.py` 또는 래퍼 실행 | - | **O (매번)** |
-| `python .\start.py --status` 상태 확인 | - | 필요 시 |
-| `python .\start.py --stop` 서버 종료 | - | 필요 시 |
-| `uvicorn` 백엔드 실행 | - | **O (매번)** |
-| `npm run dev` 프론트엔드 실행 | - | **O (매번)** |
+| `npm install` | O | `package.json` 변경 시만 |
+| 절대경로 기준 `start.py` 실행 | - | **O (매번)** |
+| `--status` / `--stop` / `--check` 옵션 | - | 필요 시 |
 
 ---
 
