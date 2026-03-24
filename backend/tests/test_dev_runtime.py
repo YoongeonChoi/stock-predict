@@ -31,3 +31,7 @@ class DevRuntimeTests(unittest.TestCase):
     def test_normalize_unc_extended_path(self) -> None:
         raw = r"\\?\UNC\server\share\repo"
         self.assertEqual(dev_runtime.normalize_windows_path(raw), r"\\server\share\repo")
+
+    def test_runtime_dir_is_under_repo_root(self) -> None:
+        runtime_dir = dev_runtime.ensure_runtime_dir()
+        self.assertEqual(runtime_dir.name, ".run")

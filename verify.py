@@ -13,7 +13,7 @@ from dev_runtime import (
 
 
 def run_step(label: str, command: list[str], cwd) -> None:
-    print(f"[verify] {label}")
+    print(f"[verify] {label}", flush=True)
     completed = subprocess.run(command, cwd=display_path(cwd), check=False)
     if completed.returncode != 0:
         raise SystemExit(f"{label} failed with exit code {completed.returncode}")
@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         run_step("Frontend build", build_command, ROOT / "frontend")
         run_step("Frontend typecheck", typecheck_command, ROOT / "frontend")
 
-    print("검증 완료")
+    print("[done] 검증 완료", flush=True)
     return 0
 
 

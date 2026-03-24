@@ -127,6 +127,7 @@
 ```
 
 Windows PowerShell 실행 정책이나 `cmd` 자동 실행 훅이 있는 환경에서는 `start.py`, `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본 사용 경로로 봅니다.
+프론트 의존성 설치는 저장소 루트에서 `npm install`만 실행해도 `frontend` 쪽까지 자동으로 반영되도록 맞춰 두며, PowerShell provider path 환경에서도 깨지지 않게 절대경로 기반 래퍼를 유지합니다.
 
 ### Backend
 
