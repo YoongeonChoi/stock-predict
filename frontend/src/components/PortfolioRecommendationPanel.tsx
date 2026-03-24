@@ -161,7 +161,7 @@ export default function PortfolioRecommendationPanel({
   emptyMessage,
 }: Props) {
   return (
-    <div className="card !p-0 overflow-hidden">
+    <div className="card min-w-0 !p-0 overflow-hidden">
       <div className="border-b border-border px-5 py-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
