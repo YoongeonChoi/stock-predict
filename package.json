@@ -1,6 +1,6 @@
 {
   "name": "stock-predict-workspace",
-  "version": "2.10.10",
+  "version": "2.10.11",
   "private": true,
   "scripts": {
     "postinstall": "node -e \"const path=require('path'); let basis=process.env.npm_package_json||process.env.INIT_CWD||process.cwd(); if(!basis.toLowerCase().endsWith('package.json')) basis=path.join(basis,'package.json'); let root=path.dirname(basis); if(root.startsWith('Microsoft.PowerShell.Core\\\\FileSystem::')) root=root.split('::',2)[1]; if(root.startsWith('\\\\\\\\?\\\\UNC\\\\')) root='\\\\\\\\'+root.slice(8); else if(root.startsWith('\\\\\\\\?\\\\')||root.startsWith('\\\\\\\\.\\\\')) root=root.slice(4); require(path.join(root,'scripts','frontend_npm.js')).run(process.argv.slice(1));\" install",
