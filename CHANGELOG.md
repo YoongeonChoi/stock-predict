@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.10.8 - 2026-03-24
+
+- `\\?\C:\...` 형태의 PowerShell 확장 경로가 `cmd`, `npm`, `node`에서 UNC처럼 처리되어 프론트 build/dev가 깨지던 문제를 수정하기 위해, 공용 경로 정규화 모듈 `dev_runtime.py`를 추가했습니다.
+- `start.py`는 더 이상 새 콘솔 창 두 개를 띄운 뒤 바로 URL만 출력하지 않고, 현재 터미널을 유지한 채 백엔드/프론트를 백그라운드로 시작하고 실제 health 체크가 성공한 뒤에만 접속 주소를 보여주도록 바꿨습니다.
+- 개발 서버 로그는 `.run/backend.log`, `.run/frontend.log`에 기록하도록 정리했고, 준비 실패 시 마지막 로그 일부를 바로 보여주게 해 원인 파악을 쉽게 만들었습니다.
+- `verify.py`도 같은 경로 정규화와 Node 실행 경로를 재사용하도록 바꿔, PowerShell provider path와 확장 경로 환경에서도 프론트 build/typecheck가 끊기지 않도록 안정화했습니다.
+- 회귀 테스트 `backend/tests/test_dev_runtime.py`를 추가해 Windows 확장 경로와 PowerShell provider prefix 정규화가 다시 깨지지 않도록 검증했습니다.
+
 ## v2.10.7 - 2026-03-24
 
 - Windows PowerShell 실행 정책 때문에 `start.ps1` 가 서명 오류로 막히는 환경을 위해, 실행 정책 영향을 받지 않는 `start.cmd`와 공용 Python 런처 `start.py`를 추가했습니다.

@@ -43,6 +43,7 @@ desktop.ini
 # Logs
 *.log
 npm-debug.log*
+.run/
 
 # Coverage
 htmlcov/
