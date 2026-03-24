@@ -2,7 +2,7 @@
 
 AI 기반 주식 시장 분석 플랫폼 — 미국, 한국, 일본 시장을 커버합니다.
 
-현재 릴리즈: `v2.10.7`
+현재 릴리즈: `v2.10.8`
 
 OpenAI API 기반 LLM과 정량 엔진을 함께 사용해 리서치 기관 보고서를 종합 분석하고, 엄격한 루브릭 기반 100점 만점 스코어링 시스템으로 국가/섹터/종목을 평가합니다.
 
@@ -302,7 +302,7 @@ pip install -r backend/requirements.txt
 & .\venv\Scripts\python.exe .\verify.py --live-api-smoke
 ```
 
-실행 정책이나 `cmd` 자동 실행 훅 때문에 래퍼가 불안정한 환경이면 위 Python 직접 실행 방식을 우선 사용하세요. `verify.cmd`와 `verify.ps1`는 같은 검증 런처를 감싸는 편의용 래퍼입니다.
+실행 정책이나 `cmd` 자동 실행 훅, `\\?\C:\...` 확장 경로 때문에 래퍼가 불안정한 환경이면 위 Python 직접 실행 방식을 우선 사용하세요. `verify.cmd`와 `verify.ps1`는 같은 검증 런처를 감싸는 편의용 래퍼입니다.
 
 개별 명령으로 확인할 때는 아래 순서를 사용합니다.
 
@@ -359,6 +359,7 @@ cd ..
 ```
 
 PowerShell 실행 정책 때문에 `.\start.ps1` 가 막히는 환경에서도 위 Python 직접 실행 방식은 그대로 사용할 수 있습니다.
+단, `.\start.ps1` 를 직접 입력하는 방식은 로컬 PC의 실행 정책이 막고 있으면 계속 차단될 수 있습니다. 이 경우는 코드 문제가 아니라 Windows 보안 정책이므로 `start.py`, `start.cmd`, 또는 `powershell -ExecutionPolicy Bypass -File .\start.ps1` 경로를 사용해야 합니다.
 
 **방법 B: CMD 래퍼 실행**
 
@@ -379,6 +380,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
 필요하면 `.\start.cmd --check` 도 같은 점검을 실행합니다.
+
+`start.py`는 현재 터미널을 유지한 채 백엔드와 프론트를 백그라운드로 띄우고, 실행 로그를 `.run/backend.log`, `.run/frontend.log`에 기록합니다. 서버가 실제로 뜨기 전에 상태 확인을 먼저 하기 때문에, 포트가 안 열렸는데 URL만 먼저 출력되는 문제를 줄였습니다.
 
 **방법 D: 수동 실행 (터미널 2개)**
 
@@ -781,6 +784,7 @@ stock-predict/
 │   └── tailwind.config.ts
 ├── start.cmd                       # Windows 편의용 런처
 ├── start.ps1                       # PowerShell 래퍼
+├── dev_runtime.py                  # Windows 경로/Node 런타임 공용 헬퍼
 ├── start.py                        # 공용 개발 서버 런처
 ├── verify.cmd                      # Windows 편의용 검증 래퍼
 ├── verify.py                       # 공용 검증 런처
