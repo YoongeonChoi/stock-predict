@@ -84,6 +84,80 @@ def validate_portfolio_holding_input(
     }
 
 
+def validate_portfolio_profile_input(
+    total_assets: float,
+    cash_balance: float,
+    monthly_budget: float,
+) -> dict[str, float]:
+    try:
+        parsed_total_assets = float(total_assets)
+        parsed_cash_balance = float(cash_balance)
+        parsed_monthly_budget = float(monthly_budget)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("총자산, 예수금, 월 추가 자금은 숫자로 입력해 주세요.") from exc
+
+    if parsed_total_assets < 0:
+        raise ValueError("총자산은 0 이상으로 입력해 주세요.")
+    if parsed_cash_balance < 0:
+        raise ValueError("예수금은 0 이상으로 입력해 주세요.")
+    if parsed_monthly_budget < 0:
+        raise ValueError("월 추가 자금은 0 이상으로 입력해 주세요.")
+
+    return {
+        "total_assets": parsed_total_assets,
+        "cash_balance": parsed_cash_balance,
+        "monthly_budget": parsed_monthly_budget,
+    }
+
+
+def _default_portfolio_profile() -> dict[str, float | None]:
+    return {
+        "total_assets": 0.0,
+        "cash_balance": 0.0,
+        "monthly_budget": 0.0,
+        "updated_at": None,
+    }
+
+
+def _build_asset_summary(
+    *,
+    profile: dict,
+    total_invested: float,
+    total_current: float,
+    total_pnl: float,
+    holding_count: int,
+) -> dict[str, float | int]:
+    tracked_total_assets = float(profile.get("total_assets") or 0.0)
+    cash_balance = float(profile.get("cash_balance") or 0.0)
+    monthly_budget = float(profile.get("monthly_budget") or 0.0)
+
+    total_assets = max(tracked_total_assets, total_current + cash_balance)
+    other_assets = max(total_assets - total_current - cash_balance, 0.0)
+    total_pnl_pct = (total_pnl / total_invested * 100.0) if total_invested else 0.0
+    stock_ratio_pct = (total_current / total_assets * 100.0) if total_assets else 0.0
+    cash_ratio_pct = (cash_balance / total_assets * 100.0) if total_assets else 0.0
+    other_assets_ratio_pct = (other_assets / total_assets * 100.0) if total_assets else 0.0
+    asset_gap = tracked_total_assets - (total_current + cash_balance)
+
+    return {
+        "total_invested": round(total_invested, 2),
+        "total_current": round(total_current, 2),
+        "total_pnl": round(total_pnl, 2),
+        "total_pnl_pct": round(total_pnl_pct, 2),
+        "holding_count": holding_count,
+        "total_assets": round(total_assets, 2),
+        "cash_balance": round(cash_balance, 2),
+        "other_assets": round(other_assets, 2),
+        "stock_ratio_pct": round(stock_ratio_pct, 2),
+        "cash_ratio_pct": round(cash_ratio_pct, 2),
+        "other_assets_ratio_pct": round(other_assets_ratio_pct, 2),
+        "monthly_budget": round(monthly_budget, 2),
+        "deployable_cash": round(cash_balance + monthly_budget, 2),
+        "asset_gap": round(asset_gap, 2),
+        "unrealized_pnl_pct_of_assets": round((total_pnl / total_assets * 100.0) if total_assets else 0.0, 2),
+    }
+
+
 def _daily_returns(price_history: list[dict]) -> list[tuple[str, float]]:
     returns: list[tuple[str, float]] = []
     for prev, curr in zip(price_history, price_history[1:]):
@@ -909,22 +983,32 @@ async def _build_model_portfolio(
 
 async def get_portfolio():
     """Get portfolio with current prices, risk context, and execution guidance."""
-    cache_key = "portfolio_overview:v5"
+    cache_key = "portfolio_overview:v6"
     cached = await cache.get(cache_key)
     if cached:
         return cached
 
+    profile = await db.portfolio_profile_get()
+    normalized_profile = {
+        "total_assets": round(float(profile.get("total_assets") or 0.0), 2),
+        "cash_balance": round(float(profile.get("cash_balance") or 0.0), 2),
+        "monthly_budget": round(float(profile.get("monthly_budget") or 0.0), 2),
+        "updated_at": profile.get("updated_at"),
+    }
+
     holdings = await db.portfolio_list()
     if not holdings:
+        summary = _build_asset_summary(
+            profile=normalized_profile,
+            total_invested=0.0,
+            total_current=0.0,
+            total_pnl=0.0,
+            holding_count=0,
+        )
         empty = {
+            "profile": normalized_profile,
             "holdings": [],
-            "summary": {
-                "total_invested": 0.0,
-                "total_current": 0.0,
-                "total_pnl": 0.0,
-                "total_pnl_pct": 0.0,
-                "holding_count": 0,
-            },
+            "summary": summary,
             "allocation": {
                 "by_sector": [],
                 "by_country": [],
@@ -1116,7 +1200,6 @@ async def get_portfolio():
     total_invested = sum(item["invested"] for item in enriched)
     total_current = sum(item["current_value"] for item in enriched)
     total_pnl = total_current - total_invested
-    total_pnl_pct = (total_pnl / total_invested * 100.0) if total_invested else 0.0
 
     sectors: dict[str, float] = defaultdict(float)
     countries: dict[str, float] = defaultdict(float)
@@ -1221,16 +1304,18 @@ async def get_portfolio():
 
     sector_alloc = [{"name": key, "value": round(value, 2)} for key, value in sorted(sectors.items(), key=lambda item: item[1], reverse=True)]
     country_alloc = [{"name": key, "value": round(value, 2)} for key, value in sorted(countries.items(), key=lambda item: item[1], reverse=True)]
+    summary = _build_asset_summary(
+        profile=normalized_profile,
+        total_invested=total_invested,
+        total_current=total_current,
+        total_pnl=total_pnl,
+        holding_count=len(enriched),
+    )
 
     response = {
+        "profile": normalized_profile,
         "holdings": enriched,
-        "summary": {
-            "total_invested": round(total_invested, 2),
-            "total_current": round(total_current, 2),
-            "total_pnl": round(total_pnl, 2),
-            "total_pnl_pct": round(total_pnl_pct, 2),
-            "holding_count": len(enriched),
-        },
+        "summary": summary,
         "allocation": {
             "by_sector": sector_alloc,
             "by_country": country_alloc,
@@ -1291,6 +1376,61 @@ async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: 
         "country_code": normalized_country,
         "buy_date": str(payload["buy_date"]),
     }
+
+
+async def update_holding(
+    holding_id: int,
+    ticker: str,
+    buy_price: float,
+    quantity: float,
+    buy_date: str,
+    country_code: str = "US",
+):
+    payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
+    normalized_ticker = str(payload["ticker"])
+    normalized_country = str(payload["country_code"])
+    try:
+        info = await yfinance_client.get_stock_info(normalized_ticker)
+        name = info.get("name", normalized_ticker)
+    except Exception:
+        name = normalized_ticker
+    await db.portfolio_update(
+        holding_id,
+        normalized_ticker,
+        name,
+        normalized_country,
+        float(payload["buy_price"]),
+        float(payload["quantity"]),
+        str(payload["buy_date"]),
+    )
+    await cache.invalidate("portfolio_overview:%")
+    return {
+        "ticker": normalized_ticker,
+        "name": name,
+        "country_code": normalized_country,
+        "buy_date": str(payload["buy_date"]),
+    }
+
+
+async def get_portfolio_profile():
+    profile = await db.portfolio_profile_get()
+    return {
+        "total_assets": round(float(profile.get("total_assets") or 0.0), 2),
+        "cash_balance": round(float(profile.get("cash_balance") or 0.0), 2),
+        "monthly_budget": round(float(profile.get("monthly_budget") or 0.0), 2),
+        "updated_at": profile.get("updated_at"),
+    }
+
+
+async def update_portfolio_profile(total_assets: float, cash_balance: float, monthly_budget: float):
+    payload = validate_portfolio_profile_input(total_assets, cash_balance, monthly_budget)
+    await db.portfolio_profile_upsert(
+        payload["total_assets"],
+        payload["cash_balance"],
+        payload["monthly_budget"],
+    )
+    await cache.invalidate("portfolio_overview:%")
+    return await get_portfolio_profile()
 
 
 async def remove_holding(holding_id: int):

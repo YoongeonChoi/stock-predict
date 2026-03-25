@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS portfolio_profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total_assets REAL NOT NULL DEFAULT 0,
+    cash_balance REAL NOT NULL DEFAULT 0,
+    monthly_budget REAL NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ideal_portfolio_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reference_date TEXT NOT NULL UNIQUE,
@@ -138,6 +146,14 @@ class Database:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.executescript(_SCHEMA)
+            await conn.execute(
+                """
+                INSERT OR IGNORE INTO portfolio_profile (
+                    id, total_assets, cash_balance, monthly_budget, updated_at
+                ) VALUES (1, 0, 0, 0, ?)
+                """,
+                (time.time(),),
+            )
             await conn.commit()
 
     # ── cache ──────────────────────────────────────────────
@@ -872,6 +888,27 @@ class Database:
             await conn.execute("DELETE FROM portfolio_holdings WHERE id = ?", (holding_id,))
             await conn.commit()
 
+    async def portfolio_update(
+        self,
+        holding_id: int,
+        ticker: str,
+        name: str,
+        country_code: str,
+        buy_price: float,
+        quantity: float,
+        buy_date: str,
+    ):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                UPDATE portfolio_holdings
+                SET ticker = ?, name = ?, country_code = ?, buy_price = ?, quantity = ?, buy_date = ?
+                WHERE id = ?
+                """,
+                (ticker, name, country_code, buy_price, quantity, buy_date, holding_id),
+            )
+            await conn.commit()
+
     async def portfolio_update_identity(self, holding_id: int, ticker: str, country_code: str):
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
@@ -881,6 +918,41 @@ class Database:
                 WHERE id = ?
                 """,
                 (ticker, country_code, holding_id),
+            )
+            await conn.commit()
+
+    async def portfolio_profile_get(self) -> dict:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM portfolio_profile
+                WHERE id = 1
+                """
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else {
+                "id": 1,
+                "total_assets": 0.0,
+                "cash_balance": 0.0,
+                "monthly_budget": 0.0,
+                "updated_at": time.time(),
+            }
+
+    async def portfolio_profile_upsert(self, total_assets: float, cash_balance: float, monthly_budget: float):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """
+                INSERT INTO portfolio_profile (id, total_assets, cash_balance, monthly_budget, updated_at)
+                VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    total_assets = excluded.total_assets,
+                    cash_balance = excluded.cash_balance,
+                    monthly_budget = excluded.monthly_budget,
+                    updated_at = excluded.updated_at
+                """,
+                (total_assets, cash_balance, monthly_budget, time.time()),
             )
             await conn.commit()
 

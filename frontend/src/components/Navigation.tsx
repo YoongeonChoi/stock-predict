@@ -17,7 +17,6 @@ import {
   Menu,
   MoonStar,
   Settings2,
-  Sparkles,
   Star,
   SunMedium,
   X,
@@ -29,7 +28,7 @@ const NAV_GROUPS = [
   {
     title: "시장 탐색",
     items: [
-      { href: "/", label: "대시보드", description: "추천 포트폴리오와 시장 스냅샷", icon: LayoutDashboard },
+      { href: "/", label: "대시보드", description: "선택 시장 현황과 핵심 흐름", icon: LayoutDashboard },
       { href: "/radar", label: "기회 레이더", description: "지금 가장 강한 셋업 탐색", icon: Crosshair },
       { href: "/screener", label: "스크리너", description: "조건 기반 종목 필터링", icon: ListFilter },
       { href: "/compare", label: "비교", description: "종목 2~4개 나란히 비교", icon: GitCompareArrows },
@@ -38,7 +37,7 @@ const NAV_GROUPS = [
   {
     title: "운영",
     items: [
-      { href: "/portfolio", label: "포트폴리오", description: "보유 종목과 모델 비중 관리", icon: BriefcaseBusiness },
+      { href: "/portfolio", label: "포트폴리오", description: "자산과 보유 종목 운영", icon: BriefcaseBusiness },
       { href: "/watchlist", label: "관심종목", description: "후보 추적과 빠른 접근", icon: Star },
       { href: "/calendar", label: "캘린더", description: "실적·거시 이벤트 일정", icon: CalendarDays },
       { href: "/archive", label: "아카이브", description: "과거 리포트와 예측 기록", icon: Archive },
@@ -48,7 +47,7 @@ const NAV_GROUPS = [
     title: "리서치",
     items: [
       { href: "/lab", label: "예측 연구실", description: "적중률과 calibration 점검", icon: FlaskConical },
-      { href: "/settings", label: "설정 및 시스템", description: "데이터 소스와 상태 확인", icon: Settings2 },
+      { href: "/settings", label: "설정 및 시스템", description: "시장 세션과 시스템 상태", icon: Settings2 },
     ],
   },
 ];
@@ -82,8 +81,8 @@ export default function Navigation() {
                   className={cn(
                     "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition-all",
                     active
-                      ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(56,189,248,0.65)]"
-                      : "border-transparent text-text-secondary hover:border-border hover:bg-white/40 hover:text-text dark:hover:bg-slate-900/40"
+                      ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(124,106,230,0.45)]"
+                      : "border-transparent text-text-secondary hover:border-border hover:bg-white/40 hover:text-text dark:hover:bg-slate-900/40",
                   )}
                 >
                   <span
@@ -91,7 +90,7 @@ export default function Navigation() {
                       "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-colors",
                       active
                         ? "border-accent/20 bg-accent/15 text-accent"
-                        : "border-border bg-surface/50 text-text-secondary group-hover:text-text"
+                        : "border-border bg-surface/50 text-text-secondary group-hover:text-text",
                     )}
                   >
                     <Icon size={18} strokeWidth={2.1} />
@@ -119,25 +118,11 @@ export default function Navigation() {
     <>
       <aside className="hidden lg:flex lg:w-[300px] lg:shrink-0">
         <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/70 bg-surface px-4 py-6 shadow-[0_24px_48px_-42px_rgba(15,23,42,0.22)]">
-          <Link href="/" className="card !p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-text-secondary">
-                  Stock Predict
-                </div>
-                <div className="mt-3 text-xl font-semibold tracking-tight text-text">멀티마켓 워크스페이스</div>
-                <div className="mt-2 text-sm leading-6 text-text-secondary">
-                  내일의 포트폴리오, 레이더, 연구실을 한 흐름으로 정리했습니다.
-                </div>
-              </div>
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-                <Sparkles size={20} />
-              </span>
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="info-chip">KR 우선</span>
-              <span className="info-chip">US · JP 동시 추적</span>
-            </div>
+          <Link href="/" className="flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/70 px-4 py-3 transition-colors hover:border-accent/35">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/10 text-sm font-semibold text-accent">
+              SP
+            </span>
+            <div className="min-w-0 text-base font-semibold tracking-tight text-text">Stock Predict</div>
           </Link>
 
           <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
@@ -161,9 +146,8 @@ export default function Navigation() {
       </aside>
 
       <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border/70 bg-surface px-4 py-3 shadow-[0_16px_34px_-30px_rgba(15,23,42,0.2)] lg:hidden">
-        <Link href="/" className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-secondary">Stock Predict</div>
-          <div className="mt-1 text-sm font-semibold text-text">투자 워크스페이스</div>
+        <Link href="/" className="text-sm font-semibold tracking-tight text-text">
+          Stock Predict
         </Link>
         <div className="flex items-center gap-2">
           <button
@@ -184,11 +168,8 @@ export default function Navigation() {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-bg pt-[76px] lg:hidden">
           <div className="h-full overflow-y-auto px-4 pb-6">
-            <div className="card !p-5">
+            <div className="card !p-4">
               <div className="text-sm font-semibold text-text">메뉴</div>
-              <div className="mt-2 text-sm leading-6 text-text-secondary">
-                대시보드, 레이더, 포트폴리오, 연구실 흐름으로 바로 이동할 수 있습니다.
-              </div>
             </div>
             <nav className="mt-4">{navLinks}</nav>
           </div>

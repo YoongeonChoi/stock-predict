@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
@@ -23,18 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <header className="border-b border-border/70 bg-surface shadow-[0_18px_36px_-32px_rgba(15,23,42,0.24)] lg:sticky lg:top-0 lg:z-30">
                   <div className="mx-auto flex w-full max-w-[1500px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:px-10">
                     <div className="min-w-0 flex-1">
-                      <div className="mb-2 hidden text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary xl:block">
-                        Market Workspace
-                      </div>
                       <SearchBar />
-                    </div>
-                    <div className="hidden items-center gap-2 xl:flex">
-                      <Link href="/portfolio" className="action-chip-secondary">
-                        포트폴리오
-                      </Link>
-                      <Link href="/radar" className="action-chip-secondary">
-                        레이더
-                      </Link>
                     </div>
                   </div>
                 </header>

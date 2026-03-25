@@ -1,6 +1,6 @@
 {
   "name": "stock-predict-frontend",
-  "version": "2.12.1",
+  "version": "2.13.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -30,3 +30,4 @@
     "eslint-config-next": "^14.2.0"
   }
 }
+
