@@ -41,16 +41,6 @@ const TICKER_GUIDE = {
     placeholder: "005930",
     helper: "숫자 6자리만 입력해도 `.KS` 또는 `.KQ` 형식으로 저장합니다.",
   },
-  US: {
-    label: "미국",
-    placeholder: "AAPL",
-    helper: "미국 종목은 일반 티커 그대로 입력하면 됩니다.",
-  },
-  JP: {
-    label: "일본",
-    placeholder: "7203",
-    helper: "숫자 4자리를 입력하면 자동으로 `.T` 형식으로 저장합니다.",
-  },
 } as const;
 
 interface HoldingFormState {
@@ -176,10 +166,7 @@ export default function PortfolioPage() {
   const activeGuide = TICKER_GUIDE[holdingForm.countryCode as keyof typeof TICKER_GUIDE] ?? TICKER_GUIDE.KR;
   const summary = data?.summary;
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
-  const mixedCountries = useMemo(
-    () => new Set((data?.holdings ?? []).map((item) => item.country_code)).size > 1,
-    [data],
-  );
+  const mixedCountries = useMemo(() => false, []);
 
   const loadPortfolio = async (showFailureToast = false) => {
     try {
@@ -515,12 +502,8 @@ export default function PortfolioPage() {
             <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">국가</label>
-            <select value={holdingForm.countryCode} onChange={(e) => setHoldingForm((prev) => ({ ...prev, countryCode: e.target.value }))} className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm">
-              <option value="KR">KR</option>
-              <option value="US">US</option>
-              <option value="JP">JP</option>
-            </select>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">시장</label>
+            <div className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm text-text-secondary">KR</div>
           </div>
           <div className="flex items-end">
             <button onClick={submitHolding} disabled={submittingHolding} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">

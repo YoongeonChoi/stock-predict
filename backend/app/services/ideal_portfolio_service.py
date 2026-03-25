@@ -9,7 +9,7 @@ from app.services import market_service
 from app.utils.async_tools import gather_limited
 from app.utils.market_calendar import next_trading_day
 
-COUNTRIES = ["KR", "US", "JP"]
+COUNTRIES = ["KR"]
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -97,7 +97,7 @@ def _market_view(response: dict) -> dict:
     regime = response.get("market_regime") or {}
     stance = regime.get("stance", "neutral")
     return {
-        "country_code": response.get("country_code", "US"),
+        "country_code": response.get("country_code", "KR"),
         "label": regime.get("label", "Neutral"),
         "stance": stance,
         "conviction": float(regime.get("conviction") or 0.0),
@@ -343,7 +343,7 @@ async def _build_snapshot(reference_date: str) -> dict:
     view_lookup = {item["country_code"]: item for item in market_views}
     candidates: list[dict] = []
     for response in responses:
-        country_code = response.get("country_code", "US")
+        country_code = response.get("country_code", "KR")
         target_date = next_trading_day(country_code, reference_date).isoformat()
         market_view = view_lookup.get(country_code, {})
         for opportunity in response.get("opportunities", [])[:6]:

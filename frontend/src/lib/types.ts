@@ -95,6 +95,57 @@ export interface NextDayForecast {
   model_version: string;
 }
 
+export interface FreeKrForecastDataSource {
+  name: string;
+  configured: boolean;
+  used: boolean;
+  item_count: number;
+  note: string;
+}
+
+export interface FreeKrForecastEvidence {
+  key: string;
+  label: string;
+  contribution: number;
+  signal: "bullish" | "bearish" | "neutral";
+  detail: string;
+}
+
+export interface FreeKrForecastHorizon {
+  horizon_days: number;
+  target_date: string;
+  mean_return_raw: number;
+  mean_return_excess: number;
+  q10: number;
+  q25: number;
+  q50: number;
+  q75: number;
+  q90: number;
+  price_q10: number;
+  price_q25: number;
+  price_q50: number;
+  price_q75: number;
+  price_q90: number;
+  p_down: number;
+  p_flat: number;
+  p_up: number;
+  vol_forecast: number;
+  confidence: number;
+}
+
+export interface FreeKrForecast {
+  reference_date: string;
+  reference_price: number;
+  regime: "risk_on" | "neutral" | "risk_off";
+  regime_probs: Record<string, number>;
+  horizons: FreeKrForecastHorizon[];
+  evidence: FreeKrForecastEvidence[];
+  data_sources: FreeKrForecastDataSource[];
+  confidence_note: string;
+  summary: string;
+  model_version: string;
+}
+
 export interface HistoricalForecastHorizon {
   horizon_days: number;
   sample_size: number;
@@ -430,6 +481,7 @@ export interface StockDetail {
   score: StockScore;
   buy_sell_guide: BuySellGuide;
   next_day_forecast?: NextDayForecast;
+  free_kr_forecast?: FreeKrForecast | null;
   historical_pattern_forecast?: HistoricalPatternForecast | null;
   setup_backtest?: SetupBacktest | null;
   market_regime?: MarketRegime;

@@ -11,10 +11,8 @@ from app.analysis.prompts import country_report_prompt
 from app.analysis.sentiment import get_news_sentiment_for_country
 from app.config import get_settings
 from app.data import (
-    boj_client,
     cache,
     ecos_client,
-    fred_client,
     investor_flow_client,
     news_client,
     yfinance_client,
@@ -139,7 +137,7 @@ async def analyze_country(country_code: str) -> dict:
     ]
 
     sentiment = await get_news_sentiment_for_country(market_news)
-    vix_val = economic_data.get("vix") if country_code == "US" else None
+    vix_val = None
     spread = economic_data.get("treasury_spread")
 
     fear_greed = calculate_fear_greed(
@@ -282,13 +280,6 @@ async def _score_top_stocks(
 
 
 async def _get_economic_data(country_code: str) -> dict:
-    if country_code == "US":
-        data = await fred_client.get_us_economic_snapshot()
-        spread = await fred_client.get_treasury_spread()
-        data["treasury_spread"] = spread
-        return data
     if country_code == "KR":
         return await ecos_client.get_kr_economic_snapshot()
-    if country_code == "JP":
-        return await boj_client.get_jp_economic_snapshot()
     return {}

@@ -7,9 +7,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
 
-    fred_api_key: str = ""
     ecos_api_key: str = ""
     fmp_api_key: str = ""
+    opendart_api_key: str = ""
+    kosis_api_key: str = ""
+    kosis_cpi_user_stats_id: str = ""
+    kosis_employment_user_stats_id: str = ""
+    kosis_industrial_production_user_stats_id: str = ""
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
 
     db_path: str = "data/stock_predict.db"
 
@@ -25,7 +31,11 @@ class Settings(BaseSettings):
     cache_ttl_forecast: int = 21600
     cache_ttl_fear_greed: int = 3600
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 @lru_cache

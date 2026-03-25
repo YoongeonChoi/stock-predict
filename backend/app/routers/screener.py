@@ -33,7 +33,7 @@ def _normalize_query_param(value):
 
 @router.get("/screener")
 async def screen_stocks(
-    country: str = Query("US", description="Country code: US, KR, JP"),
+    country: str = Query("KR", description="Country code: KR"),
     sector: str | None = Query(None, description="Sector filter"),
     market_cap_min: float | None = Query(None),
     market_cap_max: float | None = Query(None),
@@ -84,6 +84,8 @@ async def screen_stocks(
     sort_dir = _normalize_query_param(sort_dir)
     limit = _normalize_query_param(limit)
     country = country.upper()
+    if country != "KR":
+        country = "KR"
     cache_key = (
         f"screener:v5:{country}:{sector}:{market_cap_min}:{market_cap_max}:{price_min}:{price_max}:"
         f"{pe_min}:{pe_max}:{pb_max}:{dividend_yield_min}:{beta_max}:{change_pct_min}:{change_pct_max}:"

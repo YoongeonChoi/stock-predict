@@ -14,6 +14,7 @@ import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
 import CandlestickChart from "@/components/charts/CandlestickChart";
+import FreeKrForecastCard from "@/components/charts/FreeKrForecastCard";
 import EarningsSurprise from "@/components/charts/EarningsSurprise";
 import NextDayForecastCard from "@/components/charts/NextDayForecastCard";
 import PriceChart from "@/components/charts/PriceChart";
@@ -226,6 +227,7 @@ export default function StockPage() {
       </div>
 
       {stock.next_day_forecast ? <NextDayForecastCard forecast={stock.next_day_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
+      {stock.free_kr_forecast ? <FreeKrForecastCard forecast={stock.free_kr_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
       {forecastDelta ? <ForecastDeltaCard data={forecastDelta} /> : null}
 
       {stock.historical_pattern_warning ? (

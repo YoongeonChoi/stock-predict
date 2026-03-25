@@ -1,4 +1,4 @@
-"""Google News RSS aggregation for research institution news."""
+"""Google News RSS aggregation for Korean-market news."""
 
 import asyncio
 import re
@@ -13,17 +13,15 @@ from app.utils.async_tools import gather_limited
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl={hl}&gl={gl}&ceid={ceid}"
 
 LOCALE_MAP = {
-    "US": {"hl": "en-US", "gl": "US", "ceid": "US:en"},
     "KR": {"hl": "ko", "gl": "KR", "ceid": "KR:ko"},
-    "JP": {"hl": "ja", "gl": "JP", "ceid": "JP:ja"},
 }
 
 
 async def search_news(
-    query: str, country_code: str = "US", max_results: int = 15
+    query: str, country_code: str = "KR", max_results: int = 15
 ) -> list[dict]:
     settings = get_settings()
-    locale = LOCALE_MAP.get(country_code, LOCALE_MAP["US"])
+    locale = LOCALE_MAP["KR"]
 
     async def _fetch():
         def _sync():
@@ -61,13 +59,8 @@ async def get_institution_news(
 
 
 async def get_market_news(country_code: str) -> list[dict]:
-    queries = {
-        "US": "US stock market outlook forecast",
-        "KR": "한국 주식시장 전망 증시",
-        "JP": "日本 株式市場 見通し",
-    }
-    q = queries.get(country_code, queries["US"])
-    return await search_news(q, country_code, max_results=20)
+    del country_code
+    return await search_news("한국 주식시장 전망 증시", "KR", max_results=20)
 
 
 async def get_all_institution_news(

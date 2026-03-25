@@ -7,7 +7,7 @@ import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Stock Predict",
-  description: "미국·한국·일본 시장을 위한 AI 기반 주식 분석 플랫폼",
+  description: "한국 주식시장을 위한 AI 기반 분석 플랫폼",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

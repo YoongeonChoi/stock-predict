@@ -15,9 +15,6 @@ function toError(error: unknown): Error {
 
 const REGION_LABELS: Record<string, string> = {
   KR: "한국",
-  US: "미국",
-  JP: "일본",
-  GLOBAL: "글로벌",
 };
 
 export default function SettingsPage() {
@@ -96,7 +93,7 @@ export default function SettingsPage() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">공식 기관 리서치 아카이브</h2>
-                <p className="mt-1 text-sm text-text-secondary">Fed, KDI, 한국은행, BOJ, BIS에서 공개한 리포트를 하루 한 번 동기화합니다.</p>
+                <p className="mt-1 text-sm text-text-secondary">KDI와 한국은행에서 공개한 리포트를 하루 한 번 동기화합니다.</p>
               </div>
               <button
                 onClick={refreshResearchArchive}

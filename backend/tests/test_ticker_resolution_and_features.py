@@ -21,30 +21,30 @@ def patched_client():
 
 
 class TickerResolutionAndFeatureTests(unittest.TestCase):
-    def test_resolve_ticker_normalizes_kr_and_jp_numeric_codes(self):
+    def test_resolve_ticker_normalizes_kr_numeric_codes(self):
         kr = ticker_resolver_service.resolve_ticker("005930", "KR")
-        jp = ticker_resolver_service.resolve_ticker("8001", "JP")
+        kr_prefixed = ticker_resolver_service.resolve_ticker("KRX:000660", "KR")
 
         self.assertEqual(kr["ticker"], "005930.KS")
         self.assertEqual(kr["country_code"], "KR")
-        self.assertEqual(jp["ticker"], "8001.T")
-        self.assertEqual(jp["country_code"], "JP")
+        self.assertEqual(kr_prefixed["ticker"], "000660.KS")
+        self.assertEqual(kr_prefixed["country_code"], "KR")
 
     def test_ticker_resolve_route_returns_structured_resolution(self):
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
             patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
             patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-            patch("app.routers.stock.yfinance_client.get_stock_info", new=AsyncMock(return_value={"name": "Itochu Corp"})),
+            patch("app.routers.stock.yfinance_client.get_stock_info", new=AsyncMock(return_value={"name": "Samsung Electronics"})),
         ):
             with TestClient(app) as client:
-                response = client.get("/api/ticker/resolve?query=8001&country_code=JP")
+                response = client.get("/api/ticker/resolve?query=005930&country_code=KR")
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["ticker"], "8001.T")
-        self.assertEqual(body["country_code"], "JP")
-        self.assertEqual(body["name"], "Itochu Corp")
+        self.assertEqual(body["ticker"], "005930.KS")
+        self.assertEqual(body["country_code"], "KR")
+        self.assertEqual(body["name"], "Samsung Electronics")
 
     def test_daily_briefing_and_portfolio_event_routes_exist(self):
         with (
@@ -102,7 +102,7 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
         ]
 
         with patch("app.services.forecast_monitor_service.db.prediction_symbol_history", new=AsyncMock(return_value=rows)):
-            result = asyncio.run(forecast_monitor_service.get_stock_forecast_delta("AAPL", limit=5))
+            result = asyncio.run(forecast_monitor_service.get_stock_forecast_delta("005930.KS", limit=5))
 
         self.assertTrue(result["summary"]["available"])
         self.assertAlmostEqual(result["summary"]["up_probability_delta"], 6.0)

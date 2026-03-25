@@ -85,7 +85,7 @@ export default function SearchBar() {
                 select(results[0].ticker);
               }
             }}
-            placeholder="티커, 종목명, 한국·미국·일본 종목 검색"
+            placeholder="티커, 종목명, 한국 종목 검색"
             className="mt-0.5 w-full bg-transparent text-sm text-text outline-none placeholder:text-text-secondary"
           />
         </div>

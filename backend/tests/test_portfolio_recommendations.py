@@ -192,7 +192,7 @@ class PortfolioRecommendationTests(unittest.TestCase):
                 "watchlist_only": False,
             },
             "options": {
-                "countries": ["ALL", "KR", "US", "JP"],
+                "countries": ["KR"],
                 "sectors": ["ALL", "Information Technology"],
                 "styles": ["defensive", "balanced", "offensive"],
             },

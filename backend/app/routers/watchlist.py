@@ -17,7 +17,7 @@ async def get_watchlist():
 
 
 @router.post("/watchlist/{ticker}")
-async def add_watchlist(ticker: str, country_code: str = "US"):
+async def add_watchlist(ticker: str, country_code: str = "KR"):
     try:
         resolution = await watchlist_service.add_to_watchlist(ticker, country_code)
         return {"status": "added", "ticker": resolution["ticker"], "country_code": resolution["country_code"], "note": resolution["note"]}

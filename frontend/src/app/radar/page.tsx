@@ -14,7 +14,7 @@ function toError(error: unknown): Error {
   return new Error(typeof error === "string" ? error : "알 수 없는 오류가 발생했습니다.");
 }
 
-const MARKETS = ["US", "KR", "JP"] as const;
+const MARKETS = ["KR"] as const;
 
 export default function RadarPage() {
   const [market, setMarket] = useState<typeof MARKETS[number]>("KR");
@@ -36,7 +36,7 @@ export default function RadarPage() {
       <PageHeader
         eyebrow="Opportunity Radar"
         title="기회 레이더"
-        description="한국을 기본으로 미국과 일본까지 훑으면서, 지금 당장 체크할 만한 셋업과 실행 액션을 더 정돈된 흐름으로 보여줍니다."
+        description="한국장에서 지금 당장 체크할 만한 셋업과 실행 액션을 더 정돈된 흐름으로 보여줍니다."
         meta={
           <>
             <span className="info-chip">실행 후보 우선</span>

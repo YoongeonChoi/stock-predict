@@ -5,18 +5,12 @@ import warnings
 import pandas_market_calendars as mcal
 
 CALENDAR_BY_COUNTRY = {
-    "US": "XNYS",
     "KR": "XKRX",
-    "JP": "XTKS",
 }
 
 COUNTRY_BY_INDEX_TICKER = {
-    "^GSPC": "US",
-    "^DJI": "US",
-    "^IXIC": "US",
     "^KS11": "KR",
     "^KQ11": "KR",
-    "^N225": "JP",
 }
 
 
@@ -28,7 +22,7 @@ def _get_calendar(country_code: str):
             message=r".*\['break_start', 'break_end'\] are discontinued.*",
             category=UserWarning,
         )
-        calendar = mcal.get_calendar(CALENDAR_BY_COUNTRY.get(country_code, "XNYS"))
+        calendar = mcal.get_calendar(CALENDAR_BY_COUNTRY.get(country_code, "XKRX"))
     for market_time in ("break_start", "break_end"):
         try:
             calendar.remove_time(market_time)
@@ -66,9 +60,7 @@ def market_country_code_for_ticker(ticker: str) -> str:
     normalized = str(ticker or "").upper()
     if normalized.endswith(".KS") or normalized.endswith(".KQ"):
         return "KR"
-    if normalized.endswith(".T"):
-        return "JP"
-    return COUNTRY_BY_INDEX_TICKER.get(normalized, "US")
+    return COUNTRY_BY_INDEX_TICKER.get(normalized, "KR")
 
 
 def latest_closed_trading_day(

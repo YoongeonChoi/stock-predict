@@ -42,7 +42,7 @@ function executionBiasTone(bias?: string) {
   return "text-text-secondary bg-border/40";
 }
 
-function priceRange(low?: number | null, high?: number | null, key = "US") {
+function priceRange(low?: number | null, high?: number | null, key = "KR") {
   if (low == null && high == null) return "미정";
   if (low != null && high != null) return `${formatPrice(low, key)} - ${formatPrice(high, key)}`;
   return formatPrice(low ?? high, key);

@@ -14,7 +14,6 @@ export default function WatchlistPage() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [ticker, setTicker] = useState("");
-  const [country, setCountry] = useState("KR");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
   const { toast } = useToast();
 
@@ -33,15 +32,15 @@ export default function WatchlistPage() {
     }
 
     const timer = setTimeout(() => {
-      api.resolveTicker(trimmed, country).then(setResolution).catch(() => setResolution(null));
+      api.resolveTicker(trimmed, "KR").then(setResolution).catch(() => setResolution(null));
     }, 250);
     return () => clearTimeout(timer);
-  }, [ticker, country]);
+  }, [ticker]);
 
   const add = async () => {
     if (!ticker.trim()) return;
     try {
-      const saved = await api.addWatchlist(ticker.trim().toUpperCase(), country);
+      const saved = await api.addWatchlist(ticker.trim().toUpperCase(), "KR");
       toast(`${saved.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
       setTicker("");
       setResolution(null);
@@ -66,14 +65,10 @@ export default function WatchlistPage() {
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder="티커 입력 예: AAPL"
+          placeholder="티커 입력 예: 005930"
           className="flex-1 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm focus:outline-none focus:border-accent"
         />
-        <select value={country} onChange={(e) => setCountry(e.target.value)} className="px-3 py-1.5 rounded-lg bg-surface border border-border text-sm">
-          <option value="KR">KR</option>
-          <option value="US">US</option>
-          <option value="JP">JP</option>
-        </select>
+        <div className="px-3 py-1.5 rounded-lg bg-surface border border-border text-sm text-text-secondary">KR</div>
         <button onClick={add} className="px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90">추가</button>
       </div>
 

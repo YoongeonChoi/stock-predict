@@ -33,24 +33,16 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             "2026-03-24",
             "KR",
         )
-        jp = portfolio_service.validate_portfolio_holding_input(
-            "7203",
-            2800,
-            2,
-            "2026-03-24",
-            "JP",
-        )
-        us = portfolio_service.validate_portfolio_holding_input(
-            "aapl",
-            190,
+        samsung = portfolio_service.validate_portfolio_holding_input(
+            "005930.ks",
+            70000,
             5,
             "2026-03-24",
-            "US",
+            "KR",
         )
 
         self.assertEqual(kr["ticker"], "196170.KQ")
-        self.assertEqual(jp["ticker"], "7203.T")
-        self.assertEqual(us["ticker"], "AAPL")
+        self.assertEqual(samsung["ticker"], "005930.KS")
 
     async def test_portfolio_add_holding_saves_normalized_ticker(self):
         db_add = AsyncMock()
@@ -79,22 +71,22 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
     async def test_portfolio_update_holding_saves_normalized_ticker(self):
         db_update = AsyncMock()
         cache_invalidate = AsyncMock()
-        get_stock_info = AsyncMock(return_value={"name": "Toyota Motor"})
+        get_stock_info = AsyncMock(return_value={"name": "Samsung Electronics"})
 
         with (
             patch("app.services.portfolio_service.db.portfolio_update", new=db_update),
             patch("app.services.portfolio_service.cache.invalidate", new=cache_invalidate),
             patch("app.services.portfolio_service.yfinance_client.get_stock_info", new=get_stock_info),
         ):
-            result = await portfolio_service.update_holding(7, "7203", 2800, 4, "2026-03-24", "JP")
+            result = await portfolio_service.update_holding(7, "005930", 70000, 4, "2026-03-24", "KR")
 
-        self.assertEqual(result["ticker"], "7203.T")
+        self.assertEqual(result["ticker"], "005930.KS")
         db_update.assert_awaited_once_with(
             7,
-            "7203.T",
-            "Toyota Motor",
-            "JP",
-            2800.0,
+            "005930.KS",
+            "Samsung Electronics",
+            "KR",
+            70000.0,
             4.0,
             "2026-03-24",
         )
@@ -153,8 +145,8 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                         {
                             "id": 1,
                             "scope": "stock",
-                            "symbol": "AAPL",
-                            "country_code": "US",
+                            "symbol": "005930.KS",
+                            "country_code": "KR",
                             "target_date": "2026-03-20",
                             "reference_date": "2026-03-19",
                             "reference_price": 100.0,
@@ -192,7 +184,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(
                     return_value=[
                         {
-                            "label": "US",
+                            "label": "KR",
                             "total": 6,
                             "direction_hits": 4,
                             "within_range": 5,
@@ -251,7 +243,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
         self.assertEqual(result["accuracy"]["total_predictions"], 10)
-        self.assertEqual(result["breakdown"]["by_country"][0]["label"], "US")
+        self.assertEqual(result["breakdown"]["by_country"][0]["label"], "KR")
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
         self.assertTrue(result["insights"])
 
@@ -368,7 +360,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             dates=[],
         )
         radar_response = {
-            "country_code": "US",
+            "country_code": "KR",
             "generated_at": "2026-03-29T08:00:00",
             "market_regime": market_regime.model_dump(),
             "total_scanned": 4,
@@ -377,20 +369,20 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             "opportunities": [
                 {
                     "rank": 1,
-                    "ticker": "ALLY",
-                    "name": "Ally Tech",
-                    "sector": "Financials",
-                    "country_code": "US",
-                    "current_price": 55.0,
+                    "ticker": "000660.KS",
+                    "name": "SK hynix",
+                    "sector": "Information Technology",
+                    "country_code": "KR",
+                    "current_price": 205000.0,
                     "change_pct": 1.2,
                     "opportunity_score": 77.0,
                     "quant_score": 74.0,
                     "up_probability": 62.0,
                     "confidence": 69.0,
                     "predicted_return_pct": 2.3,
-                    "bull_case_price": 57.0,
-                    "base_case_price": 56.2,
-                    "bear_case_price": 53.5,
+                    "bull_case_price": 210000.0,
+                    "base_case_price": 208000.0,
+                    "bear_case_price": 201000.0,
                     "bull_probability": 31.0,
                     "base_probability": 45.0,
                     "bear_probability": 24.0,
@@ -399,11 +391,11 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     "execution_bias": "lean_long",
                     "execution_note": "추세 재가속을 보는 구간입니다.",
                     "regime_tailwind": "mixed",
-                    "entry_low": 54.0,
-                    "entry_high": 55.5,
-                    "stop_loss": 52.0,
-                    "take_profit_1": 58.0,
-                    "take_profit_2": 60.0,
+                    "entry_low": 202000.0,
+                    "entry_high": 205500.0,
+                    "stop_loss": 198000.0,
+                    "take_profit_1": 212000.0,
+                    "take_profit_2": 218000.0,
                     "risk_reward_estimate": 2.1,
                     "thesis": ["실적 모멘텀이 회복되는 흐름입니다."],
                     "risk_flags": [],
@@ -441,9 +433,9 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     return_value=[
                         {
                             "id": 1,
-                            "ticker": "TEST",
-                            "name": "Test Corp",
-                            "country_code": "US",
+                            "ticker": "005930",
+                            "name": "Samsung Electronics",
+                            "country_code": "KR",
                             "buy_price": 100.0,
                             "quantity": 12.0,
                             "buy_date": "2026-03-01",
@@ -453,7 +445,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "app.services.portfolio_service.db.watchlist_list",
-                new=AsyncMock(return_value=[{"ticker": "ALLY", "country_code": "US"}]),
+                new=AsyncMock(return_value=[{"ticker": "000660.KS", "country_code": "KR"}]),
             ),
             patch(
                 "app.services.portfolio_service.yfinance_client.get_price_history",
@@ -487,5 +479,5 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["risk"]["execution_mix"])
         self.assertEqual(result["risk"]["action_queue"][0]["execution_bias"], "capital_preservation")
         self.assertTrue(result["model_portfolio"]["recommended_holdings"])
-        self.assertIn("ALLY", [item["ticker"] for item in result["model_portfolio"]["recommended_holdings"]])
+        self.assertIn("000660.KS", [item["ticker"] for item in result["model_portfolio"]["recommended_holdings"]])
         self.assertTrue(result["model_portfolio"]["rebalance_actions"])

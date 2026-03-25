@@ -33,7 +33,7 @@ async def get_portfolio_event_radar(days: int = 14) -> dict:
     holding_index: dict[str, dict] = {}
 
     for holding in holdings:
-        country_code = str(holding.get("country_code") or "US").upper()
+        country_code = str(holding.get("country_code") or "KR").upper()
         country_weights[country_code] = country_weights.get(country_code, 0.0) + float(holding.get("weight_pct") or 0.0)
         holdings_by_country.setdefault(country_code, []).append(holding)
         holding_index[_holding_key(holding.get("ticker", ""))] = holding

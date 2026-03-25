@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Stock Predict API",
-    description="AI-powered stock market analysis for US, KR, JP markets",
+    description="AI-powered stock market analysis for the Korean market",
     version=APP_VERSION,
     lifespan=lifespan,
 )

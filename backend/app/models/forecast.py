@@ -69,6 +69,57 @@ class NextDayForecast(BaseModel):
     model_version: str = "signal-v2.4"
 
 
+class FreeKrForecastDataSource(BaseModel):
+    name: str
+    configured: bool
+    used: bool
+    item_count: int = 0
+    note: str = ""
+
+
+class FreeKrForecastEvidence(BaseModel):
+    key: str
+    label: str
+    contribution: float
+    signal: Literal["bullish", "bearish", "neutral"]
+    detail: str = ""
+
+
+class FreeKrForecastHorizon(BaseModel):
+    horizon_days: int
+    target_date: str
+    mean_return_raw: float
+    mean_return_excess: float
+    q10: float
+    q25: float
+    q50: float
+    q75: float
+    q90: float
+    price_q10: float
+    price_q25: float
+    price_q50: float
+    price_q75: float
+    price_q90: float
+    p_down: float
+    p_flat: float
+    p_up: float
+    vol_forecast: float
+    confidence: float
+
+
+class FreeKrForecast(BaseModel):
+    reference_date: str
+    reference_price: float
+    regime: Literal["risk_on", "neutral", "risk_off"]
+    regime_probs: dict[str, float]
+    horizons: list[FreeKrForecastHorizon] = Field(default_factory=list)
+    evidence: list[FreeKrForecastEvidence] = Field(default_factory=list)
+    data_sources: list[FreeKrForecastDataSource] = Field(default_factory=list)
+    confidence_note: str = ""
+    summary: str = ""
+    model_version: str = "kr-free-prob-v0.1"
+
+
 class HistoricalForecastHorizon(BaseModel):
     horizon_days: int
     sample_size: int

@@ -37,7 +37,6 @@ export function changeColor(pct: number): string {
 export function currencySymbol(countryOrTicker: string): string {
   const v = countryOrTicker.toUpperCase();
   if (v === "KR" || v.endsWith(".KS") || v.endsWith(".KQ")) return "₩";
-  if (v === "JP" || v.endsWith(".T")) return "¥";
   return "$";
 }
 

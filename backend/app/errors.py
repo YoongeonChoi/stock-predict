@@ -8,7 +8,7 @@ Format: SP-XYYY
 
 Categories:
   1xxx = Configuration (API keys, env vars)
-  2xxx = Data Sources (FRED, ECOS, BOJ, yfinance, FMP, News)
+  2xxx = Data Sources (ECOS, OpenDART/KOSIS-ready, yfinance, FMP, News)
   3xxx = Analysis Pipeline (analyzers, scoring, forecast)
   4xxx = LLM / OpenAI
   5xxx = Services / Database (archive, watchlist, export, cache)
@@ -51,8 +51,8 @@ SP_1001 = lambda: AppError("SP-1001", "OpenAI API key not configured",
                            "Set OPENAI_API_KEY in backend/.env")
 SP_1002 = lambda: AppError("SP-1002", "OpenAI API key invalid",
                            "Check your key at platform.openai.com/api-keys")
-SP_1003 = lambda: AppError("SP-1003", "FRED API key not configured",
-                           "Set FRED_API_KEY in backend/.env (free)")
+SP_1003 = lambda: AppError("SP-1003", "Supplemental public-data API key not configured",
+                           "Set additional free KR market/public-data keys only if you use them")
 SP_1004 = lambda: AppError("SP-1004", "ECOS API key not configured",
                            "Set ECOS_API_KEY in backend/.env (free)")
 SP_1005 = lambda: AppError("SP-1005", "FMP API key not configured",
@@ -61,9 +61,9 @@ SP_1005 = lambda: AppError("SP-1005", "FMP API key not configured",
 # ---------------------------------------------------------------------------
 # 2xxx  Data Sources
 # ---------------------------------------------------------------------------
-SP_2001 = lambda sid="", d="": AppError("SP-2001", f"FRED API request failed: {sid}", d)
+SP_2001 = lambda sid="", d="": AppError("SP-2001", f"Supplemental public-data API request failed: {sid}", d)
 SP_2002 = lambda d="": AppError("SP-2002", "ECOS (BOK) API request failed", d)
-SP_2003 = lambda d="": AppError("SP-2003", "BOJ API request failed", d)
+SP_2003 = lambda d="": AppError("SP-2003", "Supplemental statistics API request failed", d)
 SP_2004 = lambda t="": AppError("SP-2004", f"Ticker not found or delisted: {t}",
                                 "Yahoo Finance returned no data")
 SP_2005 = lambda t="": AppError("SP-2005", f"Price data unavailable: {t}",
@@ -138,7 +138,7 @@ SP_6007 = lambda field="period": AppError(
 SP_6008 = lambda field="region_code": AppError(
     "SP-6008",
     f"Invalid research archive parameter: {field}",
-    "Allowed region_code values are US, KR, JP, GLOBAL.",
+    "Allowed region_code value is KR.",
 )
 SP_6009 = lambda d="": AppError(
     "SP-6009",
