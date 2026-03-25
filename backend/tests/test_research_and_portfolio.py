@@ -76,6 +76,55 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         )
         cache_invalidate.assert_awaited_once_with("portfolio_overview:%")
 
+    async def test_portfolio_update_holding_saves_normalized_ticker(self):
+        db_update = AsyncMock()
+        cache_invalidate = AsyncMock()
+        get_stock_info = AsyncMock(return_value={"name": "Toyota Motor"})
+
+        with (
+            patch("app.services.portfolio_service.db.portfolio_update", new=db_update),
+            patch("app.services.portfolio_service.cache.invalidate", new=cache_invalidate),
+            patch("app.services.portfolio_service.yfinance_client.get_stock_info", new=get_stock_info),
+        ):
+            result = await portfolio_service.update_holding(7, "7203", 2800, 4, "2026-03-24", "JP")
+
+        self.assertEqual(result["ticker"], "7203.T")
+        db_update.assert_awaited_once_with(
+            7,
+            "7203.T",
+            "Toyota Motor",
+            "JP",
+            2800.0,
+            4.0,
+            "2026-03-24",
+        )
+        cache_invalidate.assert_awaited_once_with("portfolio_overview:%")
+
+    async def test_portfolio_profile_update_normalizes_summary(self):
+        with (
+            patch(
+                "app.services.portfolio_service.db.portfolio_profile_upsert",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.portfolio_service.db.portfolio_profile_get",
+                new=AsyncMock(
+                    return_value={
+                        "total_assets": 15000000.0,
+                        "cash_balance": 2500000.0,
+                        "monthly_budget": 500000.0,
+                        "updated_at": 123.0,
+                    }
+                ),
+            ),
+            patch("app.services.portfolio_service.cache.invalidate", new=AsyncMock()),
+        ):
+            result = await portfolio_service.update_portfolio_profile(15000000, 2500000, 500000)
+
+        self.assertEqual(result["total_assets"], 15000000.0)
+        self.assertEqual(result["cash_balance"], 2500000.0)
+        self.assertEqual(result["monthly_budget"], 500000.0)
+
     async def test_prediction_lab_normalizes_breakdowns(self):
         with (
             patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
@@ -211,10 +260,23 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
             patch("app.services.portfolio_service.db.portfolio_list", new=AsyncMock(return_value=[])),
+            patch(
+                "app.services.portfolio_service.db.portfolio_profile_get",
+                new=AsyncMock(
+                    return_value={
+                        "total_assets": 12000000.0,
+                        "cash_balance": 3000000.0,
+                        "monthly_budget": 400000.0,
+                        "updated_at": 123.0,
+                    }
+                ),
+            ),
         ):
             result = await portfolio_service.get_portfolio()
 
         self.assertEqual(result["summary"]["holding_count"], 0)
+        self.assertEqual(result["summary"]["total_assets"], 12000000.0)
+        self.assertEqual(result["summary"]["cash_balance"], 3000000.0)
         self.assertEqual(result["risk"]["overall_label"], "empty")
         self.assertTrue(result["risk"]["playbook"])
         self.assertIn("model_portfolio", result)
@@ -362,6 +424,17 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.portfolio_service.db.portfolio_profile_get",
+                new=AsyncMock(
+                    return_value={
+                        "total_assets": 10000.0,
+                        "cash_balance": 2000.0,
+                        "monthly_budget": 500.0,
+                        "updated_at": 123.0,
+                    }
+                ),
+            ),
             patch(
                 "app.services.portfolio_service.db.portfolio_list",
                 new=AsyncMock(

@@ -60,7 +60,7 @@ export default function SearchBar() {
         className={cn(
           "flex items-center gap-3 rounded-[22px] border px-4 py-3 transition-all",
           focused || open
-            ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(56,189,248,0.42)]"
+            ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(124,106,230,0.35)]"
             : "border-border bg-surface"
         )}
       >
@@ -138,3 +138,4 @@ export default function SearchBar() {
     </div>
   );
 }
+

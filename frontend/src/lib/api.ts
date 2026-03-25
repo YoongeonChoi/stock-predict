@@ -55,6 +55,24 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(apiPath(path), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let info: ApiErrorInfo;
+    try {
+      info = await res.json();
+    } catch {
+      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
+    }
+    throw new ApiError(res.status, info);
+  }
+  return res.json();
+}
+
 async function del<T>(path: string): Promise<T> {
   const res = await fetch(apiPath(path), { method: "DELETE" });
   if (!res.ok) {
@@ -147,6 +165,11 @@ export interface ScreenerResult {
   pe_ratio: number | null; pb_ratio: number | null;
   dividend_yield: number | null; beta: number | null;
   week52_high: number; week52_low: number; pct_from_52w_high: number;
+  revenue_growth: number | null;
+  roe: number | null;
+  debt_to_equity: number | null;
+  avg_volume: number;
+  profit_margins: number | null;
   score: number | null; country_code: string;
 }
 
@@ -490,12 +513,38 @@ export interface DailyIdealPortfolio {
 }
 
 export interface PortfolioData {
+  profile: PortfolioProfile;
   holdings: PortfolioHolding[];
-  summary: { total_invested: number; total_current: number; total_pnl: number; total_pnl_pct: number; holding_count: number };
+  summary: PortfolioSummary;
   allocation: { by_sector: { name: string; value: number }[]; by_country: { name: string; value: number }[] };
   risk: PortfolioRiskSnapshot;
   stress_test: PortfolioStressScenario[];
   model_portfolio: PortfolioModelPortfolio;
+}
+
+export interface PortfolioProfile {
+  total_assets: number;
+  cash_balance: number;
+  monthly_budget: number;
+  updated_at?: number | null;
+}
+
+export interface PortfolioSummary {
+  total_invested: number;
+  total_current: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  holding_count: number;
+  total_assets: number;
+  cash_balance: number;
+  other_assets: number;
+  stock_ratio_pct: number;
+  cash_ratio_pct: number;
+  other_assets_ratio_pct: number;
+  monthly_budget: number;
+  deployable_cash: number;
+  asset_gap: number;
+  unrealized_pnl_pct_of_assets: number;
 }
 
 export interface PortfolioHoldingCreateResponse {
@@ -948,6 +997,8 @@ export const api = {
     return get<ScreenerResponse>(`/api/screener?${qs}`);
   },
   getPortfolio: () => get<PortfolioData>("/api/portfolio"),
+  getPortfolioProfile: () => get<PortfolioProfile>("/api/portfolio/profile"),
+  updatePortfolioProfile: (data: PortfolioProfile) => put<PortfolioProfile>("/api/portfolio/profile", data),
   getPortfolioConditionalRecommendation: (params: {
     country_code?: string;
     sector?: string;
@@ -973,6 +1024,8 @@ export const api = {
     get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
   addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
     post<PortfolioHoldingCreateResponse>("/api/portfolio/holdings", data),
+  updatePortfolioHolding: (id: number, data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
+    put<PortfolioHoldingCreateResponse>(`/api/portfolio/holdings/${id}`, data),
   removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
   getMarketMovers: (code: string) => get<MarketMovers>(`/api/market/movers/${code}`),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),

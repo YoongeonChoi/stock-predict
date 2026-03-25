@@ -1,19 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Archive, ArrowRight, BriefcaseBusiness, Crosshair, FlaskConical } from "lucide-react";
 
-import DailyBriefingPanel from "@/components/DailyBriefingPanel";
-import DailyIdealPortfolioPanel from "@/components/DailyIdealPortfolioPanel";
-import MarketSessionPanel from "@/components/MarketSessionPanel";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
-import PageHeader from "@/components/PageHeader";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import { api } from "@/lib/api";
-import type { DailyBriefingResponse, DailyIdealPortfolio, HeatmapData, MarketMovers } from "@/lib/api";
-import type { CountryListItem, OpportunityRadarResponse } from "@/lib/types";
+import type { DailyBriefingResponse, HeatmapData, MarketMovers } from "@/lib/api";
+import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
+
+const COUNTRY_FLAGS: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
 
 interface MarketIndicator {
   name: string;
@@ -21,321 +18,278 @@ interface MarketIndicator {
   change_pct: number;
 }
 
+function statusTone(stance?: string) {
+  if (stance === "risk_on") return "bg-emerald-500/12 text-emerald-500";
+  if (stance === "risk_off") return "bg-rose-500/12 text-rose-500";
+  return "bg-border/60 text-text-secondary";
+}
+
+function impactTone(impact?: string) {
+  if (impact === "high") return "text-negative bg-negative/10";
+  if (impact === "medium") return "text-warning bg-warning/10";
+  return "text-text-secondary bg-border/40";
+}
+
+function indicatorLabel(indicator: MarketIndicator) {
+  const value = (indicator.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (["Gold", "Oil (WTI)", "Bitcoin"].includes(indicator.name)) return `$${value}`;
+  if (indicator.name === "US 10Y") return `${value}%`;
+  return value;
+}
+
 export default function HomePage() {
   const initializedRef = useRef(false);
   const [countries, setCountries] = useState<CountryListItem[]>([]);
   const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
+  const [briefing, setBriefing] = useState<DailyBriefingResponse | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState("KR");
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
-  const [heatmapLoading, setHeatmapLoading] = useState(true);
-  const [activeCountry, setActiveCountry] = useState("KR");
   const [movers, setMovers] = useState<MarketMovers | null>(null);
   const [radarData, setRadarData] = useState<OpportunityRadarResponse | null>(null);
-  const [radarCountry, setRadarCountry] = useState("KR");
-  const [radarLoading, setRadarLoading] = useState(true);
-  const [idealPortfolio, setIdealPortfolio] = useState<DailyIdealPortfolio | null>(null);
-  const [idealLoading, setIdealLoading] = useState(true);
-  const [briefing, setBriefing] = useState<DailyBriefingResponse | null>(null);
-  const [briefingLoading, setBriefingLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [countryReport, setCountryReport] = useState<CountryReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [heatmapLoading, setHeatmapLoading] = useState(true);
+  const [moversLoading, setMoversLoading] = useState(true);
+  const [radarLoading, setRadarLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState("");
+
+  const loadCountryWorkspace = async (code: string) => {
+    setSelectedCountry(code);
+    setHeatmapLoading(true);
+    setMoversLoading(true);
+    setRadarLoading(true);
+    setReportLoading(true);
+
+    const [heatmapResult, moversResult, radarResult, reportResult] = await Promise.allSettled([
+      api.getHeatmap(code),
+      api.getMarketMovers(code),
+      api.getMarketOpportunities(code, 8),
+      api.getCountryReport(code),
+    ]);
+
+    setHeatmapData(heatmapResult.status === "fulfilled" ? heatmapResult.value : null);
+    setMovers(moversResult.status === "fulfilled" ? moversResult.value : null);
+    setRadarData(radarResult.status === "fulfilled" ? radarResult.value : null);
+    setCountryReport(reportResult.status === "fulfilled" ? reportResult.value : null);
+
+    if (heatmapResult.status === "rejected") console.error(heatmapResult.reason);
+    if (moversResult.status === "rejected") console.error(moversResult.reason);
+    if (radarResult.status === "rejected") console.error(radarResult.reason);
+    if (reportResult.status === "rejected") console.error(reportResult.reason);
+
+    setHeatmapLoading(false);
+    setMoversLoading(false);
+    setRadarLoading(false);
+    setReportLoading(false);
+    setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
+  };
 
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    Promise.all([
-      api.getCountries().then(setCountries).catch(console.error),
-      api.getMarketIndicators().then(setIndicators).catch(console.error),
-    ]).finally(() => setLoading(false));
+    const bootstrap = async () => {
+      setLoading(true);
+      const [countryResult, indicatorResult, briefingResult] = await Promise.allSettled([
+        api.getCountries(),
+        api.getMarketIndicators(),
+        api.getDailyBriefing(),
+      ]);
 
-    api.getMarketMovers("KR").then(setMovers).catch(console.error);
-    api.getDailyIdealPortfolio(false, 8).then(setIdealPortfolio).catch(console.error).finally(() => setIdealLoading(false));
-    api.getDailyBriefing().then(setBriefing).catch(console.error).finally(() => setBriefingLoading(false));
-    setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
-    loadHeatmap("KR");
-    loadRadar("KR");
+      if (countryResult.status === "fulfilled") setCountries(countryResult.value);
+      else console.error(countryResult.reason);
+
+      if (indicatorResult.status === "fulfilled") setIndicators(indicatorResult.value);
+      else console.error(indicatorResult.reason);
+
+      if (briefingResult.status === "fulfilled") setBriefing(briefingResult.value);
+      else console.error(briefingResult.reason);
+
+      await loadCountryWorkspace("KR");
+      setLoading(false);
+    };
+
+    bootstrap();
   }, []);
 
-  const loadHeatmap = (code: string) => {
-    setActiveCountry(code);
-    setHeatmapLoading(true);
-    api.getHeatmap(code)
-      .then(setHeatmapData)
-      .catch(console.error)
-      .finally(() => setHeatmapLoading(false));
-  };
+  const selectedCountryItem = useMemo(
+    () => countries.find((country) => country.code === selectedCountry) ?? null,
+    [countries, selectedCountry],
+  );
 
-  const loadRadar = (code: string) => {
-    setRadarCountry(code);
-    setRadarLoading(true);
-    api.getMarketOpportunities(code, 6)
-      .then(setRadarData)
-      .catch(console.error)
-      .finally(() => setRadarLoading(false));
-  };
+  const marketView = useMemo(
+    () => briefing?.market_view.find((item) => item.country_code === selectedCountry) ?? null,
+    [briefing, selectedCountry],
+  );
 
-  const flags: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
-  const indicatorUnit: Record<string, string> = {
-    Gold: "$",
-    "Oil (WTI)": "$",
-    Bitcoin: "$",
-    "US 10Y": "%",
-  };
-  const quickLinks = [
-    { href: "/portfolio", label: "포트폴리오", description: "보유 종목과 모델 비중 관리", icon: BriefcaseBusiness },
-    { href: "/radar", label: "기회 레이더", description: "강한 셋업과 액션 우선순위 확인", icon: Crosshair },
-    { href: "/lab", label: "예측 연구실", description: "적중률과 calibration 점검", icon: FlaskConical },
-    { href: "/archive", label: "아카이브", description: "과거 리포트와 예측 기록 보기", icon: Archive },
-  ];
+  const focusCards = useMemo(() => {
+    const scoped = briefing?.focus_cards.filter((item) => item.country_code === selectedCountry) ?? [];
+    if (scoped.length > 0) return scoped.slice(0, 3);
+    return briefing?.focus_cards.slice(0, 3) ?? [];
+  }, [briefing, selectedCountry]);
 
-  const orderedCountries = [...countries].sort((a, b) => {
-    const priority: Record<string, number> = { KR: 0, US: 1, JP: 2 };
-    return (priority[a.code] ?? 9) - (priority[b.code] ?? 9);
-  });
+  const events = useMemo(() => {
+    const scoped = briefing?.upcoming_events.filter((item) => item.country_code === selectedCountry) ?? [];
+    if (scoped.length > 0) return scoped.slice(0, 4);
+    return briefing?.upcoming_events.slice(0, 4) ?? [];
+  }, [briefing, selectedCountry]);
 
-  const fmtIndicator = (indicator: MarketIndicator) => {
-    const unit = indicatorUnit[indicator.name];
-    const value = (indicator.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-    if (unit === "$") return `$${value}`;
-    if (unit === "%") return `${value}%`;
-    return value;
-  };
+  const topNews = countryReport?.key_news.slice(0, 4) ?? [];
+  const topStocks = countryReport?.top_stocks.slice(0, 5) ?? [];
 
   return (
     <div className="page-shell">
-      <PageHeader
-        eyebrow="AI 투자 워크스테이션"
-        title="Stock Predict"
-        description="한국 시장을 중심으로 미국·일본까지 함께 읽으면서, 내일의 추천 포트폴리오와 당장 확인할 셋업을 한 흐름으로 정리합니다."
-        meta={
-          <>
-            <span className="info-chip">KR 기본 탐색</span>
-            <span className="info-chip">US · JP 동시 스캔</span>
-            <span className="info-chip">일일 추천 포트폴리오 추적</span>
-            {lastUpdated ? <span className="info-chip">마지막 갱신 {lastUpdated}</span> : null}
-          </>
-        }
-        actions={
-          <>
-            <Link href="/portfolio" className="action-chip-primary">
-              포트폴리오 열기
-            </Link>
-            <Link href="/settings" className="action-chip-secondary">
-              설정 및 시스템
-            </Link>
-          </>
-        }
-      />
-
-      <section className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-        <div className="min-w-0">
-          {briefingLoading ? (
-            <div className="card h-[420px] animate-pulse" />
-          ) : briefing ? (
-            <DailyBriefingPanel data={briefing} />
-          ) : null}
-        </div>
-        <div className="min-w-0">
-          {briefingLoading ? (
-            <div className="card h-[420px] animate-pulse" />
-          ) : briefing ? (
-            <MarketSessionPanel sessions={briefing.sessions} />
-          ) : null}
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        <div className="min-w-0 card !p-0 overflow-hidden">
-          <div className="border-b border-border px-5 py-4">
-            <h2 className="section-title">내일 바로 볼 추천 포트폴리오</h2>
-            <p className="section-copy">다음 거래일 기준으로 가장 이상적인 종목 조합과 최근 추적 결과를 같은 화면 폭 안에서 읽기 좋게 묶었습니다.</p>
-          </div>
-          <div className="px-5 py-5">
-            {idealLoading ? (
-              <div className="h-80 rounded-[22px] bg-border/20 animate-pulse" />
-            ) : idealPortfolio ? (
-              <DailyIdealPortfolioPanel data={idealPortfolio} compact embedded />
-            ) : null}
-          </div>
-        </div>
-
-        <div className="min-w-0 card !p-0 overflow-hidden">
-          <div className="border-b border-border px-5 py-4">
-            <div className="section-heading gap-4">
-              <div className="min-w-0">
-                <h2 className="section-title">지금 가장 강한 셋업</h2>
-                <p className="section-copy">단기 기대수익과 시장 체제를 함께 반영해 지금 당장 볼 만한 기회를 추립니다.</p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {["US", "KR", "JP"].map((code) => (
-                  <button
-                    key={code}
-                    onClick={() => loadRadar(code)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                      radarCountry === code ? "bg-accent text-white" : "border border-border bg-surface text-text-secondary hover:border-accent/40 hover:text-text"
-                    }`}
-                  >
-                    {flags[code]} {code}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="px-5 py-5">
-            {radarLoading ? (
-              <div className="h-72 rounded-[22px] bg-border/20 animate-pulse" />
-            ) : radarData ? (
-              <OpportunityRadarBoard data={radarData} compact embedded />
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
-        <div className="card !p-5">
+      <section className="card !p-5 space-y-5">
+        <div className="section-heading gap-4">
           <div>
-            <h2 className="section-title">시장 스냅샷</h2>
-            <p className="section-copy">핵심 지표와 국가별 대표 지수를 같은 리듬으로 정리해 한 번에 읽기 쉽게 맞췄습니다.</p>
+            <h1 className="section-title text-2xl">대시보드</h1>
+            <p className="section-copy">선택한 시장의 지수, 뉴스, 히트맵, 강한 셋업을 한 흐름으로 봅니다.</p>
           </div>
+          <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+            {lastUpdated ? <span className="info-chip">최근 갱신 {lastUpdated}</span> : null}
+            {countryReport?.generated_at ? <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span> : null}
+          </div>
+        </div>
 
-          {indicators.length > 0 ? (
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {indicators.map((indicator) => (
-                <div key={indicator.name} className="metric-card">
-                  <div className="text-xs text-text-secondary">{indicator.name}</div>
-                  <div className="mt-3 font-mono text-lg font-semibold">{fmtIndicator(indicator)}</div>
-                  <div className={`mt-1 text-xs font-medium ${changeColor(indicator.change_pct ?? 0)}`}>
-                    {formatPct(indicator.change_pct ?? 0)}
+        <div className="flex flex-wrap gap-2">
+          {countries
+            .slice()
+            .sort((a, b) => (a.code === "KR" ? -1 : b.code === "KR" ? 1 : a.code.localeCompare(b.code)))
+            .map((country) => (
+              <button
+                key={country.code}
+                onClick={() => loadCountryWorkspace(country.code)}
+                className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                  selectedCountry === country.code
+                    ? "bg-accent text-white"
+                    : "border border-border bg-surface/70 text-text-secondary hover:border-accent/35 hover:text-text"
+                }`}
+              >
+                {COUNTRY_FLAGS[country.code]} {country.name_local}
+              </button>
+            ))}
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
+          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-text">
+                  {selectedCountryItem ? `${COUNTRY_FLAGS[selectedCountry]} ${selectedCountryItem.name_local}` : selectedCountry}
+                </div>
+                <div className="mt-1 text-sm leading-6 text-text-secondary">
+                  {countryReport?.market_summary || marketView?.summary || "선택한 시장의 상태를 불러오는 중입니다."}
+                </div>
+              </div>
+              {marketView ? (
+                <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusTone(marketView.stance)}`}>
+                  {marketView.label}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {selectedCountryItem?.indices.map((index) => (
+                <div key={index.ticker} className="metric-card">
+                  <div className="text-xs text-text-secondary">{index.name}</div>
+                  <div className="mt-2 text-lg font-semibold text-text">{(index.price ?? index.current_price ?? 0).toLocaleString()}</div>
+                  <div className={`mt-1 text-xs font-medium ${changeColor(index.change_pct ?? 0)}`}>
+                    {formatPct(index.change_pct ?? 0)}
                   </div>
                 </div>
               ))}
+              {countryReport?.next_day_forecast ? (
+                <div className="metric-card sm:col-span-2 xl:col-span-1">
+                  <div className="text-xs text-text-secondary">다음 거래일 시그널</div>
+                  <div className="mt-2 text-lg font-semibold text-text">상방 {countryReport.next_day_forecast.up_probability.toFixed(1)}%</div>
+                  <div className={`mt-1 text-xs font-medium ${changeColor(countryReport.next_day_forecast.predicted_return_pct)}`}>
+                    기대 {formatPct(countryReport.next_day_forecast.predicted_return_pct)}
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
 
-          {loading ? (
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-              {[1, 2, 3].map((i) => <div key={i} className="metric-card h-44 animate-pulse" />)}
-            </div>
-          ) : (
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-              {orderedCountries.map((country) => (
-                <Link
-                  key={country.code}
-                  href={`/country/${country.code}`}
-                  className="metric-card group transition-colors hover:border-accent/35"
-                >
-                  <div className="mb-4 flex items-center gap-3">
-                    <span className="text-3xl">{flags[country.code]}</span>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-lg font-semibold transition-colors group-hover:text-accent">{country.name_local}</h2>
-                      <span className="text-xs text-text-secondary">{country.name}</span>
+            {indicators.length > 0 ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {indicators.slice(0, 4).map((indicator) => (
+                  <div key={indicator.name} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+                    <div className="text-[11px] text-text-secondary">{indicator.name}</div>
+                    <div className="mt-2 text-sm font-semibold text-text">{indicatorLabel(indicator)}</div>
+                    <div className={`mt-1 text-[11px] ${changeColor(indicator.change_pct ?? 0)}`}>
+                      {formatPct(indicator.change_pct ?? 0)}
                     </div>
                   </div>
-                  <div className="space-y-2.5">
-                    {country.indices.map((index) => (
-                      <div key={index.ticker} className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm text-text-secondary">{index.name}</span>
-                        <div className="text-right">
-                          <span className="font-mono text-sm">{(index.price ?? 0).toLocaleString()}</span>
-                          <span className={`ml-2 text-sm font-medium ${changeColor(index.change_pct ?? 0)}`}>
-                            {formatPct(index.change_pct ?? 0)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-text">오늘의 포커스</div>
+                <div className="mt-1 text-sm text-text-secondary">선택 시장에서 바로 볼 종목과 일정만 추렸습니다.</div>
+              </div>
+              {briefing?.research_archive ? <span className="info-chip">리서치 {briefing.research_archive.todays_reports}건</span> : null}
+            </div>
+            <div className="mt-4 space-y-3">
+              {focusCards.map((item) => (
+                <Link key={`${item.country_code}-${item.ticker}`} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text">{item.name}</div>
+                      <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.sector}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-sm font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
+                      <div className="mt-1 text-[11px] text-text-secondary">상방 {item.up_probability.toFixed(1)}%</div>
+                    </div>
                   </div>
                 </Link>
               ))}
-            </div>
-          )}
-        </div>
-
-        <div className="card !p-5">
-          <div>
-            <h2 className="section-title">빠른 이동</h2>
-            <p className="section-copy">지금 하는 일에 맞춰 자주 쓰는 화면만 먼저 묶어두었습니다.</p>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {quickLinks.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="metric-card group flex items-start gap-3 transition-colors hover:border-accent/35"
-                >
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-                    <Icon size={20} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-text">{item.label}</span>
-                      <ArrowRight size={15} className="text-text-secondary transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                    <span className="mt-2 block text-xs leading-5 text-text-secondary">{item.description}</span>
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 rounded-[22px] border border-border px-4 py-4 surface-muted">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-text-secondary">정리 포인트</div>
-            <div className="mt-3 space-y-2 text-sm text-text-secondary">
-              <div>레이더는 “지금 강한 후보”, 포트폴리오는 “실제로 들고 갈 비중”, 연구실은 “사후 검증” 역할로 분리했습니다.</div>
-              <div>아카이브는 과거 리포트와 PDF/CSV 관리 허브로 남겨서 메뉴 동선이 덜 산만하게 읽히도록 정리했습니다.</div>
+              {events.map((event) => (
+                <div key={`${event.country_code}-${event.date}-${event.title}`} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium text-text">{event.title}</div>
+                    <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${impactTone(event.impact)}`}>{event.date}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.26fr_0.74fr]">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
         <div className="card !p-4">
-          <div className="section-heading">
+          <div className="section-heading gap-4">
             <div>
               <h2 className="section-title">시장 히트맵</h2>
-              <p className="section-copy">시가총액과 등락률을 함께 보면서 어느 섹터와 종목군에 자금이 붙는지 빠르게 확인합니다.</p>
+              <p className="section-copy">크기는 시가총액, 색은 등락률입니다.</p>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {["US", "KR", "JP"].map((code) => (
-                <button
-                  key={code}
-                  onClick={() => loadHeatmap(code)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                    activeCountry === code ? "bg-accent text-white" : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
-                  }`}
-                >
-                  {flags[code]} {code}
-                </button>
-              ))}
-            </div>
+            <span className="info-chip">{selectedCountry} 히트맵</span>
           </div>
           <div className="mt-4">
             <StockHeatmap data={heatmapData} loading={heatmapLoading} />
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-4 text-[10px] text-text-secondary">
-            <span>크기 = 시가총액</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-[#b91c1c]" /> -3% 이상</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-[#ef4444]" /> -1~-2%</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-[#86efac]" /> 0~+0.5%</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-[#22c55e]" /> +1~+2%</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-[#15803d]" /> +3% 이상</span>
-          </div>
         </div>
 
-        {movers ? (
-          <div className="card !p-5">
-            <div>
-              <h2 className="section-title">한국 시장 모멘텀</h2>
-              <p className="section-copy">상승 상위와 하락 상위를 한 카드에 묶어 시장 강도 변화를 더 빠르게 읽습니다.</p>
-            </div>
+        <div className="card !p-5">
+          <div>
+            <h2 className="section-title">상승·하락 상위</h2>
+            <p className="section-copy">선택 시장에서 강도가 강한 종목과 약한 종목을 같이 봅니다.</p>
+          </div>
+          {moversLoading ? (
+            <div className="mt-5 h-64 rounded-[22px] bg-border/20 animate-pulse" />
+          ) : movers ? (
             <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <h3 className="text-sm font-semibold text-positive">상승 상위</h3>
                 <div className="mt-3 space-y-2">
-                  {movers.gainers.map((stock) => (
-                    <Link key={stock.ticker} href={`/stock/${stock.ticker}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
+                  {movers.gainers.slice(0, 5).map((stock) => (
+                    <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
                       <div className="min-w-0">
                         <div className="font-medium text-text">{stock.ticker}</div>
                         <div className="mt-1 truncate text-xs text-text-secondary">{stock.name}</div>
@@ -348,8 +302,8 @@ export default function HomePage() {
               <div>
                 <h3 className="text-sm font-semibold text-negative">하락 상위</h3>
                 <div className="mt-3 space-y-2">
-                  {movers.losers.map((stock) => (
-                    <Link key={stock.ticker} href={`/stock/${stock.ticker}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
+                  {movers.losers.slice(0, 5).map((stock) => (
+                    <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
                       <div className="min-w-0">
                         <div className="font-medium text-text">{stock.ticker}</div>
                         <div className="mt-1 truncate text-xs text-text-secondary">{stock.name}</div>
@@ -360,9 +314,73 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+        <div className="card !p-0 overflow-hidden">
+          <div className="border-b border-border px-5 py-4">
+            <h2 className="section-title">강한 셋업</h2>
+            <p className="section-copy">선택 시장에서 점수와 실행력이 높은 후보를 먼저 봅니다.</p>
+          </div>
+          <div className="px-5 py-5">
+            {radarLoading ? (
+              <div className="h-80 rounded-[22px] bg-border/20 animate-pulse" />
+            ) : radarData ? (
+              <OpportunityRadarBoard data={radarData} compact embedded />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <div className="card !p-5">
+            <div className="section-heading gap-3">
+              <div>
+                <h2 className="section-title">주요 뉴스</h2>
+                <p className="section-copy">선택 시장 리포트에서 뽑은 핵심 기사입니다.</p>
+              </div>
+              {reportLoading ? <span className="info-chip">불러오는 중</span> : null}
+            </div>
+            <div className="mt-4 space-y-3">
+              {topNews.map((item) => (
+                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                  <div className="font-medium text-text">{item.title}</div>
+                  <div className="mt-2 text-xs text-text-secondary">{item.source} · {item.published}</div>
+                </a>
+              ))}
+              {!reportLoading && topNews.length === 0 ? <div className="text-sm text-text-secondary">표시할 뉴스가 아직 없습니다.</div> : null}
+            </div>
+          </div>
+
+          <div className="card !p-5">
+            <div>
+              <h2 className="section-title">상위 종목</h2>
+              <p className="section-copy">선택 국가 리포트에서 상단에 위치한 종목입니다.</p>
+            </div>
+            <div className="mt-4 space-y-2">
+              {topStocks.map((stock) => (
+                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text">{stock.name}</div>
+                      <div className="mt-1 text-xs text-text-secondary">{stock.ticker}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-text">점수 {stock.score.toFixed(1)}</div>
+                      <div className={`mt-1 text-[11px] ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-text-secondary">{stock.reason}</div>
+                </Link>
+              ))}
+              {!reportLoading && topStocks.length === 0 ? <div className="text-sm text-text-secondary">상위 종목 데이터가 아직 없습니다.</div> : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {loading ? <div className="card h-24 animate-pulse" /> : null}
     </div>
   );
 }

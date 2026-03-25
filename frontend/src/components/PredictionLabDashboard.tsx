@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { PredictionLabResponse } from "@/lib/api";
 import { changeColor } from "@/lib/utils";
@@ -95,7 +95,7 @@ export default function PredictionLabDashboard({ data }: Props) {
                 <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
                 <YAxis tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
                 <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)}%`} />
-                <Bar dataKey="direction_accuracy" name="방향 적중률" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="direction_accuracy" name="방향 적중률" fill="#7C6AE6" radius={[6, 6, 0, 0]} />
                 <Bar dataKey="avg_confidence" name="평균 신뢰도" fill="#f59e0b" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -123,7 +123,7 @@ export default function PredictionLabDashboard({ data }: Props) {
                       : `${Number(value).toFixed(2)}%`
                   }
                 />
-                <Line yAxisId="left" type="monotone" dataKey="direction_accuracy_pct" name="방향 적중률" stroke="#2563eb" strokeWidth={2} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="direction_accuracy_pct" name="방향 적중률" stroke="#7C6AE6" strokeWidth={2} dot={false} />
                 <Line yAxisId="right" type="monotone" dataKey="avg_error_pct" name="평균 오차" stroke="#ef4444" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -259,4 +259,5 @@ export default function PredictionLabDashboard({ data }: Props) {
     </div>
   );
 }
+
 

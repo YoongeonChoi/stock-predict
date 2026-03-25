@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_6009
+from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_5017, SP_6009, SP_6013
 from app.services import ideal_portfolio_service, portfolio_service, portfolio_event_service, portfolio_recommendation_service
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
@@ -15,6 +15,12 @@ class HoldingCreate(BaseModel):
     country_code: str = "US"
 
 
+class PortfolioProfileUpdate(BaseModel):
+    total_assets: float = 0
+    cash_balance: float = 0
+    monthly_budget: float = 0
+
+
 @router.get("/portfolio")
 async def get_portfolio():
     try:
@@ -22,6 +28,34 @@ async def get_portfolio():
         return data
     except Exception as e:
         err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/profile")
+async def get_portfolio_profile():
+    try:
+        return await portfolio_service.get_portfolio_profile()
+    except Exception as e:
+        err = SP_5017(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.put("/portfolio/profile")
+async def update_portfolio_profile(body: PortfolioProfileUpdate):
+    try:
+        return await portfolio_service.update_portfolio_profile(
+            body.total_assets,
+            body.cash_balance,
+            body.monthly_budget,
+        )
+    except ValueError as e:
+        err = SP_6013(str(e)[:200])
+        err.log("warning")
+        return JSONResponse(status_code=400, content=err.to_dict())
+    except Exception as e:
+        err = SP_5017(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
@@ -91,6 +125,28 @@ async def add_holding(body: HoldingCreate):
     try:
         saved = await portfolio_service.add_holding(
             body.ticker, body.buy_price, body.quantity, body.buy_date, body.country_code
+        )
+        return {"status": "ok", **saved}
+    except ValueError as e:
+        err = SP_6009(str(e)[:200])
+        err.log("warning")
+        return JSONResponse(status_code=400, content=err.to_dict())
+    except Exception as e:
+        err = SP_5008(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.put("/portfolio/holdings/{holding_id}")
+async def update_holding(holding_id: int, body: HoldingCreate):
+    try:
+        saved = await portfolio_service.update_holding(
+            holding_id,
+            body.ticker,
+            body.buy_price,
+            body.quantity,
+            body.buy_date,
+            body.country_code,
         )
         return {"status": "ok", **saved}
     except ValueError as e:

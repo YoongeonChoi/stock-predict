@@ -116,6 +116,7 @@ SP_5013 = lambda d="": AppError("SP-5013", "Portfolio event radar failed", d)
 SP_5014 = lambda d="": AppError("SP-5014", "Forecast drift query failed", d)
 SP_5015 = lambda d="": AppError("SP-5015", "Conditional portfolio recommendation failed", d)
 SP_5016 = lambda d="": AppError("SP-5016", "Optimal portfolio recommendation failed", d)
+SP_5017 = lambda d="": AppError("SP-5017", "Portfolio profile update failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -158,6 +159,11 @@ SP_6012 = lambda method="": AppError(
     "SP-6012",
     "HTTP method not allowed",
     method or "Check the supported HTTP method for this API.",
+)
+SP_6013 = lambda d="": AppError(
+    "SP-6013",
+    "Invalid portfolio profile input",
+    d or "Provide non-negative total assets, cash balance, and monthly budget values.",
 )
 
 # ---------------------------------------------------------------------------
