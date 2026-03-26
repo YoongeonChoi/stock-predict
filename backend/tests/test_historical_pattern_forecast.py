@@ -37,7 +37,7 @@ class HistoricalPatternForecastTests(unittest.TestCase):
         forecast, backtest = build_historical_pattern_forecast(
             ticker="TEST",
             name="Test Corp",
-            country_code="US",
+            country_code="KR",
             price_history=stock_history,
             market_history=market_history,
         )
@@ -56,7 +56,7 @@ class HistoricalPatternForecastTests(unittest.TestCase):
         forecast, backtest = build_historical_pattern_forecast(
             ticker="SHORT",
             name="Short History",
-            country_code="US",
+            country_code="KR",
             price_history=_series(days=120),
             market_history=None,
         )

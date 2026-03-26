@@ -10,7 +10,7 @@ import type { DailyBriefingResponse, HeatmapData, MarketMovers } from "@/lib/api
 import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
 
-const COUNTRY_FLAGS: Record<string, string> = { US: "🇺🇸", KR: "🇰🇷", JP: "🇯🇵" };
+const COUNTRY_FLAGS: Record<string, string> = { KR: "🇰🇷" };
 
 interface MarketIndicator {
   name: string;
@@ -32,8 +32,8 @@ function impactTone(impact?: string) {
 
 function indicatorLabel(indicator: MarketIndicator) {
   const value = (indicator.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (indicator.name === "USD/KRW") return `₩${value}`;
   if (["Gold", "Oil (WTI)", "Bitcoin"].includes(indicator.name)) return `$${value}`;
-  if (indicator.name === "US 10Y") return `${value}%`;
   return value;
 }
 
@@ -153,10 +153,7 @@ export default function HomePage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {countries
-            .slice()
-            .sort((a, b) => (a.code === "KR" ? -1 : b.code === "KR" ? 1 : a.code.localeCompare(b.code)))
-            .map((country) => (
+          {countries.map((country) => (
               <button
                 key={country.code}
                 onClick={() => loadCountryWorkspace(country.code)}

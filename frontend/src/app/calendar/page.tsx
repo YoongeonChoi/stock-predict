@@ -7,9 +7,7 @@ import { api } from "@/lib/api";
 import type { CalendarEvent, CalendarResponse } from "@/lib/api";
 
 const COUNTRIES = [
-  { code: "US", label: "미국", flag: "🇺🇸" },
   { code: "KR", label: "한국", flag: "🇰🇷" },
-  { code: "JP", label: "일본", flag: "🇯🇵" },
 ];
 
 const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -173,7 +171,7 @@ export default function CalendarPage() {
       <PageHeader
         eyebrow="Market Schedule Workspace"
         title="시장 일정 캘린더"
-        description="월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
+        description="한국장의 월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
         meta={
           <>
             <span className="info-chip">{activeCountry.flag} {activeCountry.label} 기준</span>

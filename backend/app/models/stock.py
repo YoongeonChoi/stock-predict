@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from app.models.score import StockScore
-from app.models.forecast import HistoricalPatternForecast, NextDayForecast, SetupBacktest
+from app.models.forecast import FreeKrForecast, HistoricalPatternForecast, NextDayForecast, SetupBacktest
 from app.models.market import MarketRegime, TradePlan
 
 
@@ -120,6 +120,7 @@ class StockDetail(BaseModel):
     score: StockScore
     buy_sell_guide: BuySellGuide
     next_day_forecast: NextDayForecast | None = None
+    free_kr_forecast: FreeKrForecast | None = None
     historical_pattern_forecast: HistoricalPatternForecast | None = None
     setup_backtest: SetupBacktest | None = None
     market_regime: MarketRegime | None = None

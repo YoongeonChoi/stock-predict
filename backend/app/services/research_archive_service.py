@@ -20,7 +20,7 @@ from app.database import db
 log = logging.getLogger("stock_predict.research_archive")
 
 SYNC_STATUS_CACHE_KEY = "research_archive:sync_status"
-SUPPORTED_REGIONS = {"US", "KR", "JP", "GLOBAL"}
+SUPPORTED_REGIONS = {"KR"}
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -55,16 +55,6 @@ class ResearchSource:
 
 SOURCES: tuple[ResearchSource, ...] = (
     ResearchSource(
-        id="fed_feds",
-        name="Federal Reserve FEDS",
-        region_code="US",
-        organization_type="중앙은행 연구",
-        language="en",
-        category="미국 경제·금융 연구",
-        home_url="https://www.federalreserve.gov/econres/feds/",
-        feed_url="https://www.federalreserve.gov/feeds/feds.xml",
-    ),
-    ResearchSource(
         id="kdi_publications",
         name="KDI 한국개발연구원",
         region_code="KR",
@@ -96,42 +86,24 @@ SOURCES: tuple[ResearchSource, ...] = (
         home_url="https://www.bok.or.kr/imer/bbs/P0002455/list.do?menuNo=500788",
         feed_url="https://www.bok.or.kr/imer/bbs/P0002455/news.rss?menuNo=500788",
     ),
-    ResearchSource(
-        id="boj_whats_new",
-        name="Bank of Japan",
-        region_code="JP",
-        organization_type="중앙은행",
-        language="en",
-        category="일본 통화정책·연구",
-        home_url="https://www.boj.or.jp/en/",
-        feed_url="https://www.boj.or.jp/en/rss/whatsnew.xml",
-        title_keywords=(
-            "statement on monetary policy",
-            "research",
-            "report",
-            "review",
-            "outlook",
-            "policy",
-            "prices",
-            "exports",
-            "imports",
-            "inflation",
-            "financial system",
-            "bond market survey",
-        ),
-    ),
-    ResearchSource(
-        id="bis_research_hub",
-        name="BIS Research Hub",
-        region_code="GLOBAL",
-        organization_type="국제기구·중앙은행 네트워크",
-        language="en",
-        category="글로벌 중앙은행 연구",
-        home_url="https://www.bis.org/doclist/reshub_papers.rss",
-        feed_url="https://www.bis.org/doclist/reshub_papers.rss",
-        entry_limit=10,
-    ),
 )
+
+
+def _filter_status_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    allowed_sources = {source.id for source in SOURCES}
+    filtered = dict(snapshot)
+    filtered["by_region"] = [
+        item for item in snapshot.get("by_region", []) if item.get("region_code") in SUPPORTED_REGIONS
+    ]
+    filtered["by_source"] = [
+        item for item in snapshot.get("by_source", []) if item.get("source_id") in allowed_sources
+    ]
+    if filtered["by_region"]:
+        filtered["total_reports"] = int(sum(int(item.get("total") or 0) for item in filtered["by_region"]))
+    else:
+        filtered["total_reports"] = int(snapshot.get("total_reports") or 0)
+    filtered["source_count"] = len(filtered["by_source"])
+    return filtered
 
 
 def _strip_html(value: str | None) -> str:
@@ -268,7 +240,7 @@ async def _fetch_feed_source(source: ResearchSource) -> list[dict[str, Any]]:
                 pdf_url = href
                 break
 
-        if not pdf_url and source.id in {"fed_feds", "bok_monetary_policy", "bok_research_ko"}:
+        if not pdf_url and source.id in {"bok_monetary_policy", "bok_research_ko"}:
             pdf_url = await _discover_pdf_url(report_url, verify_ssl=source.verify_ssl)
 
         reports.append(
@@ -373,7 +345,7 @@ async def sync_public_research_reports(force: bool = False) -> dict[str, Any]:
                 "detail": str(exc)[:240],
             })
 
-    snapshot = await db.research_report_status(today_iso)
+    snapshot = _filter_status_snapshot(await db.research_report_status(today_iso))
     status = {
         "refreshed_on": today_iso,
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
@@ -396,7 +368,7 @@ async def get_public_research_status(refresh_if_missing: bool = False) -> dict[s
         return await sync_public_research_reports(force=False)
 
     today_iso = datetime.now(timezone.utc).date().isoformat()
-    snapshot = await db.research_report_status(today_iso)
+    snapshot = _filter_status_snapshot(await db.research_report_status(today_iso))
     return {
         "refreshed_on": None,
         "refreshed_at": None,
@@ -417,7 +389,8 @@ async def list_public_research_reports(
 ) -> list[dict[str, Any]]:
     if auto_refresh:
         await sync_public_research_reports(force=False)
-    rows = await db.research_report_list(region_code=region_code, source_id=source_id, limit=limit)
+    normalized_region = region_code if region_code in SUPPORTED_REGIONS else "KR"
+    rows = await db.research_report_list(region_code=normalized_region, source_id=source_id, limit=limit)
     today_iso = datetime.now(timezone.utc).date().isoformat()
     for row in rows:
         row["is_new_today"] = str(row.get("published_at", "")).startswith(today_iso)

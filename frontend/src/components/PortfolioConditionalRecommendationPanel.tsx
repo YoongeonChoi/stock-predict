@@ -25,7 +25,7 @@ export default function PortfolioConditionalRecommendationPanel({
   onRun,
 }: Props) {
   const options = data?.options ?? {
-    countries: ["ALL", "KR", "US", "JP"],
+    countries: ["KR"],
     sectors: ["ALL"],
     styles: ["defensive", "balanced", "offensive"] as PortfolioRecommendationStyle[],
   };
@@ -42,7 +42,7 @@ export default function PortfolioConditionalRecommendationPanel({
           >
             {options.countries.map((item) => (
               <option key={item} value={item}>
-                {item === "ALL" ? "전체" : item}
+                {item}
               </option>
             ))}
           </select>
@@ -132,7 +132,7 @@ export default function PortfolioConditionalRecommendationPanel({
   return (
     <PortfolioRecommendationPanel
       title="조건 추천"
-      description="국가, 섹터, 성향, 최소 확률 조건을 정하면 그 범위 안에서 가장 효율적인 신규 비중안을 다시 계산합니다."
+      description="한국 시장 안에서 섹터, 성향, 최소 확률 조건을 정하면 그 범위 안에서 가장 효율적인 신규 비중안을 다시 계산합니다."
       loading={loading}
       budget={data?.budget}
       summary={data?.summary}

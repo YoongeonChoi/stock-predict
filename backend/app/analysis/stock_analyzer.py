@@ -8,6 +8,7 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
+from app.analysis.free_kr_forecast import build_free_kr_forecast
 from app.analysis.historical_pattern_forecast import build_historical_pattern_forecast
 from app.analysis.llm_client import ask_json
 from app.analysis.market_regime import build_market_regime
@@ -15,7 +16,17 @@ from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import stock_analysis_prompt
 from app.analysis.trade_planner import build_trade_plan
 from app.config import get_settings
-from app.data import cache, fmp_client, investor_flow_client, news_client, yfinance_client
+from app.data import (
+    cache,
+    ecos_client,
+    fmp_client,
+    investor_flow_client,
+    kosis_client,
+    naver_news_client,
+    news_client,
+    opendart_client,
+    yfinance_client,
+)
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import (
     AnalystRatings,
@@ -66,16 +77,40 @@ async def analyze_stock(ticker: str) -> dict:
     info = _enrich_info_from_history(info, prices_full)
 
     peer_avg_task = _calc_peer_averages(peers)
-    news_task = news_client.search_news(
+    google_news_task = news_client.search_news(
         f"{info.get('name', ticker)} {ticker} stock", country_code, max_results=12
     )
+    naver_news_task = naver_news_client.search_news(
+        f"{info.get('name', ticker)} {ticker}",
+        max_results=10,
+        sort="date",
+    )
+    filings_task = opendart_client.get_recent_filings(ticker, limit=8)
+    ecos_task = ecos_client.get_kr_economic_snapshot()
+    kosis_task = kosis_client.get_kr_macro_snapshot()
     flow_task = investor_flow_client.get_flow_signal(
         country_code,
         ticker=ticker,
         reference_date=prices_6mo[-1]["date"] if prices_6mo else None,
         price_history=prices_6mo or prices_raw,
     )
-    peer_avg, news, flow_signal = await asyncio.gather(peer_avg_task, news_task, flow_task)
+    (
+        peer_avg,
+        google_news,
+        naver_news,
+        filings,
+        ecos_snapshot,
+        kosis_snapshot,
+        flow_signal,
+    ) = await asyncio.gather(
+        peer_avg_task,
+        google_news_task,
+        naver_news_task,
+        filings_task,
+        ecos_task,
+        kosis_task,
+        flow_task,
+    )
 
     quant_score = score_stock(info, peers_avg=peer_avg, price_hist=prices_raw, analyst_counts=analyst_raw)
     composite = score_composite(
@@ -87,7 +122,7 @@ async def analyze_stock(ticker: str) -> dict:
     )
 
     system, user = stock_analysis_prompt(
-        ticker, info, financials_raw, news, quant_score.model_dump()
+        ticker, info, financials_raw, google_news, quant_score.model_dump()
     )
     llm_result = await ask_json(system, user)
     llm_failed = "error_code" in llm_result or "error" in llm_result
@@ -117,7 +152,7 @@ async def analyze_stock(ticker: str) -> dict:
         name=info.get("name", ticker),
         country_code=country_code,
         price_history=prices_6mo or prices_raw,
-        news_items=news,
+        news_items=google_news,
         analyst_context={
             **analyst_raw,
             "target_mean": info.get("target_mean"),
@@ -128,6 +163,25 @@ async def analyze_stock(ticker: str) -> dict:
         flow_signal=flow_signal,
         context_bias=((composite.total if composite else quant_score.total) - 50) / 50,
         asset_type="stock",
+    )
+    free_kr_forecast = build_free_kr_forecast(
+        ticker=ticker,
+        name=info.get("name", ticker),
+        price_history=prices_full or prices_6mo or prices_raw,
+        market_history=market_prices_full or market_prices,
+        google_news=google_news,
+        naver_news=naver_news,
+        filings=filings,
+        flow_signal=flow_signal,
+        analyst_context={
+            **analyst_raw,
+            "target_mean": info.get("target_mean"),
+            "target_median": info.get("target_median"),
+            "target_high": info.get("target_high"),
+            "target_low": info.get("target_low"),
+        },
+        ecos_snapshot=ecos_snapshot,
+        kosis_snapshot=kosis_snapshot,
     )
     historical_pattern_forecast = None
     setup_backtest = None
@@ -198,6 +252,7 @@ async def analyze_stock(ticker: str) -> dict:
         score=quant_score,
         buy_sell_guide=buy_sell,
         next_day_forecast=next_day_forecast,
+        free_kr_forecast=free_kr_forecast,
         historical_pattern_forecast=historical_pattern_forecast,
         setup_backtest=setup_backtest,
         market_regime=market_regime,
@@ -362,9 +417,7 @@ def _build_peer_comparisons(info: dict, peer_avg: dict) -> list[PeerComparison]:
 def _detect_country(ticker: str) -> str:
     if ticker.endswith(".KS") or ticker.endswith(".KQ"):
         return "KR"
-    if ticker.endswith(".T"):
-        return "JP"
-    return "US"
+    return "KR"
 
 
 def _window_prices(prices: list[dict], window: int) -> list[dict]:

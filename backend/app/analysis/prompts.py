@@ -26,10 +26,8 @@ def country_report_prompt(
         news_text += f"\n[{inst}]\n{headlines}\n"
 
     ticker_guide = {
-        "US": "US tickers use plain symbols (e.g. AAPL, MSFT, NVDA, TSLA, AMZN)",
-        "KR": "Korean tickers MUST use Yahoo Finance format: 6-digit number + .KS (e.g. 005930.KS for Samsung, 000660.KS for SK Hynix, 051910.KS for LG Chem, 035420.KS for NAVER)",
-        "JP": "Japanese tickers MUST use Yahoo Finance format: 4-digit number + .T (e.g. 7203.T for Toyota, 6758.T for Sony, 9984.T for SoftBank)",
-    }.get(country_code, "Use Yahoo Finance ticker symbols")
+        "KR": "Korean tickers MUST use Yahoo Finance format: 6-digit number + .KS or .KQ (e.g. 005930.KS, 000660.KS, 035420.KS, 068270.KS, 196170.KQ)",
+    }.get(country_code, "Use Korean Yahoo Finance ticker symbols")
 
     system = (
         "You are a senior equity strategist analyzing a country's stock market.\n"

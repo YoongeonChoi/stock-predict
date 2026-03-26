@@ -25,13 +25,13 @@ def _sample_prices(days: int = 40) -> list[dict]:
 
 class NextDayForecastTests(unittest.TestCase):
     def test_next_trading_day_skips_weekend(self):
-        self.assertEqual(next_trading_day("US", "2026-03-21").isoformat(), "2026-03-23")
+        self.assertEqual(next_trading_day("KR", "2026-03-21").isoformat(), "2026-03-23")
 
     def test_forecast_outputs_expected_structure(self):
         forecast = forecast_next_day(
             ticker="TEST",
             name="Synthetic Corp",
-            country_code="US",
+            country_code="KR",
             price_history=_sample_prices(),
             news_items=[
                 {"title": "Synthetic Corp beats estimates and raises growth outlook"},
@@ -61,7 +61,7 @@ class NextDayForecastTests(unittest.TestCase):
         forecast = forecast_next_day(
             ticker="TEST",
             name="Synthetic Corp",
-            country_code="US",
+            country_code="KR",
             price_history=_sample_prices(10),
             asset_type="stock",
         )
@@ -75,7 +75,7 @@ class NextDayForecastTests(unittest.TestCase):
         bullish = forecast_next_day(
             ticker="TEST",
             name="Synthetic Corp",
-            country_code="US",
+            country_code="KR",
             price_history=_sample_prices(),
             news_items=[
                 {"title": "Synthetic Corp beats estimates and raises growth outlook"},
@@ -85,7 +85,7 @@ class NextDayForecastTests(unittest.TestCase):
             flow_signal=FlowSignal(
                 available=True,
                 source="test",
-                market="US",
+                market="KR",
                 unit="shares",
                 foreign_net_buy=120_000,
                 institutional_net_buy=80_000,
@@ -98,7 +98,7 @@ class NextDayForecastTests(unittest.TestCase):
         bearish = forecast_next_day(
             ticker="TEST",
             name="Synthetic Corp",
-            country_code="US",
+            country_code="KR",
             price_history=_sample_prices(),
             news_items=[
                 {"title": "Synthetic Corp misses estimates and issues warning"},
@@ -108,7 +108,7 @@ class NextDayForecastTests(unittest.TestCase):
             flow_signal=FlowSignal(
                 available=True,
                 source="test",
-                market="US",
+                market="KR",
                 unit="shares",
                 foreign_net_buy=-130_000,
                 institutional_net_buy=-90_000,

@@ -70,7 +70,7 @@ def _opportunity(
 
 
 class IdealPortfolioServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_build_snapshot_selects_cross_market_positions(self):
+    async def test_build_snapshot_selects_kr_positions(self):
         kr = _radar_response(
             "KR",
             "risk_on",
@@ -87,52 +87,10 @@ class IdealPortfolioServiceTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        us = _radar_response(
-            "US",
-            "neutral",
-            [
-                _opportunity(
-                    ticker="NVDA",
-                    country_code="US",
-                    sector="Information Technology",
-                    score=79.0,
-                    up_probability=61.0,
-                    predicted_return_pct=2.1,
-                    execution_bias="lean_long",
-                    action="accumulate",
-                ),
-                _opportunity(
-                    ticker="JPM",
-                    country_code="US",
-                    sector="Financials",
-                    score=73.0,
-                    up_probability=57.0,
-                    predicted_return_pct=1.4,
-                    execution_bias="lean_long",
-                    action="breakout_watch",
-                ),
-            ],
-        )
-        jp = _radar_response(
-            "JP",
-            "risk_off",
-            [
-                _opportunity(
-                    ticker="7203.T",
-                    country_code="JP",
-                    sector="Consumer Discretionary",
-                    score=66.0,
-                    up_probability=53.0,
-                    predicted_return_pct=0.8,
-                    execution_bias="stay_selective",
-                    action="wait_pullback",
-                )
-            ],
-        )
 
         with patch(
             "app.services.ideal_portfolio_service.market_service.get_market_opportunities",
-            new=AsyncMock(side_effect=[kr, us, jp]),
+            new=AsyncMock(return_value=kr),
         ), patch(
             "app.services.ideal_portfolio_service.next_trading_day",
             side_effect=lambda country_code, reference_date: datetime.fromisoformat("2026-03-24").date(),
@@ -153,7 +111,7 @@ class IdealPortfolioServiceTests(unittest.IsolatedAsyncioTestCase):
                 "portfolio": {
                     "positions": [
                         {
-                            "ticker": "NVDA",
+                            "ticker": "000660.KS",
                             "target_date": "2026-03-24",
                             "reference_price": 100.0,
                             "target_weight_pct": 20.0,

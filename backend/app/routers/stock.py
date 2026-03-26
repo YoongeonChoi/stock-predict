@@ -12,8 +12,13 @@ from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014
 router = APIRouter(prefix="/api", tags=["stock"])
 
 
+def _resolve_kr_ticker(ticker: str) -> str:
+    return ticker_resolver_service.resolve_ticker(ticker, "KR")["ticker"] or ticker.upper()
+
+
 @router.get("/stock/{ticker}/detail")
 async def get_stock_detail(ticker: str):
+    ticker = _resolve_kr_ticker(ticker)
     try:
         detail = await analyze_stock(ticker)
     except Exception as e:
@@ -32,6 +37,7 @@ async def get_stock_detail(ticker: str):
 
 @router.get("/stock/{ticker}/chart")
 async def get_stock_chart(ticker: str, period: str = "3mo"):
+    ticker = _resolve_kr_ticker(ticker)
     allowed = {"1mo", "3mo", "6mo", "1y", "2y"}
     if period not in allowed:
         err = SP_6003()
@@ -61,6 +67,7 @@ def _determine_signal(buy: int, neutral: int, sell: int) -> str:
 
 @router.get("/stock/{ticker}/technical-summary")
 async def get_technical_summary(ticker: str):
+    ticker = _resolve_kr_ticker(ticker)
     cache_key = f"tech_summary:{ticker}"
     cached = await cache.get(cache_key)
     if cached is not None:
@@ -179,6 +186,7 @@ async def get_technical_summary(ticker: str):
 
 @router.get("/stock/{ticker}/pivot-points")
 async def get_pivot_points(ticker: str):
+    ticker = _resolve_kr_ticker(ticker)
     cache_key = f"pivot_points:{ticker}"
     cached = await cache.get(cache_key)
     if cached is not None:
@@ -237,7 +245,7 @@ async def get_pivot_points(ticker: str):
 
 @router.get("/search")
 async def search_stocks(q: str = Query(..., min_length=1)):
-    results = await ticker_resolver_service.search_candidates(q, limit=15)
+    results = await ticker_resolver_service.search_candidates(q, country_code="KR", limit=15)
     for item in results[:10]:
         try:
             info = await yfinance_client.get_stock_info(item["ticker"])
@@ -249,7 +257,7 @@ async def search_stocks(q: str = Query(..., min_length=1)):
 
 
 @router.get("/ticker/resolve")
-async def resolve_ticker(query: str = Query(..., min_length=1), country_code: str = "US"):
+async def resolve_ticker(query: str = Query(..., min_length=1), country_code: str = "KR"):
     try:
         resolution = ticker_resolver_service.resolve_ticker(query, country_code)
         if resolution.get("ticker"):
@@ -268,7 +276,7 @@ async def resolve_ticker(query: str = Query(..., min_length=1), country_code: st
 @router.get("/stock/{ticker}/forecast-delta")
 async def get_stock_forecast_delta(ticker: str, limit: int = 8):
     try:
-        resolution = ticker_resolver_service.resolve_ticker(ticker)
+        resolution = ticker_resolver_service.resolve_ticker(ticker, "KR")
         return await forecast_monitor_service.get_stock_forecast_delta(resolution["ticker"], limit=limit)
     except Exception as exc:
         err = SP_5014(str(exc)[:200])

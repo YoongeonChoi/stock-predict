@@ -79,24 +79,6 @@ class StockSummaryRef(BaseModel):
 
 
 def _init_registry():
-    COUNTRY_REGISTRY["US"] = CountryInfo(
-        code="US",
-        name="United States",
-        name_local="미국",
-        currency="USD",
-        indices=[
-            IndexInfo(ticker="^GSPC", name="S&P 500"),
-            IndexInfo(ticker="^DJI", name="Dow Jones"),
-            IndexInfo(ticker="^IXIC", name="NASDAQ"),
-        ],
-        research_institutions=[
-            "Federal Reserve",
-            "Goldman Sachs Research",
-            "J.P. Morgan Global Research",
-            "Morgan Stanley Research",
-            "BofA Global Research",
-        ],
-    )
     COUNTRY_REGISTRY["KR"] = CountryInfo(
         code="KR",
         name="South Korea",
@@ -113,24 +95,6 @@ def _init_registry():
             "미래에셋증권 리서치센터",
             "자본시장연구원(KCMI)",
             "KDI",
-        ],
-    )
-    COUNTRY_REGISTRY["JP"] = CountryInfo(
-        code="JP",
-        name="Japan",
-        name_local="일본",
-        currency="JPY",
-        indices=[
-            IndexInfo(ticker="^N225", name="Nikkei 225"),
-            IndexInfo(ticker="1306.T", name="TOPIX ETF"),
-        ],
-        research_institutions=[
-            "Bank of Japan",
-            "野村證券 / Nomura Reports",
-            "Daiwa Institute of Research",
-            "Mizuho Research & Technologies",
-            "ニッセイ基礎研究所 / NLI Research Institute",
-            "Japan Research Institute",
         ],
     )
 

@@ -11,6 +11,8 @@ async def get_watchlist() -> list[dict]:
     enriched = []
     for item in items:
         resolution = ticker_resolver_service.resolve_ticker(item["ticker"], item.get("country_code"))
+        if resolution["country_code"] != "KR":
+            continue
         ticker = resolution["ticker"] or item["ticker"]
         if ticker != item["ticker"] or resolution["country_code"] != item.get("country_code"):
             try:
@@ -49,11 +51,11 @@ async def get_watchlist() -> list[dict]:
 
 
 async def add_to_watchlist(ticker: str, country_code: str):
-    resolution = ticker_resolver_service.resolve_ticker(ticker, country_code)
+    resolution = ticker_resolver_service.resolve_ticker(ticker, "KR")
     await db.watchlist_add(resolution["ticker"], resolution["country_code"])
     return resolution
 
 
 async def remove_from_watchlist(ticker: str):
-    resolution = ticker_resolver_service.resolve_ticker(ticker)
+    resolution = ticker_resolver_service.resolve_ticker(ticker, "KR")
     await db.watchlist_remove(resolution["ticker"] or ticker.upper())

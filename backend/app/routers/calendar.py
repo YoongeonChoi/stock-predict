@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["calendar"])
 @router.get("/calendar/{code}")
 async def get_calendar(code: str, year: int | None = None, month: int | None = None):
     code = code.upper()
-    if code not in ("US", "KR", "JP"):
+    if code != "KR":
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())

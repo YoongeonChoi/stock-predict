@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: stock-predict-api
+    runtime: python
+    rootDir: backend
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    disk:
+      name: stock-predict-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /var/data/stock_predict.db
+      - key: FRONTEND_URL
+        sync: false
+      - key: FRONTEND_URLS
+        sync: false
+      - key: FRONTEND_ORIGIN_REGEX
+        sync: false
+      - key: STARTUP_PREDICTION_ACCURACY_REFRESH
+        value: "true"
+      - key: STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT
+        value: "20"
+      - key: STARTUP_RESEARCH_ARCHIVE_SYNC
+        value: "true"
+      - key: STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT
+        value: "35"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ECOS_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: OPENDART_API_KEY
+        sync: false
+      - key: KOSIS_API_KEY
+        sync: false
+      - key: KOSIS_CPI_STATS_ID
+        sync: false
+      - key: KOSIS_EMPLOYMENT_STATS_ID
+        sync: false
+      - key: KOSIS_INDUSTRIAL_PRODUCTION_STATS_ID
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false

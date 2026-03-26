@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
     name TEXT DEFAULT '',
-    country_code TEXT DEFAULT 'US',
+    country_code TEXT DEFAULT 'KR',
     buy_price REAL NOT NULL,
     quantity REAL NOT NULL,
     buy_date TEXT NOT NULL,

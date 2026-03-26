@@ -36,12 +36,12 @@ class MarketCalendarUtilsTests(unittest.TestCase):
         schedule = pd.DataFrame(
             {
                 "market_open": [
-                    pd.Timestamp("2026-03-23T13:30:00Z"),
-                    pd.Timestamp("2026-03-24T13:30:00Z"),
+                    pd.Timestamp("2026-03-23T00:00:00Z"),
+                    pd.Timestamp("2026-03-24T00:00:00Z"),
                 ],
                 "market_close": [
-                    pd.Timestamp("2026-03-23T20:00:00Z"),
-                    pd.Timestamp("2026-03-24T20:00:00Z"),
+                    pd.Timestamp("2026-03-23T06:30:00Z"),
+                    pd.Timestamp("2026-03-24T06:30:00Z"),
                 ],
             },
             index=pd.to_datetime(["2026-03-23", "2026-03-24"]),
@@ -50,8 +50,8 @@ class MarketCalendarUtilsTests(unittest.TestCase):
         with patch("app.utils.market_calendar._get_calendar") as mocked:
             mocked.return_value.schedule.return_value = schedule
             token = market_calendar.market_session_cache_token(
-                country_code="US",
-                reference_time=datetime(2026, 3, 24, 15, 0, tzinfo=timezone.utc),
+                country_code="KR",
+                reference_time=datetime(2026, 3, 24, 2, 0, tzinfo=timezone.utc),
             )
 
         self.assertEqual(token, "2026-03-23:open")

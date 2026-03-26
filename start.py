@@ -121,7 +121,7 @@ def wait_for_http(url: str, timeout_seconds: int, pid: int | None, label: str, l
 
 def stop_pid(pid: int | None) -> bool:
     if not is_process_running(pid):
-        return False
+        return True
 
     if IS_WINDOWS:
         subprocess.run(
@@ -130,10 +130,15 @@ def stop_pid(pid: int | None) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        return True
+    else:
+        os.kill(pid, signal.SIGTERM)
 
-    os.kill(pid, signal.SIGTERM)
-    return True
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if not is_process_running(pid):
+            return True
+        time.sleep(0.25)
+    return not is_process_running(pid)
 
 
 def check_backend_imports(python_path: str) -> bool:
@@ -262,31 +267,48 @@ def print_status() -> int:
 def stop_services() -> int:
     paths = runtime_paths()
     stopped_any = False
+    failed_labels: list[str] = []
 
     for label, pid_key in (("frontend", "frontend_pid"), ("backend", "backend_pid")):
         pid = read_pid(paths[pid_key])
-        if stop_pid(pid):
+        was_running = is_process_running(pid)
+        stopped = stop_pid(pid)
+        if was_running and stopped:
             print(f"[stop] {label} 종료 요청 완료 (pid={pid})")
             stopped_any = True
+        elif was_running and not stopped:
+            print(f"[fail] {label} 종료에 실패했습니다. pid={pid}")
+            failed_labels.append(label)
         remove_file(paths[pid_key])
 
     if not stopped_any:
         print("[stop] 종료할 개발 서버가 없습니다.")
+    elif failed_labels:
+        print(f"[fail] 종료되지 않은 개발 서버가 있습니다: {', '.join(failed_labels)}")
+        return 1
     else:
         print("[done] 개발 서버를 종료했습니다.")
     return 0
 
 
-def ensure_not_running() -> bool:
+def prepare_services_for_launch() -> bool:
     status = read_status()
     backend_running = status["backend"]["running"]
     frontend_running = status["frontend"]["running"]
+    stale_backend_pid = status["backend"]["pid"] and not backend_running
+    stale_frontend_pid = status["frontend"]["pid"] and not frontend_running
 
     if backend_running or frontend_running:
-        print("[info] 이미 실행 중인 개발 서버가 있습니다.")
+        print("[info] 이미 실행 중인 개발 서버를 자동으로 종료한 뒤 다시 시작합니다.")
         print_status()
-        print(f"[hint] 새로 띄우기 전에 먼저 종료하세요: {canonical_python_command('start.py', '--stop')}")
-        return False
+        if stop_services() != 0:
+            print(f"[hint] 필요하면 수동 종료를 시도하세요: {canonical_python_command('start.py', '--stop')}")
+            return False
+        return True
+
+    if stale_backend_pid or stale_frontend_pid:
+        print("[info] 이전 실행의 PID 흔적을 정리한 뒤 다시 시작합니다.")
+        stop_services()
     return True
 
 
@@ -302,7 +324,7 @@ def launch_services() -> int:
         print("[fail] 프론트 실행 명령을 만들지 못했습니다. Node.js와 npm 설치를 확인하세요.")
         return 1
 
-    if not ensure_not_running():
+    if not prepare_services_for_launch():
         return 1
 
     backend_dir = ROOT / "backend"
@@ -358,6 +380,7 @@ def launch_services() -> int:
         print(f"백엔드 로그: {display_path(paths['backend_log'])}")
         print(f"프론트 로그: {display_path(paths['frontend_log'])}")
         print("현재 프롬프트로 바로 돌아왔다면 정상이며, 같은 터미널에서 다른 명령을 계속 입력해도 됩니다.")
+        print("같은 명령을 다시 실행하면 기존 개발 서버를 자동으로 종료한 뒤 재시작합니다.")
         print("")
         print(f"기준 명령: {canonical_python_command('start.py')}")
         print("같은 명령 뒤에 `--status`, `--stop`, `--check` 옵션만 붙여 재사용하면 됩니다.")

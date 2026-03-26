@@ -30,7 +30,7 @@ async def _upcoming_events() -> list[dict]:
         next_month = today + timedelta(days=31)
         months.add((next_month.year, next_month.month))
 
-    for country_code in ("KR", "US", "JP"):
+    for country_code in ("KR",):
         for year, month in sorted(months):
             calendar = await calendar_service.get_calendar(country_code, year, month)
             for event in calendar.get("events", []):
@@ -75,14 +75,6 @@ def _build_priority_lines(sessions: list[dict], radar_map: dict[str, dict], arch
             f"한국 레이더 최상단은 {top['ticker']} ({top['name']})로, 상방 확률 {top['up_probability']:.1f}%와 액션 `{top['action']}` 신호가 함께 나왔습니다."
         )
 
-    us = radar_map.get("US")
-    jp = radar_map.get("JP")
-    if us and jp:
-        us_actionable = us.get("actionable_count", 0)
-        jp_actionable = jp.get("actionable_count", 0)
-        favored = "미국" if us_actionable >= jp_actionable else "일본"
-        lines.append(f"해외 시장 중 오늘 셋업이 더 많은 쪽은 {favored}입니다. 리스크 분산이 필요하면 그쪽 후보를 먼저 확인해 보세요.")
-
     open_markets = [item["name_local"] for item in sessions if item.get("is_open")]
     if open_markets:
         lines.append(f"현재 정규장이 진행 중인 시장은 {', '.join(open_markets)}이며, 예측 엔진은 마지막 완결 종가를 기준으로 유지됩니다.")
@@ -104,7 +96,7 @@ async def get_daily_briefing() -> dict:
         return cached
 
     sessions_task = market_session_service.get_market_sessions()
-    radar_tasks = [market_service.get_market_opportunities(code, 4) for code in ("KR", "US", "JP")]
+    radar_tasks = [market_service.get_market_opportunities(code, 4) for code in ("KR",)]
     archive_task = db.research_report_status(today)
     events_task = _upcoming_events()
 
@@ -118,7 +110,7 @@ async def get_daily_briefing() -> dict:
     radar_map = {item["country_code"]: item for item in radar_results}
     country_views = []
     focus_cards = []
-    for country_code in ("KR", "US", "JP"):
+    for country_code in ("KR",):
         radar = radar_map.get(country_code) or {}
         regime = radar.get("market_regime") or {}
         opportunities = radar.get("opportunities") or []

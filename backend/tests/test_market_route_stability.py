@@ -50,7 +50,7 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
             patch("app.routers.screener.yfinance_client.get_price_history", new=AsyncMock(return_value=[])),
         ):
             result = await screen_stocks(
-                country="US",
+                country="KR",
                 sector=None,
                 market_cap_min=None,
                 market_cap_max=None,

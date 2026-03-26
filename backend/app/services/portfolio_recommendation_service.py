@@ -12,7 +12,7 @@ from app.database import db
 from app.services import market_service, portfolio_service
 from app.utils.async_tools import gather_limited
 
-COUNTRY_FILTERS = ["ALL", "KR", "US", "JP"]
+COUNTRY_FILTERS = ["KR"]
 STYLE_FILTERS = ["defensive", "balanced", "offensive"]
 
 STYLE_PRESETS = {
@@ -48,8 +48,8 @@ def _clip(value: float, low: float, high: float) -> float:
 
 
 def _normalize_country_filter(country_code: str | None) -> str:
-    normalized = str(country_code or "ALL").strip().upper() or "ALL"
-    return normalized if normalized in COUNTRY_FILTERS else "ALL"
+    normalized = str(country_code or "KR").strip().upper() or "KR"
+    return normalized if normalized in COUNTRY_FILTERS else "KR"
 
 
 def _normalize_sector_filter(sector: str | None) -> str:
@@ -134,7 +134,7 @@ def _portfolio_state_signature(portfolio_rows: list[dict], watchlist_rows: list[
     holdings_payload = sorted(
         (
             str(row.get("ticker") or ""),
-            str(row.get("country_code") or "US"),
+            str(row.get("country_code") or "KR"),
             round(float(row.get("buy_price") or 0.0), 4),
             round(float(row.get("quantity") or 0.0), 4),
             str(row.get("buy_date") or ""),
@@ -145,7 +145,7 @@ def _portfolio_state_signature(portfolio_rows: list[dict], watchlist_rows: list[
     watchlist_payload = sorted(
         (
             str(row.get("ticker") or ""),
-            str(row.get("country_code") or "US"),
+            str(row.get("country_code") or "KR"),
         )
         for row in watchlist_rows
         if row.get("ticker")
@@ -216,11 +216,11 @@ def _build_candidate(
     country_locked: bool,
     sector_locked: bool,
 ) -> dict | None:
-    key = f"{opportunity.get('country_code', 'US')}:{opportunity.get('ticker')}"
+    key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     current_holding = holding_lookup.get(key)
     score, notes, source = portfolio_service._radar_model_score(opportunity, watchlist_keys)
     current_weight_pct = round(float((current_holding or {}).get("weight_pct") or 0.0), 2)
-    current_country_exposure = float(country_exposure.get(opportunity.get("country_code", "US"), 0.0))
+    current_country_exposure = float(country_exposure.get(opportunity.get("country_code", "KR"), 0.0))
     current_sector_exposure = float(sector_exposure.get(opportunity.get("sector", "Other"), 0.0))
 
     score += max(18.0 - current_country_exposure, 0.0) * 0.18
@@ -246,7 +246,7 @@ def _build_candidate(
         "key": key,
         "ticker": opportunity.get("ticker"),
         "name": opportunity.get("name"),
-        "country_code": opportunity.get("country_code", "US"),
+        "country_code": opportunity.get("country_code", "KR"),
         "sector": opportunity.get("sector", "Other"),
         "source": source,
         "in_watchlist": source == "watchlist",
@@ -358,7 +358,7 @@ def _build_summary(recommendations: list[dict], candidate_count: int) -> dict:
 
 async def get_conditional_recommendations(
     *,
-    country_code: str = "ALL",
+    country_code: str = "KR",
     sector: str = "ALL",
     style: str = "balanced",
     max_items: int = 5,
@@ -384,18 +384,18 @@ async def get_conditional_recommendations(
     if cached:
         return cached
 
-    scan_countries = [normalized_country] if normalized_country != "ALL" else ["KR", "US", "JP"]
+    scan_countries = ["KR"]
     _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
         scan_countries,
         watchlist_rows_seed=watchlist_rows_for_state,
     )
     watchlist_keys = {
-        f"{row.get('country_code', 'US')}:{row.get('ticker')}"
+        f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
         for row in watchlist_rows
         if row.get("ticker")
     }
     holding_lookup = {
-        f"{item.get('country_code', 'US')}:{item.get('ticker')}": item
+        f"{item.get('country_code', 'KR')}:{item.get('ticker')}": item
         for item in holdings
         if item.get("ticker")
     }
@@ -404,7 +404,7 @@ async def get_conditional_recommendations(
 
     filtered_candidates: list[dict] = []
     for opportunity in radar_items:
-        if normalized_country != "ALL" and opportunity.get("country_code") != normalized_country:
+        if opportunity.get("country_code") != normalized_country:
             continue
         if normalized_sector != "ALL" and opportunity.get("sector") != normalized_sector:
             continue
@@ -416,7 +416,7 @@ async def get_conditional_recommendations(
             holding_lookup=holding_lookup,
             country_exposure=country_exposure,
             sector_exposure=sector_exposure,
-            country_locked=normalized_country != "ALL",
+            country_locked=True,
             sector_locked=normalized_sector != "ALL",
         )
         if not candidate:
@@ -430,7 +430,7 @@ async def get_conditional_recommendations(
     budget = _budget_for_style(
         style=normalized_style,
         max_items=capped_items,
-        country_locked=normalized_country != "ALL",
+        country_locked=True,
         sector_locked=normalized_sector != "ALL",
     )
     selected = _select_recommendations(
@@ -463,7 +463,7 @@ async def get_conditional_recommendations(
     response = {
         "generated_at": datetime.now().isoformat(),
         "filters": {
-            "country_code": normalized_country,
+            "country_code": "KR",
             "sector": normalized_sector,
             "style": normalized_style,
             "max_items": capped_items,
@@ -498,17 +498,17 @@ async def get_optimal_recommendation() -> dict:
     risk = portfolio.get("risk") or {}
     auto_style = _auto_style_from_risk(risk)
     _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
-        ["KR", "US", "JP"],
+        ["KR"],
         portfolio_snapshot=portfolio,
         watchlist_rows_seed=watchlist_rows,
     )
     watchlist_keys = {
-        f"{row.get('country_code', 'US')}:{row.get('ticker')}"
+        f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
         for row in watchlist_rows
         if row.get("ticker")
     }
     holding_lookup = {
-        f"{item.get('country_code', 'US')}:{item.get('ticker')}": item
+        f"{item.get('country_code', 'KR')}:{item.get('ticker')}": item
         for item in holdings
         if item.get("ticker")
     }

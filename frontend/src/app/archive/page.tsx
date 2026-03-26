@@ -28,9 +28,6 @@ function reportTypeLabel(type: string) {
 
 const REGION_LABELS: Record<string, string> = {
   KR: "한국",
-  US: "미국",
-  JP: "일본",
-  GLOBAL: "글로벌",
 };
 
 export default function ArchivePage() {
@@ -38,7 +35,7 @@ export default function ArchivePage() {
   const [accuracy, setAccuracy] = useState<PredictionAccuracyStats | null>(null);
   const [researchReports, setResearchReports] = useState<ResearchArchiveEntry[]>([]);
   const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(null);
-  const [researchRegion, setResearchRegion] = useState<"KR" | "US" | "JP" | "GLOBAL">("KR");
+  const [researchRegion, setResearchRegion] = useState<"KR">("KR");
   const [loading, setLoading] = useState(true);
   const [researchLoading, setResearchLoading] = useState(true);
   const [refreshingResearch, setRefreshingResearch] = useState(false);
@@ -117,11 +114,11 @@ export default function ArchivePage() {
           <div>
             <h2 className="font-semibold text-lg">기관 리서치 아카이브</h2>
             <p className="text-sm text-text-secondary mt-1">
-              Fed, KDI, 한국은행, BOJ, BIS 공식 리포트를 하루 한 번 동기화합니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
+              KDI와 한국은행 공식 리포트를 하루 한 번 동기화합니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(["KR", "US", "JP", "GLOBAL"] as const).map((region) => (
+            {(["KR"] as const).map((region) => (
               <button
                 key={region}
                 onClick={() => setResearchRegion(region)}

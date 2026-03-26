@@ -165,10 +165,10 @@ export default function ScreenerPage() {
   return (
     <div className="page-shell">
       <section className="card !p-5 space-y-5">
-        <div className="section-heading gap-4">
+            <div className="section-heading gap-4">
           <div>
             <h1 className="section-title text-2xl">스크리너</h1>
-            <p className="section-copy">국가, 밸류, 퀄리티, 모멘텀, 리스크 조건을 함께 써서 실제 투자 후보군을 압축합니다.</p>
+            <p className="section-copy">한국장 기준으로 밸류, 퀄리티, 모멘텀, 리스크 조건을 함께 써서 실제 투자 후보군을 압축합니다.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="info-chip">결과 {results.length}개</span>
@@ -211,8 +211,6 @@ export default function ScreenerPage() {
                 <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">국가</label>
                 <select value={filters.country} onChange={(e) => setFilters((prev) => ({ ...prev, country: e.target.value }))} className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm">
                   <option value="KR">KR</option>
-                  <option value="US">US</option>
-                  <option value="JP">JP</option>
                 </select>
               </div>
               <div>

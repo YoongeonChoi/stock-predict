@@ -95,7 +95,7 @@ export default function CountryPage() {
   const news = report.key_news || [];
   const topStocks = report.top_stocks || [];
   const primaryIndex = report.country.indices?.[0];
-  const priceKey = report.country.code || code || "US";
+  const priceKey = report.country.code || code || "KR";
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">

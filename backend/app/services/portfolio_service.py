@@ -30,11 +30,7 @@ def _normalize_kr_portfolio_ticker(raw_ticker: str) -> str:
     return ticker_resolver_service.resolve_ticker(raw_ticker, "KR")["ticker"]
 
 
-def _normalize_jp_portfolio_ticker(raw_ticker: str) -> str:
-    return ticker_resolver_service.resolve_ticker(raw_ticker, "JP")["ticker"]
-
-
-def normalize_portfolio_ticker(ticker: str, country_code: str = "US") -> str:
+def normalize_portfolio_ticker(ticker: str, country_code: str = "KR") -> str:
     resolution = ticker_resolver_service.resolve_ticker(ticker, country_code)
     return resolution["ticker"]
 
@@ -44,11 +40,11 @@ def validate_portfolio_holding_input(
     buy_price: float,
     quantity: float,
     buy_date: str,
-    country_code: str = "US",
+    country_code: str = "KR",
 ) -> dict[str, str | float]:
     normalized_country = _normalize_country_code(country_code)
     if normalized_country not in COUNTRY_REGISTRY:
-        raise ValueError("지원하지 않는 국가 코드입니다. US, KR, JP 중에서 선택해 주세요.")
+        raise ValueError("지원하지 않는 국가 코드입니다. 한국(KR)만 지원합니다.")
 
     resolution = ticker_resolver_service.resolve_ticker(ticker, normalized_country)
     normalized_ticker = resolution["ticker"]
@@ -462,7 +458,7 @@ def _supplement_scan_countries(country_codes: list[str]) -> list[str]:
         if code in COUNTRY_REGISTRY and code not in ordered:
             ordered.append(code)
 
-    for fallback in ["KR", "US", "JP"]:
+    for fallback in ["KR"]:
         if fallback not in ordered:
             ordered.append(fallback)
         if len(ordered) >= 2:
@@ -549,7 +545,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
 
 
 def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[float, list[str], str]:
-    watchlist_key = f"{opportunity.get('country_code', 'US')}:{opportunity.get('ticker')}"
+    watchlist_key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     is_watchlist = watchlist_key in watchlist_keys
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
@@ -757,13 +753,13 @@ async def _build_model_portfolio(
 
     watchlist_rows = await db.watchlist_list()
     watchlist_keys = {
-        f"{row.get('country_code', 'US')}:{row.get('ticker')}"
+        f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
         for row in watchlist_rows
         if row.get("ticker")
     }
 
-    base_scan_countries = [item.get("country_code", "US") for item in holdings]
-    base_scan_countries.extend(row.get("country_code", "US") for row in watchlist_rows)
+    base_scan_countries = [item.get("country_code", "KR") for item in holdings]
+    base_scan_countries.extend(row.get("country_code", "KR") for row in watchlist_rows)
     scan_countries = _supplement_scan_countries(base_scan_countries)
     radar_responses = await gather_limited(
         scan_countries,
@@ -777,7 +773,7 @@ async def _build_model_portfolio(
         for opportunity in response.get("opportunities", [])
     ]
     radar_lookup = {
-        f"{item.get('country_code', 'US')}:{item.get('ticker')}": item
+        f"{item.get('country_code', 'KR')}:{item.get('ticker')}": item
         for item in radar_items
         if item.get("ticker")
     }
@@ -813,7 +809,7 @@ async def _build_model_portfolio(
         )
 
     for opportunity in radar_items:
-        key = f"{opportunity.get('country_code', 'US')}:{opportunity.get('ticker')}"
+        key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
         if key in holding_keys:
             continue
         model_score, notes, source = _radar_model_score(opportunity, watchlist_keys)
@@ -824,7 +820,7 @@ async def _build_model_portfolio(
                 "key": key,
                 "ticker": opportunity.get("ticker"),
                 "name": opportunity.get("name"),
-                "country_code": opportunity.get("country_code", "US"),
+                "country_code": opportunity.get("country_code", "KR"),
                 "sector": opportunity.get("sector", "Other"),
                 "source": source,
                 "in_watchlist": source == "watchlist",
@@ -996,7 +992,11 @@ async def get_portfolio():
         "updated_at": profile.get("updated_at"),
     }
 
-    holdings = await db.portfolio_list()
+    holdings = [
+        row
+        for row in await db.portfolio_list()
+        if _normalize_country_code(row.get("country_code", "KR")) == "KR"
+    ]
     if not holdings:
         summary = _build_asset_summary(
             profile=normalized_profile,
@@ -1040,7 +1040,13 @@ async def get_portfolio():
         await cache.set(cache_key, empty, 60)
         return empty
 
-    unique_countries = sorted({row.get("country_code", "US") for row in holdings if row.get("country_code", "US") in COUNTRY_REGISTRY})
+    unique_countries = sorted(
+        {
+            row.get("country_code", "KR")
+            for row in holdings
+            if row.get("country_code", "KR") in COUNTRY_REGISTRY
+        }
+    )
 
     async def _load_country_context(country_code: str) -> tuple[str, dict]:
         index = COUNTRY_REGISTRY[country_code].indices[0]
@@ -1075,7 +1081,7 @@ async def get_portfolio():
     }
 
     async def _enrich_holding(holding: dict) -> dict:
-        country_code = _normalize_country_code(holding.get("country_code", "US"))
+        country_code = _normalize_country_code(holding.get("country_code", "KR"))
         ticker = normalize_portfolio_ticker(holding["ticker"], country_code)
         if ticker != holding.get("ticker") or country_code != holding.get("country_code"):
             try:
@@ -1352,7 +1358,7 @@ async def get_portfolio():
     return response
 
 
-async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: str, country_code: str = "US"):
+async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: str, country_code: str = "KR"):
     payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
     normalized_ticker = str(payload["ticker"])
     normalized_country = str(payload["country_code"])
@@ -1384,7 +1390,7 @@ async def update_holding(
     buy_price: float,
     quantity: float,
     buy_date: str,
-    country_code: str = "US",
+    country_code: str = "KR",
 ):
     payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
     normalized_ticker = str(payload["ticker"])

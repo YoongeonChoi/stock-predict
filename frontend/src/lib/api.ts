@@ -1,7 +1,7 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 export function apiPath(path: string): string {
-  return `${API}${path}`;
+  return API ? `${API}${path}` : path;
 }
 
 export interface ApiErrorInfo {
@@ -592,7 +592,7 @@ export interface ArchiveEntry {
 export interface ResearchArchiveSourceResult {
   source_id: string;
   source_name: string;
-  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  region_code: "KR";
   count: number;
 }
 
@@ -603,7 +603,7 @@ export interface ResearchArchiveSourceCount {
 }
 
 export interface ResearchArchiveRegionCount {
-  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  region_code: "KR";
   total: number;
 }
 
@@ -626,7 +626,7 @@ export interface ResearchArchiveEntry {
   id: number;
   source_id: string;
   source_name: string;
-  region_code: "US" | "KR" | "JP" | "GLOBAL";
+  region_code: "KR";
   organization_type: string;
   language: string;
   category?: string | null;
@@ -962,13 +962,13 @@ export const api = {
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${ticker}/technical-summary`),
   getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${ticker}/pivot-points`),
   getWatchlist: () => get<import("./types").WatchlistItem[]>("/api/watchlist"),
-  addWatchlist: (ticker: string, country_code = "US") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
+  addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
   getPredictionAccuracy: () => get<PredictionAccuracyStats>("/api/archive/accuracy/stats"),
-  getResearchArchive: (regionCode?: "US" | "KR" | "JP" | "GLOBAL", limit = 40, autoRefresh = true) => {
+  getResearchArchive: (regionCode?: "KR", limit = 40, autoRefresh = true) => {
     const qs = new URLSearchParams();
     if (regionCode) qs.set("region_code", regionCode);
     qs.set("limit", String(limit));
@@ -1029,7 +1029,7 @@ export const api = {
   removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
   getMarketMovers: (code: string) => get<MarketMovers>(`/api/market/movers/${code}`),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
-  resolveTicker: (query: string, countryCode = "US") =>
+  resolveTicker: (query: string, countryCode = "KR") =>
     get<TickerResolution>(`/api/ticker/resolve?query=${encodeURIComponent(query)}&country_code=${countryCode}`),
   getStockForecastDelta: (ticker: string, limit = 8) =>
     get<ForecastDeltaResponse>(`/api/stock/${encodeURIComponent(ticker)}/forecast-delta?limit=${limit}`),

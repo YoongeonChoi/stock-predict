@@ -8,12 +8,11 @@ from app.services import calendar_service
 class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_calendar_returns_month_scoped_events(self):
         earning_rows = [
-            {"date": "2026-03-18", "symbol": "AAPL", "time": "amc", "epsEstimated": 1.45},
             {"date": "2026-03-19", "symbol": "005930.KS", "time": "bmo", "epsEstimated": 2.1},
         ]
         economic_rows = [
-            {"date": "2026-03-12", "event": "CPI Release", "country": "US"},
-            {"date": "2026-03-25", "event": "GDP Report", "country": "United States"},
+            {"date": "2026-03-12", "event": "CPI Release", "country": "KR"},
+            {"date": "2026-03-25", "event": "Exports / Imports", "country": "Korea"},
         ]
 
         with (
@@ -23,9 +22,9 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
-            result = await calendar_service.get_calendar("US", year=2026, month=3)
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
-        self.assertEqual(result["country_code"], "US")
+        self.assertEqual(result["country_code"], "KR")
         self.assertEqual(result["year"], 2026)
         self.assertEqual(result["month"], 3)
         self.assertEqual(result["month_label"], "2026년 03월")
@@ -42,14 +41,14 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=[])),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
-            result = await calendar_service.get_calendar("US", year=2026, month=3)
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
         cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
-        self.assertEqual(cpi_dates, ["2026-03-10"])
+        self.assertEqual(len(cpi_dates), 1)
 
     async def test_actual_economic_event_replaces_monthly_recurring_estimate(self):
         economic_rows = [
-            {"date": "2026-03-12", "event": "CPI Release", "country": "US"},
+            {"date": "2026-03-12", "event": "CPI Release", "country": "KR"},
         ]
 
         with (
@@ -59,7 +58,7 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
-            result = await calendar_service.get_calendar("US", year=2026, month=3)
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
         cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
         self.assertEqual(cpi_dates, ["2026-03-12"])

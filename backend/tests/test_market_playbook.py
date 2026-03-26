@@ -30,8 +30,8 @@ def _price_series(days: int = 80, start: float = 100.0, drift: float = 0.4) -> l
 class MarketPlaybookTests(unittest.TestCase):
     def test_market_regime_detects_uptrend(self):
         regime = build_market_regime(
-            country_code="US",
-            name="S&P 500",
+            country_code="KR",
+            name="KOSPI",
             price_history=_price_series(),
             breadth_ratio=0.8,
         )

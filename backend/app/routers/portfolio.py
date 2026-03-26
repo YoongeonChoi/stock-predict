@@ -12,7 +12,7 @@ class HoldingCreate(BaseModel):
     buy_price: float
     quantity: float
     buy_date: str
-    country_code: str = "US"
+    country_code: str = "KR"
 
 
 class PortfolioProfileUpdate(BaseModel):
@@ -86,7 +86,7 @@ async def get_portfolio_event_radar(days: int = 14):
 
 @router.get("/portfolio/recommendations/conditional")
 async def get_conditional_portfolio_recommendations(
-    country_code: str = "ALL",
+    country_code: str = "KR",
     sector: str = "ALL",
     style: str = "balanced",
     max_items: int = 5,

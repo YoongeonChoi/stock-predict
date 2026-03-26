@@ -30,8 +30,8 @@ function fmtVal(value: unknown, fmt?: string, ticker?: string): string {
   if (Number.isNaN(number)) return String(value);
   if (fmt === "pct") return formatPct(number);
   if (fmt === "ratio_pct") return `${(number * 100).toFixed(2)}%`;
-  if (fmt === "money") return formatPrice(number, ticker ?? "US");
-  if (fmt === "cap") return formatMarketCap(number, ticker ?? "US");
+  if (fmt === "money") return formatPrice(number, ticker ?? "KR");
+  if (fmt === "cap") return formatMarketCap(number, ticker ?? "KR");
   return number.toFixed(2);
 }
 
@@ -75,7 +75,7 @@ export default function ComparePage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleCompare()}
-          placeholder="비교할 티커를 쉼표로 입력하세요. 예: AAPL, MSFT, GOOGL"
+          placeholder="비교할 티커를 쉼표로 입력하세요. 예: 005930, 000660, 035420"
           className="flex-1 px-4 py-2 rounded-lg bg-surface border border-border text-sm focus:outline-none focus:border-accent"
         />
         <button onClick={handleCompare} disabled={loading} className="px-6 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90 disabled:opacity-50">
@@ -142,7 +142,7 @@ export default function ComparePage() {
       {!loading && results.length === 0 && !error ? (
         <div className="card text-center text-text-secondary py-12">
           <p className="text-lg mb-2">2개에서 4개 종목까지 한 번에 비교할 수 있습니다</p>
-          <p className="text-sm">예시: AAPL, MSFT, GOOGL, AMZN</p>
+          <p className="text-sm">예시: 005930, 000660, 035420, 051910</p>
         </div>
       ) : null}
     </div>

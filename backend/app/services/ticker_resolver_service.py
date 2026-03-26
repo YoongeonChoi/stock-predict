@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from functools import lru_cache
@@ -10,7 +10,6 @@ _SUFFIX_COUNTRY = {
     ".KS": "KR",
     ".KQ": "KR",
     ".KR": "KR",
-    ".T": "JP",
 }
 
 _PREFIX_COUNTRY = {
@@ -18,19 +17,6 @@ _PREFIX_COUNTRY = {
     "KOSPI": "KR",
     "KOSDAQ": "KR",
     "KR": "KR",
-    "TYO": "JP",
-    "TSE": "JP",
-    "JP": "JP",
-    "NASDAQ": "US",
-    "NYSE": "US",
-    "AMEX": "US",
-    "US": "US",
-}
-
-_ALIASES = {
-    "BRK.B": "BRK-B",
-    "BRK/A": "BRK-A",
-    "BRK.B/WS": "BRK-B",
 }
 
 
@@ -38,8 +24,6 @@ _ALIASES = {
 def _build_universe_maps() -> dict[str, dict]:
     by_ticker: dict[str, dict] = {}
     kr_by_base: dict[str, list[str]] = {}
-    jp_by_base: dict[str, list[str]] = {}
-    us_by_base: dict[str, list[str]] = {}
 
     for country_code, sectors in UNIVERSE.items():
         for sector_name, tickers in sectors.items():
@@ -55,10 +39,6 @@ def _build_universe_maps() -> dict[str, dict]:
                 base = ticker.split(".")[0]
                 if country_code == "KR" and re.fullmatch(r"\d{6}", base):
                     kr_by_base.setdefault(base, []).append(ticker)
-                elif country_code == "JP" and re.fullmatch(r"\d{4}", base):
-                    jp_by_base.setdefault(base, []).append(ticker)
-                elif country_code == "US":
-                    us_by_base.setdefault(base, []).append(ticker)
 
     for country in COUNTRY_REGISTRY.values():
         for index in country.indices:
@@ -75,15 +55,13 @@ def _build_universe_maps() -> dict[str, dict]:
     return {
         "by_ticker": by_ticker,
         "kr_by_base": kr_by_base,
-        "jp_by_base": jp_by_base,
-        "us_by_base": us_by_base,
     }
 
 
 def normalize_country_code(country_code: str | None) -> str:
-    normalized = str(country_code or "US").strip().upper() or "US"
+    normalized = str(country_code or "KR").strip().upper() or "KR"
     if normalized not in COUNTRY_REGISTRY:
-        return "US"
+        return "KR"
     return normalized
 
 
@@ -107,18 +85,14 @@ def _suffix_country(ticker: str) -> str | None:
 
 def _candidate_note(match_basis: str, input_ticker: str, resolved_ticker: str) -> str:
     if match_basis == "verbatim":
-        return "입력한 형식을 그대로 사용합니다."
+        return "입력한 한국 티커 형식을 그대로 사용합니다."
     if match_basis == "kr_numeric":
         return f"{input_ticker} 숫자 코드를 한국 시장 표준 티커 {resolved_ticker}로 맞췄습니다."
-    if match_basis == "jp_numeric":
-        return f"{input_ticker} 숫자 코드를 일본 시장 표준 티커 {resolved_ticker}로 맞췄습니다."
     if match_basis == "prefixed":
-        return f"거래소 접두어를 제거하고 표준 티커 {resolved_ticker}로 정리했습니다."
-    if match_basis == "alias":
-        return f"입력 형식을 Yahoo 조회 티커 {resolved_ticker}로 정리했습니다."
+        return f"KRX 접두어를 제거하고 표준 티커 {resolved_ticker}로 정리했습니다."
     if match_basis == "inferred":
-        return f"입력한 값에 가장 가까운 표준 티커 {resolved_ticker}를 적용했습니다."
-    return "표준 티커 형식으로 정리했습니다."
+        return f"입력한 값에 가장 가까운 한국 표준 티커 {resolved_ticker}를 적용했습니다."
+    return "표준 한국 티커 형식으로 정리했습니다."
 
 
 def get_ticker_metadata(ticker: str) -> dict:
@@ -127,20 +101,19 @@ def get_ticker_metadata(ticker: str) -> dict:
         ticker.upper(),
         {
             "ticker": ticker.upper(),
-            "country_code": _suffix_country(ticker.upper()) or "US",
+            "country_code": _suffix_country(ticker.upper()) or "KR",
             "sector": "Unknown",
         },
     )
 
 
-def resolve_ticker(raw_ticker: str, country_code: str | None = "US") -> dict:
+def resolve_ticker(raw_ticker: str, country_code: str | None = "KR") -> dict:
     requested_country = normalize_country_code(country_code)
     input_value = str(raw_ticker or "").strip()
     prefix_country, candidate = _split_prefix(input_value)
-    hinted_country = prefix_country or requested_country
     maps = _build_universe_maps()
 
-    normalized = _ALIASES.get(candidate, candidate).replace(" ", "").upper()
+    normalized = candidate.replace(" ", "").upper()
     if not normalized:
         return {
             "input_ticker": input_value,
@@ -170,19 +143,18 @@ def resolve_ticker(raw_ticker: str, country_code: str | None = "US") -> dict:
         }
 
     suffix_country = _suffix_country(normalized)
-    if suffix_country:
+    if suffix_country == "KR":
         metadata = get_ticker_metadata(normalized)
-        match_basis = "alias" if normalized in _ALIASES.values() else "verbatim"
         return {
             "input_ticker": input_value,
             "normalized_input": normalized,
             "ticker": normalized,
-            "country_code": metadata["country_code"] or suffix_country,
+            "country_code": "KR",
             "sector": metadata["sector"],
-            "match_basis": match_basis,
+            "match_basis": "verbatim",
             "confidence": "medium",
             "matched": normalized in maps["by_ticker"],
-            "note": _candidate_note(match_basis, input_value, normalized),
+            "note": _candidate_note("verbatim", input_value, normalized),
         }
 
     if re.fullmatch(r"\d{6}", normalized):
@@ -201,43 +173,11 @@ def resolve_ticker(raw_ticker: str, country_code: str | None = "US") -> dict:
             "note": _candidate_note("kr_numeric", input_value, resolved),
         }
 
-    if re.fullmatch(r"\d{4}", normalized):
-        candidates = maps["jp_by_base"].get(normalized, [])
-        if candidates or hinted_country == "JP":
-            resolved = candidates[0] if candidates else f"{normalized}.T"
-            metadata = get_ticker_metadata(resolved)
-            return {
-                "input_ticker": input_value,
-                "normalized_input": normalized,
-                "ticker": resolved,
-                "country_code": "JP",
-                "sector": metadata["sector"],
-                "match_basis": "jp_numeric",
-                "confidence": "high" if candidates else "medium",
-                "matched": bool(candidates),
-                "note": _candidate_note("jp_numeric", input_value, resolved),
-            }
-
-    us_candidate = normalized.replace(".", "-")
-    if us_candidate in maps["by_ticker"]:
-        metadata = maps["by_ticker"][us_candidate]
-        return {
-            "input_ticker": input_value,
-            "normalized_input": normalized,
-            "ticker": us_candidate,
-            "country_code": metadata["country_code"],
-            "sector": metadata["sector"],
-            "match_basis": "alias",
-            "confidence": "medium",
-            "matched": True,
-            "note": _candidate_note("alias", input_value, us_candidate),
-        }
-
     return {
         "input_ticker": input_value,
         "normalized_input": normalized,
         "ticker": normalized,
-        "country_code": hinted_country,
+        "country_code": "KR",
         "sector": get_ticker_metadata(normalized)["sector"],
         "match_basis": "inferred",
         "confidence": "low",
@@ -288,7 +228,6 @@ async def search_candidates(query: str, country_code: str | None = None, limit: 
         results,
         key=lambda item: (
             0 if item["ticker"] == resolved["ticker"] else 1,
-            item["country_code"] != normalize_country_code(country_code),
             item["ticker"],
         ),
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.analysis.free_kr_forecast import MODEL_VERSION as FREE_KR_MODEL_VERSION
 from app.analysis.historical_pattern_forecast import MODEL_VERSION as HISTORICAL_MODEL_VERSION
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.config import get_settings
@@ -12,6 +13,10 @@ from app.version import APP_VERSION
 
 def _configured(value: str) -> bool:
     return bool(str(value or "").strip())
+
+
+def _any_configured(*values: str) -> bool:
+    return any(_configured(value) for value in values)
 
 
 def _source(name: str, configured: bool, purpose: str, note: str, status: str | None = None) -> dict:
@@ -59,22 +64,46 @@ async def get_diagnostics() -> dict:
             "응답이 없으면 더 작은 유니버스와 Yahoo 기반 대체 흐름으로 동작합니다.",
         ),
         _source(
-            "FRED",
-            _configured(settings.fred_api_key),
-            "미국 매크로와 금리 컨텍스트",
-            "미설정 시 미국 국가 분석의 거시 입력이 약해집니다.",
-        ),
-        _source(
             "ECOS",
             _configured(settings.ecos_api_key),
             "한국 매크로 데이터",
             "미설정 시 한국 국가 분석의 거시 입력이 약해집니다.",
         ),
         _source(
+            "OpenDART",
+            _configured(settings.opendart_api_key),
+            "최근 공시와 한국 상장사 이벤트 보강",
+            "무료 확률 엔진에서 최근 공시 타이틀을 보조 신호로만 반영합니다.",
+        ),
+        _source(
+            "KOSIS",
+            _configured(settings.kosis_api_key)
+            and _any_configured(
+                settings.kosis_cpi_stats_id,
+                settings.kosis_employment_stats_id,
+                settings.kosis_industrial_production_stats_id,
+            ),
+            "정부 통계 보강",
+            "KOSIS API 키와 통계표 ID를 함께 넣어야 무료 확률 엔진의 거시 보강 입력으로 사용됩니다.",
+        ),
+        _source(
+            "Naver Search API",
+            _configured(settings.naver_client_id) and _configured(settings.naver_client_secret),
+            "국내 뉴스 헤드라인 보강",
+            "Google News RSS 대비 국내 기사 커버리지를 보강합니다.",
+        ),
+        _source(
+            "Google News RSS",
+            True,
+            "한국장 뉴스 헤드라인 수집",
+            "무료 헤드라인 기반이라 장문 원문과 이벤트 구조화는 향후 OpenDART·네이버 뉴스 보강이 필요합니다.",
+            status="best_effort",
+        ),
+        _source(
             "Yahoo Finance",
             True,
             "핵심 가격 이력, 지수 수준, 기본 펀더멘털",
-            "실행 시점의 가격 시계열을 책임지는 기본 백본입니다.",
+            "한국장 무료 스택의 핵심 가격 백본입니다.",
             status="available",
         ),
         _source(
@@ -87,7 +116,7 @@ async def get_diagnostics() -> dict:
         _source(
             "공식 기관 리서치 아카이브",
             True,
-            "Fed·KDI·한국은행·BOJ·BIS 공식 리포트 큐레이션",
+            "KDI·한국은행 공식 리포트 큐레이션",
             "하루 한 번 동기화하며 PDF가 있으면 바로 연결하고, 없으면 원문 링크를 제공합니다.",
             status="available" if research_archive else "best_effort",
         ),
@@ -107,7 +136,7 @@ async def get_diagnostics() -> dict:
             {
                 "name": "next_day",
                 "version": MODEL_VERSION,
-                "markets": ["US", "KR", "JP"],
+                "markets": ["KR"],
                 "signals": [
                     "trend_momentum",
                     "ema_alignment",
@@ -131,7 +160,7 @@ async def get_diagnostics() -> dict:
             {
                 "name": "historical_pattern",
                 "version": HISTORICAL_MODEL_VERSION,
-                "markets": ["US", "KR", "JP"],
+                "markets": ["KR"],
                 "signals": [
                     "historical_analog_matching",
                     "multi_horizon_return_distribution",
@@ -141,6 +170,28 @@ async def get_diagnostics() -> dict:
                 "notes": [
                     "최근 2년 가격 이력에서 현재와 비슷한 국면을 찾아 5·20·60거래일 기대 분포를 계산합니다.",
                     "유사 국면이 충분하지 않으면 이 모델은 조용히 생략되고 기존 다음 거래일 예측만 표시됩니다.",
+                ],
+            },
+            {
+                "name": "free_kr_probabilistic",
+                "version": FREE_KR_MODEL_VERSION,
+                "markets": ["KR"],
+                "signals": [
+                    "multi_period_momentum",
+                    "relative_strength",
+                    "volatility_regime",
+                    "ecos_macro",
+                    "kosis_optional_macro",
+                    "opendart_optional_filings",
+                    "google_naver_news_overlay",
+                    "flow_overlay",
+                    "q10_q25_q50_q75_q90",
+                    "up_flat_down_probabilities",
+                ],
+                "notes": [
+                    "기존 휴리스틱 엔진과 별도로 병렬 계산되는 무료 한국장 확률 엔진입니다.",
+                    "OpenDART, Naver Search API, KOSIS는 설정되어 있을 때만 약한 보강 신호로 반영합니다.",
+                    "현재 구현은 학습형 Student-t mixture 직전 단계의 열화판으로, 분포 밴드와 장세 확률을 먼저 제공합니다.",
                 ],
             },
         ],

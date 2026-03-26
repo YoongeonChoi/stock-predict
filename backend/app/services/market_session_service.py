@@ -7,15 +7,11 @@ from app.models.country import COUNTRY_REGISTRY
 from app.utils import market_calendar
 
 _DISPLAY_TZ = {
-    "US": ZoneInfo("America/New_York"),
     "KR": ZoneInfo("Asia/Seoul"),
-    "JP": ZoneInfo("Asia/Tokyo"),
 }
 
 _AFTER_HOURS_NOTE = {
-    "US": "무료 데이터 기준으로 프리마켓·애프터마켓 일부는 보일 수 있지만, 예측 엔진은 완결 종가만 기준으로 사용합니다.",
     "KR": "현재 무료 데이터 스택에서는 한국 시간외 단일가 가격을 안정적으로 반영하지 않습니다.",
-    "JP": "현재 무료 데이터 스택에서는 일본 장후 가격을 안정적으로 반영하지 않습니다.",
 }
 
 
@@ -65,7 +61,7 @@ async def get_market_sessions(reference_time: datetime | None = None) -> dict:
                 "closed_at": _to_local_label(snapshot.get("closed_at"), country_code),
                 "next_open_at": _to_local_label(snapshot.get("next_open_at"), country_code),
                 "next_close_at": _to_local_label(snapshot.get("next_close_at"), country_code),
-                "after_hours_supported": country_code == "US",
+                "after_hours_supported": False,
                 "provider_note": _AFTER_HOURS_NOTE[country_code],
                 "forecast_ready_note": _readiness_note(snapshot),
             }

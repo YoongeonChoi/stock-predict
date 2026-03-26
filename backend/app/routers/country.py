@@ -181,7 +181,7 @@ async def get_country_forecast(code: str):
 
 @router.get("/market/indicators")
 async def get_market_indicators():
-    """Global market indicators for the dashboard."""
+    """Korean market indicators for the dashboard."""
     from app.data import cache as data_cache
     cached = await data_cache.get("market_indicators")
     if cached:
@@ -189,9 +189,10 @@ async def get_market_indicators():
 
     indicators = []
     tickers = {
-        "VIX": "^VIX", "DXY": "DX-Y.NYB", "Gold": "GC=F", "Oil (WTI)": "CL=F",
-        "US 10Y": "^TNX", "Bitcoin": "BTC-USD",
-        "USD/KRW": "USDKRW=X", "USD/JPY": "USDJPY=X", "EUR/USD": "EURUSD=X",
+        "USD/KRW": "USDKRW=X",
+        "Gold": "GC=F",
+        "Oil (WTI)": "CL=F",
+        "Bitcoin": "BTC-USD",
     }
     for name, ticker in tickers.items():
         try:

@@ -50,16 +50,6 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("010620.KS", flattened)
         self.assertIn("196170.KQ", universe["Health Care"])
 
-        with patch(
-            "app.data.fmp_client.probe_stock_screener",
-            new=AsyncMock(return_value=False),
-        ):
-            us_universe = await get_universe("US")
-        us_flattened = [ticker for tickers in us_universe.values() for ticker in tickers]
-        self.assertNotIn("HES", us_flattened)
-        self.assertNotIn("PXD", us_flattened)
-        self.assertNotIn("WRK", us_flattened)
-
     async def test_probe_stock_screener_disables_exchange_after_403(self):
         class FailingAsyncClient:
             calls = 0
@@ -107,12 +97,12 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
                 new=probe_mock,
             ),
         ):
-            selection = await resolve_universe("JP")
+            selection = await resolve_universe("KR")
 
         self.assertEqual(selection.source, "fallback")
         self.assertTrue(selection.note)
-        self.assertEqual(selection.sectors["Information Technology"][0], "6758.T")
-        self.assertEqual(probe_mock.await_count, len(EXCHANGE_MAP["JP"]))
+        self.assertEqual(selection.sectors["Information Technology"][0], "005930.KS")
+        self.assertEqual(probe_mock.await_count, len(EXCHANGE_MAP["KR"]))
 
 
 if __name__ == "__main__":

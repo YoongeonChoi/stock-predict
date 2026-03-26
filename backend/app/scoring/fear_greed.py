@@ -10,7 +10,7 @@ def calculate_fear_greed(
     vix_value: float | None = None,
     news_sentiment: float | None = None,
     treasury_spread: float | None = None,
-    country_code: str = "US",
+    country_code: str = "KR",
 ) -> FearGreedIndex:
     components = []
 
