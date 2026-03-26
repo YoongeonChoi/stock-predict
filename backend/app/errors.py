@@ -119,6 +119,11 @@ SP_5014 = lambda d="": AppError("SP-5014", "Forecast drift query failed", d)
 SP_5015 = lambda d="": AppError("SP-5015", "Conditional portfolio recommendation failed", d)
 SP_5016 = lambda d="": AppError("SP-5016", "Optimal portfolio recommendation failed", d)
 SP_5017 = lambda d="": AppError("SP-5017", "Portfolio profile update failed", d)
+SP_5018 = lambda d="": AppError(
+    "SP-5018",
+    "Service request timed out",
+    d or "The requested aggregated response took too long. Retry shortly.",
+)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation

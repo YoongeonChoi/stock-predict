@@ -46,6 +46,9 @@ TICKER_FALLBACK = {
     "SoftBank": "9984.T", "Keyence": "6861.T",
 }
 
+TOP_STOCKS_PER_SECTOR = 2
+TOP_STOCKS_MAX_CANDIDATES = 18
+
 
 async def analyze_country(country_code: str) -> dict:
     settings = get_settings()
@@ -239,7 +242,12 @@ async def _score_top_stocks(
     universe = await get_universe(country_code)
     all_tickers: list[str] = []
     for sector_tickers in universe.values():
-        all_tickers.extend(sector_tickers[:10])
+        for ticker in sector_tickers[:TOP_STOCKS_PER_SECTOR]:
+            all_tickers.append(ticker)
+            if len(all_tickers) >= TOP_STOCKS_MAX_CANDIDATES:
+                break
+        if len(all_tickers) >= TOP_STOCKS_MAX_CANDIDATES:
+            break
 
     async def _score_ticker(ticker: str):
         info, prices, analyst_raw = await asyncio.gather(
@@ -253,7 +261,7 @@ async def _score_top_stocks(
         return quant.total, ticker, info
 
     scored: list[tuple[float, str, dict]] = []
-    for item in await gather_limited(all_tickers, _score_ticker, limit=8):
+    for item in await gather_limited(all_tickers, _score_ticker, limit=6):
         if isinstance(item, Exception) or item is None:
             continue
         scored.append(item)

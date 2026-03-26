@@ -12,6 +12,10 @@ export interface ApiErrorInfo {
   detail?: string;
 }
 
+export interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export class ApiError extends Error {
   status: number;
   errorCode: string;
@@ -25,8 +29,20 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiTimeoutError extends Error {
+  path: string;
+  timeoutMs: number;
+
+  constructor(path: string, timeoutMs: number) {
+    super(`${Math.round(timeoutMs / 1000)}초 안에 응답이 오지 않았습니다.`);
+    this.name = "ApiTimeoutError";
+    this.path = path;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export function isAuthRequiredError(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP_6014");
+  return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP-6014");
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -49,20 +65,53 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  const { timeoutMs = 0, ...requestInit } = init;
   const authHeaders = await getAuthHeaders();
-  const headers = new Headers(init.headers || {});
+  const headers = new Headers(requestInit.headers || {});
   Object.entries(authHeaders).forEach(([key, value]) => {
     if (!headers.has(key)) {
       headers.set(key, value);
     }
   });
 
-  const res = await fetch(apiPath(path), {
-    ...init,
-    headers,
-    cache: init.cache ?? "no-store",
-  });
+  const controller = new AbortController();
+  if (requestInit.signal) {
+    if (requestInit.signal.aborted) {
+      controller.abort();
+    } else {
+      requestInit.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+
+  let timedOut = false;
+  const timeoutHandle = timeoutMs > 0
+    ? globalThis.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
+    : null;
+
+  let res: Response;
+  try {
+    res = await fetch(apiPath(path), {
+      ...requestInit,
+      headers,
+      cache: requestInit.cache ?? "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (timeoutHandle != null) {
+      globalThis.clearTimeout(timeoutHandle);
+    }
+    if (timedOut && error instanceof Error && error.name === "AbortError") {
+      throw new ApiTimeoutError(path, timeoutMs);
+    }
+    throw error;
+  }
+  if (timeoutHandle != null) {
+    globalThis.clearTimeout(timeoutHandle);
+  }
   if (!res.ok) {
     let info: ApiErrorInfo;
     try {
@@ -75,8 +124,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
-async function get<T>(path: string): Promise<T> {
-  return request<T>(path);
+async function get<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  return request<T>(path, init);
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -962,8 +1011,8 @@ export const api = {
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
   getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
   getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),
-  getHeatmap: (code: string) => get<HeatmapData>(`/api/country/${code}/heatmap`),
-  getCountryReport: (code: string) => get<import("./types").CountryReport>(`/api/country/${code}/report`),
+  getHeatmap: (code: string, options?: RequestOptions) => get<HeatmapData>(`/api/country/${code}/heatmap`, options),
+  getCountryReport: (code: string, options?: RequestOptions) => get<import("./types").CountryReport>(`/api/country/${code}/report`, options),
   getCountryForecast: (code: string) => get<import("./types").IndexForecast>(`/api/country/${code}/forecast`),
   getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
   getSectorReport: (code: string, sectorId: string) =>
@@ -993,10 +1042,10 @@ export const api = {
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
   getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),
-  getDailyBriefing: () => get<DailyBriefingResponse>("/api/briefing/daily"),
+  getDailyBriefing: (options?: RequestOptions) => get<DailyBriefingResponse>("/api/briefing/daily", options),
   getMarketSessions: () => get<MarketSessionsResponse>("/api/market/sessions"),
-  getMarketOpportunities: (code: string, limit = 12) =>
-    get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`),
+  getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
+    get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`, options),
   getCalendar: (code: string, year?: number, month?: number) => {
     const qs = new URLSearchParams();
     if (year) qs.set("year", String(year));
@@ -1039,7 +1088,7 @@ export const api = {
   updatePortfolioHolding: (id: number, data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
     put<PortfolioHoldingCreateResponse>(`/api/portfolio/holdings/${id}`, data),
   removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
-  getMarketMovers: (code: string) => get<MarketMovers>(`/api/market/movers/${code}`),
+  getMarketMovers: (code: string, options?: RequestOptions) => get<MarketMovers>(`/api/market/movers/${code}`, options),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
   resolveTicker: (query: string, countryCode = "KR") =>
     get<TickerResolution>(`/api/ticker/resolve?query=${encodeURIComponent(query)}&country_code=${countryCode}`),
