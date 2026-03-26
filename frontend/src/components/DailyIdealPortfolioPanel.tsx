@@ -11,6 +11,31 @@ interface Props {
   embedded?: boolean;
 }
 
+function expectedReturn20d(value: DailyIdealPortfolio["summary"] | DailyIdealPortfolioPosition) {
+  const item = value as Partial<DailyIdealPortfolio["summary"] & DailyIdealPortfolioPosition>;
+  return item.expected_return_pct_20d ?? item.predicted_portfolio_return_pct ?? item.predicted_return_pct ?? 0;
+}
+
+function excessReturn20d(value: DailyIdealPortfolio["summary"] | DailyIdealPortfolioPosition) {
+  const item = value as Partial<DailyIdealPortfolio["summary"] & DailyIdealPortfolioPosition>;
+  return item.expected_excess_return_pct_20d ?? 0;
+}
+
+function upProbability20d(value: DailyIdealPortfolio["summary"] | DailyIdealPortfolioPosition) {
+  const item = value as Partial<DailyIdealPortfolio["summary"] & DailyIdealPortfolioPosition>;
+  return item.up_probability_20d ?? item.portfolio_up_probability ?? item.up_probability ?? 0;
+}
+
+function downProbability20d(value: DailyIdealPortfolio["summary"] | DailyIdealPortfolioPosition) {
+  const item = value as Partial<DailyIdealPortfolio["summary"] & DailyIdealPortfolioPosition>;
+  return item.down_probability_20d ?? item.portfolio_down_probability ?? 0;
+}
+
+function volatility20d(value: DailyIdealPortfolio["summary"] | DailyIdealPortfolioPosition) {
+  const item = value as Partial<DailyIdealPortfolio["summary"] & DailyIdealPortfolioPosition>;
+  return item.forecast_volatility_pct_20d ?? 0;
+}
+
 function stanceLabel(stance: string) {
   if (stance === "risk_on") return "위험 선호";
   if (stance === "risk_off") return "위험 회피";
@@ -71,7 +96,7 @@ function CompactPositionCard({ item }: { item: DailyIdealPortfolioPosition }) {
             <span className="text-xs text-text-secondary">{item.ticker}</span>
           </div>
           <div className="mt-1 truncate text-xs text-text-secondary">
-            {item.sector} · 다음 거래일 {item.target_date}
+            {item.sector} · 20거래일 목표 {item.target_date_20d || item.target_date}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -96,18 +121,18 @@ function CompactPositionCard({ item }: { item: DailyIdealPortfolioPosition }) {
           <div className="mt-1 font-semibold">{formatPrice(item.reference_price, item.country_code)}</div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">예상 수익률</div>
-          <div className={`mt-1 font-semibold ${changeColor(item.predicted_return_pct)}`}>
-            {formatPct(item.predicted_return_pct)}
+          <div className="text-[11px] text-text-secondary">20거래일 기대수익률</div>
+          <div className={`mt-1 font-semibold ${changeColor(expectedReturn20d(item))}`}>
+            {formatPct(expectedReturn20d(item))}
           </div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">상승 확률</div>
-          <div className="mt-1 font-semibold">{item.up_probability.toFixed(1)}%</div>
+          <div className="text-[11px] text-text-secondary">상방 / 하방</div>
+          <div className="mt-1 font-semibold">{upProbability20d(item).toFixed(1)}% / {downProbability20d(item).toFixed(1)}%</div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">점수</div>
-          <div className="mt-1 font-semibold">{item.selection_score.toFixed(1)}</div>
+          <div className="text-[11px] text-text-secondary">변동성 / 점수</div>
+          <div className="mt-1 font-semibold">{volatility20d(item).toFixed(2)}% / {item.selection_score.toFixed(1)}</div>
         </div>
       </div>
 
@@ -133,7 +158,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
       <div className={cn("min-w-0 space-y-4", embedded ? "" : "card !p-5")}>
         {!embedded ? (
           <div>
-            <h2 className="font-semibold">내일의 이상적 포트폴리오</h2>
+            <h2 className="font-semibold">이상적 포트폴리오</h2>
             <p className="mt-1 text-sm text-text-secondary">{data.objective}</p>
           </div>
         ) : null}
@@ -169,14 +194,18 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             </div>
           </div>
           <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
-            <div className="text-[11px] text-text-secondary">포트폴리오 상승 확률</div>
-            <div className="mt-2 text-2xl font-bold">{data.summary.portfolio_up_probability.toFixed(1)}%</div>
+            <div className="text-[11px] text-text-secondary">20거래일 기대수익률</div>
+            <div className={`mt-2 text-2xl font-bold ${changeColor(expectedReturn20d(data.summary))}`}>{formatPct(expectedReturn20d(data.summary))}</div>
           </div>
           <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
-            <div className="text-[11px] text-text-secondary">예상 수익률</div>
-            <div className={`mt-2 text-2xl font-bold ${changeColor(data.summary.predicted_portfolio_return_pct)}`}>
-              {formatPct(data.summary.predicted_portfolio_return_pct)}
-            </div>
+            <div className="text-[11px] text-text-secondary">기대초과 / 변동성</div>
+            <div className={`mt-2 text-2xl font-bold ${changeColor(excessReturn20d(data.summary))}`}>{formatPct(excessReturn20d(data.summary))}</div>
+            <div className="mt-1 text-[11px] text-text-secondary">변동성 {volatility20d(data.summary).toFixed(2)}%</div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+            <div className="text-[11px] text-text-secondary">상방 / 하방 / 회전율</div>
+            <div className="mt-2 text-2xl font-bold">{upProbability20d(data.summary).toFixed(1)}%</div>
+            <div className="mt-1 text-[11px] text-text-secondary">하방 {downProbability20d(data.summary).toFixed(1)}% · 회전율 {data.summary.turnover_pct.toFixed(2)}%</div>
           </div>
         </div>
 
@@ -246,7 +275,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
       <div className="card !p-4 space-y-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="font-semibold">내일의 이상적 포트폴리오</h2>
+            <h2 className="font-semibold">이상적 포트폴리오</h2>
             <p className="mt-1 text-sm text-text-secondary">{data.objective}</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -278,18 +307,18 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             <div className="mt-2 text-2xl font-bold">{data.risk_budget.cash_buffer_pct.toFixed(1)}%</div>
           </div>
           <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">포트폴리오 상승 확률</div>
-            <div className="mt-2 text-2xl font-bold">{data.summary.portfolio_up_probability.toFixed(1)}%</div>
+            <div className="text-xs text-text-secondary">20거래일 기대수익률</div>
+            <div className={`mt-2 text-2xl font-bold ${changeColor(expectedReturn20d(data.summary))}`}>{formatPct(expectedReturn20d(data.summary))}</div>
           </div>
           <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">예상 수익률</div>
-            <div className={`mt-2 text-2xl font-bold ${changeColor(data.summary.predicted_portfolio_return_pct)}`}>
-              {formatPct(data.summary.predicted_portfolio_return_pct)}
-            </div>
+            <div className="text-xs text-text-secondary">기대초과 / 변동성</div>
+            <div className={`mt-2 text-2xl font-bold ${changeColor(excessReturn20d(data.summary))}`}>{formatPct(excessReturn20d(data.summary))}</div>
+            <div className="mt-1 text-[11px] text-text-secondary">변동성 {volatility20d(data.summary).toFixed(2)}%</div>
           </div>
           <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">단일 종목 상단</div>
-            <div className="mt-2 text-2xl font-bold">{data.risk_budget.max_single_weight_pct.toFixed(1)}%</div>
+            <div className="text-xs text-text-secondary">상방 / 하방 / 회전율</div>
+            <div className="mt-2 text-2xl font-bold">{upProbability20d(data.summary).toFixed(1)}%</div>
+            <div className="mt-1 text-[11px] text-text-secondary">하방 {downProbability20d(data.summary).toFixed(1)}% · 회전율 {data.summary.turnover_pct.toFixed(2)}%</div>
           </div>
         </div>
 
@@ -328,7 +357,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
         <div className="border-b border-border px-4 py-3">
           <h3 className="font-semibold">추천 비중 테이블</h3>
           <p className="mt-1 text-xs text-text-secondary">
-            다음 거래일 기준으로 바로 살펴볼 종목과 목표 비중을 정리했습니다.
+            20거래일 분포 기대수익률과 기대초과수익률 기준으로 바로 살펴볼 종목과 목표 비중을 정리했습니다.
           </p>
         </div>
         <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
@@ -354,7 +383,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
                     <div className="mt-1 text-[11px] text-text-secondary">
                       {item.ticker} · {item.country_code} · {item.sector}
                     </div>
-                    <div className="mt-1 text-[11px] text-text-secondary">다음 거래일 {item.target_date}</div>
+                    <div className="mt-1 text-[11px] text-text-secondary">20거래일 목표 {item.target_date_20d || item.target_date}</div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="font-semibold">{item.target_weight_pct.toFixed(1)}%</div>
@@ -365,9 +394,9 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
                     <div className="mt-1 text-[11px] text-text-secondary">{item.setup_label || "기본 셋업"}</div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className={`font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
-                    <div className="mt-1 text-[11px] text-text-secondary">상승 확률 {item.up_probability.toFixed(1)}%</div>
-                    <div className="mt-1 text-[11px] text-text-secondary">신뢰도 {item.confidence.toFixed(1)}</div>
+                    <div className={`font-semibold ${changeColor(expectedReturn20d(item))}`}>{formatPct(expectedReturn20d(item))}</div>
+                    <div className={`mt-1 text-[11px] ${changeColor(excessReturn20d(item))}`}>기대초과 {formatPct(excessReturn20d(item))}</div>
+                    <div className="mt-1 text-[11px] text-text-secondary">상방 {upProbability20d(item).toFixed(1)}% · 변동성 {volatility20d(item).toFixed(2)}%</div>
                   </td>
                   <td className="px-4 py-3">
                     <div className={`inline-flex rounded-full px-2 py-1 text-[11px] ${executionBiasTone(item.execution_bias)}`}>

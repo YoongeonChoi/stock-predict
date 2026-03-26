@@ -119,6 +119,21 @@
 - 새 예측 로직을 넣을 때는 Monte Carlo + LLM 숫자 보정 방식이나 상수 가중 휴리스틱을 다시 들여오지 않습니다.
 - 예측 엔진을 수정하면 wrapper, 시스템 진단, README, CHANGELOG, 버전, 회귀 테스트를 함께 맞춥니다.
 
+## 포트폴리오 최적화 기준선
+
+현재 포트폴리오 비중의 canonical optimizer는 `backend/app/services/portfolio_optimizer.py` 입니다.
+
+- 포트폴리오 추천, 조건 추천, 최적 추천, 일일 이상적 포트폴리오는 같은 optimizer를 공유합니다.
+- 비중 계산은 `20거래일 기대수익률 + 기대초과수익률 + EWMA+shrinkage 공분산 + 회전율 패널티` 기준을 유지합니다.
+- 새 포트폴리오 로직을 추가할 때는 선형 점수 합으로 비중을 나누는 ad-hoc 방식을 다시 들여오지 않습니다.
+- 포트폴리오 응답을 바꾸면 최소한 아래를 함께 확인합니다.
+  - `backend/app/services/portfolio_service.py`
+  - `backend/app/services/portfolio_recommendation_service.py`
+  - `backend/app/services/ideal_portfolio_service.py`
+  - `frontend/src/lib/api.ts`
+  - 포트폴리오 관련 패널 컴포넌트
+  - README / CHANGELOG / 회귀 테스트
+
 ## 필수 규칙
 
 1. 사용자에게 보이는 동작이 바뀌면 `README.md`를 업데이트합니다.

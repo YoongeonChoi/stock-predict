@@ -5,16 +5,22 @@ import math
 from collections import defaultdict
 from datetime import datetime
 
+from app.analysis.distributional_return_engine import build_distributional_forecast
 from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.stock_analyzer import _calc_technicals
 from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
-from app.data import cache, yfinance_client
+from app.data import cache, ecos_client, kosis_client, yfinance_client
 from app.data.supabase_client import supabase_client
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
 from app.services import market_service, ticker_resolver_service
+from app.services.portfolio_optimizer import (
+    attach_candidate_return_series,
+    build_horizon_snapshot,
+    optimize_portfolio_weights,
+)
 from app.utils.async_tools import gather_limited
 
 
@@ -116,7 +122,7 @@ def _default_portfolio_profile() -> dict[str, float | None]:
 
 
 def _portfolio_cache_key(user_id: str) -> str:
-    return f"portfolio_overview:v7:{user_id}"
+    return f"portfolio_overview:v8:{user_id}"
 
 
 async def invalidate_portfolio_cache(user_id: str | None = None) -> None:
@@ -379,7 +385,7 @@ def _stress_scenarios(
 def _portfolio_model_defaults(note: str) -> dict:
     return {
         "as_of": datetime.now().isoformat(),
-        "objective": "예측 시나리오, 실행 바이어스, 포지션 캡을 함께 반영한 모델 포트폴리오 제안입니다.",
+        "objective": "20거래일 분포 기대수익률, 기대초과수익, EWMA+shrinkage 공분산, 회전율 패널티를 함께 반영한 모델 포트폴리오 제안입니다.",
         "risk_budget": {
             "style": "balanced",
             "style_label": "균형형",
@@ -397,6 +403,12 @@ def _portfolio_model_defaults(note: str) -> dict:
             "watchlist_focus_count": 0,
             "model_up_probability": 0.0,
             "model_predicted_return_pct": 0.0,
+            "expected_return_pct_20d": 0.0,
+            "expected_excess_return_pct_20d": 0.0,
+            "forecast_volatility_pct_20d": 0.0,
+            "up_probability_20d": 0.0,
+            "down_probability_20d": 0.0,
+            "turnover_pct": 0.0,
         },
         "allocation": {
             "by_country": [],
@@ -502,24 +514,52 @@ def _priority_label(priority_score: float) -> str:
     return "low"
 
 
+def _distributional_view(payload: dict | None) -> dict[str, float | str | None]:
+    data = payload or {}
+    up_probability = float(data.get("up_probability_20d") or data.get("up_probability") or 50.0)
+    down_probability = data.get("down_probability_20d")
+    if down_probability is None:
+        down_probability = data.get("bear_probability")
+    down_probability = float(down_probability or max(100.0 - up_probability, 0.0))
+    flat_probability = data.get("flat_probability_20d")
+    if flat_probability is None:
+        flat_probability = max(100.0 - up_probability - down_probability, 0.0)
+    return {
+        "target_date": data.get("target_date_20d") or data.get("forecast_date"),
+        "expected_return_pct": float(data.get("expected_return_pct_20d") or data.get("predicted_return_pct") or 0.0),
+        "expected_excess_return_pct": float(data.get("expected_excess_return_pct_20d") or 0.0),
+        "median_return_pct": float(data.get("median_return_pct_20d") or data.get("predicted_return_pct") or 0.0),
+        "forecast_volatility_pct": float(data.get("forecast_volatility_pct_20d") or data.get("realized_volatility_pct") or 0.0),
+        "up_probability": up_probability,
+        "flat_probability": float(flat_probability),
+        "down_probability": down_probability,
+        "confidence": float(data.get("distribution_confidence_20d") or data.get("confidence") or data.get("trade_conviction") or 50.0),
+        "bull_case_price": data.get("price_q75_20d") or data.get("bull_case_price"),
+        "base_case_price": data.get("price_q50_20d") or data.get("base_case_price"),
+        "bear_case_price": data.get("price_q25_20d") or data.get("bear_case_price"),
+    }
+
+
 def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tuple[float, list[str]]:
-    up_probability = float(holding.get("up_probability") or (radar_match or {}).get("up_probability") or 50.0)
-    predicted_return_pct = float(holding.get("predicted_return_pct") or (radar_match or {}).get("predicted_return_pct") or 0.0)
+    merged = {**(radar_match or {}), **holding}
+    dist_view = _distributional_view(merged)
+    up_probability = float(dist_view["up_probability"] or 50.0)
+    predicted_return_pct = float(dist_view["expected_return_pct"] or 0.0)
     trade_conviction = float(holding.get("trade_conviction") or 50.0)
     risk_score = float(holding.get("risk_score") or 50.0)
     execution_bias = holding.get("execution_bias") or (radar_match or {}).get("execution_bias") or "stay_selective"
     trade_action = holding.get("trade_action") or (radar_match or {}).get("action") or "wait_pullback"
     signal_profile = market_service.build_distributional_signal_profile(
         current_price=float(holding.get("current_price") or 0.0),
-        bull_case_price=holding.get("bull_case_price") or (radar_match or {}).get("bull_case_price"),
-        base_case_price=holding.get("base_case_price") or (radar_match or {}).get("base_case_price"),
-        bear_case_price=holding.get("bear_case_price") or (radar_match or {}).get("bear_case_price"),
-        bull_probability=holding.get("bull_probability") or (radar_match or {}).get("bull_probability"),
-        base_probability=holding.get("base_probability") or (radar_match or {}).get("base_probability"),
-        bear_probability=holding.get("bear_probability") or (radar_match or {}).get("bear_probability"),
+        bull_case_price=dist_view["bull_case_price"],
+        base_case_price=dist_view["base_case_price"],
+        bear_case_price=dist_view["bear_case_price"],
+        bull_probability=dist_view["up_probability"],
+        base_probability=dist_view["flat_probability"],
+        bear_probability=dist_view["down_probability"],
         predicted_return_pct=predicted_return_pct,
         up_probability=up_probability,
-        confidence=float(holding.get("confidence") or (radar_match or {}).get("confidence") or trade_conviction),
+        confidence=float(dist_view["confidence"] or trade_conviction),
     )
 
     score = 44.0
@@ -554,7 +594,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
         score += max(float(radar_match.get("opportunity_score") or 0.0) - 60.0, 0.0) * 0.12
 
     notes = [
-        f"분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%, 상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt를 반영했습니다.",
+        f"20거래일 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%, 상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt를 반영했습니다.",
         f"실행 바이어스는 `{execution_bias}`이며 현재 셋업은 `{trade_action}` 기준으로 해석했습니다.",
     ]
     risk_flags = holding.get("risk_flags") or []
@@ -572,18 +612,19 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
     is_watchlist = watchlist_key in watchlist_keys
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
+    dist_view = _distributional_view(opportunity)
 
     signal_profile = market_service.build_distributional_signal_profile(
         current_price=float(opportunity.get("current_price") or 0.0),
-        bull_case_price=opportunity.get("bull_case_price"),
-        base_case_price=opportunity.get("base_case_price"),
-        bear_case_price=opportunity.get("bear_case_price"),
-        bull_probability=opportunity.get("bull_probability"),
-        base_probability=opportunity.get("base_probability"),
-        bear_probability=opportunity.get("bear_probability"),
-        predicted_return_pct=float(opportunity.get("predicted_return_pct") or 0.0),
-        up_probability=float(opportunity.get("up_probability") or 50.0),
-        confidence=float(opportunity.get("confidence") or 50.0),
+        bull_case_price=dist_view["bull_case_price"],
+        base_case_price=dist_view["base_case_price"],
+        bear_case_price=dist_view["bear_case_price"],
+        bull_probability=dist_view["up_probability"],
+        base_probability=dist_view["flat_probability"],
+        bear_probability=dist_view["down_probability"],
+        predicted_return_pct=float(dist_view["expected_return_pct"] or 0.0),
+        up_probability=float(dist_view["up_probability"] or 50.0),
+        confidence=float(dist_view["confidence"] or 50.0),
     )
     score = float(opportunity.get("opportunity_score") or 0.0) * 0.7 + signal_profile["directional_score"] * 0.18
     if is_watchlist:
@@ -599,7 +640,7 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
     score -= signal_profile["downside_pct"] * 0.7
 
     notes = [
-        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%입니다.",
+        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 20거래일 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%입니다.",
         f"실행 바이어스 `{execution_bias}`와 액션 `{action}` 기준으로 신규 편입 후보로 평가했습니다.",
     ]
     if is_watchlist:
@@ -668,73 +709,29 @@ def _select_model_candidates(candidates: list[dict], target_count: int) -> list[
     return selected
 
 
-def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[dict], float]:
+def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[dict], object]:
     if not selected:
-        return [], 0.0
+        return [], optimize_portfolio_weights([], budget)
 
-    target_equity_pct = float(budget["recommended_equity_pct"])
-    max_single = float(budget["max_single_weight_pct"])
-    max_country = float(budget["max_country_weight_pct"])
-    max_sector = float(budget["max_sector_weight_pct"])
-
-    targets: dict[str, float] = {item["key"]: 0.0 for item in selected}
-    country_alloc: dict[str, float] = defaultdict(float)
-    sector_alloc: dict[str, float] = defaultdict(float)
-
-    min_position = max(min(target_equity_pct * 0.58 / max(len(selected), 1), 8.0), 4.0)
-    for item in sorted(selected, key=lambda entry: entry.get("model_score", 0.0), reverse=True):
-        remaining_total = target_equity_pct - sum(targets.values())
-        if remaining_total <= 0.25:
-            break
-        country_room = max_country - country_alloc[item["country_code"]]
-        sector_room = max_sector - sector_alloc[item["sector"]]
-        room = min(max_single - targets[item["key"]], country_room, sector_room, remaining_total)
-        if room <= 0.25:
-            continue
-        add_weight = min(min_position, room)
-        targets[item["key"]] += add_weight
-        country_alloc[item["country_code"]] += add_weight
-        sector_alloc[item["sector"]] += add_weight
-
-    remaining = target_equity_pct - sum(targets.values())
-    for _ in range(6):
-        if remaining <= 0.25:
-            break
-        active: list[tuple[dict, float]] = []
-        for item in selected:
-            country_room = max_country - country_alloc[item["country_code"]]
-            sector_room = max_sector - sector_alloc[item["sector"]]
-            room = min(max_single - targets[item["key"]], country_room, sector_room, remaining)
-            if room > 0.1:
-                active.append((item, room))
-        if not active:
-            break
-
-        total_weight_score = sum(max(float(item.get("weight_score") or 0.0), 1.0) for item, _ in active)
-        distributed = 0.0
-        for item, room in active:
-            share = remaining * max(float(item.get("weight_score") or 0.0), 1.0) / total_weight_score
-            add_weight = min(share, room)
-            if add_weight <= 0.05:
-                continue
-            targets[item["key"]] += add_weight
-            country_alloc[item["country_code"]] += add_weight
-            sector_alloc[item["sector"]] += add_weight
-            distributed += add_weight
-        remaining -= distributed
-        if distributed <= 0.1:
-            break
+    optimization = optimize_portfolio_weights(selected, budget)
+    targets = optimization.target_weights
 
     rounded_selected: list[dict] = []
     for item in selected:
-        target_weight_pct = round(targets[item["key"]], 2)
+        dist_view = _distributional_view(item)
+        target_weight_pct = round(float(targets.get(item["key"], 0.0)), 2)
         current_weight_pct = round(float(item.get("current_weight_pct") or 0.0), 2)
         delta_weight_pct = round(target_weight_pct - current_weight_pct, 2)
         action = _candidate_action(
             current_weight_pct=current_weight_pct,
             target_weight_pct=target_weight_pct,
         )
-        priority_score = abs(delta_weight_pct) * 2.0 + max(float(item.get("model_score") or 0.0) - 55.0, 0.0) * 0.2
+        priority_score = (
+            abs(delta_weight_pct) * 2.0
+            + max(float(item.get("model_score") or 0.0) - 55.0, 0.0) * 0.2
+            + max(float(dist_view["expected_excess_return_pct"] or 0.0), 0.0) * 0.45
+            - max(float(dist_view["down_probability"] or 0.0) - 35.0, 0.0) * 0.08
+        )
         if action in {"exit", "trim"} and item.get("execution_bias") in {"reduce_risk", "capital_preservation"}:
             priority_score += 8.0
         if action in {"new", "add"} and float(item.get("model_score") or 0.0) >= 65.0:
@@ -749,11 +746,31 @@ def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[di
                 "action": action,
                 "priority": _priority_label(priority_score),
                 "priority_score": round(priority_score, 2),
+                "target_horizon_days": 20,
+                "target_date_20d": dist_view["target_date"],
+                "expected_return_pct_20d": round(float(dist_view["expected_return_pct"] or 0.0), 2),
+                "expected_excess_return_pct_20d": round(float(dist_view["expected_excess_return_pct"] or 0.0), 2),
+                "median_return_pct_20d": round(float(dist_view["median_return_pct"] or 0.0), 2),
+                "forecast_volatility_pct_20d": round(float(dist_view["forecast_volatility_pct"] or 0.0), 2),
+                "up_probability_20d": round(float(dist_view["up_probability"] or 0.0), 2),
+                "flat_probability_20d": round(float(dist_view["flat_probability"] or 0.0), 2),
+                "down_probability_20d": round(float(dist_view["down_probability"] or 0.0), 2),
+                "distribution_confidence_20d": round(float(dist_view["confidence"] or 0.0), 1),
+                "price_q25_20d": dist_view["bear_case_price"],
+                "price_q50_20d": dist_view["base_case_price"],
+                "price_q75_20d": dist_view["bull_case_price"],
+                "predicted_return_pct": round(float(dist_view["expected_return_pct"] or 0.0), 2),
+                "up_probability": round(float(dist_view["up_probability"] or 0.0), 2),
+                "bull_case_price": dist_view["bull_case_price"],
+                "base_case_price": dist_view["base_case_price"],
+                "bear_case_price": dist_view["bear_case_price"],
+                "bull_probability": round(float(dist_view["up_probability"] or 0.0), 2),
+                "base_probability": round(float(dist_view["flat_probability"] or 0.0), 2),
+                "bear_probability": round(float(dist_view["down_probability"] or 0.0), 2),
             }
         )
 
-    actual_equity_pct = round(sum(item["target_weight_pct"] for item in rounded_selected), 2)
-    return rounded_selected, actual_equity_pct
+    return rounded_selected, optimization
 
 
 def _allocation_breakdown(items: list[dict], field: str) -> list[dict]:
@@ -834,10 +851,27 @@ async def _build_model_portfolio(
                 "current_weight_pct": round(float(holding.get("weight_pct") or 0.0), 2),
                 "model_score": model_score,
                 "weight_score": max(model_score - 42.0, 6.0) + 2.0,
-                "up_probability": holding.get("up_probability"),
-                "predicted_return_pct": holding.get("predicted_return_pct"),
-                "bull_probability": holding.get("bull_probability"),
-                "bear_probability": holding.get("bear_probability"),
+                "target_horizon_days": 20,
+                "target_date_20d": holding.get("target_date_20d"),
+                "expected_return_pct_20d": holding.get("expected_return_pct_20d"),
+                "expected_excess_return_pct_20d": holding.get("expected_excess_return_pct_20d"),
+                "median_return_pct_20d": holding.get("median_return_pct_20d"),
+                "forecast_volatility_pct_20d": holding.get("forecast_volatility_pct_20d"),
+                "up_probability_20d": holding.get("up_probability_20d"),
+                "flat_probability_20d": holding.get("flat_probability_20d"),
+                "down_probability_20d": holding.get("down_probability_20d"),
+                "distribution_confidence_20d": holding.get("distribution_confidence_20d"),
+                "price_q25_20d": holding.get("price_q25_20d"),
+                "price_q50_20d": holding.get("price_q50_20d"),
+                "price_q75_20d": holding.get("price_q75_20d"),
+                "up_probability": holding.get("up_probability_20d") or holding.get("up_probability"),
+                "predicted_return_pct": holding.get("expected_return_pct_20d") or holding.get("predicted_return_pct"),
+                "bull_probability": holding.get("up_probability_20d") or holding.get("bull_probability"),
+                "base_probability": holding.get("flat_probability_20d") or holding.get("base_probability"),
+                "bear_probability": holding.get("down_probability_20d") or holding.get("bear_probability"),
+                "bull_case_price": holding.get("price_q75_20d") or holding.get("bull_case_price"),
+                "base_case_price": holding.get("price_q50_20d") or holding.get("base_case_price"),
+                "bear_case_price": holding.get("price_q25_20d") or holding.get("bear_case_price"),
                 "execution_bias": holding.get("execution_bias"),
                 "setup_label": holding.get("trade_setup"),
                 "rationale": notes,
@@ -864,10 +898,27 @@ async def _build_model_portfolio(
                 "current_weight_pct": 0.0,
                 "model_score": model_score,
                 "weight_score": max(model_score - 48.0, 4.0),
-                "up_probability": opportunity.get("up_probability"),
-                "predicted_return_pct": opportunity.get("predicted_return_pct"),
-                "bull_probability": opportunity.get("bull_probability"),
-                "bear_probability": opportunity.get("bear_probability"),
+                "target_horizon_days": 20,
+                "target_date_20d": opportunity.get("target_date_20d"),
+                "expected_return_pct_20d": opportunity.get("expected_return_pct_20d"),
+                "expected_excess_return_pct_20d": opportunity.get("expected_excess_return_pct_20d"),
+                "median_return_pct_20d": opportunity.get("median_return_pct_20d"),
+                "forecast_volatility_pct_20d": opportunity.get("forecast_volatility_pct_20d"),
+                "up_probability_20d": opportunity.get("up_probability_20d"),
+                "flat_probability_20d": opportunity.get("flat_probability_20d"),
+                "down_probability_20d": opportunity.get("down_probability_20d"),
+                "distribution_confidence_20d": opportunity.get("distribution_confidence_20d"),
+                "price_q25_20d": opportunity.get("price_q25_20d"),
+                "price_q50_20d": opportunity.get("price_q50_20d"),
+                "price_q75_20d": opportunity.get("price_q75_20d"),
+                "up_probability": opportunity.get("up_probability_20d") or opportunity.get("up_probability"),
+                "predicted_return_pct": opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct"),
+                "bull_probability": opportunity.get("up_probability_20d") or opportunity.get("bull_probability"),
+                "base_probability": opportunity.get("flat_probability_20d") or opportunity.get("base_probability"),
+                "bear_probability": opportunity.get("down_probability_20d") or opportunity.get("bear_probability"),
+                "bull_case_price": opportunity.get("price_q75_20d") or opportunity.get("bull_case_price"),
+                "base_case_price": opportunity.get("price_q50_20d") or opportunity.get("base_case_price"),
+                "bear_case_price": opportunity.get("price_q25_20d") or opportunity.get("bear_case_price"),
                 "execution_bias": opportunity.get("execution_bias"),
                 "setup_label": opportunity.get("setup_label"),
                 "rationale": notes,
@@ -876,9 +927,10 @@ async def _build_model_portfolio(
         )
 
     selected = _select_model_candidates(candidates, int(budget["target_position_count"]))
-    recommended_holdings, actual_equity_pct = _allocate_model_weights(selected, budget)
-    budget["recommended_equity_pct"] = actual_equity_pct
-    budget["cash_buffer_pct"] = round(100.0 - actual_equity_pct, 2)
+    selected = await attach_candidate_return_series(selected, limit=4)
+    recommended_holdings, optimization = _allocate_model_weights(selected, budget)
+    budget["recommended_equity_pct"] = optimization.actual_equity_pct
+    budget["cash_buffer_pct"] = round(100.0 - optimization.actual_equity_pct, 2)
 
     recommended_lookup = {item["key"]: item for item in recommended_holdings}
     rebalance_actions: list[dict] = []
@@ -912,10 +964,27 @@ async def _build_model_portfolio(
                 "action": action,
                 "priority": _priority_label(priority_score),
                 "priority_score": round(priority_score, 2),
-                "up_probability": holding.get("up_probability"),
-                "predicted_return_pct": holding.get("predicted_return_pct"),
-                "bull_probability": holding.get("bull_probability"),
-                "bear_probability": holding.get("bear_probability"),
+                "target_horizon_days": 20,
+                "target_date_20d": holding.get("target_date_20d"),
+                "expected_return_pct_20d": holding.get("expected_return_pct_20d"),
+                "expected_excess_return_pct_20d": holding.get("expected_excess_return_pct_20d"),
+                "median_return_pct_20d": holding.get("median_return_pct_20d"),
+                "forecast_volatility_pct_20d": holding.get("forecast_volatility_pct_20d"),
+                "up_probability_20d": holding.get("up_probability_20d"),
+                "flat_probability_20d": holding.get("flat_probability_20d"),
+                "down_probability_20d": holding.get("down_probability_20d"),
+                "distribution_confidence_20d": holding.get("distribution_confidence_20d"),
+                "price_q25_20d": holding.get("price_q25_20d"),
+                "price_q50_20d": holding.get("price_q50_20d"),
+                "price_q75_20d": holding.get("price_q75_20d"),
+                "up_probability": holding.get("up_probability_20d") or holding.get("up_probability"),
+                "predicted_return_pct": holding.get("expected_return_pct_20d") or holding.get("predicted_return_pct"),
+                "bull_probability": holding.get("up_probability_20d") or holding.get("bull_probability"),
+                "base_probability": holding.get("flat_probability_20d") or holding.get("base_probability"),
+                "bear_probability": holding.get("down_probability_20d") or holding.get("bear_probability"),
+                "bull_case_price": holding.get("price_q75_20d") or holding.get("bull_case_price"),
+                "base_case_price": holding.get("price_q50_20d") or holding.get("base_case_price"),
+                "bear_case_price": holding.get("price_q25_20d") or holding.get("bear_case_price"),
                 "execution_bias": holding.get("execution_bias"),
                 "setup_label": holding.get("trade_setup"),
                 "rationale": list((item or {}).get("rationale") or holding.get("thesis") or []),
@@ -962,16 +1031,6 @@ async def _build_model_portfolio(
         )[:4]
     ]
 
-    recommendation_total = sum(float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings)
-    weighted_up_probability = (
-        sum(float(item.get("up_probability") or 50.0) * float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings) / recommendation_total
-        if recommendation_total else 0.0
-    )
-    weighted_predicted_return = (
-        sum(float(item.get("predicted_return_pct") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in recommended_holdings) / recommendation_total
-        if recommendation_total else 0.0
-    )
-
     top_country = _allocation_breakdown(recommended_holdings, "country_code")
     top_sector = _allocation_breakdown(recommended_holdings, "sector")
     trim_count = sum(1 for item in rebalance_actions if item.get("action") in {"trim", "exit"})
@@ -979,9 +1038,16 @@ async def _build_model_portfolio(
     watchlist_focus_count = sum(1 for item in recommended_holdings if item.get("in_watchlist"))
 
     notes = [
-        f"현재 추천안은 `{budget['style_label']}` 운영을 기준으로 주식 {actual_equity_pct:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
+        f"현재 추천안은 `{budget['style_label']}` 운영을 기준으로 주식 {optimization.actual_equity_pct:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
         f"권장 포지션 수는 {len(recommended_holdings)}개이며 단일 종목 상단은 {budget['max_single_weight_pct']:.1f}%로 제한했습니다.",
     ]
+    if recommended_holdings:
+        notes.append(
+            f"20거래일 기대수익률 {optimization.expected_return_pct_20d:+.2f}%, 기대초과수익률 {optimization.expected_excess_return_pct_20d:+.2f}%를 기준으로 비중을 최적화했습니다."
+        )
+        notes.append(
+            f"예상 변동성은 {optimization.forecast_volatility_pct_20d:.2f}%, 예상 회전율은 {optimization.turnover_pct:.2f}%입니다."
+        )
     if trim_count > 0:
         notes.append(f"현재 보유 종목 중 {trim_count}개는 방어 신호 또는 과대 비중 때문에 먼저 줄이는 편이 좋습니다.")
     if new_position_count > 0:
@@ -993,15 +1059,21 @@ async def _build_model_portfolio(
 
     return {
         "as_of": datetime.now().isoformat(),
-        "objective": "예측 시나리오, 실행 바이어스, 포지션 캡을 동시에 반영해 실제 매매 비중 제안으로 연결한 모델 포트폴리오입니다.",
+        "objective": "20거래일 분포 기대수익률과 기대초과수익률, EWMA+shrinkage 공분산, 회전율 패널티를 함께 반영해 실제 매매 비중 제안으로 연결한 모델 포트폴리오입니다.",
         "risk_budget": budget,
         "summary": {
             "selected_count": len(recommended_holdings),
             "new_position_count": new_position_count,
             "trim_count": trim_count,
             "watchlist_focus_count": watchlist_focus_count,
-            "model_up_probability": round(weighted_up_probability, 2),
-            "model_predicted_return_pct": round(weighted_predicted_return, 2),
+            "model_up_probability": round(optimization.up_probability_20d, 2),
+            "model_predicted_return_pct": round(optimization.expected_return_pct_20d, 2),
+            "expected_return_pct_20d": round(optimization.expected_return_pct_20d, 2),
+            "expected_excess_return_pct_20d": round(optimization.expected_excess_return_pct_20d, 2),
+            "forecast_volatility_pct_20d": round(optimization.forecast_volatility_pct_20d, 2),
+            "up_probability_20d": round(optimization.up_probability_20d, 2),
+            "down_probability_20d": round(optimization.down_probability_20d, 2),
+            "turnover_pct": round(optimization.turnover_pct, 2),
         },
         "allocation": {
             "by_country": top_country,
@@ -1088,12 +1160,16 @@ async def get_portfolio(user_id: str):
     async def _load_country_context(country_code: str) -> tuple[str, dict]:
         index = COUNTRY_REGISTRY[country_code].indices[0]
         history = await yfinance_client.get_price_history(index.ticker, period="6mo")
+        macro_snapshot = await ecos_client.get_kr_economic_snapshot() if country_code == "KR" else {}
+        kosis_snapshot = await kosis_client.get_kr_macro_snapshot() if country_code == "KR" else {}
         regime_forecast = forecast_next_day(
             ticker=index.ticker,
             name=index.name,
             country_code=country_code,
             price_history=history,
             benchmark_history=history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
             asset_type="index",
         )
         regime = build_market_regime(
@@ -1108,6 +1184,8 @@ async def get_portfolio(user_id: str):
             "benchmark_history": history,
             "market_regime": regime,
             "market_forecast": regime_forecast,
+            "macro_snapshot": macro_snapshot,
+            "kosis_snapshot": kosis_snapshot,
         }
 
     country_results = await gather_limited(unique_countries, _load_country_context, limit=3)
@@ -1129,6 +1207,8 @@ async def get_portfolio(user_id: str):
         context = country_context.get(country_code)
         benchmark_history = context.get("benchmark_history") if context else []
         market_regime = context.get("market_regime") if context else None
+        macro_snapshot = context.get("macro_snapshot") if context else {}
+        kosis_snapshot = context.get("kosis_snapshot") if context else {}
 
         try:
             info, analyst_raw, price_history = await asyncio.gather(
@@ -1166,7 +1246,24 @@ async def get_portfolio(user_id: str):
             context_bias=0.18 if market_regime and market_regime.stance == "risk_on" else -0.18 if market_regime and market_regime.stance == "risk_off" else 0.0,
             asset_type="stock",
             benchmark_history=benchmark_history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
             fundamental_context=info,
+        ) if price_history else None
+        distributional_forecast = build_distributional_forecast(
+            price_history=price_history,
+            benchmark_history=benchmark_history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
+            analyst_context={
+                **analyst_raw,
+                "target_mean": info.get("target_mean"),
+                "target_median": info.get("target_median"),
+                "target_high": info.get("target_high"),
+                "target_low": info.get("target_low"),
+            },
+            fundamental_context=info,
+            asset_type="stock",
         ) if price_history else None
         trade_plan = build_trade_plan(
             ticker=ticker,
@@ -1178,6 +1275,11 @@ async def get_portfolio(user_id: str):
             market_regime=market_regime,
         ) if price_points else None
         scenario_snapshot = _scenario_snapshot(next_day_forecast) if next_day_forecast else {}
+        horizon_20 = build_horizon_snapshot(
+            distributional_forecast,
+            horizon_days=20,
+            country_code=country_code,
+        )
 
         realized_volatility_pct = _annualized_volatility(price_history)
         max_drawdown_pct = _max_drawdown(price_history)
@@ -1218,6 +1320,19 @@ async def get_portfolio(user_id: str):
             "up_probability": round(next_day_forecast.up_probability, 2) if next_day_forecast else None,
             "predicted_return_pct": round(next_day_forecast.predicted_return_pct, 2) if next_day_forecast else None,
             "forecast_date": next_day_forecast.target_date if next_day_forecast else None,
+            "target_horizon_days": 20,
+            "target_date_20d": horizon_20.get("target_date"),
+            "expected_return_pct_20d": horizon_20.get("expected_return_pct"),
+            "expected_excess_return_pct_20d": horizon_20.get("expected_excess_return_pct"),
+            "median_return_pct_20d": horizon_20.get("median_return_pct"),
+            "forecast_volatility_pct_20d": horizon_20.get("forecast_volatility_pct"),
+            "up_probability_20d": horizon_20.get("up_probability"),
+            "flat_probability_20d": horizon_20.get("flat_probability"),
+            "down_probability_20d": horizon_20.get("down_probability"),
+            "distribution_confidence_20d": horizon_20.get("confidence"),
+            "price_q25_20d": horizon_20.get("price_q25"),
+            "price_q50_20d": horizon_20.get("price_q50"),
+            "price_q75_20d": horizon_20.get("price_q75"),
             "execution_bias": next_day_forecast.execution_bias if next_day_forecast else None,
             "execution_note": next_day_forecast.execution_note if next_day_forecast else None,
             "risk_flags": (next_day_forecast.risk_flags[:2] if next_day_forecast else []),

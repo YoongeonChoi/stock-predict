@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from datetime import date
 from unittest.mock import AsyncMock, patch
 
 from app.services import ideal_portfolio_service
@@ -46,6 +47,19 @@ def _opportunity(
         "up_probability": up_probability,
         "confidence": 68.0,
         "predicted_return_pct": predicted_return_pct,
+        "target_horizon_days": 20,
+        "target_date_20d": "2026-04-21",
+        "expected_return_pct_20d": predicted_return_pct,
+        "expected_excess_return_pct_20d": round(predicted_return_pct - 0.9, 2),
+        "median_return_pct_20d": round(predicted_return_pct - 0.2, 2),
+        "forecast_volatility_pct_20d": 7.4,
+        "up_probability_20d": up_probability,
+        "flat_probability_20d": 22.0,
+        "down_probability_20d": 15.0,
+        "distribution_confidence_20d": 71.0,
+        "price_q25_20d": 98.0,
+        "price_q50_20d": 102.0,
+        "price_q75_20d": 106.0,
         "bull_case_price": 104.0,
         "base_case_price": 102.0,
         "bear_case_price": 97.0,
@@ -92,15 +106,35 @@ class IdealPortfolioServiceTests(unittest.IsolatedAsyncioTestCase):
             "app.services.ideal_portfolio_service.market_service.get_market_opportunities",
             new=AsyncMock(return_value=kr),
         ), patch(
-            "app.services.ideal_portfolio_service.next_trading_day",
-            side_effect=lambda country_code, reference_date: datetime.fromisoformat("2026-03-24").date(),
+            "app.services.ideal_portfolio_service.trading_days_forward",
+            side_effect=lambda country_code, reference_date, count: [date(2026, 4, 21)],
+        ), patch(
+            "app.services.ideal_portfolio_service.yfinance_client.get_price_history",
+            new=AsyncMock(
+                return_value=[
+                    {"date": "2026-03-17", "close": 96.0},
+                    {"date": "2026-03-18", "close": 97.0},
+                    {"date": "2026-03-19", "close": 98.5},
+                    {"date": "2026-03-20", "close": 99.5},
+                    {"date": "2026-03-21", "close": 100.2},
+                    {"date": "2026-03-22", "close": 101.0},
+                    {"date": "2026-03-23", "close": 102.0},
+                ]
+            ),
         ):
             snapshot = await ideal_portfolio_service._build_snapshot("2026-03-23")
 
         self.assertTrue(snapshot["positions"])
         self.assertEqual(snapshot["reference_date"], "2026-03-23")
         self.assertGreater(snapshot["summary"]["predicted_portfolio_return_pct"], 0)
-        self.assertLessEqual(snapshot["risk_budget"]["cash_buffer_pct"], 28.0)
+        self.assertGreater(snapshot["summary"]["expected_excess_return_pct_20d"], 0)
+        self.assertGreater(snapshot["summary"]["turnover_pct"], 0)
+        self.assertGreater(snapshot["risk_budget"]["recommended_equity_pct"], 0.0)
+        self.assertAlmostEqual(
+            snapshot["risk_budget"]["recommended_equity_pct"] + snapshot["risk_budget"]["cash_buffer_pct"],
+            100.0,
+            places=2,
+        )
         self.assertIn("KR", [item["country_code"] for item in snapshot["positions"]])
         self.assertTrue(snapshot["playbook"])
 
