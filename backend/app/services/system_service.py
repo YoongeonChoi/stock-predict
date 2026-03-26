@@ -79,12 +79,12 @@ async def get_diagnostics() -> dict:
             "KOSIS",
             _configured(settings.kosis_api_key)
             and _any_configured(
-                settings.kosis_cpi_user_stats_id,
-                settings.kosis_employment_user_stats_id,
-                settings.kosis_industrial_production_user_stats_id,
+                settings.kosis_cpi_stats_id,
+                settings.kosis_employment_stats_id,
+                settings.kosis_industrial_production_stats_id,
             ),
             "정부 통계 보강",
-            "API 키와 userStatsId를 함께 넣어야 무료 확률 엔진의 거시 보강 입력으로 사용됩니다.",
+            "KOSIS API 키와 통계표 ID를 함께 넣어야 무료 확률 엔진의 거시 보강 입력으로 사용됩니다.",
         ),
         _source(
             "Naver Search API",

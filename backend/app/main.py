@@ -23,45 +23,97 @@ logging.basicConfig(
 startup_log = logging.getLogger("stock_predict.startup")
 
 
+async def _run_startup_task(
+    *,
+    name: str,
+    running_detail: str,
+    success_detail: str,
+    failure_prefix: str,
+    timeout_seconds: int,
+    job,
+) -> None:
+    upsert_startup_task(name, "running", running_detail)
+    try:
+        await asyncio.wait_for(job(), timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        startup_log.info("Startup task '%s' cancelled during shutdown.", name)
+        raise
+    except Exception as exc:
+        startup_log.warning("%s: %s", failure_prefix, exc, exc_info=True)
+        upsert_startup_task(
+            name,
+            "warning",
+            f"Startup continued without {name.replace('_', ' ')}: {exc}",
+        )
+    else:
+        upsert_startup_task(name, "ok", success_detail)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    background_tasks: list[asyncio.Task] = []
     reset_runtime_state()
     upsert_startup_task("database_initialize", "running", "Initializing SQLite database.")
     await db.initialize()
     upsert_startup_task("database_initialize", "ok", "Database initialization complete.")
 
-    upsert_startup_task("prediction_accuracy_refresh", "running", "Refreshing stored next-day prediction accuracy.")
-    try:
-        await asyncio.wait_for(
-            archive_service.refresh_prediction_accuracy(limit=100),
-            timeout=20,
-        )
-    except Exception as exc:
-        startup_log.warning("Prediction accuracy refresh failed during startup: %s", exc, exc_info=True)
+    if settings.startup_prediction_accuracy_refresh:
         upsert_startup_task(
             "prediction_accuracy_refresh",
-            "warning",
-            f"Startup continued without accuracy refresh: {exc}",
+            "running",
+            "Refreshing stored next-day prediction accuracy in background.",
+        )
+        background_tasks.append(
+            asyncio.create_task(
+                _run_startup_task(
+                    name="prediction_accuracy_refresh",
+                    running_detail="Refreshing stored next-day prediction accuracy in background.",
+                    success_detail="Prediction accuracy refresh completed.",
+                    failure_prefix="Prediction accuracy refresh failed during startup",
+                    timeout_seconds=settings.startup_prediction_accuracy_refresh_timeout,
+                    job=lambda: archive_service.refresh_prediction_accuracy(limit=100),
+                )
+            )
         )
     else:
-        upsert_startup_task("prediction_accuracy_refresh", "ok", "Prediction accuracy refresh completed.")
-
-    upsert_startup_task("research_archive_sync", "running", "Syncing curated public research archive.")
-    try:
-        await asyncio.wait_for(
-            research_archive_service.sync_public_research_reports(force=False),
-            timeout=35,
+        upsert_startup_task(
+            "prediction_accuracy_refresh",
+            "ok",
+            "Prediction accuracy refresh skipped by configuration.",
         )
-    except Exception as exc:
-        startup_log.warning("Research archive sync failed during startup: %s", exc, exc_info=True)
+
+    if settings.startup_research_archive_sync:
         upsert_startup_task(
             "research_archive_sync",
-            "warning",
-            f"Startup continued without external research refresh: {exc}",
+            "running",
+            "Syncing curated public research archive in background.",
+        )
+        background_tasks.append(
+            asyncio.create_task(
+                _run_startup_task(
+                    name="research_archive_sync",
+                    running_detail="Syncing curated public research archive in background.",
+                    success_detail="Curated research archive refresh completed.",
+                    failure_prefix="Research archive sync failed during startup",
+                    timeout_seconds=settings.startup_research_archive_sync_timeout,
+                    job=lambda: research_archive_service.sync_public_research_reports(force=False),
+                )
+            )
         )
     else:
-        upsert_startup_task("research_archive_sync", "ok", "Curated research archive refresh completed.")
-    yield
+        upsert_startup_task(
+            "research_archive_sync",
+            "ok",
+            "Curated research archive sync skipped by configuration.",
+        )
+    try:
+        yield
+    finally:
+        for task in background_tasks:
+            if not task.done():
+                task.cancel()
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
 
 
 app = FastAPI(
@@ -74,7 +126,8 @@ app = FastAPI(
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000"],
+    allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

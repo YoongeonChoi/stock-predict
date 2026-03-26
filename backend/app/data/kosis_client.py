@@ -1,4 +1,4 @@
-"""Optional KOSIS client using userStatsId-based Open API calls."""
+"""Optional KOSIS client using KOSIS statistics IDs on the shared API."""
 
 from __future__ import annotations
 
@@ -11,15 +11,15 @@ from app.errors import SP_2003
 BASE_URL = "https://kosis.kr/openapi/statisticsData.do"
 
 SERIES = {
-    "cpi": {"setting_key": "kosis_cpi_user_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
-    "employment": {"setting_key": "kosis_employment_user_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
-    "industrial_production": {"setting_key": "kosis_industrial_production_user_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
+    "cpi": {"setting_key": "kosis_cpi_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
+    "employment": {"setting_key": "kosis_employment_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
+    "industrial_production": {"setting_key": "kosis_industrial_production_stats_id", "prd_se": "M", "new_est_prd_cnt": 3},
 }
 
 
-async def get_series(user_stats_id: str, prd_se: str = "M", count: int = 3) -> list[dict]:
+async def get_series(stats_id: str, prd_se: str = "M", count: int = 3) -> list[dict]:
     settings = get_settings()
-    if not (settings.kosis_api_key and user_stats_id):
+    if not (settings.kosis_api_key and stats_id):
         return []
 
     async def _fetch():
@@ -28,7 +28,7 @@ async def get_series(user_stats_id: str, prd_se: str = "M", count: int = 3) -> l
             "apiKey": settings.kosis_api_key,
             "format": "json",
             "jsonVD": "Y",
-            "userStatsId": user_stats_id,
+            "userStatsId": stats_id,
             "prdSe": prd_se,
             "newEstPrdCnt": max(1, count),
         }
@@ -56,7 +56,7 @@ async def get_series(user_stats_id: str, prd_se: str = "M", count: int = 3) -> l
         return rows
 
     return await cache.get_or_fetch(
-        f"kosis:{user_stats_id}:{prd_se}:{count}",
+        f"kosis:{stats_id}:{prd_se}:{count}",
         _fetch,
         settings.cache_ttl_economic,
     )
@@ -66,9 +66,9 @@ async def get_kr_macro_snapshot() -> dict:
     settings = get_settings()
     snapshot: dict[str, float | None] = {}
     for key, spec in SERIES.items():
-        user_stats_id = getattr(settings, spec["setting_key"], "")
+        stats_id = getattr(settings, spec["setting_key"], "")
         rows = await get_series(
-            user_stats_id=user_stats_id,
+            stats_id=stats_id,
             prd_se=spec["prd_se"],
             count=spec["new_est_prd_cnt"],
         )

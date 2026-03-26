@@ -342,9 +342,9 @@ def _build_data_sources(
     kosis_configured = bool(
         settings.kosis_api_key
         and (
-            settings.kosis_cpi_user_stats_id
-            or settings.kosis_employment_user_stats_id
-            or settings.kosis_industrial_production_user_stats_id
+            settings.kosis_cpi_stats_id
+            or settings.kosis_employment_stats_id
+            or settings.kosis_industrial_production_stats_id
         )
     )
     return [

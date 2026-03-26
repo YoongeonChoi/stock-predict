@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.15.2 - 2026-03-26
+
+- Vercel 프론트 + Render 백엔드 상시 배포 구성을 바로 가져갈 수 있도록 `render.yaml`, `frontend/.env.example`, 확장된 `backend/.env.example`를 추가했습니다.
+- 백엔드 CORS 설정을 다중 프론트 도메인과 regex 기반 프리뷰 도메인까지 받을 수 있게 확장해, 커스텀 도메인과 `*.vercel.app` 프리뷰를 함께 운영하기 쉬워졌습니다.
+- 부팅 시 예측 정확도/리서치 아카이브 동기화를 백그라운드 작업으로 돌리도록 바꿔, 저비용 호스팅 환경에서도 `/api/health`가 더 빨리 살아나도록 안정화했습니다.
+- README를 상시 배포 기준으로 갱신하고, 환경 변수와 Render/Vercel/Cloudflare 연결 순서를 문서에 반영했습니다.
+- KOSIS 설정명을 `*_USER_STATS_ID`에서 `*_STATS_ID`로 정리해, 별도 API가 아니라 같은 KOSIS 통계자료 API에 넘기는 통계표 ID라는 점이 코드와 문서에 드러나도록 맞췄습니다.
+
 ## v2.15.0 - 2026-03-25
 
 - 기존 `signal-v2.4` 휴리스틱 예측을 그대로 유지한 채, 가격·거래량·상대강도·거시를 중심으로 `q10/q25/q50/q75/q90`, `상승/중립/하락 확률`, `장세 확률`을 반환하는 무료 한국장 확률 엔진 `kr-free-prob-v0.1`을 종목 상세에 병렬 추가했습니다.

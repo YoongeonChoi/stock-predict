@@ -1,7 +1,7 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 export function apiPath(path: string): string {
-  return `${API}${path}`;
+  return API ? `${API}${path}` : path;
 }
 
 export interface ApiErrorInfo {

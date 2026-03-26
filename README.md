@@ -2,7 +2,7 @@
 
 한국장 전용 AI 주식 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.15.0`
+현재 릴리즈: `v2.15.2`
 
 이 버전부터 앱은 더 이상 미국/일본 시장을 다루지 않고, 한국 주식과 한국 거시 일정에만 집중합니다. 프론트와 백엔드의 국가 선택, 리서치 아카이브, 캘린더, 포트폴리오 입력 흐름도 모두 `KR` 기준으로 정리했습니다.
 
@@ -85,19 +85,35 @@
 
 ## 환경 변수
 
-`backend/.env` 예시:
+백엔드 `backend/.env` 예시:
 
 ```env
 OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4o
 ECOS_API_KEY=...
 FMP_API_KEY=...
 OPENDART_API_KEY=...
 KOSIS_API_KEY=...
-KOSIS_CPI_USER_STATS_ID=...
-KOSIS_EMPLOYMENT_USER_STATS_ID=...
-KOSIS_INDUSTRIAL_PRODUCTION_USER_STATS_ID=...
+KOSIS_CPI_STATS_ID=...
+KOSIS_EMPLOYMENT_STATS_ID=...
+KOSIS_INDUSTRIAL_PRODUCTION_STATS_ID=...
 NAVER_CLIENT_ID=...
 NAVER_CLIENT_SECRET=...
+DB_PATH=data/stock_predict.db
+FRONTEND_URL=http://localhost:3000
+FRONTEND_URLS=
+FRONTEND_ORIGIN_REGEX=
+STARTUP_PREDICTION_ACCURACY_REFRESH=true
+STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT=20
+STARTUP_RESEARCH_ARCHIVE_SYNC=true
+STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
+```
+
+프론트 `frontend/.env.example` 기준 예시:
+
+```env
+NEXT_PUBLIC_API_URL=
+BACKEND_PROXY_URL=http://localhost:8000
 ```
 
 메모:
@@ -106,8 +122,55 @@ NAVER_CLIENT_SECRET=...
 - `ECOS_API_KEY`는 한국 거시 입력 품질에 중요합니다.
 - `OPENDART_API_KEY`를 넣으면 최근 공시 이벤트가 무료 KR 확률 엔진에 보강 신호로 반영됩니다.
 - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`를 넣으면 국내 뉴스 헤드라인 커버리지가 보강됩니다.
-- `KOSIS_API_KEY`는 `userStatsId`와 함께 넣어야 정부 통계 보강에 실제 사용됩니다.
+- `KOSIS_API_KEY`는 KOSIS 공유서비스 인증키입니다.
+- `KOSIS_CPI_STATS_ID`, `KOSIS_EMPLOYMENT_STATS_ID`, `KOSIS_INDUSTRIAL_PRODUCTION_STATS_ID`는 별도 API가 아니라 같은 KOSIS 통계자료 API에 넘기는 통계표 ID입니다.
 - `FMP_API_KEY`는 선택입니다. 없으면 더 작은 fallback 유니버스와 Yahoo 중심 흐름으로 동작합니다.
+- `FRONTEND_URLS`는 쉼표 또는 줄바꿈으로 여러 프론트 도메인을 받을 수 있습니다.
+- `FRONTEND_ORIGIN_REGEX`를 쓰면 `https://preview-*.vercel.app` 같은 프리뷰 도메인을 CORS에 같이 허용할 수 있습니다.
+- 시작 시 예측 정확도/리서치 동기화는 이제 백그라운드로 돌며, `STARTUP_*` 값으로 부팅 시 동작 여부와 timeout을 조절할 수 있습니다.
+
+## 상시 배포 추천 구성
+
+학생 예산 기준으로 가장 현실적인 기본 구성은 아래입니다.
+
+- 프론트: `Vercel Hobby`
+- 백엔드: `Render Starter`
+- DB: `SQLite + Render Persistent Disk`
+- DNS: `Cloudflare`
+
+이 레포는 아직 로그인/사용자 분리가 없고 SQLite 파일을 직접 사용합니다. 그래서 지금 단계에서는 `Vercel + Render + 디스크 유지`가 가장 적은 수정으로 안정적인 상시 운영에 가깝습니다.
+
+권장 도메인 구조:
+
+- 프론트: `https://example.com`
+- 백엔드: `https://api.example.com`
+
+배포 순서:
+
+1. 백엔드부터 Render에 올립니다.
+   - 저장소 루트에 포함된 `render.yaml`을 사용하면 `backend` 루트, `uvicorn` 시작 명령, `/api/health` 헬스체크, `/var/data` 디스크 마운트가 한 번에 잡힙니다.
+   - Render에서 `New + -> Blueprint`로 이 저장소를 연결합니다.
+2. Render 서비스 환경 변수를 채웁니다.
+   - `DB_PATH=/var/data/stock_predict.db`
+   - `FRONTEND_URL=https://example.com`
+   - `FRONTEND_URLS=https://www.example.com`
+   - `FRONTEND_ORIGIN_REGEX=^https://.*\.vercel\.app$`
+   - 나머지 API 키는 `backend/.env.example` 기준으로 입력합니다.
+3. Render 기본 도메인으로 백엔드가 뜨는지 먼저 확인합니다.
+   - `https://<your-render-service>.onrender.com/api/health`
+4. 프론트를 Vercel에 올립니다.
+   - 프로젝트 Root Directory는 `frontend`
+   - 환경 변수 `NEXT_PUBLIC_API_URL=https://api.example.com`
+5. Cloudflare에서 커스텀 도메인을 붙입니다.
+   - `example.com`은 Vercel이 제시하는 값으로 연결합니다.
+   - `api.example.com`은 Render가 제시하는 `CNAME` 값으로 연결합니다.
+6. 도메인 검증이 끝나면 Render의 `FRONTEND_URL`, `FRONTEND_URLS`를 최종 도메인 기준으로 다시 확인하고 재배포합니다.
+
+운영 메모:
+
+- 현재 구조는 단일 워크스페이스 DB입니다. 여러 사용자가 동시에 접속하면 워치리스트, 포트폴리오, 프로필 데이터가 함께 공유됩니다.
+- Render Starter + 디스크 조합은 “항상 켜지는 개인 서비스”에는 잘 맞지만, 멀티유저 SaaS로 가려면 이후 `Postgres + 사용자 인증` 분리가 필요합니다.
+- 부팅 직후에도 `/api/health`가 먼저 살아나도록 외부 동기화 작업은 백그라운드로 실행됩니다.
 
 ## 실행
 
