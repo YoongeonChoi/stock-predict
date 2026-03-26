@@ -507,14 +507,26 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
     predicted_return_pct = float(holding.get("predicted_return_pct") or (radar_match or {}).get("predicted_return_pct") or 0.0)
     trade_conviction = float(holding.get("trade_conviction") or 50.0)
     risk_score = float(holding.get("risk_score") or 50.0)
-    bear_probability = float(holding.get("bear_probability") or (radar_match or {}).get("bear_probability") or 0.0)
     execution_bias = holding.get("execution_bias") or (radar_match or {}).get("execution_bias") or "stay_selective"
     trade_action = holding.get("trade_action") or (radar_match or {}).get("action") or "wait_pullback"
+    signal_profile = market_service.build_distributional_signal_profile(
+        current_price=float(holding.get("current_price") or 0.0),
+        bull_case_price=holding.get("bull_case_price") or (radar_match or {}).get("bull_case_price"),
+        base_case_price=holding.get("base_case_price") or (radar_match or {}).get("base_case_price"),
+        bear_case_price=holding.get("bear_case_price") or (radar_match or {}).get("bear_case_price"),
+        bull_probability=holding.get("bull_probability") or (radar_match or {}).get("bull_probability"),
+        base_probability=holding.get("base_probability") or (radar_match or {}).get("base_probability"),
+        bear_probability=holding.get("bear_probability") or (radar_match or {}).get("bear_probability"),
+        predicted_return_pct=predicted_return_pct,
+        up_probability=up_probability,
+        confidence=float(holding.get("confidence") or (radar_match or {}).get("confidence") or trade_conviction),
+    )
 
-    score = 50.0
-    score += (up_probability - 50.0) * 0.85
-    score += predicted_return_pct * 6.0
-    score += (trade_conviction - 50.0) * 0.22
+    score = 44.0
+    score += signal_profile["directional_score"] * 0.34
+    score += signal_profile["expected_return_pct"] * 3.5
+    score += signal_profile["probability_edge"] * 0.18
+    score += (trade_conviction - 50.0) * 0.14
     score += {
         "press_long": 12.0,
         "lean_long": 7.0,
@@ -530,7 +542,8 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
         "avoid": -8.0,
     }.get(trade_action, 0.0)
     score -= max(risk_score - 55.0, 0.0) * 0.55
-    score -= max(bear_probability - 24.0, 0.0) * 0.65
+    score -= signal_profile["downside_pct"] * 0.9
+    score -= max(signal_profile["range_width_pct"] - 8.0, 0.0) * 0.45
 
     if holding.get("market_regime_stance") == "risk_on":
         score += 4.0
@@ -541,7 +554,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
         score += max(float(radar_match.get("opportunity_score") or 0.0) - 60.0, 0.0) * 0.12
 
     notes = [
-        f"다음 거래일 상승 확률 {up_probability:.1f}%, 예상 수익률 {predicted_return_pct:+.2f}%를 반영했습니다.",
+        f"분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%, 상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt를 반영했습니다.",
         f"실행 바이어스는 `{execution_bias}`이며 현재 셋업은 `{trade_action}` 기준으로 해석했습니다.",
     ]
     risk_flags = holding.get("risk_flags") or []
@@ -560,7 +573,19 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
 
-    score = float(opportunity.get("opportunity_score") or 0.0)
+    signal_profile = market_service.build_distributional_signal_profile(
+        current_price=float(opportunity.get("current_price") or 0.0),
+        bull_case_price=opportunity.get("bull_case_price"),
+        base_case_price=opportunity.get("base_case_price"),
+        bear_case_price=opportunity.get("bear_case_price"),
+        bull_probability=opportunity.get("bull_probability"),
+        base_probability=opportunity.get("base_probability"),
+        bear_probability=opportunity.get("bear_probability"),
+        predicted_return_pct=float(opportunity.get("predicted_return_pct") or 0.0),
+        up_probability=float(opportunity.get("up_probability") or 50.0),
+        confidence=float(opportunity.get("confidence") or 50.0),
+    )
+    score = float(opportunity.get("opportunity_score") or 0.0) * 0.7 + signal_profile["directional_score"] * 0.18
     if is_watchlist:
         score += 5.0
     if action in {"accumulate", "breakout_watch"}:
@@ -571,9 +596,10 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
         score += 3.0
     elif opportunity.get("regime_tailwind") == "headwind":
         score -= 2.5
+    score -= signal_profile["downside_pct"] * 0.7
 
     notes = [
-        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 상승 확률 {float(opportunity.get('up_probability') or 0.0):.1f}%입니다.",
+        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%입니다.",
         f"실행 바이어스 `{execution_bias}`와 액션 `{action}` 기준으로 신규 편입 후보로 평가했습니다.",
     ]
     if is_watchlist:
@@ -1067,6 +1093,7 @@ async def get_portfolio(user_id: str):
             name=index.name,
             country_code=country_code,
             price_history=history,
+            benchmark_history=history,
             asset_type="index",
         )
         regime = build_market_regime(
@@ -1138,6 +1165,8 @@ async def get_portfolio(user_id: str):
             },
             context_bias=0.18 if market_regime and market_regime.stance == "risk_on" else -0.18 if market_regime and market_regime.stance == "risk_off" else 0.0,
             asset_type="stock",
+            benchmark_history=benchmark_history,
+            fundamental_context=info,
         ) if price_history else None
         trade_plan = build_trade_plan(
             ticker=ticker,

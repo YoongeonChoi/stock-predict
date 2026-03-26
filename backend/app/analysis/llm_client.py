@@ -1,12 +1,18 @@
 """OpenAI GPT-4o wrapper with structured JSON output and error-coded responses."""
 
 import json
+
 import openai
 from app.config import get_settings
 from app.errors import SP_1001, SP_4001, SP_4002, SP_4003, SP_4004, SP_4005
 
 
-async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.3) -> dict:
+async def ask_json(
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.3,
+    json_schema: dict | None = None,
+) -> dict:
     settings = get_settings()
     if not settings.openai_api_key or settings.openai_api_key.startswith("sk-your"):
         err = SP_1001()
@@ -19,6 +25,12 @@ async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.
             max_retries=0,
             timeout=30.0,
         )
+        response_format = {"type": "json_object"}
+        if json_schema:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
         response = await client.chat.completions.create(
             model=settings.openai_model,
             messages=[
@@ -26,7 +38,7 @@ async def ask_json(system_prompt: str, user_prompt: str, temperature: float = 0.
                 {"role": "user", "content": user_prompt},
             ],
             temperature=temperature,
-            response_format={"type": "json_object"},
+            response_format=response_format,
         )
         text = response.choices[0].message.content or "{}"
         try:

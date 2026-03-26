@@ -1,15 +1,20 @@
-"""Index forecast engine: Monte Carlo simulation + LLM qualitative adjustment."""
+"""Index forecast engine backed by the shared distribution model."""
 
-import numpy as np
+from __future__ import annotations
+
 from datetime import datetime
-from app.data import yfinance_client, cache
-from app.analysis.llm_client import ask_json
-from app.analysis.prompts import index_forecast_prompt
-from app.models.forecast import IndexForecast, ForecastScenario
+from math import exp
+
+from app.analysis.distributional_return_engine import MODEL_VERSION, build_distributional_forecast
+from app.data import cache, yfinance_client
+from app.models.forecast import ForecastScenario, IndexForecast
 from app.config import get_settings
 
-TRADING_DAYS_1M = 21
-NUM_SIMULATIONS = 10000
+TRADING_DAYS_1M = 20
+
+
+def _price(reference_price: float, log_return: float) -> float:
+    return round(reference_price * exp(log_return), 2) if reference_price > 0 else 0.0
 
 
 async def forecast_index(
@@ -17,79 +22,76 @@ async def forecast_index(
     index_name: str,
     economic_data: dict,
     news_summary: str,
+    *,
+    price_history: list[dict] | None = None,
+    benchmark_history: list[dict] | None = None,
+    breadth_context: dict | None = None,
+    news_items: list[dict] | None = None,
+    event_context: dict | None = None,
 ) -> IndexForecast:
     settings = get_settings()
-    cache_key = f"forecast:{index_ticker}"
+    reference_token = str((price_history or [])[-1]["date"]) if price_history else "live"
+    cache_key = f"forecast:{index_ticker}:{reference_token}:{MODEL_VERSION}"
     cached = await cache.get(cache_key)
     if cached:
         return IndexForecast(**cached)
 
-    returns = await yfinance_client.get_historical_returns(index_ticker, days=60)
-    quote = await yfinance_client.get_index_quote(index_ticker)
-    current_price = quote.get("price", 0)
+    resolved_history = price_history or await yfinance_client.get_price_history(index_ticker, period="2y")
+    if not resolved_history:
+        return _fallback(index_ticker, index_name, 0.0)
 
-    if not returns or current_price == 0:
+    structured_news = news_items or [
+        {"title": line.strip(), "published": resolved_history[-1].get("date"), "source": "news"}
+        for line in str(news_summary or "").splitlines()
+        if line.strip()
+    ]
+
+    distribution = build_distributional_forecast(
+        price_history=resolved_history,
+        benchmark_history=benchmark_history,
+        macro_snapshot=economic_data or {},
+        news_items=structured_news,
+        event_context=event_context,
+        breadth_context=breadth_context or {},
+        horizons=(TRADING_DAYS_1M,),
+        asset_type="index",
+    )
+    if distribution is None:
+        current_price = float(resolved_history[-1].get("close") or 0.0)
         return _fallback(index_ticker, index_name, current_price)
 
-    mc_result = _monte_carlo(current_price, returns)
-
-    system, user = index_forecast_prompt(
-        index_name, current_price, mc_result, economic_data, news_summary
-    )
-    llm = await ask_json(system, user, temperature=0.3)
-
-    _llm_ok = "error_code" not in llm and "error" not in llm
-    fair_value = float(llm.get("fair_value", mc_result["base"])) if _llm_ok else mc_result["base"]
-    scenarios = []
-    if _llm_ok:
-        for s in llm.get("scenarios", []):
-            scenarios.append(ForecastScenario(
-                name=s.get("name", ""),
-                price=round(float(s.get("price", 0)), 2),
-                probability=float(s.get("probability", 33)),
-                description=s.get("description", ""),
-            ))
-
-    if not scenarios:
-        scenarios = [
-            ForecastScenario(name="Bull", price=round(mc_result["bull"], 2), probability=25,
-                             description="Statistical upper band"),
-            ForecastScenario(name="Base", price=round(mc_result["base"], 2), probability=50,
-                             description="Most likely scenario"),
-            ForecastScenario(name="Bear", price=round(mc_result["bear"], 2), probability=25,
-                             description="Statistical lower band"),
-        ]
-
+    horizon = distribution.horizons[TRADING_DAYS_1M]
     result = IndexForecast(
         index_ticker=index_ticker,
         index_name=index_name,
-        current_price=round(current_price, 2),
-        fair_value=round(fair_value, 2),
-        scenarios=scenarios,
-        confidence_note=llm.get("confidence_note", ""),
+        current_price=round(distribution.reference_price, 2),
+        fair_value=_price(distribution.reference_price, horizon.q50),
+        scenarios=[
+            ForecastScenario(
+                name="Bull",
+                price=_price(distribution.reference_price, horizon.q90),
+                probability=round(horizon.p_up, 1),
+                description="상방 90분위 시나리오입니다.",
+            ),
+            ForecastScenario(
+                name="Base",
+                price=_price(distribution.reference_price, horizon.q50),
+                probability=round(horizon.p_flat, 1),
+                description="조건부 수익률 분포의 중앙값입니다.",
+            ),
+            ForecastScenario(
+                name="Bear",
+                price=_price(distribution.reference_price, horizon.q10),
+                probability=round(horizon.p_down, 1),
+                description="하방 10분위 시나리오입니다.",
+            ),
+        ],
+        confidence_note=distribution.confidence_note,
         generated_at=datetime.now().isoformat(),
     )
 
     await cache.set(cache_key, result.model_dump(), settings.cache_ttl_forecast)
     return result
-
-
-def _monte_carlo(current: float, returns: list[float]) -> dict:
-    mu = np.mean(returns)
-    sigma = np.std(returns)
-
-    rng = np.random.default_rng(42)
-    simulated = rng.normal(mu, sigma, (NUM_SIMULATIONS, TRADING_DAYS_1M))
-    cumulative = np.exp(simulated.cumsum(axis=1))
-    final_prices = current * cumulative[:, -1]
-
-    return {
-        "bull": round(float(np.percentile(final_prices, 90)), 2),
-        "base": round(float(np.percentile(final_prices, 50)), 2),
-        "bear": round(float(np.percentile(final_prices, 10)), 2),
-        "p25": round(float(np.percentile(final_prices, 25)), 2),
-        "p75": round(float(np.percentile(final_prices, 75)), 2),
-    }
 
 
 def _fallback(ticker: str, name: str, price: float) -> IndexForecast:
@@ -99,10 +101,10 @@ def _fallback(ticker: str, name: str, price: float) -> IndexForecast:
         current_price=price,
         fair_value=price,
         scenarios=[
-            ForecastScenario(name="Bull", price=round(price * 1.05, 2), probability=25),
-            ForecastScenario(name="Base", price=price, probability=50),
-            ForecastScenario(name="Bear", price=round(price * 0.95, 2), probability=25),
+            ForecastScenario(name="Bull", price=round(price * 1.05, 2), probability=25.0),
+            ForecastScenario(name="Base", price=price, probability=50.0),
+            ForecastScenario(name="Bear", price=round(price * 0.95, 2), probability=25.0),
         ],
-        confidence_note="Insufficient data for statistical forecast.",
+        confidence_note="가격 이력이 부족해 분포 예측을 수행하지 못했습니다.",
         generated_at=datetime.now().isoformat(),
     )

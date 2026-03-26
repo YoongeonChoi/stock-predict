@@ -216,7 +216,8 @@ def index_forecast_prompt(
     system = (
         "You are a quantitative strategist.\n"
         "You MUST respond with valid JSON only.\n"
-        "Adjust the Monte Carlo base scenarios using fundamental analysis.\n"
+        "Adjust the probability-distribution baseline using macro, breadth, and event context.\n"
+        "Do not invent prices without tying them back to the provided baseline scenarios.\n"
         "Provide probability-weighted scenarios for 1 month ahead."
     )
 
@@ -224,7 +225,7 @@ def index_forecast_prompt(
 
 Current Price: {current_price}
 
-## Monte Carlo Base Scenarios (statistical)
+## Distribution Baseline Scenarios (statistical)
 Bull (90th pctl): {mc_scenarios.get('bull')}
 Base (50th pctl): {mc_scenarios.get('base')}
 Bear (10th pctl): {mc_scenarios.get('bear')}

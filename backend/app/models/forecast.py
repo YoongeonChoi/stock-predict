@@ -66,7 +66,7 @@ class NextDayForecast(BaseModel):
     execution_note: str = ""
     flow_signal: FlowSignal | None = None
     drivers: list[ForecastDriver] = Field(default_factory=list)
-    model_version: str = "signal-v2.4"
+    model_version: str = "dist-studentt-v3.1"
 
 
 class FreeKrForecastDataSource(BaseModel):
@@ -117,7 +117,7 @@ class FreeKrForecast(BaseModel):
     data_sources: list[FreeKrForecastDataSource] = Field(default_factory=list)
     confidence_note: str = ""
     summary: str = ""
-    model_version: str = "kr-free-prob-v0.1"
+    model_version: str = "dist-studentt-v3.1"
 
 
 class HistoricalForecastHorizon(BaseModel):

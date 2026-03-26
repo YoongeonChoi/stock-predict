@@ -8,6 +8,7 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
+from app.analysis.distributional_return_engine import build_structured_event_context
 from app.analysis.free_kr_forecast import build_free_kr_forecast
 from app.analysis.historical_pattern_forecast import build_historical_pattern_forecast
 from app.analysis.llm_client import ask_json
@@ -146,13 +147,22 @@ async def analyze_stock(ticker: str) -> dict:
     price = info.get("current_price", 0)
     prev = info.get("prev_close", price)
     change_pct = ((price - prev) / prev * 100) if prev else 0
+    combined_news = [*google_news, *naver_news]
+    event_context = await build_structured_event_context(
+        ticker=ticker,
+        asset_name=info.get("name", ticker),
+        country_code=country_code,
+        news_items=combined_news,
+        filings=filings,
+        reference_date=(prices_6mo[-1]["date"] if prices_6mo else prices_raw[-1]["date"]),
+    )
 
     next_day_forecast = forecast_next_day(
         ticker=ticker,
         name=info.get("name", ticker),
         country_code=country_code,
         price_history=prices_6mo or prices_raw,
-        news_items=google_news,
+        news_items=combined_news,
         analyst_context={
             **analyst_raw,
             "target_mean": info.get("target_mean"),
@@ -163,6 +173,12 @@ async def analyze_stock(ticker: str) -> dict:
         flow_signal=flow_signal,
         context_bias=((composite.total if composite else quant_score.total) - 50) / 50,
         asset_type="stock",
+        benchmark_history=market_prices_full or market_prices,
+        macro_snapshot=ecos_snapshot,
+        kosis_snapshot=kosis_snapshot,
+        fundamental_context=info,
+        filings=filings,
+        event_context=event_context,
     )
     free_kr_forecast = build_free_kr_forecast(
         ticker=ticker,
@@ -182,6 +198,8 @@ async def analyze_stock(ticker: str) -> dict:
         },
         ecos_snapshot=ecos_snapshot,
         kosis_snapshot=kosis_snapshot,
+        fundamental_context=info,
+        event_context=event_context,
     )
     historical_pattern_forecast = None
     setup_backtest = None
@@ -205,7 +223,10 @@ async def analyze_stock(ticker: str) -> dict:
             name=COUNTRY_REGISTRY[country_code].indices[0].name,
             country_code=country_code,
             price_history=market_prices,
+            macro_snapshot=ecos_snapshot,
+            kosis_snapshot=kosis_snapshot,
             asset_type="index",
+            event_context=event_context,
         ),
     )
     trade_plan = build_trade_plan(

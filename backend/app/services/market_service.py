@@ -10,7 +10,7 @@ from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.analysis.stock_analyzer import _calc_technicals
-from app.data import cache, yfinance_client
+from app.data import cache, ecos_client, kosis_client, yfinance_client
 from app.data.universe_data import resolve_universe
 from app.models.country import COUNTRY_REGISTRY
 from app.models.market import OpportunityItem, OpportunityRadarResponse
@@ -38,6 +38,74 @@ def _scenario_snapshot(forecast) -> dict:
     }
 
 
+def _safe_float(value: float | None, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def build_distributional_signal_profile(
+    *,
+    current_price: float,
+    bull_case_price: float | None,
+    base_case_price: float | None,
+    bear_case_price: float | None,
+    bull_probability: float | None,
+    base_probability: float | None,
+    bear_probability: float | None,
+    predicted_return_pct: float,
+    up_probability: float,
+    confidence: float,
+) -> dict[str, float]:
+    price = max(_safe_float(current_price, 0.0), 1e-6)
+    bull_return_pct = ((_safe_float(bull_case_price, price) / price) - 1.0) * 100.0
+    base_return_pct = ((_safe_float(base_case_price, price) / price) - 1.0) * 100.0
+    bear_return_pct = ((_safe_float(bear_case_price, price) / price) - 1.0) * 100.0
+    bull_prob = _safe_float(bull_probability, up_probability)
+    base_prob = _safe_float(base_probability, max(100.0 - up_probability - _safe_float(bear_probability, 0.0), 0.0))
+    bear_prob = _safe_float(bear_probability, max(100.0 - up_probability, 0.0))
+    probability_total = bull_prob + base_prob + bear_prob
+    if probability_total <= 0:
+        bull_prob, base_prob, bear_prob = up_probability, max(100.0 - up_probability, 0.0), 0.0
+        probability_total = bull_prob + base_prob + bear_prob
+    bull_prob /= probability_total
+    base_prob /= probability_total
+    bear_prob /= probability_total
+
+    expected_return_pct = bull_return_pct * bull_prob + base_return_pct * base_prob + bear_return_pct * bear_prob
+    if abs(expected_return_pct) < 0.05:
+        expected_return_pct = _safe_float(predicted_return_pct, 0.0)
+
+    upside_pct = max(bull_return_pct, base_return_pct, 0.0)
+    downside_pct = max(-bear_return_pct, -base_return_pct, 0.0)
+    range_width_pct = max(bull_return_pct - bear_return_pct, 0.0)
+    probability_edge = _safe_float(up_probability, 50.0) - (bear_prob * 100.0)
+    tail_ratio = upside_pct / max(downside_pct, 0.35)
+    uncertainty_penalty = max(range_width_pct - 6.0, 0.0) * 0.45 + max(bear_prob * 100.0 - 24.0, 0.0) * 0.28
+    directional_score = (
+        50.0
+        + expected_return_pct * 7.2
+        + probability_edge * 0.48
+        + (_safe_float(confidence, 50.0) - 50.0) * 0.34
+        + min(tail_ratio, 3.0) * 5.2
+        - downside_pct * 1.85
+        - uncertainty_penalty
+    )
+    return {
+        "bull_return_pct": round(bull_return_pct, 2),
+        "base_return_pct": round(base_return_pct, 2),
+        "bear_return_pct": round(bear_return_pct, 2),
+        "expected_return_pct": round(expected_return_pct, 2),
+        "upside_pct": round(upside_pct, 2),
+        "downside_pct": round(downside_pct, 2),
+        "range_width_pct": round(range_width_pct, 2),
+        "probability_edge": round(probability_edge, 2),
+        "tail_ratio": round(tail_ratio, 2),
+        "directional_score": round(_clip(directional_score, 0.0, 100.0), 2),
+    }
+
+
 async def get_market_opportunities(
     country_code: str,
     limit: int = 12,
@@ -46,7 +114,7 @@ async def get_market_opportunities(
 ) -> dict:
     country_code = country_code.upper()
     candidate_budget = max_candidates if max_candidates is not None else max(12, min(24, limit * 2))
-    cache_key = f"opportunity_radar:v5:{country_code}:{limit}:{candidate_budget}"
+    cache_key = f"opportunity_radar:v7:{country_code}:{limit}:{candidate_budget}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -65,11 +133,16 @@ async def get_market_opportunities(
 
     primary_index = country.indices[0]
     index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
+    macro_snapshot = await ecos_client.get_kr_economic_snapshot() if country_code == "KR" else {}
+    kosis_snapshot = await kosis_client.get_kr_macro_snapshot() if country_code == "KR" else {}
     regime_forecast = forecast_next_day(
         ticker=primary_index.ticker,
         name=primary_index.name,
         country_code=country_code,
         price_history=index_history,
+        benchmark_history=index_history,
+        macro_snapshot=macro_snapshot,
+        kosis_snapshot=kosis_snapshot,
         asset_type="index",
     )
     market_regime = build_market_regime(
@@ -124,6 +197,10 @@ async def get_market_opportunities(
             },
             context_bias=((quant_score.total - 50.0) / 50.0) + (0.18 if market_regime.stance == "risk_on" else -0.18 if market_regime.stance == "risk_off" else 0.0),
             asset_type="stock",
+            benchmark_history=index_history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
+            fundamental_context=info,
         )
         price_points = [PricePoint(**point) for point in prices]
         trade_plan = build_trade_plan(
@@ -139,14 +216,29 @@ async def get_market_opportunities(
         prev_close = float(info.get("prev_close") or current_price)
         change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
         valuation_gap = ((buy_sell.fair_value / current_price) - 1.0) * 100.0 if current_price else 0.0
+        scenario_snapshot = _scenario_snapshot(forecast)
+        signal_profile = build_distributional_signal_profile(
+            current_price=current_price,
+            bull_case_price=scenario_snapshot["bull_case_price"],
+            base_case_price=scenario_snapshot["base_case_price"],
+            bear_case_price=scenario_snapshot["bear_case_price"],
+            bull_probability=scenario_snapshot["bull_probability"],
+            base_probability=scenario_snapshot["base_probability"],
+            bear_probability=scenario_snapshot["bear_probability"],
+            predicted_return_pct=forecast.predicted_return_pct,
+            up_probability=forecast.up_probability,
+            confidence=forecast.confidence,
+        )
         opportunity_score = (
-            quant_score.total * 0.34
-            + max(forecast.up_probability - 50.0, 0.0) * 1.1
-            + forecast.confidence * 0.18
-            + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 6.0
-            + (7.0 if market_regime.stance == "risk_on" else -3.0 if market_regime.stance == "risk_off" else 2.0)
-            + (6.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.5)
-            + _clip(valuation_gap, -20.0, 20.0) * 0.18
+            signal_profile["directional_score"] * 0.58
+            + quant_score.total * 0.14
+            + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 5.5
+            + signal_profile["expected_return_pct"] * 4.8
+            + signal_profile["probability_edge"] * 0.18
+            + signal_profile["tail_ratio"] * 2.8
+            + (5.0 if market_regime.stance == "risk_on" else -3.5 if market_regime.stance == "risk_off" else 1.0)
+            + (4.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.0)
+            + _clip(valuation_gap, -20.0, 20.0) * 0.12
         )
         execution_bias_bonus = {
             "press_long": 7.0,
@@ -159,7 +251,6 @@ async def get_market_opportunities(
         opportunity_score -= len(forecast.risk_flags[:2]) * 1.2
         opportunity_score = round(_clip(opportunity_score, 0.0, 100.0), 1)
         regime_tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed"
-        scenario_snapshot = _scenario_snapshot(forecast)
 
         return OpportunityItem(
             rank=0,
@@ -173,7 +264,7 @@ async def get_market_opportunities(
             quant_score=round(quant_score.total, 1),
             up_probability=round(forecast.up_probability, 1),
             confidence=round(forecast.confidence, 1),
-            predicted_return_pct=round(forecast.predicted_return_pct, 2),
+            predicted_return_pct=round(signal_profile["expected_return_pct"], 2),
             bull_case_price=scenario_snapshot["bull_case_price"],
             base_case_price=scenario_snapshot["base_case_price"],
             bear_case_price=scenario_snapshot["bear_case_price"],
