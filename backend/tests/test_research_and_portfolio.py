@@ -451,6 +451,8 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.portfolio_service.supabase_client.watchlist_list",
                 new=AsyncMock(return_value=[{"ticker": "000660.KS", "country_code": "KR"}]),
             ),
+            patch("app.services.portfolio_service.ecos_client.get_kr_economic_snapshot", new=AsyncMock(return_value={})),
+            patch("app.services.portfolio_service.kosis_client.get_kr_macro_snapshot", new=AsyncMock(return_value={})),
             patch(
                 "app.services.portfolio_service.yfinance_client.get_price_history",
                 new=AsyncMock(side_effect=[_sample_price_history(), _sample_price_history()]),

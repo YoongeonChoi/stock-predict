@@ -9,6 +9,31 @@ interface Props {
   model: PortfolioModelPortfolio;
 }
 
+function expectedReturn20d(item: PortfolioModelItem | PortfolioModelPortfolio["summary"]) {
+  const value = item as Partial<PortfolioModelItem & PortfolioModelPortfolio["summary"]>;
+  return value.expected_return_pct_20d ?? value.model_predicted_return_pct ?? 0;
+}
+
+function excessReturn20d(item: PortfolioModelItem | PortfolioModelPortfolio["summary"]) {
+  const value = item as Partial<PortfolioModelItem & PortfolioModelPortfolio["summary"]>;
+  return value.expected_excess_return_pct_20d ?? 0;
+}
+
+function upProbability20d(item: PortfolioModelItem | PortfolioModelPortfolio["summary"]) {
+  const value = item as Partial<PortfolioModelItem & PortfolioModelPortfolio["summary"]>;
+  return value.up_probability_20d ?? value.model_up_probability ?? value.up_probability ?? 0;
+}
+
+function downProbability20d(item: PortfolioModelItem | PortfolioModelPortfolio["summary"]) {
+  const value = item as Partial<PortfolioModelItem & PortfolioModelPortfolio["summary"]>;
+  return value.down_probability_20d ?? value.bear_probability ?? 0;
+}
+
+function volatility20d(item: PortfolioModelItem | PortfolioModelPortfolio["summary"]) {
+  const value = item as Partial<PortfolioModelItem & PortfolioModelPortfolio["summary"]>;
+  return value.forecast_volatility_pct_20d ?? 0;
+}
+
 function actionLabel(action: PortfolioModelItem["action"]) {
   if (action === "new") return "신규 편입";
   if (action === "add") return "비중 확대";
@@ -106,36 +131,40 @@ export default function PortfolioModelPanel({ model }: Props) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 xl:grid-cols-6 gap-4">
-          <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">추천 주식 비중</div>
-            <div className="text-2xl font-bold mt-2">{model.risk_budget.recommended_equity_pct.toFixed(1)}%</div>
-          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-6 gap-4">
+            <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
+              <div className="text-xs text-text-secondary">추천 주식 비중</div>
+              <div className="text-2xl font-bold mt-2">{model.risk_budget.recommended_equity_pct.toFixed(1)}%</div>
+            </div>
           <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
             <div className="text-xs text-text-secondary">현금 버퍼</div>
             <div className="text-2xl font-bold mt-2">{model.risk_budget.cash_buffer_pct.toFixed(1)}%</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
+              <div className="text-xs text-text-secondary">20거래일 기대수익률</div>
+              <div className={`text-2xl font-bold mt-2 ${changeColor(expectedReturn20d(model.summary))}`}>
+                {formatPct(expectedReturn20d(model.summary))}
+              </div>
+              <div className={`text-[11px] mt-1 ${changeColor(excessReturn20d(model.summary))}`}>기대초과 {formatPct(excessReturn20d(model.summary))}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
+              <div className="text-xs text-text-secondary">상방 / 하방 확률</div>
+              <div className="text-2xl font-bold mt-2">{upProbability20d(model.summary).toFixed(1)}%</div>
+              <div className="text-[11px] text-text-secondary mt-1">하방 {downProbability20d(model.summary).toFixed(1)}%</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
+              <div className="text-xs text-text-secondary">예상 변동성</div>
+              <div className="text-2xl font-bold mt-2">{volatility20d(model.summary).toFixed(2)}%</div>
+              <div className="text-[11px] text-text-secondary mt-1">회전율 {model.summary.turnover_pct.toFixed(2)}%</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
+              <div className="text-xs text-text-secondary">권장 포지션 수</div>
+              <div className="text-2xl font-bold mt-2">{model.summary.selected_count}</div>
+              <div className="text-[11px] text-text-secondary mt-1">
+                신규 {model.summary.new_position_count}개 · 축소 {model.summary.trim_count}개
+              </div>
+            </div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">모델 상승 확률</div>
-            <div className="text-2xl font-bold mt-2">{model.summary.model_up_probability.toFixed(1)}%</div>
-            <div className={`text-[11px] mt-1 ${changeColor(model.summary.model_predicted_return_pct)}`}>다음 거래일 {formatPct(model.summary.model_predicted_return_pct)}</div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">권장 포지션 수</div>
-            <div className="text-2xl font-bold mt-2">{model.summary.selected_count}</div>
-            <div className="text-[11px] text-text-secondary mt-1">목표 {model.risk_budget.target_position_count}개</div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">신규 편입 후보</div>
-            <div className="text-2xl font-bold mt-2">{model.summary.new_position_count}</div>
-            <div className="text-[11px] text-text-secondary mt-1">워치리스트 반영 {model.summary.watchlist_focus_count}개</div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">
-            <div className="text-xs text-text-secondary">축소/정리 후보</div>
-            <div className="text-2xl font-bold mt-2">{model.summary.trim_count}</div>
-            <div className="text-[11px] text-text-secondary mt-1">리밸런싱 큐 기준</div>
-          </div>
-        </div>
 
         <div className="grid xl:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -176,7 +205,7 @@ export default function PortfolioModelPanel({ model }: Props) {
           <div className="min-w-0 card !p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h3 className="font-semibold">권장 비중 테이블</h3>
-              <p className="text-xs text-text-secondary mt-1">현재 보유 비중과 목표 비중의 차이를 바로 확인하고, 어떤 종목을 늘리거나 줄일지 결정할 수 있습니다.</p>
+              <p className="text-xs text-text-secondary mt-1">20거래일 기대수익률과 기대초과수익률을 기준으로 현재 비중과 목표 비중의 차이를 바로 확인할 수 있습니다.</p>
             </div>
             <div className="w-full overflow-x-auto px-2 pb-2 pt-1 md:px-3">
               <table className="w-full min-w-[940px] text-sm">
@@ -188,7 +217,7 @@ export default function PortfolioModelPanel({ model }: Props) {
                     <th className="px-4 py-3 text-right">목표</th>
                     <th className="px-4 py-3 text-right">변화</th>
                     <th className="px-4 py-3 text-right">모델 점수</th>
-                    <th className="px-4 py-3">시그널</th>
+                    <th className="px-4 py-3">20거래일 시그널</th>
                     <th className="px-4 py-3">근거</th>
                   </tr>
                 </thead>
@@ -222,7 +251,14 @@ export default function PortfolioModelPanel({ model }: Props) {
                           {executionBiasLabel(item.execution_bias)}
                         </div>
                         <div className="text-[11px] text-text-secondary mt-2">
-                          상승 {item.up_probability?.toFixed(1) ?? "-"}% / 하방 {item.bear_probability?.toFixed(1) ?? "-"}%
+                          상승 {(item.up_probability_20d ?? item.up_probability)?.toFixed(1) ?? "-"}% / 하방 {(item.down_probability_20d ?? item.bear_probability)?.toFixed(1) ?? "-"}%
+                        </div>
+                        <div className={`text-[11px] mt-1 ${changeColor(item.expected_return_pct_20d ?? item.predicted_return_pct ?? 0)}`}>
+                          기대 {formatPct(item.expected_return_pct_20d ?? item.predicted_return_pct ?? 0)} / 초과 {formatPct(item.expected_excess_return_pct_20d ?? 0)}
+                        </div>
+                        <div className="text-[11px] text-text-secondary mt-1">
+                          변동성 {(item.forecast_volatility_pct_20d ?? 0).toFixed(2)}%
+                          {item.target_date_20d ? ` · ${item.target_date_20d}` : ""}
                         </div>
                         {item.setup_label ? <div className="text-[11px] text-text-secondary mt-1">{item.setup_label}</div> : null}
                       </td>

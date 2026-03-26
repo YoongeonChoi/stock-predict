@@ -24,6 +24,31 @@ interface Props {
   emptyMessage: string;
 }
 
+function expectedReturn20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
+  const value = item as Partial<PortfolioRecommendationItem & PortfolioRecommendationSummary>;
+  return value.expected_return_pct_20d ?? value.model_predicted_return_pct ?? value.predicted_return_pct ?? 0;
+}
+
+function excessReturn20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
+  const value = item as Partial<PortfolioRecommendationItem & PortfolioRecommendationSummary>;
+  return value.expected_excess_return_pct_20d ?? 0;
+}
+
+function upProbability20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
+  const value = item as Partial<PortfolioRecommendationItem & PortfolioRecommendationSummary>;
+  return value.up_probability_20d ?? value.model_up_probability ?? value.up_probability ?? 0;
+}
+
+function downProbability20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
+  const value = item as Partial<PortfolioRecommendationItem & PortfolioRecommendationSummary>;
+  return value.down_probability_20d ?? value.bear_probability ?? 0;
+}
+
+function volatility20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
+  const value = item as Partial<PortfolioRecommendationItem & PortfolioRecommendationSummary>;
+  return value.forecast_volatility_pct_20d ?? 0;
+}
+
 function actionLabel(action?: string | null) {
   if (action === "accumulate") return "분할 매수";
   if (action === "breakout_watch") return "돌파 감시";
@@ -109,20 +134,21 @@ function RecommendationCard({ item }: { item: PortfolioRecommendationItem }) {
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">예상 수익률</div>
-          <div className={`mt-1 font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
+          <div className="text-[11px] text-text-secondary">20거래일 기대수익률</div>
+          <div className={`mt-1 font-semibold ${changeColor(expectedReturn20d(item))}`}>{formatPct(expectedReturn20d(item))}</div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">상승 확률</div>
-          <div className="mt-1 font-semibold">{item.up_probability.toFixed(1)}%</div>
+          <div className="text-[11px] text-text-secondary">기대초과수익률</div>
+          <div className={`mt-1 font-semibold ${changeColor(excessReturn20d(item))}`}>{formatPct(excessReturn20d(item))}</div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">모델 점수</div>
-          <div className="mt-1 font-semibold">{item.model_score.toFixed(1)}</div>
+          <div className="text-[11px] text-text-secondary">상방 / 하방</div>
+          <div className="mt-1 font-semibold">{upProbability20d(item).toFixed(1)}% / {downProbability20d(item).toFixed(1)}%</div>
         </div>
         <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-          <div className="text-[11px] text-text-secondary">노출 보정</div>
-          <div className="mt-1 text-sm font-semibold">{item.current_country_exposure_pct.toFixed(1)}% / {item.current_sector_exposure_pct.toFixed(1)}%</div>
+          <div className="text-[11px] text-text-secondary">변동성 / 노출</div>
+          <div className="mt-1 text-sm font-semibold">{volatility20d(item).toFixed(2)}% / {item.current_country_exposure_pct.toFixed(1)}%</div>
+          <div className="mt-1 text-[11px] text-text-secondary">섹터 {item.current_sector_exposure_pct.toFixed(1)}%</div>
         </div>
       </div>
 
@@ -130,14 +156,15 @@ function RecommendationCard({ item }: { item: PortfolioRecommendationItem }) {
         {item.rationale[0] || "핵심 메모가 아직 없습니다."}
       </div>
 
-      <div className="mt-3 grid gap-2 text-xs text-text-secondary sm:grid-cols-2">
-        <div>
-          진입 {item.entry_low != null && item.entry_high != null ? `${formatPrice(item.entry_low, item.country_code)} - ${formatPrice(item.entry_high, item.country_code)}` : "미정"}
+        <div className="mt-3 grid gap-2 text-xs text-text-secondary sm:grid-cols-2">
+          <div>
+            진입 {item.entry_low != null && item.entry_high != null ? `${formatPrice(item.entry_low, item.country_code)} - ${formatPrice(item.entry_high, item.country_code)}` : "미정"}
+          </div>
+          <div>
+            손절 / 1차 목표 {item.stop_loss != null ? formatPrice(item.stop_loss, item.country_code) : "미정"} / {item.take_profit_1 != null ? formatPrice(item.take_profit_1, item.country_code) : "미정"}
+            {item.target_date_20d ? ` · ${item.target_date_20d}` : ""}
+          </div>
         </div>
-        <div>
-          손절 / 1차 목표 {item.stop_loss != null ? formatPrice(item.stop_loss, item.country_code) : "미정"} / {item.take_profit_1 != null ? formatPrice(item.take_profit_1, item.country_code) : "미정"}
-        </div>
-      </div>
 
       {item.risk_flags.length > 0 ? (
         <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
@@ -196,10 +223,19 @@ export default function PortfolioRecommendationPanel({
               <div className="mt-1 text-[11px] text-text-secondary">최대 {budget.target_position_count}개</div>
             </div>
             <div className="metric-card">
-              <div className="text-xs text-text-secondary">모델 상승 확률</div>
-              <div className="mt-2 text-2xl font-bold text-text">{summary.model_up_probability.toFixed(1)}%</div>
-              <div className={`mt-1 text-[11px] ${changeColor(summary.model_predicted_return_pct)}`}>
-                기대 {formatPct(summary.model_predicted_return_pct)}
+              <div className="text-xs text-text-secondary">20거래일 기대수익률</div>
+              <div className={`mt-2 text-2xl font-bold ${changeColor(expectedReturn20d(summary))}`}>{formatPct(expectedReturn20d(summary))}</div>
+              <div className={`mt-1 text-[11px] ${changeColor(excessReturn20d(summary))}`}>
+                기대초과 {formatPct(excessReturn20d(summary))}
+              </div>
+            </div>
+            <div className="metric-card">
+              <div className="text-xs text-text-secondary">상방 / 하방 / 변동성</div>
+              <div className="mt-2 text-lg font-semibold text-text">
+                {upProbability20d(summary).toFixed(1)}% / {downProbability20d(summary).toFixed(1)}%
+              </div>
+              <div className="mt-1 text-[11px] text-text-secondary">
+                변동성 {volatility20d(summary).toFixed(2)}% · 회전율 {summary.turnover_pct.toFixed(2)}%
               </div>
             </div>
             <div className="metric-card">

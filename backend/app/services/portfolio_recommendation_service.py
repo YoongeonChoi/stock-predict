@@ -9,6 +9,7 @@ import json
 from app.data import cache
 from app.data.universe_data import GICS_SECTORS
 from app.data.supabase_client import supabase_client
+from app.services.portfolio_optimizer import attach_candidate_return_series
 from app.services import market_service, portfolio_service
 from app.utils.async_tools import gather_limited
 
@@ -122,6 +123,12 @@ def _response_defaults(message: str) -> dict:
             "existing_overlap_count": 0,
             "model_up_probability": 0.0,
             "model_predicted_return_pct": 0.0,
+            "expected_return_pct_20d": 0.0,
+            "expected_excess_return_pct_20d": 0.0,
+            "forecast_volatility_pct_20d": 0.0,
+            "up_probability_20d": 0.0,
+            "down_probability_20d": 0.0,
+            "turnover_pct": 0.0,
             "focus_country": None,
             "focus_sector": None,
         },
@@ -257,11 +264,28 @@ def _build_candidate(
         "model_score": model_score,
         "weight_score": max(model_score - 48.0, 4.0),
         "opportunity_score": round(float(opportunity.get("opportunity_score") or 0.0), 1),
-        "up_probability": float(opportunity.get("up_probability") or 0.0),
-        "predicted_return_pct": float(opportunity.get("predicted_return_pct") or 0.0),
+        "target_horizon_days": int(opportunity.get("target_horizon_days") or 20),
+        "target_date_20d": opportunity.get("target_date_20d"),
+        "expected_return_pct_20d": float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0),
+        "expected_excess_return_pct_20d": float(opportunity.get("expected_excess_return_pct_20d") or 0.0),
+        "median_return_pct_20d": float(opportunity.get("median_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0),
+        "forecast_volatility_pct_20d": float(opportunity.get("forecast_volatility_pct_20d") or 0.0),
+        "up_probability_20d": float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0),
+        "flat_probability_20d": float(opportunity.get("flat_probability_20d") or 0.0),
+        "down_probability_20d": float(opportunity.get("down_probability_20d") or opportunity.get("bear_probability") or 0.0),
+        "distribution_confidence_20d": float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 0.0),
+        "price_q25_20d": opportunity.get("price_q25_20d"),
+        "price_q50_20d": opportunity.get("price_q50_20d"),
+        "price_q75_20d": opportunity.get("price_q75_20d"),
+        "up_probability": float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0),
+        "predicted_return_pct": float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0),
         "confidence": float(opportunity.get("confidence") or 0.0),
-        "bull_probability": opportunity.get("bull_probability"),
-        "bear_probability": opportunity.get("bear_probability"),
+        "bull_probability": opportunity.get("up_probability_20d") or opportunity.get("bull_probability"),
+        "base_probability": opportunity.get("flat_probability_20d") or opportunity.get("base_probability"),
+        "bear_probability": opportunity.get("down_probability_20d") or opportunity.get("bear_probability"),
+        "bull_case_price": opportunity.get("price_q75_20d") or opportunity.get("bull_case_price"),
+        "base_case_price": opportunity.get("price_q50_20d") or opportunity.get("base_case_price"),
+        "bear_case_price": opportunity.get("price_q25_20d") or opportunity.get("bear_case_price"),
         "execution_bias": execution_bias,
         "setup_label": opportunity.get("setup_label"),
         "action": opportunity.get("action"),
@@ -333,16 +357,8 @@ def _select_recommendations(
     return selected
 
 
-def _build_summary(recommendations: list[dict], candidate_count: int) -> dict:
+def _build_summary(recommendations: list[dict], candidate_count: int, optimization) -> dict:
     total_weight = sum(float(item.get("target_weight_pct") or 0.0) for item in recommendations)
-    weighted_up_probability = (
-        sum(float(item.get("up_probability") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in recommendations) / total_weight
-        if total_weight else 0.0
-    )
-    weighted_return = (
-        sum(float(item.get("predicted_return_pct") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in recommendations) / total_weight
-        if total_weight else 0.0
-    )
     by_country = portfolio_service._allocation_breakdown(recommendations, "country_code")
     by_sector = portfolio_service._allocation_breakdown(recommendations, "sector")
     return {
@@ -350,8 +366,14 @@ def _build_summary(recommendations: list[dict], candidate_count: int) -> dict:
         "candidate_count": candidate_count,
         "watchlist_focus_count": sum(1 for item in recommendations if item.get("in_watchlist")),
         "existing_overlap_count": sum(1 for item in recommendations if float(item.get("current_weight_pct") or 0.0) > 0.0),
-        "model_up_probability": round(weighted_up_probability, 2),
-        "model_predicted_return_pct": round(weighted_return, 2),
+        "model_up_probability": round(optimization.up_probability_20d if total_weight else 0.0, 2),
+        "model_predicted_return_pct": round(optimization.expected_return_pct_20d if total_weight else 0.0, 2),
+        "expected_return_pct_20d": round(optimization.expected_return_pct_20d if total_weight else 0.0, 2),
+        "expected_excess_return_pct_20d": round(optimization.expected_excess_return_pct_20d if total_weight else 0.0, 2),
+        "forecast_volatility_pct_20d": round(optimization.forecast_volatility_pct_20d if total_weight else 0.0, 2),
+        "up_probability_20d": round(optimization.up_probability_20d if total_weight else 0.0, 2),
+        "down_probability_20d": round(optimization.down_probability_20d if total_weight else 0.0, 2),
+        "turnover_pct": round(optimization.turnover_pct if total_weight else 0.0, 2),
         "focus_country": by_country[0]["name"] if by_country else None,
         "focus_sector": by_sector[0]["name"] if by_sector else None,
     }
@@ -379,7 +401,7 @@ async def get_conditional_recommendations(
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows_for_state)
     cache_key = (
-        f"portfolio_conditional_reco:v2:{user_id}:{normalized_country}:{normalized_sector}:{normalized_style}:"
+        f"portfolio_conditional_reco:v3:{user_id}:{normalized_country}:{normalized_sector}:{normalized_style}:"
         f"{capped_items}:{min_probability}:{int(bool(exclude_holdings))}:{int(bool(watchlist_only))}:{state_signature}"
     )
     cached = await cache.get(cache_key)
@@ -442,15 +464,20 @@ async def get_conditional_recommendations(
         country_locked=normalized_country != "ALL",
         sector_locked=normalized_sector != "ALL",
     )
-    recommendations, actual_equity_pct = portfolio_service._allocate_model_weights(selected, budget)
-    budget["recommended_equity_pct"] = actual_equity_pct
-    budget["cash_buffer_pct"] = round(100.0 - actual_equity_pct, 2)
+    selected = await attach_candidate_return_series(selected, limit=4)
+    recommendations, optimization = portfolio_service._allocate_model_weights(selected, budget)
+    budget["recommended_equity_pct"] = optimization.actual_equity_pct
+    budget["cash_buffer_pct"] = round(100.0 - optimization.actual_equity_pct, 2)
 
-    summary = _build_summary(recommendations, len(filtered_candidates))
+    summary = _build_summary(recommendations, len(filtered_candidates), optimization)
     notes = [
         f"{STYLE_PRESETS[normalized_style]['style_label']} 기준으로 주식 {budget['recommended_equity_pct']:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
-        f"조건 필터는 국가 `{normalized_country}`, 섹터 `{normalized_sector}`, 최소 상승 확률 {min_probability:.1f}% 기준입니다.",
+        f"조건 필터는 국가 `{normalized_country}`, 섹터 `{normalized_sector}`, 20거래일 상승 확률 {min_probability:.1f}% 기준입니다.",
     ]
+    if recommendations:
+        notes.append(
+            f"20거래일 기대수익률 {optimization.expected_return_pct_20d:+.2f}%, 기대초과수익률 {optimization.expected_excess_return_pct_20d:+.2f}%를 기준으로 비중을 계산했습니다."
+        )
     if watchlist_only:
         notes.append("이번 결과는 워치리스트에 이미 올려둔 종목만 대상으로 좁혔습니다.")
     if exclude_holdings:
@@ -491,7 +518,7 @@ async def get_optimal_recommendation(user_id: str) -> dict:
         supabase_client.watchlist_list(user_id),
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows)
-    cache_key = f"portfolio_optimal_reco:v2:{user_id}:{state_signature}"
+    cache_key = f"portfolio_optimal_reco:v3:{user_id}:{state_signature}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -545,15 +572,20 @@ async def get_optimal_recommendation(user_id: str) -> dict:
         country_locked=False,
         sector_locked=False,
     )
-    recommendations, actual_equity_pct = portfolio_service._allocate_model_weights(selected, budget)
-    budget["recommended_equity_pct"] = actual_equity_pct
-    budget["cash_buffer_pct"] = round(100.0 - actual_equity_pct, 2)
-    summary = _build_summary(recommendations, len(candidates))
+    selected = await attach_candidate_return_series(selected, limit=4)
+    recommendations, optimization = portfolio_service._allocate_model_weights(selected, budget)
+    budget["recommended_equity_pct"] = optimization.actual_equity_pct
+    budget["cash_buffer_pct"] = round(100.0 - optimization.actual_equity_pct, 2)
+    summary = _build_summary(recommendations, len(candidates), optimization)
 
     notes = [
-        "최적 추천은 현재 포트폴리오 집중도와 시장 체제를 동시에 반영해 신규 자금에 가장 적합한 후보를 다시 계산합니다.",
+        "최적 추천은 현재 포트폴리오 집중도와 시장 체제를 동시에 반영하고, 20거래일 분포 기대초과수익 기준으로 신규 자금에 가장 적합한 후보를 다시 계산합니다.",
         f"현재 포트폴리오 위험 상태를 기준으로 `{budget['style_label']}` 운영을 자동 선택했습니다.",
     ]
+    if recommendations:
+        notes.append(
+            f"예상 변동성 {optimization.forecast_volatility_pct_20d:.2f}%와 회전율 {optimization.turnover_pct:.2f}%를 함께 반영했습니다."
+        )
     if summary["focus_country"]:
         notes.append(f"현재 기준 최우선 시장은 {summary['focus_country']}이며, 그 시장 쪽에 신규 비중을 더 배분했습니다.")
     if summary["focus_sector"]:

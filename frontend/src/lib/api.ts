@@ -253,6 +253,19 @@ export interface PortfolioHolding {
   up_probability?: number | null;
   predicted_return_pct?: number | null;
   forecast_date?: string | null;
+  target_horizon_days?: number | null;
+  target_date_20d?: string | null;
+  expected_return_pct_20d?: number | null;
+  expected_excess_return_pct_20d?: number | null;
+  median_return_pct_20d?: number | null;
+  forecast_volatility_pct_20d?: number | null;
+  up_probability_20d?: number | null;
+  flat_probability_20d?: number | null;
+  down_probability_20d?: number | null;
+  distribution_confidence_20d?: number | null;
+  price_q25_20d?: number | null;
+  price_q50_20d?: number | null;
+  price_q75_20d?: number | null;
   execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
   execution_note?: string | null;
   risk_flags: string[];
@@ -343,6 +356,12 @@ export interface PortfolioModelSummary {
   watchlist_focus_count: number;
   model_up_probability: number;
   model_predicted_return_pct: number;
+  expected_return_pct_20d: number;
+  expected_excess_return_pct_20d: number;
+  forecast_volatility_pct_20d: number;
+  up_probability_20d: number;
+  down_probability_20d: number;
+  turnover_pct: number;
 }
 
 export interface PortfolioModelAllocationItem {
@@ -363,10 +382,27 @@ export interface PortfolioModelItem {
   model_score: number;
   action: "new" | "add" | "hold" | "trim" | "exit" | "watch";
   priority: "high" | "medium" | "low";
+  target_horizon_days?: number | null;
+  target_date_20d?: string | null;
+  expected_return_pct_20d?: number | null;
+  expected_excess_return_pct_20d?: number | null;
+  median_return_pct_20d?: number | null;
+  forecast_volatility_pct_20d?: number | null;
+  up_probability_20d?: number | null;
+  flat_probability_20d?: number | null;
+  down_probability_20d?: number | null;
+  distribution_confidence_20d?: number | null;
+  price_q25_20d?: number | null;
+  price_q50_20d?: number | null;
+  price_q75_20d?: number | null;
   up_probability?: number | null;
   predicted_return_pct?: number | null;
+  base_probability?: number | null;
   bull_probability?: number | null;
   bear_probability?: number | null;
+  bull_case_price?: number | null;
+  base_case_price?: number | null;
+  bear_case_price?: number | null;
   execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
   setup_label?: string | null;
   rationale: string[];
@@ -408,6 +444,12 @@ export interface PortfolioRecommendationSummary {
   existing_overlap_count: number;
   model_up_probability: number;
   model_predicted_return_pct: number;
+  expected_return_pct_20d: number;
+  expected_excess_return_pct_20d: number;
+  forecast_volatility_pct_20d: number;
+  up_probability_20d: number;
+  down_probability_20d: number;
+  turnover_pct: number;
   focus_country?: string | null;
   focus_sector?: string | null;
 }
@@ -435,11 +477,28 @@ export interface PortfolioRecommendationItem {
   delta_weight_pct: number;
   model_score: number;
   opportunity_score: number;
+  target_horizon_days?: number | null;
+  target_date_20d?: string | null;
+  expected_return_pct_20d?: number | null;
+  expected_excess_return_pct_20d?: number | null;
+  median_return_pct_20d?: number | null;
+  forecast_volatility_pct_20d?: number | null;
+  up_probability_20d?: number | null;
+  flat_probability_20d?: number | null;
+  down_probability_20d?: number | null;
+  distribution_confidence_20d?: number | null;
+  price_q25_20d?: number | null;
+  price_q50_20d?: number | null;
+  price_q75_20d?: number | null;
   up_probability: number;
   predicted_return_pct: number;
   confidence: number;
   bull_probability?: number | null;
+  base_probability?: number | null;
   bear_probability?: number | null;
+  bull_case_price?: number | null;
+  base_case_price?: number | null;
+  bear_case_price?: number | null;
   execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
   setup_label?: string | null;
   action?: string | null;
@@ -513,9 +572,22 @@ export interface DailyIdealPortfolioPosition {
   sector: string;
   reference_price: number;
   target_date: string;
+  target_horizon_days?: number | null;
+  target_date_20d?: string | null;
   target_weight_pct: number;
   selection_score: number;
   opportunity_score: number;
+  expected_return_pct_20d?: number | null;
+  expected_excess_return_pct_20d?: number | null;
+  median_return_pct_20d?: number | null;
+  forecast_volatility_pct_20d?: number | null;
+  up_probability_20d?: number | null;
+  flat_probability_20d?: number | null;
+  down_probability_20d?: number | null;
+  distribution_confidence_20d?: number | null;
+  price_q25_20d?: number | null;
+  price_q50_20d?: number | null;
+  price_q75_20d?: number | null;
   up_probability: number;
   confidence: number;
   predicted_return_pct: number;
@@ -544,6 +616,7 @@ export interface DailyIdealPortfolioHistoryEntry {
   reference_date: string;
   generated_at: string;
   predicted_portfolio_return_pct: number;
+  expected_excess_return_pct_20d?: number | null;
   realized_portfolio_return_pct?: number | null;
   evaluated: boolean;
   hit_rate?: number | null;
@@ -562,7 +635,12 @@ export interface DailyIdealPortfolio {
   summary: {
     selected_count: number;
     predicted_portfolio_return_pct: number;
+    expected_return_pct_20d: number;
+    expected_excess_return_pct_20d: number;
+    forecast_volatility_pct_20d: number;
     portfolio_up_probability: number;
+    portfolio_down_probability: number;
+    turnover_pct: number;
   };
   allocation: {
     by_country: PortfolioModelAllocationItem[];

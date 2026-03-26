@@ -5,9 +5,10 @@ from datetime import datetime
 
 from app.database import db
 from app.data import cache, yfinance_client
-from app.services import market_service
+from app.services import market_service, portfolio_service
+from app.services.portfolio_optimizer import attach_candidate_return_series
 from app.utils.async_tools import gather_limited
-from app.utils.market_calendar import next_trading_day
+from app.utils.market_calendar import trading_days_forward
 
 COUNTRIES = ["KR"]
 
@@ -17,13 +18,20 @@ def _clip(value: float, low: float, high: float) -> float:
 
 
 def _country_target_dates(reference_date: str) -> list[dict]:
-    return [
-        {
-            "country_code": country_code,
-            "target_date": next_trading_day(country_code, reference_date).isoformat(),
-        }
-        for country_code in COUNTRIES
-    ]
+    target_dates: list[dict] = []
+    for country_code in COUNTRIES:
+        try:
+            target_days = trading_days_forward(country_code, reference_date, 20)
+            target_date = target_days[-1].isoformat() if target_days else reference_date
+        except Exception:
+            target_date = reference_date
+        target_dates.append(
+            {
+                "country_code": country_code,
+                "target_date": target_date,
+            }
+        )
+    return target_dates
 
 
 def _risk_budget(market_views: list[dict], aggregate_up_probability: float) -> dict:
@@ -66,23 +74,32 @@ def _risk_budget(market_views: list[dict], aggregate_up_probability: float) -> d
 def _candidate_score(opportunity: dict, market_view: dict) -> float:
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
+    expected_return_pct = float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0)
+    expected_excess_return_pct = float(opportunity.get("expected_excess_return_pct_20d") or 0.0)
+    forecast_volatility_pct = float(opportunity.get("forecast_volatility_pct_20d") or 0.0)
+    up_probability = float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 50.0)
+    flat_probability = float(opportunity.get("flat_probability_20d") or opportunity.get("base_probability") or 0.0)
+    down_probability = float(opportunity.get("down_probability_20d") or opportunity.get("bear_probability") or max(100.0 - up_probability, 0.0))
+    distribution_confidence = float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 50.0)
     signal_profile = market_service.build_distributional_signal_profile(
         current_price=float(opportunity.get("current_price") or 0.0),
-        bull_case_price=opportunity.get("bull_case_price"),
-        base_case_price=opportunity.get("base_case_price"),
-        bear_case_price=opportunity.get("bear_case_price"),
-        bull_probability=opportunity.get("bull_probability"),
-        base_probability=opportunity.get("base_probability"),
-        bear_probability=opportunity.get("bear_probability"),
-        predicted_return_pct=float(opportunity.get("predicted_return_pct") or 0.0),
-        up_probability=float(opportunity.get("up_probability") or 50.0),
-        confidence=float(opportunity.get("confidence") or 50.0),
+        bull_case_price=opportunity.get("price_q75_20d") or opportunity.get("bull_case_price"),
+        base_case_price=opportunity.get("price_q50_20d") or opportunity.get("base_case_price"),
+        bear_case_price=opportunity.get("price_q25_20d") or opportunity.get("bear_case_price"),
+        bull_probability=up_probability,
+        base_probability=flat_probability,
+        bear_probability=down_probability,
+        predicted_return_pct=expected_return_pct,
+        up_probability=up_probability,
+        confidence=distribution_confidence,
     )
     score = float(opportunity.get("opportunity_score") or 0.0) * 0.48
     score += signal_profile["directional_score"] * 0.22
-    score += signal_profile["expected_return_pct"] * 3.8
+    score += signal_profile["expected_return_pct"] * 2.8
+    score += expected_excess_return_pct * 3.6
     score += signal_profile["probability_edge"] * 0.16
     score += signal_profile["tail_ratio"] * 2.0
+    score += max(distribution_confidence - 55.0, 0.0) * 0.14
     score += {
         "press_long": 7.0,
         "lean_long": 4.0,
@@ -103,6 +120,7 @@ def _candidate_score(opportunity: dict, market_view: dict) -> float:
         "risk_off": -4.0,
     }.get(market_view.get("stance", "neutral"), 0.0)
     score -= signal_profile["downside_pct"] * 0.8
+    score -= forecast_volatility_pct * 0.22
     score -= len(opportunity.get("risk_flags") or []) * 1.4
     return round(_clip(score, 0.0, 100.0), 2)
 
@@ -256,10 +274,12 @@ def _build_history_entry(row: dict) -> dict:
     portfolio = row["portfolio"]
     evaluation = row.get("evaluation")
     positions = portfolio.get("positions", [])
+    summary = portfolio.get("summary", {})
     return {
         "reference_date": row.get("reference_date"),
         "generated_at": portfolio.get("generated_at"),
-        "predicted_portfolio_return_pct": round(float(portfolio.get("summary", {}).get("predicted_portfolio_return_pct") or 0.0), 2),
+        "predicted_portfolio_return_pct": round(float(summary.get("expected_return_pct_20d") or summary.get("predicted_portfolio_return_pct") or 0.0), 2),
+        "expected_excess_return_pct_20d": round(float(summary.get("expected_excess_return_pct_20d") or 0.0), 2),
         "realized_portfolio_return_pct": round(float(evaluation.get("portfolio_return_pct") or 0.0), 2) if evaluation else None,
         "evaluated": evaluation is not None,
         "hit_rate": round(float(evaluation.get("win_rate") or 0.0), 2) if evaluation else None,
@@ -286,7 +306,7 @@ async def _evaluate_pending_snapshots(reference_date_to: str):
 
         for item in positions:
             ticker = item.get("ticker")
-            target_date = item.get("target_date")
+            target_date = item.get("target_date_20d") or item.get("target_date")
             if not ticker or not target_date or target_date > reference_date_to:
                 continue
 
@@ -303,11 +323,13 @@ async def _evaluate_pending_snapshots(reference_date_to: str):
             realized_return_pct = (actual_close / reference_price - 1.0) * 100.0
             weight = float(item.get("target_weight_pct") or 0.0)
             direction_hit = (
-                (float(item.get("predicted_return_pct") or 0.0) >= 0 and realized_return_pct >= 0)
-                or (float(item.get("predicted_return_pct") or 0.0) < 0 and realized_return_pct < 0)
+                (float(item.get("expected_return_pct_20d") or item.get("predicted_return_pct") or 0.0) >= 0 and realized_return_pct >= 0)
+                or (float(item.get("expected_return_pct_20d") or item.get("predicted_return_pct") or 0.0) < 0 and realized_return_pct < 0)
             )
             within_scenario = (
-                float(item.get("bear_case_price") or actual_close) <= actual_close <= float(item.get("bull_case_price") or actual_close)
+                float(item.get("price_q25_20d") or item.get("bear_case_price") or actual_close)
+                <= actual_close
+                <= float(item.get("price_q75_20d") or item.get("bull_case_price") or actual_close)
             )
 
             weighted_return_sum += realized_return_pct * weight
@@ -358,7 +380,6 @@ async def _build_snapshot(reference_date: str) -> dict:
     candidates: list[dict] = []
     for response in responses:
         country_code = response.get("country_code", "KR")
-        target_date = next_trading_day(country_code, reference_date).isoformat()
         market_view = view_lookup.get(country_code, {})
         for opportunity in response.get("opportunities", [])[:6]:
             selection_score = _candidate_score(opportunity, market_view)
@@ -370,18 +391,31 @@ async def _build_snapshot(reference_date: str) -> dict:
                     "country_code": country_code,
                     "sector": opportunity.get("sector", "Other"),
                     "reference_price": round(float(opportunity.get("current_price") or 0.0), 2),
-                    "target_date": target_date,
+                    "target_date": opportunity.get("target_date_20d") or opportunity.get("forecast_date"),
+                    "target_horizon_days": int(opportunity.get("target_horizon_days") or 20),
+                    "target_date_20d": opportunity.get("target_date_20d") or opportunity.get("forecast_date"),
                     "selection_score": selection_score,
                     "opportunity_score": round(float(opportunity.get("opportunity_score") or 0.0), 1),
-                    "up_probability": round(float(opportunity.get("up_probability") or 0.0), 1),
-                    "confidence": round(float(opportunity.get("confidence") or 0.0), 1),
-                    "predicted_return_pct": round(float(opportunity.get("predicted_return_pct") or 0.0), 2),
-                    "bull_case_price": opportunity.get("bull_case_price"),
-                    "base_case_price": opportunity.get("base_case_price"),
-                    "bear_case_price": opportunity.get("bear_case_price"),
-                    "bull_probability": opportunity.get("bull_probability"),
-                    "base_probability": opportunity.get("base_probability"),
-                    "bear_probability": opportunity.get("bear_probability"),
+                    "up_probability_20d": round(float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0), 1),
+                    "flat_probability_20d": round(float(opportunity.get("flat_probability_20d") or opportunity.get("base_probability") or 0.0), 1),
+                    "down_probability_20d": round(float(opportunity.get("down_probability_20d") or opportunity.get("bear_probability") or 0.0), 1),
+                    "confidence": round(float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 0.0), 1),
+                    "distribution_confidence_20d": round(float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 0.0), 1),
+                    "expected_return_pct_20d": round(float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0), 2),
+                    "expected_excess_return_pct_20d": round(float(opportunity.get("expected_excess_return_pct_20d") or 0.0), 2),
+                    "median_return_pct_20d": round(float(opportunity.get("median_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0), 2),
+                    "forecast_volatility_pct_20d": round(float(opportunity.get("forecast_volatility_pct_20d") or 0.0), 2),
+                    "price_q25_20d": opportunity.get("price_q25_20d") or opportunity.get("bear_case_price"),
+                    "price_q50_20d": opportunity.get("price_q50_20d") or opportunity.get("base_case_price"),
+                    "price_q75_20d": opportunity.get("price_q75_20d") or opportunity.get("bull_case_price"),
+                    "up_probability": round(float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0), 1),
+                    "predicted_return_pct": round(float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0), 2),
+                    "bull_case_price": opportunity.get("price_q75_20d") or opportunity.get("bull_case_price"),
+                    "base_case_price": opportunity.get("price_q50_20d") or opportunity.get("base_case_price"),
+                    "bear_case_price": opportunity.get("price_q25_20d") or opportunity.get("bear_case_price"),
+                    "bull_probability": opportunity.get("up_probability_20d") or opportunity.get("bull_probability"),
+                    "base_probability": opportunity.get("flat_probability_20d") or opportunity.get("base_probability"),
+                    "bear_probability": opportunity.get("down_probability_20d") or opportunity.get("bear_probability"),
                     "setup_label": opportunity.get("setup_label"),
                     "action": opportunity.get("action"),
                     "execution_bias": opportunity.get("execution_bias"),
@@ -399,16 +433,11 @@ async def _build_snapshot(reference_date: str) -> dict:
             )
 
     selected = _select_positions(candidates, budget)
-    positions = _allocate_weights(selected, budget)
+    selected = await attach_candidate_return_series(selected, limit=4)
+    positions, optimization = portfolio_service._allocate_model_weights(selected, budget)
+    budget["recommended_equity_pct"] = optimization.actual_equity_pct
+    budget["cash_buffer_pct"] = round(100.0 - optimization.actual_equity_pct, 2)
 
-    predicted_weighted_return = (
-        sum(float(item.get("predicted_return_pct") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in positions) / 100.0
-        if positions else 0.0
-    )
-    weighted_up_probability = (
-        sum(float(item.get("up_probability") or 0.0) * float(item.get("target_weight_pct") or 0.0) for item in positions) / max(sum(float(item.get("target_weight_pct") or 0.0) for item in positions), 1.0)
-        if positions else 0.0
-    )
     country_alloc: dict[str, float] = defaultdict(float)
     sector_alloc: dict[str, float] = defaultdict(float)
     for item in positions:
@@ -417,7 +446,8 @@ async def _build_snapshot(reference_date: str) -> dict:
 
     playbook = [
         f"현재 추천안은 {budget['style_label']} 기준으로 주식 {budget['recommended_equity_pct']:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 유지합니다.",
-        "신규 진입은 시가 추격보다 진입 구간 확인 후 분할 매수에 맞춰 대응하는 편이 좋습니다.",
+        f"20거래일 기대수익률 {optimization.expected_return_pct_20d:+.2f}%와 기대초과수익률 {optimization.expected_excess_return_pct_20d:+.2f}%를 기준으로 비중을 최적화했습니다.",
+        f"예상 변동성은 {optimization.forecast_volatility_pct_20d:.2f}%, 예상 회전율은 {optimization.turnover_pct:.2f}%입니다.",
     ]
     if any(item.get("market_stance") == "risk_off" for item in positions):
         playbook.append("리스크오프 시장 종목은 목표 비중을 넘겨서 추격하지 말고, 손절 라인을 더 엄격히 관리하는 편이 좋습니다.")
@@ -427,14 +457,19 @@ async def _build_snapshot(reference_date: str) -> dict:
     return {
         "reference_date": reference_date,
         "generated_at": datetime.now().isoformat(),
-        "objective": "다음 거래일 기준으로 가장 이상적인 포지션 조합을 추려 비중까지 제안하는 일일 추천 포트폴리오입니다.",
+        "objective": "20거래일 분포 기대수익률과 기대초과수익률, EWMA+shrinkage 공분산, 회전율 패널티를 함께 반영해 이상적인 포지션 조합과 비중을 제안하는 일일 포트폴리오입니다.",
         "target_dates": _country_target_dates(reference_date),
         "risk_budget": budget,
         "market_view": market_views,
         "summary": {
             "selected_count": len(positions),
-            "predicted_portfolio_return_pct": round(predicted_weighted_return, 2),
-            "portfolio_up_probability": round(weighted_up_probability, 2),
+            "predicted_portfolio_return_pct": round(optimization.expected_return_pct_20d, 2),
+            "expected_return_pct_20d": round(optimization.expected_return_pct_20d, 2),
+            "expected_excess_return_pct_20d": round(optimization.expected_excess_return_pct_20d, 2),
+            "forecast_volatility_pct_20d": round(optimization.forecast_volatility_pct_20d, 2),
+            "portfolio_up_probability": round(optimization.up_probability_20d, 2),
+            "portfolio_down_probability": round(optimization.down_probability_20d, 2),
+            "turnover_pct": round(optimization.turnover_pct, 2),
         },
         "allocation": {
             "by_country": [{"name": key, "value": round(value, 2)} for key, value in sorted(country_alloc.items(), key=lambda item: item[1], reverse=True)],
@@ -447,7 +482,7 @@ async def _build_snapshot(reference_date: str) -> dict:
 
 async def get_daily_ideal_portfolio(force_refresh: bool = False, history_limit: int = 10) -> dict:
     reference_date = datetime.now().date().isoformat()
-    cache_key = f"ideal_portfolio_feed:v1:{reference_date}:{history_limit}"
+    cache_key = f"ideal_portfolio_feed:v2:{reference_date}:{history_limit}"
 
     await _evaluate_pending_snapshots(reference_date)
     if not force_refresh:

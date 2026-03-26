@@ -52,6 +52,19 @@ class OpportunityItem(BaseModel):
     up_probability: float
     confidence: float
     predicted_return_pct: float
+    target_horizon_days: int = 20
+    target_date_20d: str | None = None
+    expected_return_pct_20d: float | None = None
+    expected_excess_return_pct_20d: float | None = None
+    median_return_pct_20d: float | None = None
+    forecast_volatility_pct_20d: float | None = None
+    up_probability_20d: float | None = None
+    flat_probability_20d: float | None = None
+    down_probability_20d: float | None = None
+    distribution_confidence_20d: float | None = None
+    price_q25_20d: float | None = None
+    price_q50_20d: float | None = None
+    price_q75_20d: float | None = None
     bull_case_price: float | None = None
     base_case_price: float | None = None
     bear_case_price: float | None = None
