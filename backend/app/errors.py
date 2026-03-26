@@ -57,6 +57,8 @@ SP_1004 = lambda: AppError("SP-1004", "ECOS API key not configured",
                            "Set ECOS_API_KEY in backend/.env (free)")
 SP_1005 = lambda: AppError("SP-1005", "FMP API key not configured",
                            "Set FMP_API_KEY in backend/.env (free, optional)")
+SP_1006 = lambda: AppError("SP-1006", "Supabase server key not configured",
+                           "Set SUPABASE_SERVER_KEY in backend/.env or deployment env")
 
 # ---------------------------------------------------------------------------
 # 2xxx  Data Sources
@@ -164,6 +166,11 @@ SP_6013 = lambda d="": AppError(
     "SP-6013",
     "Invalid portfolio profile input",
     d or "Provide non-negative total assets, cash balance, and monthly budget values.",
+)
+SP_6014 = lambda d="": AppError(
+    "SP-6014",
+    "Authentication required",
+    d or "Sign in and retry the requested operation.",
 )
 
 # ---------------------------------------------------------------------------

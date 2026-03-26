@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 from app.models.forecast import ForecastScenario, NextDayForecast
 from app.models.market import MarketRegime, TradePlan
@@ -50,15 +50,16 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         get_stock_info = AsyncMock(return_value={"name": "Samsung Electronics"})
 
         with (
-            patch("app.services.portfolio_service.db.portfolio_add", new=db_add),
+            patch("app.services.portfolio_service.supabase_client.portfolio_add", new=db_add),
             patch("app.services.portfolio_service.cache.invalidate", new=cache_invalidate),
             patch("app.services.portfolio_service.yfinance_client.get_stock_info", new=get_stock_info),
         ):
-            result = await portfolio_service.add_holding("005930", 70000, 10, "2026-03-24", "KR")
+            result = await portfolio_service.add_holding("user-123", "005930", 70000, 10, "2026-03-24", "KR")
 
         self.assertEqual(result["ticker"], "005930.KS")
         self.assertEqual(result["name"], "Samsung Electronics")
         db_add.assert_awaited_once_with(
+            "user-123",
             "005930.KS",
             "Samsung Electronics",
             "KR",
@@ -66,7 +67,8 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             10.0,
             "2026-03-24",
         )
-        cache_invalidate.assert_awaited_once_with("portfolio_overview:%")
+        self.assertEqual(cache_invalidate.await_count, 2)
+        cache_invalidate.assert_has_awaits([call("%:user-123"), call("portfolio_overview:%")])
 
     async def test_portfolio_update_holding_saves_normalized_ticker(self):
         db_update = AsyncMock()
@@ -74,14 +76,15 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         get_stock_info = AsyncMock(return_value={"name": "Samsung Electronics"})
 
         with (
-            patch("app.services.portfolio_service.db.portfolio_update", new=db_update),
+            patch("app.services.portfolio_service.supabase_client.portfolio_update", new=db_update),
             patch("app.services.portfolio_service.cache.invalidate", new=cache_invalidate),
             patch("app.services.portfolio_service.yfinance_client.get_stock_info", new=get_stock_info),
         ):
-            result = await portfolio_service.update_holding(7, "005930", 70000, 4, "2026-03-24", "KR")
+            result = await portfolio_service.update_holding("user-123", 7, "005930", 70000, 4, "2026-03-24", "KR")
 
         self.assertEqual(result["ticker"], "005930.KS")
         db_update.assert_awaited_once_with(
+            "user-123",
             7,
             "005930.KS",
             "Samsung Electronics",
@@ -90,16 +93,17 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             4.0,
             "2026-03-24",
         )
-        cache_invalidate.assert_awaited_once_with("portfolio_overview:%")
+        self.assertEqual(cache_invalidate.await_count, 2)
+        cache_invalidate.assert_has_awaits([call("%:user-123"), call("portfolio_overview:%")])
 
     async def test_portfolio_profile_update_normalizes_summary(self):
         with (
             patch(
-                "app.services.portfolio_service.db.portfolio_profile_upsert",
+                "app.services.portfolio_service.supabase_client.portfolio_profile_upsert",
                 new=AsyncMock(),
             ),
             patch(
-                "app.services.portfolio_service.db.portfolio_profile_get",
+                "app.services.portfolio_service.supabase_client.portfolio_profile_get",
                 new=AsyncMock(
                     return_value={
                         "total_assets": 15000000.0,
@@ -111,7 +115,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("app.services.portfolio_service.cache.invalidate", new=AsyncMock()),
         ):
-            result = await portfolio_service.update_portfolio_profile(15000000, 2500000, 500000)
+            result = await portfolio_service.update_portfolio_profile("user-123", 15000000, 2500000, 500000)
 
         self.assertEqual(result["total_assets"], 15000000.0)
         self.assertEqual(result["cash_balance"], 2500000.0)
@@ -251,9 +255,9 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
-            patch("app.services.portfolio_service.db.portfolio_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_service.supabase_client.portfolio_list", new=AsyncMock(return_value=[])),
             patch(
-                "app.services.portfolio_service.db.portfolio_profile_get",
+                "app.services.portfolio_service.supabase_client.portfolio_profile_get",
                 new=AsyncMock(
                     return_value={
                         "total_assets": 12000000.0,
@@ -264,7 +268,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
         ):
-            result = await portfolio_service.get_portfolio()
+            result = await portfolio_service.get_portfolio("user-123")
 
         self.assertEqual(result["summary"]["holding_count"], 0)
         self.assertEqual(result["summary"]["total_assets"], 12000000.0)
@@ -417,7 +421,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
             patch(
-                "app.services.portfolio_service.db.portfolio_profile_get",
+                "app.services.portfolio_service.supabase_client.portfolio_profile_get",
                 new=AsyncMock(
                     return_value={
                         "total_assets": 10000.0,
@@ -428,7 +432,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.services.portfolio_service.db.portfolio_list",
+                "app.services.portfolio_service.supabase_client.portfolio_list",
                 new=AsyncMock(
                     return_value=[
                         {
@@ -444,7 +448,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.services.portfolio_service.db.watchlist_list",
+                "app.services.portfolio_service.supabase_client.watchlist_list",
                 new=AsyncMock(return_value=[{"ticker": "000660.KS", "country_code": "KR"}]),
             ),
             patch(
@@ -469,7 +473,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(side_effect=[radar_response, empty_radar_response]),
             ),
         ):
-            result = await portfolio_service.get_portfolio()
+            result = await portfolio_service.get_portfolio("user-123")
 
         self.assertEqual(result["holdings"][0]["execution_bias"], "capital_preservation")
         self.assertEqual(result["holdings"][0]["bear_probability"], 43.0)

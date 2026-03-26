@@ -1,9 +1,11 @@
 import asyncio
 import unittest
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from app.auth import AuthenticatedUser, get_current_user
 from app.main import app
 from app.services import portfolio_recommendation_service
 
@@ -90,11 +92,13 @@ class PortfolioRecommendationTests(unittest.TestCase):
 
         with (
             patch("app.services.portfolio_recommendation_service.portfolio_service.get_portfolio", new=AsyncMock(return_value=portfolio_snapshot)),
-            patch("app.services.portfolio_recommendation_service.db.watchlist_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_recommendation_service.supabase_client.watchlist_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_recommendation_service.supabase_client.portfolio_list", new=AsyncMock(return_value=[])),
             patch("app.services.portfolio_recommendation_service.market_service.get_market_opportunities", new=AsyncMock(return_value=kr_response)),
         ):
             result = asyncio.run(
                 portfolio_recommendation_service.get_conditional_recommendations(
+                    user_id="user-123",
                     country_code="KR",
                     sector="Information Technology",
                     style="balanced",
@@ -154,14 +158,15 @@ class PortfolioRecommendationTests(unittest.TestCase):
 
         async def run_once(portfolio_rows, portfolio_snapshot):
             with (
-                patch("app.services.portfolio_recommendation_service.db.portfolio_list", new=AsyncMock(return_value=portfolio_rows)),
-                patch("app.services.portfolio_recommendation_service.db.watchlist_list", new=AsyncMock(return_value=[])),
+                patch("app.services.portfolio_recommendation_service.supabase_client.portfolio_list", new=AsyncMock(return_value=portfolio_rows)),
+                patch("app.services.portfolio_recommendation_service.supabase_client.watchlist_list", new=AsyncMock(return_value=[])),
                 patch("app.services.portfolio_recommendation_service.portfolio_service.get_portfolio", new=AsyncMock(return_value=portfolio_snapshot)),
                 patch("app.services.portfolio_recommendation_service.market_service.get_market_opportunities", new=AsyncMock(return_value=kr_response)),
                 patch("app.services.portfolio_recommendation_service.cache.get", new=AsyncMock(return_value=None)) as cache_get,
                 patch("app.services.portfolio_recommendation_service.cache.set", new=AsyncMock()),
             ):
                 result = await portfolio_recommendation_service.get_conditional_recommendations(
+                    user_id="user-123",
                     country_code="KR",
                     sector="Information Technology",
                     style="balanced",
@@ -178,6 +183,23 @@ class PortfolioRecommendationTests(unittest.TestCase):
         self.assertNotEqual(key_empty, key_invested)
         self.assertEqual(len(result_empty["recommendations"]), 1)
         self.assertEqual(result_invested["recommendations"], [])
+
+    @contextmanager
+    def _authenticated_client(self):
+        async def _fake_current_user():
+            return AuthenticatedUser(id="user-123", email="tester@example.com")
+
+        app.dependency_overrides[get_current_user] = _fake_current_user
+        try:
+            with (
+                patch("app.main.db.initialize", new=AsyncMock()),
+                patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
+                patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
+            ):
+                with TestClient(app) as client:
+                    yield client
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_portfolio_recommendation_routes_exist(self):
         conditional_payload = {
@@ -232,13 +254,10 @@ class PortfolioRecommendationTests(unittest.TestCase):
         }
 
         with (
-            patch("app.main.db.initialize", new=AsyncMock()),
-            patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-            patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
             patch("app.routers.portfolio.portfolio_recommendation_service.get_conditional_recommendations", new=AsyncMock(return_value=conditional_payload)),
             patch("app.routers.portfolio.portfolio_recommendation_service.get_optimal_recommendation", new=AsyncMock(return_value=optimal_payload)),
         ):
-            with TestClient(app) as client:
+            with self._authenticated_client() as client:
                 conditional = client.get("/api/portfolio/recommendations/conditional?country_code=KR&max_items=5")
                 optimal = client.get("/api/portfolio/recommendations/optimal")
 

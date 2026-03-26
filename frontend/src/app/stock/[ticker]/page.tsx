@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
+import { useAuth } from "@/components/AuthProvider";
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
 import ForecastDeltaCard from "@/components/ForecastDeltaCard";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
@@ -21,6 +22,7 @@ import PriceChart from "@/components/charts/PriceChart";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import type { CompositeScore, ForecastDeltaResponse, PivotPoints, TechSummary } from "@/lib/api";
 import type { PricePoint, StockDetail } from "@/lib/types";
@@ -33,6 +35,7 @@ function toError(error: unknown): Error {
 
 export default function StockPage() {
   const { ticker } = useParams<{ ticker: string }>();
+  const router = useRouter();
   const [stock, setStock] = useState<StockDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -42,6 +45,8 @@ export default function StockPage() {
   const [chartPeriod, setChartPeriod] = useState("3mo");
   const [chartType, setChartType] = useState<"line" | "candle">("line");
   const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const { toast } = useToast();
+  const { session } = useAuth();
 
   useEffect(() => {
     if (!ticker) return;
@@ -73,9 +78,21 @@ export default function StockPage() {
     }
   };
 
-  const addToWatchlist = () => {
-    if (stock) {
-      api.addWatchlist(stock.ticker, stock.country_code).catch(console.error);
+  const addToWatchlist = async () => {
+    if (!stock) {
+      return;
+    }
+    if (!session) {
+      toast("워치리스트는 로그인 후 사용할 수 있습니다.", "info");
+      router.push(`/auth?next=${encodeURIComponent(`/stock/${stock.ticker}`)}`);
+      return;
+    }
+    try {
+      await api.addWatchlist(stock.ticker, stock.country_code);
+      toast(`${stock.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
+    } catch (error) {
+      console.error(error);
+      toast("워치리스트 추가에 실패했습니다.", "error");
     }
   };
 

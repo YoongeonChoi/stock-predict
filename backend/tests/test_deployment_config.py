@@ -38,6 +38,10 @@ class DeploymentSettingsTests(unittest.TestCase):
         self.assertEqual(settings.kosis_employment_stats_id, "legacy-employment")
         self.assertEqual(settings.kosis_industrial_production_stats_id, "legacy-industrial")
 
+    def test_supabase_server_key_accepts_secret_alias(self):
+        settings = Settings(SUPABASE_SECRET_KEY="secret-key")
+        self.assertEqual(settings.supabase_server_key, "secret-key")
+
 
 if __name__ == "__main__":
     unittest.main()
