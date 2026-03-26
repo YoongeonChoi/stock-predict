@@ -38,9 +38,15 @@ def _scenario_snapshot(forecast) -> dict:
     }
 
 
-async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
+async def get_market_opportunities(
+    country_code: str,
+    limit: int = 12,
+    *,
+    max_candidates: int | None = None,
+) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v4:{country_code}:{limit}"
+    candidate_budget = max_candidates if max_candidates is not None else max(12, min(24, limit * 2))
+    cache_key = f"opportunity_radar:v5:{country_code}:{limit}:{candidate_budget}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -76,9 +82,15 @@ async def get_market_opportunities(country_code: str, limit: int = 12) -> dict:
     universe_selection = await resolve_universe(country_code)
     universe = universe_selection.sectors
     candidates: list[tuple[str, str]] = []
+    sector_count = max(1, len(universe))
+    per_sector = max(1, min(3, candidate_budget // sector_count))
     for sector, tickers in universe.items():
-        for ticker in tickers[:3]:
+        for ticker in tickers[:per_sector]:
             candidates.append((sector, ticker))
+            if len(candidates) >= candidate_budget:
+                break
+        if len(candidates) >= candidate_budget:
+            break
 
     async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
         sector, ticker = candidate

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
@@ -6,10 +7,11 @@ from app.data import yfinance_client
 from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
 from app.services import archive_service, export_service, market_service
-from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005
+from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
+PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 12
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -59,7 +61,11 @@ async def get_country_report(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     try:
-        report = await analyze_country(code)
+        report = await asyncio.wait_for(analyze_country(code), timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        err = SP_5018(f"Country report for {code} exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
+        err.log("warning")
+        return JSONResponse(status_code=504, content=err.to_dict())
     except Exception as e:
         err = SP_3001(code)
         err.detail = str(e)[:200]
@@ -323,4 +329,12 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
-    return await market_service.get_market_opportunities(code, limit)
+    try:
+        return await asyncio.wait_for(
+            market_service.get_market_opportunities(code, limit),
+            timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        err = SP_5018(f"Opportunity radar for {code} exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
+        err.log("warning")
+        return JSONResponse(status_code=504, content=err.to_dict())

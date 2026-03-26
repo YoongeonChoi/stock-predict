@@ -1,11 +1,15 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 
 from app.data import cache
 from app.database import db
 from app.services import calendar_service, market_service, market_session_service
+
+log = logging.getLogger("stock_predict.briefing")
+BRIEFING_RADAR_TIMEOUT_SECONDS = 8
 
 
 def _event_score(event: dict) -> tuple:
@@ -88,6 +92,41 @@ def _build_priority_lines(sessions: list[dict], radar_map: dict[str, dict], arch
     return lines[:4]
 
 
+def _radar_fallback(country_code: str, note: str) -> dict:
+    return {
+        "country_code": country_code,
+        "generated_at": datetime.now().isoformat(),
+        "market_regime": {
+            "label": "요약 지연",
+            "stance": "neutral",
+            "conviction": 0,
+            "summary": note,
+        },
+        "total_scanned": 0,
+        "actionable_count": 0,
+        "bullish_count": 0,
+        "universe_source": "fallback",
+        "universe_note": note,
+        "opportunities": [],
+    }
+
+
+async def _load_briefing_radar(country_code: str) -> dict:
+    try:
+        return await asyncio.wait_for(
+            market_service.get_market_opportunities(country_code, 4, max_candidates=8),
+            timeout=BRIEFING_RADAR_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        note = "공개 추천 계산이 길어져 브리핑에는 요약만 표시합니다."
+        log.warning("Daily briefing radar timed out for %s after %ss", country_code, BRIEFING_RADAR_TIMEOUT_SECONDS)
+        return _radar_fallback(country_code, note)
+    except Exception as exc:
+        note = "공개 추천 계산에 실패해 브리핑에는 요약만 표시합니다."
+        log.warning("Daily briefing radar failed for %s: %s", country_code, exc, exc_info=True)
+        return _radar_fallback(country_code, note)
+
+
 async def get_daily_briefing() -> dict:
     today = datetime.now().date().isoformat()
     cache_key = f"daily_briefing:v1:{today}"
@@ -96,7 +135,7 @@ async def get_daily_briefing() -> dict:
         return cached
 
     sessions_task = market_session_service.get_market_sessions()
-    radar_tasks = [market_service.get_market_opportunities(code, 4) for code in ("KR",)]
+    radar_tasks = [_load_briefing_radar(code) for code in ("KR",)]
     archive_task = db.research_report_status(today)
     events_task = _upcoming_events()
 
