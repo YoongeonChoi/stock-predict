@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.19.0 - 2026-03-27
+
+- 이메일 회원가입 화면을 재구성해 아이디 중복 확인, 비밀번호 강도 체크리스트, 비밀번호 재확인, 이름·전화번호·생년월일 필수 입력을 한 흐름으로 정리했습니다.
+- 계정 관련 로직을 `frontend/src/lib/account.ts`, `frontend/src/components/auth/*`, `backend/app/services/account_service.py`, `backend/app/routers/account.py` 중심으로 분리해 인증/프로필 검증 규칙과 화면 구성을 관리하기 쉽게 정리했습니다.
+- `/api/account/username-availability`를 로그인 전 공개 확인 API로 바로 쓸 수 있게 수정하고, `/api/account/me`를 통해 현재 계정 프로필을 일관되게 읽도록 연결했습니다.
+- 모바일 기준으로 상단 셸, 대시보드, 포트폴리오, 인증 화면의 레이아웃 브레이크포인트를 다시 조정하고, 과한 보라색 계열 강조를 줄여 더 차분한 단일 포인트 색 중심의 UI로 정돈했습니다.
+- README를 예측 공식, 포트폴리오 최적화 공식, 무료 배포 구조, 회원가입 보안 규칙까지 포함하는 상세 문서로 전면 재작성하고, AGENTS/DESIGN_BIBLE도 현재 운영 구조에 맞춰 갱신했습니다.
+
 ## v2.18.0 - 2026-03-27
 
 - 포트폴리오 추천, 조건 추천, 최적 추천, 일일 이상적 포트폴리오를 모두 `20거래일 기대수익률 + 기대초과수익률 + EWMA+shrinkage 공분산 + 회전율 패널티` 기준의 공통 optimizer로 통합했습니다.

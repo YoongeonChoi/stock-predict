@@ -26,7 +26,7 @@ import type {
 } from "@/lib/api";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
-const COLORS = ["#7C6AE6", "#2563eb", "#f59e0b", "#ef4444", "#0ea5e9", "#22c55e", "#ec4899", "#94a3b8"];
+const COLORS = ["#2563eb", "#0f172a", "#f59e0b", "#0ea5e9", "#22c55e", "#64748b", "#14b8a6", "#e11d48"];
 const DEFAULT_RECOMMENDATION_FILTERS: PortfolioConditionalRecommendationFilters = {
   country_code: "KR",
   sector: "ALL",
@@ -39,9 +39,9 @@ const DEFAULT_RECOMMENDATION_FILTERS: PortfolioConditionalRecommendationFilters 
 
 const TICKER_GUIDE = {
   KR: {
-    label: "한국",
-    placeholder: "005930",
-    helper: "숫자 6자리만 입력해도 `.KS` 또는 `.KQ` 형식으로 저장합니다.",
+    label: "기본 입력 규칙",
+    placeholder: "005930 또는 005930.KS",
+    helper: "국내 종목은 숫자 6자리만 입력해도 표준 티커 형식으로 자동 해석합니다.",
   },
 } as const;
 
@@ -428,7 +428,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="page-shell">
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.86fr)]">
+      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.86fr)]">
         <div className="card !p-5 space-y-5">
           <div className="section-heading">
             <div>
@@ -441,7 +441,7 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <SummaryMetric label="총자산" value={formatAssetValue(summary?.total_assets ?? 0)} helper="사용자 기준 통화" />
             <SummaryMetric label="총매입금액" value={formatAssetValue(summary?.total_invested ?? 0)} helper={`${summary?.holding_count ?? 0}개 종목`} />
             <SummaryMetric label="주식 평가액" value={formatAssetValue(summary?.total_current ?? 0)} helper={`${(summary?.stock_ratio_pct ?? 0).toFixed(1)}%`} />
@@ -515,7 +515,7 @@ export default function PortfolioPage() {
           {editingHoldingId != null ? <button onClick={resetHoldingForm} className="action-chip-secondary">수정 취소</button> : null}
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_180px_140px_180px_130px_auto]">
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_180px_140px_180px_auto]">
           <div className="min-w-0">
             <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">티커</label>
             <input value={holdingForm.ticker} onChange={(e) => setHoldingForm((prev) => ({ ...prev, ticker: e.target.value }))} placeholder={activeGuide.placeholder} className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
@@ -532,10 +532,6 @@ export default function PortfolioPage() {
             <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수일</label>
             <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
           </div>
-          <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">시장</label>
-            <div className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm text-text-secondary">KR</div>
-          </div>
           <div className="flex items-end">
             <button onClick={submitHolding} disabled={submittingHolding} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
               {submittingHolding ? "저장 중..." : editingHoldingId != null ? "보유 종목 수정" : "보유 종목 추가"}
@@ -544,7 +540,7 @@ export default function PortfolioPage() {
         </div>
 
         <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-3 space-y-2">
-          <div className="text-xs text-text-secondary">{activeGuide.label} 입력 규칙: {activeGuide.helper}</div>
+          <div className="text-xs text-text-secondary">{activeGuide.label}: {activeGuide.helper}</div>
           <TickerResolutionHint resolution={resolution} />
           {formError ? <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">{formError}</div> : null}
         </div>

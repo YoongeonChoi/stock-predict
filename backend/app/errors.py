@@ -124,6 +124,7 @@ SP_5018 = lambda d="": AppError(
     "Service request timed out",
     d or "The requested aggregated response took too long. Retry shortly.",
 )
+SP_5019 = lambda d="": AppError("SP-5019", "Account service request failed", d)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -176,6 +177,11 @@ SP_6014 = lambda d="": AppError(
     "SP-6014",
     "Authentication required",
     d or "Sign in and retry the requested operation.",
+)
+SP_6015 = lambda d="": AppError(
+    "SP-6015",
+    "Invalid account profile input",
+    d or "Provide a valid username, name, phone number, and birth date.",
 )
 
 # ---------------------------------------------------------------------------

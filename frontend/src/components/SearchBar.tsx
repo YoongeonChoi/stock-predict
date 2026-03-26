@@ -60,7 +60,7 @@ export default function SearchBar() {
         className={cn(
           "flex items-center gap-3 rounded-[22px] border px-4 py-3 transition-all",
           focused || open
-            ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(124,106,230,0.35)]"
+            ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(37,99,235,0.22)]"
             : "border-border bg-surface"
         )}
       >
@@ -85,7 +85,7 @@ export default function SearchBar() {
                 select(results[0].ticker);
               }
             }}
-            placeholder="티커, 종목명, 한국 종목 검색"
+            placeholder="티커 또는 종목명 검색"
             className="mt-0.5 w-full bg-transparent text-sm text-text outline-none placeholder:text-text-secondary"
           />
         </div>
