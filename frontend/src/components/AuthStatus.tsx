@@ -6,17 +6,34 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import { useAuth } from "@/components/AuthProvider";
 
-function maskEmail(email?: string | null) {
-  if (!email) {
-    return "로그인됨";
+function buildIdentityLabel({
+  username,
+  fullName,
+  email,
+}: {
+  username?: string | null;
+  fullName?: string | null;
+  email?: string | null;
+}) {
+  if (fullName && username) {
+    return `${fullName} · @${username}`;
   }
-  return email.length > 26 ? `${email.slice(0, 23)}...` : email;
+  if (fullName) {
+    return fullName;
+  }
+  if (username) {
+    return `@${username}`;
+  }
+  if (email) {
+    return email.length > 26 ? `${email.slice(0, 23)}...` : email;
+  }
+  return "로그인됨";
 }
 
 export default function AuthStatus() {
   const router = useRouter();
   const { toast } = useToast();
-  const { configured, loading, user, signOut } = useAuth();
+  const { configured, loading, user, profile, signOut } = useAuth();
 
   if (!configured) {
     return (
@@ -57,7 +74,11 @@ export default function AuthStatus() {
   return (
     <div className="flex shrink-0 items-center gap-2">
       <div className="hidden rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-sm text-text-secondary md:block">
-        {maskEmail(user.email)}
+        {buildIdentityLabel({
+          username: profile?.username,
+          fullName: profile?.full_name,
+          email: user.email,
+        })}
       </div>
       <button onClick={handleSignOut} className="action-chip-secondary">
         로그아웃

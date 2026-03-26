@@ -60,6 +60,13 @@ class SupabaseClient:
             "Authorization": f"Bearer {access_token}",
         }
 
+    def _admin_headers(self) -> dict[str, str]:
+        return {
+            "apikey": self._server_key,
+            "Authorization": f"Bearer {self._server_key}",
+            "Content-Type": "application/json",
+        }
+
     async def _request_json(
         self,
         method: str,
@@ -95,6 +102,41 @@ class SupabaseClient:
             allow_unauthorized=True,
         )
         return dict(payload) if isinstance(payload, dict) else None
+
+    async def admin_list_users(self, *, page: int = 1, per_page: int = 200) -> list[dict]:
+        payload = await self._request_json(
+            "GET",
+            "/auth/v1/admin/users",
+            headers=self._admin_headers(),
+            params={"page": page, "per_page": per_page},
+        )
+        if isinstance(payload, dict):
+            rows = payload.get("users")
+            if isinstance(rows, list):
+                return [dict(item) for item in rows if isinstance(item, dict)]
+        return []
+
+    async def find_user_by_username(self, username: str) -> dict[str, Any] | None:
+        normalized = username.strip().lower()
+        if not normalized:
+            return None
+
+        for page in range(1, 11):
+            users = await self.admin_list_users(page=page, per_page=200)
+            if not users:
+                return None
+            for user in users:
+                metadata = user.get("user_metadata")
+                if not isinstance(metadata, dict):
+                    metadata = user.get("raw_user_meta_data")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                value = metadata.get("username")
+                if isinstance(value, str) and value.strip().lower() == normalized:
+                    return user
+            if len(users) < 200:
+                return None
+        return None
 
     async def watchlist_list(self, user_id: str) -> list[dict]:
         payload = await self._request_json(

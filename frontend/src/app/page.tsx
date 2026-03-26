@@ -289,23 +289,25 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {countries.map((country) => (
-              <button
-                key={country.code}
-                onClick={() => void loadCountryWorkspace(country.code)}
-                className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-                  selectedCountry === country.code
-                    ? "bg-accent text-white"
-                    : "border border-border bg-surface/70 text-text-secondary hover:border-accent/35 hover:text-text"
-                }`}
-              >
-                {COUNTRY_FLAGS[country.code]} {country.name_local}
-              </button>
-            ))}
-        </div>
+        {countries.length > 1 ? (
+          <div className="flex flex-wrap gap-2">
+            {countries.map((country) => (
+                <button
+                  key={country.code}
+                  onClick={() => void loadCountryWorkspace(country.code)}
+                  className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                    selectedCountry === country.code
+                      ? "bg-accent text-white"
+                      : "border border-border bg-surface/70 text-text-secondary hover:border-accent/35 hover:text-text"
+                  }`}
+                >
+                  {COUNTRY_FLAGS[country.code]} {country.name_local}
+                </button>
+              ))}
+          </div>
+        ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
           <div className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -323,7 +325,7 @@ export default function HomePage() {
               ) : null}
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
               {selectedCountryItem?.indices.map((index) => (
                 <div key={index.ticker} className="metric-card">
                   <div className="text-xs text-text-secondary">{index.name}</div>
@@ -345,7 +347,7 @@ export default function HomePage() {
             </div>
 
             {indicators.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {indicators.slice(0, 4).map((indicator) => (
                   <div key={indicator.name} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
                     <div className="text-[11px] text-text-secondary">{indicator.name}</div>
@@ -407,7 +409,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
+      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
         <div className="card !p-4">
           <div className="section-heading gap-4">
             <div>
@@ -438,7 +440,7 @@ export default function HomePage() {
           {moversLoading ? (
             <div className="mt-5 h-64 rounded-[22px] bg-border/20 animate-pulse" />
           ) : movers ? (
-            <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="mt-5 grid gap-5 sm:grid-cols-2 2xl:grid-cols-1">
               <div>
                 <h3 className="text-sm font-semibold text-positive">상승 상위</h3>
                 <div className="mt-3 space-y-2">
@@ -479,7 +481,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
         <div className="card !p-0 overflow-hidden">
           <div className="border-b border-border px-5 py-4">
             <h2 className="section-title">강한 셋업</h2>

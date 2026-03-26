@@ -81,7 +81,7 @@ export default function Navigation() {
                   className={cn(
                     "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition-all",
                     active
-                      ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(124,106,230,0.45)]"
+                      ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(37,99,235,0.25)]"
                       : "border-transparent text-text-secondary hover:border-border hover:bg-white/40 hover:text-text dark:hover:bg-slate-900/40",
                   )}
                 >
@@ -166,10 +166,16 @@ export default function Navigation() {
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 bg-bg pt-[76px] lg:hidden">
-          <div className="h-full overflow-y-auto px-4 pb-6">
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button
+            aria-label="메뉴 닫기"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+          />
+          <div className="relative h-full max-w-[320px] border-r border-border/70 bg-surface px-4 pb-6 pt-[84px] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]">
             <div className="card !p-4">
               <div className="text-sm font-semibold text-text">메뉴</div>
+              <div className="mt-1 text-xs text-text-secondary">탐색, 운영, 리서치 흐름을 한 곳에서 이동합니다.</div>
             </div>
             <nav className="mt-4">{navLinks}</nav>
           </div>

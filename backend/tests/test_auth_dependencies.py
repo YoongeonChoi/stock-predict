@@ -30,12 +30,27 @@ class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_valid_user_returns_authenticated_user(self):
         with patch(
             "app.auth.supabase_client.get_user",
-            new=AsyncMock(return_value={"id": "user-123", "email": "user@example.com"}),
+            new=AsyncMock(
+                return_value={
+                    "id": "user-123",
+                    "email": "user@example.com",
+                    "user_metadata": {
+                        "username": "alpha_user",
+                        "full_name": "홍 길동",
+                        "phone_number": "01012345678",
+                        "birth_date": "1999-01-31",
+                    },
+                }
+            ),
         ):
             user = await get_current_user("Bearer token")
 
         self.assertEqual(user.id, "user-123")
         self.assertEqual(user.email, "user@example.com")
+        self.assertEqual(user.username, "alpha_user")
+        self.assertEqual(user.full_name, "홍 길동")
+        self.assertEqual(user.phone_number, "01012345678")
+        self.assertEqual(user.birth_date, "1999-01-31")
 
     async def test_invalid_token_raises_401(self):
         with patch("app.auth.supabase_client.get_user", new=AsyncMock(return_value=None)):

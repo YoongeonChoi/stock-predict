@@ -9,7 +9,7 @@ import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Stock Predict",
-  description: "한국 주식시장을 위한 AI 기반 분석 플랫폼",
+  description: "시장 탐색, 포트폴리오 운영, 예측 검증을 한 흐름으로 이어주는 투자 분석 워크스페이스",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Navigation />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <header className="border-b border-border/70 bg-surface shadow-[0_18px_36px_-32px_rgba(15,23,42,0.24)] lg:sticky lg:top-0 lg:z-30">
-                    <div className="mx-auto flex w-full max-w-[1500px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:px-10">
+                    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-6 lg:px-8 xl:px-10">
                       <div className="min-w-0 flex-1">
                         <SearchBar />
                       </div>

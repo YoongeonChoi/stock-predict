@@ -16,6 +16,24 @@ export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
 }
 
+export interface AccountProfile {
+  user_id: string;
+  email?: string | null;
+  username?: string | null;
+  full_name?: string | null;
+  phone_number?: string | null;
+  phone_masked?: string | null;
+  birth_date?: string | null;
+}
+
+export interface UsernameAvailabilityResponse {
+  username: string;
+  normalized_username: string;
+  valid: boolean;
+  available: boolean;
+  message: string;
+}
+
 export class ApiError extends Error {
   status: number;
   errorCode: string;
@@ -1086,6 +1104,9 @@ export interface ForecastDeltaResponse {
 }
 
 export const api = {
+  getMyAccountProfile: () => get<AccountProfile>("/api/account/me"),
+  checkUsernameAvailability: (username: string) =>
+    get<UsernameAvailabilityResponse>(`/api/account/username-availability?username=${encodeURIComponent(username)}`),
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
   getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
   getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),

@@ -17,7 +17,7 @@ export default function AuthGateCard({ title, description, nextPath }: AuthGateC
         eyebrow="계정"
         title={title}
         description={description}
-        meta={<span className="info-chip">Supabase 계정 연동</span>}
+        meta={<span className="info-chip">계정별 데이터 분리</span>}
         actions={
           <>
             <Link href={authHref} className="action-chip-primary">
