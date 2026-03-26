@@ -8,6 +8,106 @@
 - 사용자에게 보이는 변경은 코드, 문서, 버전, 에러 코드까지 함께 반영합니다.
 - 프론트와 백엔드 계약이 어긋나지 않도록 항상 함께 확인합니다.
 
+## 현재 서비스 기준선
+
+문서와 구현은 `예전에 구상한 제품`이 아니라 `지금 운영 중인 사이트`를 기준으로 맞춥니다.
+
+- 프론트 배포: `Vercel`
+- 백엔드 배포: `Render`
+- 인증/사용자 데이터: `Supabase`
+- DNS/도메인: `Cloudflare`
+
+현재 서비스는 한국 시장 중심으로 운영되지만, 문서와 사용자 문구에서 이 제약을 매 문단의 headline처럼 반복하지 않습니다.
+먼저 `무엇을 할 수 있는지`를 설명하고, 시장 범위는 필요한 문맥에서만 분명하게 적습니다.
+
+## 현재 제품 지도
+
+### 프론트 주요 화면
+
+- `/`
+  - 대시보드
+  - 브리핑, 시장 스냅샷, 히트맵, 모멘텀, 레이더 요약
+- `/auth`
+  - 이메일 회원가입 / 로그인
+- `/radar`
+  - Opportunity Radar
+- `/screener`
+  - 조건 기반 종목 필터링
+- `/compare`
+  - 종목 비교
+- `/portfolio`
+  - 자산 프로필, 보유 종목, 추천, 이벤트 레이더
+- `/watchlist`
+  - 관심종목 관리
+- `/calendar`
+  - 일정 캘린더
+- `/archive`
+  - 리서치/예측 아카이브
+- `/lab`
+  - 예측 연구실
+- `/settings`
+  - 시스템/진단/운영 설정
+- 상세 라우트
+  - `/country/[code]`
+  - `/country/[code]/sector/[id]`
+  - `/stock/[ticker]`
+  - `/archive/export/[id]`
+
+### 백엔드 API 지도
+
+- 상태/시스템
+  - `/api/health`
+  - `/api/diagnostics`
+- 시장/국가
+  - `/api/countries`
+  - `/api/country/{code}/report`
+  - `/api/country/{code}/heatmap`
+  - `/api/country/{code}/forecast`
+  - `/api/country/{code}/sector-performance`
+  - `/api/country/{code}/sectors`
+  - `/api/market/indicators`
+  - `/api/market/movers/{code}`
+  - `/api/market/opportunities/{code}`
+- 섹터/종목/검색
+  - `/api/country/{code}/sector/{sector_id}/report`
+  - `/api/stock/{ticker}/detail`
+  - `/api/stock/{ticker}/chart`
+  - `/api/stock/{ticker}/technical-summary`
+  - `/api/stock/{ticker}/pivot-points`
+  - `/api/stock/{ticker}/forecast-delta`
+  - `/api/search`
+  - `/api/ticker/resolve`
+- 포트폴리오/관심종목
+  - `/api/watchlist`
+  - `/api/watchlist/{ticker}`
+  - `/api/portfolio`
+  - `/api/portfolio/profile`
+  - `/api/portfolio/holdings`
+  - `/api/portfolio/ideal`
+  - `/api/portfolio/event-radar`
+  - `/api/portfolio/recommendations/conditional`
+  - `/api/portfolio/recommendations/optimal`
+- 브리핑/리서치/캘린더/아카이브
+  - `/api/briefing/daily`
+  - `/api/market/sessions`
+  - `/api/calendar/{code}`
+  - `/api/archive`
+  - `/api/archive/accuracy/stats`
+  - `/api/archive/research`
+  - `/api/archive/research/status`
+  - `/api/archive/research/refresh`
+  - `/api/archive/{report_id}`
+  - `/api/predictions`
+  - `/api/compare`
+  - `/api/screener`
+  - `/api/export/{fmt}/{report_id}`
+
+규칙:
+
+- 새 기능을 설계할 때는 먼저 이 지도 안에서 `기존 화면 확장`인지 `새 화면/새 라우트`인지 판단합니다.
+- 이미 있는 라우트/페이지와 목적이 겹치면 새 파일을 만들기 전에 기존 흐름에 흡수할 방법을 먼저 찾습니다.
+- 문서에는 존재하지 않는 메뉴, 라우트, 모드를 미리 적지 않습니다.
+
 ## 필수 규칙
 
 1. 사용자에게 보이는 동작이 바뀌면 `README.md`를 업데이트합니다.
@@ -38,6 +138,25 @@
 12. 공개 대시보드나 집계형 API를 추가/수정할 때는 반드시 timeout과 부분 fallback을 함께 설계합니다.
    - 느린 외부 소스 하나 때문에 전체 화면이 `불러오는 중` 상태로 고정되지 않게 합니다.
    - timeout을 추가하면 관련 에러 코드와 사용자 안내 문구도 함께 맞춥니다.
+13. 소개 문구, 헤더 설명, README 첫 문단은 `제약`보다 `효용`을 먼저 설명합니다.
+   - 시장 범위, free 플랜 제약, 외부 API 한계는 숨기지 않되, headline처럼 반복하지 않습니다.
+14. AI 과장 카피를 금지합니다.
+   - `혁신적`, `놀라운`, `AI가 다 해준다`, `차세대` 같은 문구보다 실제 기능, 근거, 입력/출력 계약을 우선 적습니다.
+15. 사용자 시선 흐름을 우선합니다.
+   - 카드, 섹션, 버튼은 “예뻐 보이는 대칭”보다 “읽기 쉬운 정렬”을 우선하며, 한 화면에서 동시에 여러 강조점이 경쟁하지 않게 합니다.
+
+## 문구 원칙
+
+- 한국어 우선이지만 과한 설명체보다 운영형 문장을 씁니다.
+- 기능명은 가능한 한 현재 내비게이션과 같은 용어를 유지합니다.
+  - 예: `기회 레이더`, `포트폴리오`, `관심종목`, `예측 연구실`
+- 사용자가 바로 이해할 수 있는 명사/동사 조합을 씁니다.
+  - 좋은 예: `보유 종목 추가`, `조건 추천 보기`, `관심종목에서 제거`
+  - 피할 예: `실행`, `확인`, `AI 분석 시작`
+- “한국 시장만 지원” 같은 제약은 아래 경우에만 전면에 드러냅니다.
+  - 잘못된 입력을 막아야 할 때
+  - API/데이터 범위를 설명해야 할 때
+  - 지원 범위 차이로 오해가 생길 수 있을 때
 
 ## 작업 순서
 
