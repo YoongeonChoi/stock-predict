@@ -5,19 +5,28 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from app.auth import AuthenticatedUser, get_current_user
 from app.main import app
 from app.services import ticker_resolver_service, forecast_monitor_service
 
 
 @contextmanager
-def patched_client():
+def patched_client(*, authenticated: bool = False):
+    async def _fake_current_user():
+        return AuthenticatedUser(id="user-123", email="tester@example.com")
+
+    if authenticated:
+        app.dependency_overrides[get_current_user] = _fake_current_user
     with (
         patch("app.main.db.initialize", new=AsyncMock()),
         patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
         patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
     ):
-        with TestClient(app) as client:
-            yield client
+        try:
+            with TestClient(app) as client:
+                yield client
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 class TickerResolutionAndFeatureTests(unittest.TestCase):
@@ -60,7 +69,7 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
                 new=AsyncMock(return_value={"generated_at": "2026-03-24T00:00:00", "window_days": 14, "events": []}),
             ),
         ):
-            with TestClient(app) as client:
+            with patched_client(authenticated=True) as client:
                 briefing = client.get("/api/briefing/daily")
                 event_radar = client.get("/api/portfolio/event-radar?days=14")
 

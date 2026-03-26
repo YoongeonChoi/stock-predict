@@ -8,7 +8,7 @@ import json
 
 from app.data import cache
 from app.data.universe_data import GICS_SECTORS
-from app.database import db
+from app.data.supabase_client import supabase_client
 from app.services import market_service, portfolio_service
 from app.utils.async_tools import gather_limited
 
@@ -161,11 +161,12 @@ def _portfolio_state_signature(portfolio_rows: list[dict], watchlist_rows: list[
 async def _load_recommendation_context(
     scan_countries: list[str],
     *,
+    user_id: str,
     portfolio_snapshot: dict | None = None,
     watchlist_rows_seed: list[dict] | None = None,
 ) -> tuple[dict, list[dict], list[dict], list[dict], list[dict]]:
-    portfolio_task = portfolio_service.get_portfolio() if portfolio_snapshot is None else None
-    watchlist_task = db.watchlist_list() if watchlist_rows_seed is None else None
+    portfolio_task = portfolio_service.get_portfolio(user_id) if portfolio_snapshot is None else None
+    watchlist_task = supabase_client.watchlist_list(user_id) if watchlist_rows_seed is None else None
     radar_task = gather_limited(
         scan_countries,
         lambda code: market_service.get_market_opportunities(code, limit=8),
@@ -358,6 +359,7 @@ def _build_summary(recommendations: list[dict], candidate_count: int) -> dict:
 
 async def get_conditional_recommendations(
     *,
+    user_id: str,
     country_code: str = "KR",
     sector: str = "ALL",
     style: str = "balanced",
@@ -372,12 +374,12 @@ async def get_conditional_recommendations(
     capped_items = max(3, min(max_items, 8))
     min_probability = round(_clip(float(min_up_probability), 45.0, 75.0), 1)
     portfolio_rows, watchlist_rows_for_state = await asyncio.gather(
-        db.portfolio_list(),
-        db.watchlist_list(),
+        supabase_client.portfolio_list(user_id),
+        supabase_client.watchlist_list(user_id),
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows_for_state)
     cache_key = (
-        f"portfolio_conditional_reco:v1:{normalized_country}:{normalized_sector}:{normalized_style}:"
+        f"portfolio_conditional_reco:v2:{user_id}:{normalized_country}:{normalized_sector}:{normalized_style}:"
         f"{capped_items}:{min_probability}:{int(bool(exclude_holdings))}:{int(bool(watchlist_only))}:{state_signature}"
     )
     cached = await cache.get(cache_key)
@@ -387,6 +389,7 @@ async def get_conditional_recommendations(
     scan_countries = ["KR"]
     _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
         scan_countries,
+        user_id=user_id,
         watchlist_rows_seed=watchlist_rows_for_state,
     )
     watchlist_keys = {
@@ -482,23 +485,24 @@ async def get_conditional_recommendations(
     return response
 
 
-async def get_optimal_recommendation() -> dict:
+async def get_optimal_recommendation(user_id: str) -> dict:
     portfolio_rows, watchlist_rows = await asyncio.gather(
-        db.portfolio_list(),
-        db.watchlist_list(),
+        supabase_client.portfolio_list(user_id),
+        supabase_client.watchlist_list(user_id),
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows)
-    cache_key = f"portfolio_optimal_reco:v1:{state_signature}"
+    cache_key = f"portfolio_optimal_reco:v2:{user_id}:{state_signature}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
 
-    portfolio = await portfolio_service.get_portfolio()
+    portfolio = await portfolio_service.get_portfolio(user_id)
     holdings = portfolio.get("holdings") or []
     risk = portfolio.get("risk") or {}
     auto_style = _auto_style_from_risk(risk)
     _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
         ["KR"],
+        user_id=user_id,
         portfolio_snapshot=portfolio,
         watchlist_rows_seed=watchlist_rows,
     )

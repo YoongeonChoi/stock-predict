@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.database import db
 from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
+from app.exceptions import ApiAppException
 from app.routers import country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research, briefing
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
 from app.services import archive_service, research_archive_service
@@ -144,6 +145,11 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content=err.to_dict(),
     )
+
+
+@app.exception_handler(ApiAppException)
+async def api_app_exception_handler(request: Request, exc: ApiAppException):
+    return JSONResponse(status_code=exc.status_code, content=exc.error.to_dict())
 
 
 @app.exception_handler(RequestValidationError)

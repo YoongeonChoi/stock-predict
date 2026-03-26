@@ -1,3 +1,5 @@
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+
 const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 export function apiPath(path: string): string {
@@ -23,8 +25,44 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(apiPath(path), { cache: "no-store" });
+export function isAuthRequiredError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP_6014");
+}
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const client = getSupabaseBrowserClient();
+  if (!client) {
+    return {};
+  }
+  try {
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    if (!session?.access_token) {
+      return {};
+    }
+    return {
+      Authorization: `Bearer ${session.access_token}`,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const authHeaders = await getAuthHeaders();
+  const headers = new Headers(init.headers || {});
+  Object.entries(authHeaders).forEach(([key, value]) => {
+    if (!headers.has(key)) {
+      headers.set(key, value);
+    }
+  });
+
+  const res = await fetch(apiPath(path), {
+    ...init,
+    headers,
+    cache: init.cache ?? "no-store",
+  });
   if (!res.ok) {
     let info: ApiErrorInfo;
     try {
@@ -37,54 +75,28 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+async function get<T>(path: string): Promise<T> {
+  return request<T>(path);
+}
+
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(apiPath(path), {
+  return request<T>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let info: ApiErrorInfo;
-    try {
-      info = await res.json();
-    } catch {
-      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
-    }
-    throw new ApiError(res.status, info);
-  }
-  return res.json();
 }
 
 async function put<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(apiPath(path), {
+  return request<T>(path, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let info: ApiErrorInfo;
-    try {
-      info = await res.json();
-    } catch {
-      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
-    }
-    throw new ApiError(res.status, info);
-  }
-  return res.json();
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(apiPath(path), { method: "DELETE" });
-  if (!res.ok) {
-    let info: ApiErrorInfo;
-    try {
-      info = await res.json();
-    } catch {
-      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
-    }
-    throw new ApiError(res.status, info);
-  }
-  return res.json();
+  return request<T>(path, { method: "DELETE" });
 }
 
 export interface CompositeScoreItem {
@@ -526,7 +538,7 @@ export interface PortfolioProfile {
   total_assets: number;
   cash_balance: number;
   monthly_budget: number;
-  updated_at?: number | null;
+  updated_at?: string | null;
 }
 
 export interface PortfolioSummary {

@@ -11,7 +11,7 @@ from app.analysis.stock_analyzer import _calc_technicals
 from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.data import cache, yfinance_client
-from app.database import db
+from app.data.supabase_client import supabase_client
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
 from app.services import market_service, ticker_resolver_service
@@ -113,6 +113,16 @@ def _default_portfolio_profile() -> dict[str, float | None]:
         "monthly_budget": 0.0,
         "updated_at": None,
     }
+
+
+def _portfolio_cache_key(user_id: str) -> str:
+    return f"portfolio_overview:v7:{user_id}"
+
+
+async def invalidate_portfolio_cache(user_id: str | None = None) -> None:
+    if user_id:
+        await cache.invalidate(f"%:{user_id}")
+    await cache.invalidate("portfolio_overview:%")
 
 
 def _build_asset_summary(
@@ -735,6 +745,7 @@ def _allocation_breakdown(items: list[dict], field: str) -> list[dict]:
 
 async def _build_model_portfolio(
     *,
+    user_id: str,
     holdings: list[dict],
     risk: dict,
     country_context: dict[str, dict],
@@ -751,7 +762,7 @@ async def _build_model_portfolio(
         downside_watch_weight=float(risk.get("downside_watch_weight") or 0.0),
     )
 
-    watchlist_rows = await db.watchlist_list()
+    watchlist_rows = await supabase_client.watchlist_list(user_id)
     watchlist_keys = {
         f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
         for row in watchlist_rows
@@ -977,14 +988,14 @@ async def _build_model_portfolio(
     }
 
 
-async def get_portfolio():
+async def get_portfolio(user_id: str):
     """Get portfolio with current prices, risk context, and execution guidance."""
-    cache_key = "portfolio_overview:v6"
+    cache_key = _portfolio_cache_key(user_id)
     cached = await cache.get(cache_key)
     if cached:
         return cached
 
-    profile = await db.portfolio_profile_get()
+    profile = await supabase_client.portfolio_profile_get(user_id)
     normalized_profile = {
         "total_assets": round(float(profile.get("total_assets") or 0.0), 2),
         "cash_balance": round(float(profile.get("cash_balance") or 0.0), 2),
@@ -994,7 +1005,7 @@ async def get_portfolio():
 
     holdings = [
         row
-        for row in await db.portfolio_list()
+        for row in await supabase_client.portfolio_list(user_id)
         if _normalize_country_code(row.get("country_code", "KR")) == "KR"
     ]
     if not holdings:
@@ -1085,7 +1096,7 @@ async def get_portfolio():
         ticker = normalize_portfolio_ticker(holding["ticker"], country_code)
         if ticker != holding.get("ticker") or country_code != holding.get("country_code"):
             try:
-                await db.portfolio_update_identity(holding["id"], ticker, country_code)
+                await supabase_client.portfolio_update_identity(user_id, holding["id"], ticker, country_code)
             except Exception:
                 pass
         context = country_context.get(country_code)
@@ -1348,6 +1359,7 @@ async def get_portfolio():
         "stress_test": stress_test,
     }
     response["model_portfolio"] = await _build_model_portfolio(
+        user_id=user_id,
         holdings=enriched,
         risk=response["risk"],
         country_context=country_context,
@@ -1358,7 +1370,7 @@ async def get_portfolio():
     return response
 
 
-async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: str, country_code: str = "KR"):
+async def add_holding(user_id: str, ticker: str, buy_price: float, quantity: float, buy_date: str, country_code: str = "KR"):
     payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
     normalized_ticker = str(payload["ticker"])
     normalized_country = str(payload["country_code"])
@@ -1367,7 +1379,8 @@ async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: 
         name = info.get("name", normalized_ticker)
     except Exception:
         name = normalized_ticker
-    await db.portfolio_add(
+    await supabase_client.portfolio_add(
+        user_id,
         normalized_ticker,
         name,
         normalized_country,
@@ -1375,7 +1388,7 @@ async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: 
         float(payload["quantity"]),
         str(payload["buy_date"]),
     )
-    await cache.invalidate("portfolio_overview:%")
+    await invalidate_portfolio_cache(user_id)
     return {
         "ticker": normalized_ticker,
         "name": name,
@@ -1385,6 +1398,7 @@ async def add_holding(ticker: str, buy_price: float, quantity: float, buy_date: 
 
 
 async def update_holding(
+    user_id: str,
     holding_id: int,
     ticker: str,
     buy_price: float,
@@ -1400,7 +1414,8 @@ async def update_holding(
         name = info.get("name", normalized_ticker)
     except Exception:
         name = normalized_ticker
-    await db.portfolio_update(
+    await supabase_client.portfolio_update(
+        user_id,
         holding_id,
         normalized_ticker,
         name,
@@ -1409,7 +1424,7 @@ async def update_holding(
         float(payload["quantity"]),
         str(payload["buy_date"]),
     )
-    await cache.invalidate("portfolio_overview:%")
+    await invalidate_portfolio_cache(user_id)
     return {
         "ticker": normalized_ticker,
         "name": name,
@@ -1418,8 +1433,8 @@ async def update_holding(
     }
 
 
-async def get_portfolio_profile():
-    profile = await db.portfolio_profile_get()
+async def get_portfolio_profile(user_id: str):
+    profile = await supabase_client.portfolio_profile_get(user_id)
     return {
         "total_assets": round(float(profile.get("total_assets") or 0.0), 2),
         "cash_balance": round(float(profile.get("cash_balance") or 0.0), 2),
@@ -1428,17 +1443,18 @@ async def get_portfolio_profile():
     }
 
 
-async def update_portfolio_profile(total_assets: float, cash_balance: float, monthly_budget: float):
+async def update_portfolio_profile(user_id: str, total_assets: float, cash_balance: float, monthly_budget: float):
     payload = validate_portfolio_profile_input(total_assets, cash_balance, monthly_budget)
-    await db.portfolio_profile_upsert(
+    await supabase_client.portfolio_profile_upsert(
+        user_id,
         payload["total_assets"],
         payload["cash_balance"],
         payload["monthly_budget"],
     )
-    await cache.invalidate("portfolio_overview:%")
-    return await get_portfolio_profile()
+    await invalidate_portfolio_cache(user_id)
+    return await get_portfolio_profile(user_id)
 
 
-async def remove_holding(holding_id: int):
-    await db.portfolio_delete(holding_id)
-    await cache.invalidate("portfolio_overview:%")
+async def remove_holding(user_id: str, holding_id: int):
+    await supabase_client.portfolio_delete(user_id, holding_id)
+    await invalidate_portfolio_cache(user_id)

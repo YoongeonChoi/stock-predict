@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     naver_client_secret: str = ""
 
     db_path: str = "data/stock_predict.db"
+    supabase_url: str = ""
+    supabase_server_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "SUPABASE_SERVER_KEY",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "SUPABASE_SECRET_KEY",
+        ),
+    )
 
     frontend_url: str = "http://localhost:3000"
     frontend_urls: str = ""

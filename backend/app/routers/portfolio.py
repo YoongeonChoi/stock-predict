@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from app.auth import AuthenticatedUser, get_current_user
 from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_5017, SP_6009, SP_6013
 from app.services import ideal_portfolio_service, portfolio_service, portfolio_event_service, portfolio_recommendation_service
 
@@ -22,9 +23,9 @@ class PortfolioProfileUpdate(BaseModel):
 
 
 @router.get("/portfolio")
-async def get_portfolio():
+async def get_portfolio(current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        data = await portfolio_service.get_portfolio()
+        data = await portfolio_service.get_portfolio(current_user.id)
         return data
     except Exception as e:
         err = SP_5008(str(e)[:200])
@@ -33,9 +34,9 @@ async def get_portfolio():
 
 
 @router.get("/portfolio/profile")
-async def get_portfolio_profile():
+async def get_portfolio_profile(current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return await portfolio_service.get_portfolio_profile()
+        return await portfolio_service.get_portfolio_profile(current_user.id)
     except Exception as e:
         err = SP_5017(str(e)[:200])
         err.log()
@@ -43,9 +44,13 @@ async def get_portfolio_profile():
 
 
 @router.put("/portfolio/profile")
-async def update_portfolio_profile(body: PortfolioProfileUpdate):
+async def update_portfolio_profile(
+    body: PortfolioProfileUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     try:
         return await portfolio_service.update_portfolio_profile(
+            current_user.id,
             body.total_assets,
             body.cash_balance,
             body.monthly_budget,
@@ -75,9 +80,9 @@ async def get_ideal_portfolio(refresh: bool = False, history_limit: int = 10):
 
 
 @router.get("/portfolio/event-radar")
-async def get_portfolio_event_radar(days: int = 14):
+async def get_portfolio_event_radar(days: int = 14, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return await portfolio_event_service.get_portfolio_event_radar(days)
+        return await portfolio_event_service.get_portfolio_event_radar(current_user.id, days)
     except Exception as e:
         err = SP_5013(str(e)[:200])
         err.log()
@@ -93,9 +98,11 @@ async def get_conditional_portfolio_recommendations(
     min_up_probability: float = 54.0,
     exclude_holdings: bool = True,
     watchlist_only: bool = False,
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         return await portfolio_recommendation_service.get_conditional_recommendations(
+            user_id=current_user.id,
             country_code=country_code,
             sector=sector,
             style=style,
@@ -111,9 +118,9 @@ async def get_conditional_portfolio_recommendations(
 
 
 @router.get("/portfolio/recommendations/optimal")
-async def get_optimal_portfolio_recommendation():
+async def get_optimal_portfolio_recommendation(current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return await portfolio_recommendation_service.get_optimal_recommendation()
+        return await portfolio_recommendation_service.get_optimal_recommendation(current_user.id)
     except Exception as e:
         err = SP_5016(str(e)[:200])
         err.log()
@@ -121,10 +128,15 @@ async def get_optimal_portfolio_recommendation():
 
 
 @router.post("/portfolio/holdings")
-async def add_holding(body: HoldingCreate):
+async def add_holding(body: HoldingCreate, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
         saved = await portfolio_service.add_holding(
-            body.ticker, body.buy_price, body.quantity, body.buy_date, body.country_code
+            current_user.id,
+            body.ticker,
+            body.buy_price,
+            body.quantity,
+            body.buy_date,
+            body.country_code,
         )
         return {"status": "ok", **saved}
     except ValueError as e:
@@ -138,9 +150,14 @@ async def add_holding(body: HoldingCreate):
 
 
 @router.put("/portfolio/holdings/{holding_id}")
-async def update_holding(holding_id: int, body: HoldingCreate):
+async def update_holding(
+    holding_id: int,
+    body: HoldingCreate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     try:
         saved = await portfolio_service.update_holding(
+            current_user.id,
             holding_id,
             body.ticker,
             body.buy_price,
@@ -160,9 +177,9 @@ async def update_holding(holding_id: int, body: HoldingCreate):
 
 
 @router.delete("/portfolio/holdings/{holding_id}")
-async def delete_holding(holding_id: int):
+async def delete_holding(holding_id: int, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        await portfolio_service.remove_holding(holding_id)
+        await portfolio_service.remove_holding(current_user.id, holding_id)
         return {"status": "ok"}
     except Exception as e:
         err = SP_5008(str(e)[:200])

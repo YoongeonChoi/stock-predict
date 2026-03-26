@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.16.0 - 2026-03-26
+
+- Supabase 이메일 로그인과 세션 연동을 프론트에 추가해, 로그인 상태를 헤더에서 바로 확인하고 인증이 필요한 워치리스트/포트폴리오 화면은 계정 연결 흐름으로 자연스럽게 안내하도록 정리했습니다.
+- 워치리스트, 포트폴리오 보유 종목, 포트폴리오 프로필 저장소를 사용자별 Supabase 테이블로 전환해, 같은 배포 URL을 여러 사용자가 써도 각자 데이터가 섞이지 않도록 구조를 바꿨습니다.
+- 백엔드에 Supabase 토큰 검증 의존성과 사용자별 CRUD 경로를 추가하고, 로그인 필요 에러 `SP-6014`와 서버용 Supabase 키 미설정 에러 `SP-1006`을 새로 등록했습니다.
+- 무료 배포 기준을 `Vercel Hobby + Render Free + Supabase Free + Cloudflare` 조합으로 다시 정리하고, Render free 제약에 맞춰 `render.yaml`, `.env.example`, README를 함께 갱신했습니다.
+
 ## v2.15.3 - 2026-03-26
 
 - Vercel 프론트 + Render 백엔드 상시 배포 구성을 바로 가져갈 수 있도록 `render.yaml`, `frontend/.env.example`, 확장된 `backend/.env.example`를 추가했습니다.

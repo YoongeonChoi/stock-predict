@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import AuthGateCard from "@/components/AuthGateCard";
+import { useAuth } from "@/components/AuthProvider";
 import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
-import { api } from "@/lib/api";
+import { api, isAuthRequiredError } from "@/lib/api";
 import type { TickerResolution } from "@/lib/api";
 import type { WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
@@ -16,13 +18,33 @@ export default function WatchlistPage() {
   const [ticker, setTicker] = useState("");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
   const { toast } = useToast();
+  const { session, loading: authLoading } = useAuth();
 
-  const load = () => {
+  const load = async () => {
+    if (!session) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    api.getWatchlist().then(setItems).catch(console.error).finally(() => setLoading(false));
+    try {
+      setItems(await api.getWatchlist());
+    } catch (error) {
+      console.error(error);
+      if (!isAuthRequiredError(error)) {
+        toast("관심종목을 불러오지 못했습니다.", "error");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    load();
+  }, [authLoading, session]);
 
   useEffect(() => {
     const trimmed = ticker.trim();
@@ -51,10 +73,28 @@ export default function WatchlistPage() {
   };
 
   const remove = async (value: string) => {
-    await api.removeWatchlist(value);
-    toast(`${value} 종목을 워치리스트에서 제거했습니다.`, "success");
-    load();
+    try {
+      await api.removeWatchlist(value);
+      toast(`${value} 종목을 워치리스트에서 제거했습니다.`, "success");
+      load();
+    } catch {
+      toast("워치리스트 삭제에 실패했습니다.", "error");
+    }
   };
+
+  if (authLoading) {
+    return <div className="page-shell animate-pulse space-y-4"><div className="card h-48" /><div className="card h-64" /></div>;
+  }
+
+  if (!session) {
+    return (
+      <AuthGateCard
+        title="관심종목은 로그인 후 사용합니다"
+        description="워치리스트는 계정별로 분리 저장됩니다. 로그인하면 내가 저장한 종목만 따로 추적할 수 있습니다."
+        nextPath="/watchlist"
+      />
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">

@@ -15,9 +15,9 @@ def _event_rank(event: dict) -> tuple:
     return (event.get("date", "9999-12-31"), impact_rank, -float(event.get("portfolio_weight") or 0), event.get("title", ""))
 
 
-async def get_portfolio_event_radar(days: int = 14) -> dict:
+async def get_portfolio_event_radar(user_id: str, days: int = 14) -> dict:
     window_days = max(3, min(days, 30))
-    portfolio = await portfolio_service.get_portfolio()
+    portfolio = await portfolio_service.get_portfolio(user_id)
     holdings = portfolio.get("holdings") or []
     if not holdings:
         return {

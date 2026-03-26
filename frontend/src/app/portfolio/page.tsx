@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import AuthGateCard from "@/components/AuthGateCard";
+import { useAuth } from "@/components/AuthProvider";
 import PortfolioConditionalRecommendationPanel from "@/components/PortfolioConditionalRecommendationPanel";
 import PortfolioEventRadar from "@/components/PortfolioEventRadar";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
@@ -162,6 +164,7 @@ export default function PortfolioPage() {
   const [optimalLoading, setOptimalLoading] = useState(true);
   const [eventRadarLoading, setEventRadarLoading] = useState(true);
   const { toast } = useToast();
+  const { session, loading: authLoading } = useAuth();
 
   const activeGuide = TICKER_GUIDE[holdingForm.countryCode as keyof typeof TICKER_GUIDE] ?? TICKER_GUIDE.KR;
   const summary = data?.summary;
@@ -169,6 +172,9 @@ export default function PortfolioPage() {
   const mixedCountries = useMemo(() => false, []);
 
   const loadPortfolio = async (showFailureToast = false) => {
+    if (!session) {
+      return;
+    }
     try {
       const next = await api.getPortfolio();
       setData(next);
@@ -182,6 +188,9 @@ export default function PortfolioPage() {
   };
 
   const refreshSupportPanels = async (filters: PortfolioConditionalRecommendationFilters = conditionalFilters) => {
+    if (!session) {
+      return;
+    }
     setConditionalLoading(true);
     setOptimalLoading(true);
     setEventRadarLoading(true);
@@ -206,6 +215,18 @@ export default function PortfolioPage() {
     setEventRadarLoading(false);
   };
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!session) {
+      setLoading(false);
+      setConditionalLoading(false);
+      setOptimalLoading(false);
+      setEventRadarLoading(false);
+      return;
+    }
+
     const loadWorkspace = async () => {
       setLoading(true);
       const [portfolioResult, eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
@@ -244,7 +265,7 @@ export default function PortfolioPage() {
     };
 
     loadWorkspace();
-  }, []);
+  }, [authLoading, session]);
 
   useEffect(() => {
     const trimmed = holdingForm.ticker.trim();
@@ -392,6 +413,16 @@ export default function PortfolioPage() {
         <div className="card h-52" />
         <div className="card h-80" />
       </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <AuthGateCard
+        title="포트폴리오는 로그인 후 관리합니다"
+        description="총자산, 보유 종목, 추천 결과를 계정별로 분리 저장하려면 먼저 로그인해 주세요."
+        nextPath="/portfolio"
+      />
     );
   }
 
