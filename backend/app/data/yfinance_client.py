@@ -677,7 +677,7 @@ async def get_sector_tickers(country_code: str, sector: str) -> list[str]:
 
 
 async def get_historical_returns(ticker: str, days: int = 60) -> list[float]:
-    """Daily log-returns for Monte Carlo simulation."""
+    """Daily log-returns for distributional forecasting and backtests."""
     settings = get_settings()
 
     async def _fetch():

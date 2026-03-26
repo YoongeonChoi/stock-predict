@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 
+from app.analysis.distributional_return_engine import build_structured_event_context
 from app.analysis.forecast_engine import forecast_index
 from app.analysis.llm_client import ask_json
 from app.analysis.market_regime import build_market_regime
@@ -158,6 +159,19 @@ async def analyze_country(country_code: str) -> dict:
         reference_date=primary_index_history[-1]["date"] if primary_index_history else None,
         price_history=primary_index_history,
     )
+    breadth_ratio = (
+        sum(1 for stock in top_stocks if stock.change_pct > 0) / len(top_stocks)
+        if top_stocks
+        else None
+    )
+    event_context = await build_structured_event_context(
+        ticker=primary_index.ticker,
+        asset_name=primary_index.name,
+        country_code=country_code,
+        news_items=market_news,
+        filings=[],
+        reference_date=primary_index_history[-1]["date"] if primary_index_history else datetime.now().date().isoformat(),
+    )
 
     next_day = forecast_next_day(
         ticker=primary_index.ticker,
@@ -168,11 +182,9 @@ async def analyze_country(country_code: str) -> dict:
         flow_signal=flow_signal,
         context_bias=((country_score.total - 50) / 50) + ((fear_greed.score - 50) / 100),
         asset_type="index",
-    )
-    breadth_ratio = (
-        sum(1 for stock in top_stocks if stock.change_pct > 0) / len(top_stocks)
-        if top_stocks
-        else None
+        macro_snapshot=economic_data,
+        breadth_context={"breadth_ratio": breadth_ratio},
+        event_context=event_context,
     )
     market_regime = build_market_regime(
         country_code=country_code,
@@ -187,7 +199,14 @@ async def analyze_country(country_code: str) -> dict:
     news_summary = "\n".join(item["title"] for item in market_news[:10])
     try:
         forecast = await forecast_index(
-            primary_index.ticker, primary_index.name, economic_data, news_summary
+            primary_index.ticker,
+            primary_index.name,
+            economic_data,
+            news_summary,
+            price_history=primary_index_history,
+            breadth_context={"breadth_ratio": breadth_ratio},
+            news_items=market_news,
+            event_context=event_context,
         )
         forecast_data = forecast.model_dump()
     except Exception as exc:

@@ -66,10 +66,23 @@ def _risk_budget(market_views: list[dict], aggregate_up_probability: float) -> d
 def _candidate_score(opportunity: dict, market_view: dict) -> float:
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
-    score = float(opportunity.get("opportunity_score") or 0.0) * 0.55
-    score += float(opportunity.get("up_probability") or 50.0) * 0.24
-    score += float(opportunity.get("confidence") or 50.0) * 0.09
-    score += float(opportunity.get("predicted_return_pct") or 0.0) * 4.8
+    signal_profile = market_service.build_distributional_signal_profile(
+        current_price=float(opportunity.get("current_price") or 0.0),
+        bull_case_price=opportunity.get("bull_case_price"),
+        base_case_price=opportunity.get("base_case_price"),
+        bear_case_price=opportunity.get("bear_case_price"),
+        bull_probability=opportunity.get("bull_probability"),
+        base_probability=opportunity.get("base_probability"),
+        bear_probability=opportunity.get("bear_probability"),
+        predicted_return_pct=float(opportunity.get("predicted_return_pct") or 0.0),
+        up_probability=float(opportunity.get("up_probability") or 50.0),
+        confidence=float(opportunity.get("confidence") or 50.0),
+    )
+    score = float(opportunity.get("opportunity_score") or 0.0) * 0.48
+    score += signal_profile["directional_score"] * 0.22
+    score += signal_profile["expected_return_pct"] * 3.8
+    score += signal_profile["probability_edge"] * 0.16
+    score += signal_profile["tail_ratio"] * 2.0
     score += {
         "press_long": 7.0,
         "lean_long": 4.0,
@@ -89,6 +102,7 @@ def _candidate_score(opportunity: dict, market_view: dict) -> float:
         "neutral": 1.0,
         "risk_off": -4.0,
     }.get(market_view.get("stance", "neutral"), 0.0)
+    score -= signal_profile["downside_pct"] * 0.8
     score -= len(opportunity.get("risk_flags") or []) * 1.4
     return round(_clip(score, 0.0, 100.0), 2)
 
