@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.auth import AuthenticatedUser, get_current_user
 from app.exceptions import ApiAppException
 from app.errors import SP_5019
 from app.models.account import AccountDeleteRequest, AccountProfileUpdateRequest, SignUpValidationRequest
-from app.services import account_service
+from app.services import account_service, public_rate_limit_service
 
 router = APIRouter(prefix="/api", tags=["account"])
 
@@ -54,9 +54,11 @@ async def delete_account_me(
 
 @router.post("/account/signup/validate")
 async def post_signup_validation(
+    request: Request,
     payload: SignUpValidationRequest,
 ):
     try:
+        public_rate_limit_service.enforce_public_account_rate_limit(request, "signup_validate")
         return await account_service.validate_signup(payload)
     except ApiAppException:
         raise
@@ -68,9 +70,11 @@ async def post_signup_validation(
 
 @router.get("/account/username-availability")
 async def get_username_availability(
+    request: Request,
     username: str = Query(default="", max_length=40),
 ):
     try:
+        public_rate_limit_service.enforce_public_account_rate_limit(request, "username_availability")
         return await account_service.check_username_availability(username)
     except ApiAppException:
         raise

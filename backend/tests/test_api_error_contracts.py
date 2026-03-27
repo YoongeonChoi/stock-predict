@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import AuthenticatedUser, get_current_user
 from app.main import app
+from app.services.public_rate_limit_service import reset_public_rate_limit_state
 
 
 @contextmanager
@@ -28,6 +29,12 @@ def patched_client(*, authenticated: bool = False):
 
 
 class ApiErrorContractTests(unittest.TestCase):
+    def setUp(self):
+        reset_public_rate_limit_state()
+
+    def tearDown(self):
+        reset_public_rate_limit_state()
+
     def test_portfolio_validation_error_returns_structured_error_code(self):
         with patched_client(authenticated=True) as client:
             response = client.post("/api/portfolio/holdings", json={"ticker": "AAPL"})
@@ -68,6 +75,30 @@ class ApiErrorContractTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("generated_at", response.json())
+
+    def test_public_account_rate_limit_returns_structured_error_code(self):
+        with patch(
+            "app.routers.account.account_service.check_username_availability",
+            new=AsyncMock(
+                return_value={
+                    "username": "alpha_01",
+                    "normalized_username": "alpha_01",
+                    "valid": True,
+                    "available": True,
+                    "message": "사용 가능한 아이디입니다.",
+                }
+            ),
+        ):
+            with patched_client() as client:
+                for _ in range(12):
+                    response = client.get("/api/account/username-availability?username=alpha_01")
+                    self.assertEqual(response.status_code, 200)
+                response = client.get("/api/account/username-availability?username=alpha_01")
+
+        self.assertEqual(response.status_code, 429)
+        body = response.json()
+        self.assertEqual(body["error_code"], "SP-6016")
+        self.assertEqual(body["message"], "Too many public account requests")
 
 
 if __name__ == "__main__":

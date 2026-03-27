@@ -183,6 +183,11 @@ SP_6015 = lambda d="": AppError(
     "Invalid account profile input",
     d or "Provide a valid username, name, phone number, and birth date.",
 )
+SP_6016 = lambda d="": AppError(
+    "SP-6016",
+    "Too many public account requests",
+    d or "Wait briefly, then retry the username or signup validation request.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors
