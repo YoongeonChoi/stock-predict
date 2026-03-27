@@ -3,8 +3,10 @@ import type { User } from "@supabase/supabase-js";
 export interface AccountProfileShape {
   user_id?: string;
   email?: string | null;
+  pending_email?: string | null;
   email_verified?: boolean;
   email_confirmed_at?: string | null;
+  email_change_sent_at?: string | null;
   username?: string | null;
   full_name?: string | null;
   phone_number?: string | null;
@@ -30,6 +32,7 @@ export interface PasswordStrengthResult {
 const USERNAME_PATTERN = /^[a-z][a-z0-9_]{3,19}$/;
 const PHONE_PATTERN = /^\d{9,15}$/;
 const FULL_NAME_PATTERN = /^[A-Za-z가-힣\s]{2,40}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SYMBOL_PATTERN = /[^A-Za-z0-9]/;
 
 function readMetadataValue(metadata: unknown, keys: string[]): string | null {
@@ -51,6 +54,14 @@ export function normalizeUsername(value: string): string {
 
 export function isValidUsername(value: string): boolean {
   return USERNAME_PATTERN.test(value.trim());
+}
+
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function isValidEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(normalizeEmail(value));
 }
 
 export function normalizeFullName(value: string): string {
@@ -156,8 +167,10 @@ export function extractAccountProfileFromUser(user: User | null): AccountProfile
   return {
     user_id: user.id,
     email: user.email ?? null,
+    pending_email: user.new_email ?? null,
     email_verified: Boolean(emailConfirmedAt),
     email_confirmed_at: emailConfirmedAt,
+    email_change_sent_at: user.email_change_sent_at ?? null,
     username: username ? normalizeUsername(username) : null,
     full_name: readMetadataValue(metadata, ["full_name", "name"]),
     phone_number: phoneNumber ? formatPhoneNumber(phoneNumber) : null,

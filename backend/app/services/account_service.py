@@ -117,8 +117,10 @@ def build_account_profile(user: AuthenticatedUser) -> AccountProfile:
     return AccountProfile(
         user_id=user.id,
         email=user.email,
+        pending_email=normalize_email(user.pending_email or "") or None,
         email_verified=user.email_verified,
         email_confirmed_at=user.email_confirmed_at,
+        email_change_sent_at=user.email_change_sent_at,
         username=normalize_username(user.username or "") or None,
         full_name=(user.full_name or "").strip() or None,
         phone_number=format_phone_number(user.phone_number),
@@ -181,8 +183,10 @@ async def update_current_profile(
         AuthenticatedUser(
             id=user.id,
             email=user.email,
+            pending_email=user.pending_email,
             email_verified=user.email_verified,
             email_confirmed_at=user.email_confirmed_at,
+            email_change_sent_at=user.email_change_sent_at,
             username=normalized_username,
             full_name=normalized_full_name,
             phone_number=normalized_phone_number,

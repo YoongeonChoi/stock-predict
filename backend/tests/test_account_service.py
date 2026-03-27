@@ -29,6 +29,7 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
             AuthenticatedUser(
                 id="user-123",
                 email="tester@example.com",
+                pending_email="next@example.com",
                 username="Alpha_01",
                 full_name="홍 길동",
                 phone_number="01012345678",
@@ -37,6 +38,7 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(profile.username, "alpha_01")
+        self.assertEqual(profile.pending_email, "next@example.com")
         self.assertEqual(profile.phone_number, "010-1234-5678")
         self.assertEqual(profile.phone_masked, "010-****-5678")
 

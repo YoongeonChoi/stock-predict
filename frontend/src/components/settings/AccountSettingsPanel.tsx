@@ -10,10 +10,12 @@ import { useToast } from "@/components/Toast";
 import {
   formatPhoneNumber,
   getPasswordStrength,
+  isValidEmail,
   isValidBirthDate,
   isValidFullName,
   isValidPhoneNumber,
   isValidUsername,
+  normalizeEmail,
   normalizeFullName,
   normalizePhoneNumber,
   normalizeUsername,
@@ -39,6 +41,11 @@ interface UsernameState {
 interface PasswordDraft {
   nextPassword: string;
   confirmPassword: string;
+}
+
+interface EmailDraft {
+  nextEmail: string;
+  confirmEmail: string;
 }
 
 function buildDraft(profile: AccountProfile | null): ProfileDraft {
@@ -90,6 +97,8 @@ export default function AccountSettingsPanel() {
   const [signingOut, setSigningOut] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({ nextPassword: "", confirmPassword: "" });
+  const [emailDraft, setEmailDraft] = useState<EmailDraft>({ nextEmail: "", confirmEmail: "" });
+  const [updatingEmail, setUpdatingEmail] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -125,6 +134,19 @@ export default function AccountSettingsPanel() {
     typeof session?.expires_at === "number"
       ? new Date(session.expires_at * 1000).toLocaleString("ko-KR")
       : "확인 불가";
+  const pendingEmail = normalizeEmail(profile?.pending_email ?? "");
+  const currentEmail = normalizeEmail(profile?.email ?? "");
+  const normalizedNextEmail = normalizeEmail(emailDraft.nextEmail);
+  const emailChangeSentLabel = profile?.email_change_sent_at
+    ? new Date(profile.email_change_sent_at).toLocaleString("ko-KR")
+    : "확인 불가";
+  const emailMatches = Boolean(emailDraft.nextEmail) && normalizedNextEmail === normalizeEmail(emailDraft.confirmEmail);
+  const emailReady = Boolean(
+    isValidEmail(normalizedNextEmail) &&
+    emailMatches &&
+    normalizedNextEmail !== currentEmail &&
+    normalizedNextEmail !== pendingEmail,
+  );
   const usernameReady =
     Boolean(normalizedDraftUsername) &&
     (
@@ -232,7 +254,9 @@ export default function AccountSettingsPanel() {
   };
 
   const handleResendVerification = async () => {
-    if (!profile?.email) {
+    const targetEmail = profile?.pending_email ?? profile?.email;
+    const resendType = profile?.pending_email ? "email_change" : "signup";
+    if (!targetEmail) {
       toast("인증 메일을 보낼 이메일이 없습니다.", "error");
       return;
     }
@@ -245,8 +269,8 @@ export default function AccountSettingsPanel() {
     setSendingVerification(true);
     try {
       const { error } = await client.auth.resend({
-        type: "signup",
-        email: profile.email,
+        type: resendType,
+        email: targetEmail,
         options: {
           emailRedirectTo: `${window.location.origin}/settings`,
         },
@@ -288,6 +312,49 @@ export default function AccountSettingsPanel() {
       toast(message, "error");
     } finally {
       setSendingReset(false);
+    }
+  };
+
+  const handleEmailChange = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      toast("Supabase 설정이 비어 있어 이메일을 변경할 수 없습니다.", "error");
+      return;
+    }
+    if (!isValidEmail(normalizedNextEmail)) {
+      toast("새 이메일 형식을 올바르게 입력해 주세요.", "error");
+      return;
+    }
+    if (!emailMatches) {
+      toast("새 이메일 재확인이 일치하지 않습니다.", "error");
+      return;
+    }
+    if (normalizedNextEmail === currentEmail) {
+      toast("현재 사용 중인 이메일과 다른 주소를 입력해 주세요.", "error");
+      return;
+    }
+    if (normalizedNextEmail === pendingEmail) {
+      toast("이미 변경 대기 중인 이메일입니다. 받은 편지함의 인증 메일을 먼저 확인해 주세요.", "error");
+      return;
+    }
+
+    setUpdatingEmail(true);
+    try {
+      const { error } = await client.auth.updateUser(
+        { email: normalizedNextEmail },
+        { emailRedirectTo: `${window.location.origin}/settings` },
+      );
+      if (error) {
+        throw error;
+      }
+      setEmailDraft({ nextEmail: "", confirmEmail: "" });
+      await refreshProfile();
+      toast("이메일 변경 요청을 보냈습니다. 새 주소의 인증 메일을 확인해 주세요.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "이메일 변경 요청 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setUpdatingEmail(false);
     }
   };
 
@@ -570,11 +637,90 @@ export default function AccountSettingsPanel() {
             <button
               type="button"
               onClick={handleResendVerification}
-              disabled={sendingVerification || !profile.email || profile.email_verified}
+              disabled={sendingVerification || (!profile.email && !profile.pending_email) || (profile.email_verified && !profile.pending_email)}
               className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {profile.email_verified ? "이메일 인증 완료" : sendingVerification ? "재전송 중..." : "인증 메일 다시 보내기"}
+              {profile.pending_email
+                ? (sendingVerification ? "재전송 중..." : "변경 확인 메일 다시 보내기")
+                : profile.email_verified
+                  ? "이메일 인증 완료"
+                  : sendingVerification
+                    ? "재전송 중..."
+                    : "인증 메일 다시 보내기"}
             </button>
+            {profile.pending_email ? (
+              <div className="mt-4 rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm text-text-secondary">
+                <div className="font-medium text-text">변경 대기 이메일</div>
+                <div className="mt-1 break-all">{profile.pending_email}</div>
+                <div className="mt-2 text-xs leading-6">보낸 시각: {emailChangeSentLabel}</div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <MailCheck size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">이메일 변경</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  로그인 메일 주소를 바꾸면 새 주소로 확인 메일이 발송됩니다. 메일 확인 전까지는 현재 주소가 유지됩니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <Field label="현재 이메일">
+                <input
+                  value={profile.email ?? ""}
+                  readOnly
+                  className="w-full rounded-2xl border border-border bg-surface/40 px-4 py-3 text-sm text-text-secondary"
+                />
+              </Field>
+              <Field
+                label="새 이메일"
+                helper={pendingEmail ? "이미 변경 대기 중인 주소와 다른 이메일만 새로 요청할 수 있습니다." : "인증 메일은 새 이메일 주소로 발송됩니다."}
+              >
+                <input
+                  value={emailDraft.nextEmail}
+                  onChange={(event) => setEmailDraft((prev) => ({ ...prev, nextEmail: event.target.value }))}
+                  type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  placeholder="new@example.com"
+                />
+              </Field>
+              <Field label="새 이메일 재확인">
+                <input
+                  value={emailDraft.confirmEmail}
+                  onChange={(event) => setEmailDraft((prev) => ({ ...prev, confirmEmail: event.target.value }))}
+                  type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  placeholder="new@example.com"
+                />
+              </Field>
+              <div className="rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm text-text-secondary">
+                <ul className="space-y-2">
+                  <li>{isValidEmail(normalizedNextEmail) ? "새 이메일 형식이 확인되었습니다." : "새 이메일 형식을 확인해 주세요."}</li>
+                  <li>{emailMatches ? "이메일 재확인이 일치합니다." : "새 이메일 재확인을 동일하게 입력해 주세요."}</li>
+                  <li>{normalizedNextEmail && normalizedNextEmail === currentEmail ? "현재 이메일과 같은 주소는 사용할 수 없습니다." : "현재 이메일과 다른 주소를 요청할 수 있습니다."}</li>
+                  <li>{pendingEmail && normalizedNextEmail === pendingEmail ? "이미 변경 대기 중인 이메일입니다." : "변경 대기 중인 이메일과 충돌하지 않습니다."}</li>
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={handleEmailChange}
+                disabled={updatingEmail || !emailReady}
+                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {updatingEmail ? "변경 요청 중..." : "새 이메일로 변경 요청"}
+              </button>
+            </div>
           </div>
 
           <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">

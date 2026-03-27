@@ -13,8 +13,10 @@ from app.exceptions import ApiAppException
 class AuthenticatedUser:
     id: str
     email: str | None = None
+    pending_email: str | None = None
     email_verified: bool = False
     email_confirmed_at: str | None = None
+    email_change_sent_at: str | None = None
     username: str | None = None
     full_name: str | None = None
     phone_number: str | None = None
@@ -84,8 +86,10 @@ async def get_current_user(
     return AuthenticatedUser(
         id=str(user["id"]),
         email=user.get("email"),
+        pending_email=user.get("new_email"),
         email_verified=bool(email_confirmed_at),
         email_confirmed_at=str(email_confirmed_at) if email_confirmed_at else None,
+        email_change_sent_at=str(user.get("email_change_sent_at")) if user.get("email_change_sent_at") else None,
         username=profile["username"],
         full_name=profile["full_name"],
         phone_number=profile["phone_number"],
