@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.26.0 - 2026-03-27
+
+- `GET /api/account/username-availability`와 `POST /api/account/signup/validate`에 IP 기준의 짧은 sliding-window rate limit을 추가해 공개 가입 API 남용을 완화했습니다.
+- 공개 계정 엔드포인트가 제한에 걸릴 때 `429`와 새 에러 코드 `SP-6016`을 일관되게 반환하도록 정리하고, 재시도 안내 문구를 함께 맞췄습니다.
+- account router / API error contract 테스트를 갱신해 공개 가입 API의 구조화 에러 응답이 다시 깨지지 않도록 고정했습니다.
+
 ## v2.25.0 - 2026-03-27
 
 - `/settings`에 `이메일 변경` 카드를 추가해 새 이메일 입력, 재확인, 검증 상태 확인, 변경 요청까지 같은 화면에서 처리할 수 있도록 정리했습니다.
