@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.47.0 - 2026-03-28
+
+- 표시 confidence는 이제 `raw support -> bootstrap prior -> empirical sigmoid calibrator` 순서로 계산합니다. `next_day`, `distributional_5d`, `distributional_20d` 예측 결과가 실제 target date 이후 평가되면, 그 실측 로그를 다시 먹여 horizon별 calibrator를 점진적으로 재학습합니다.
+- `prediction_records`에는 calibration snapshot이 함께 저장되고, 예측 정확도 refresh가 끝날 때마다 empirical profile을 다시 맞춥니다. 그 결과 시간이 지날수록 confidence가 “높아 보이는 점수”가 아니라 “실제 적중률에 가까운 점수” 쪽으로 수렴합니다.
+- 예측 연구실은 이제 `1D / 5D / 20D` horizon별 실측 성과와 empirical calibrator 상태를 함께 보여줍니다. 샘플 수, positive rate, Brier score, prior 대비 개선 정도를 현재 UI에서 바로 확인할 수 있습니다.
+- 시스템 준비 상태 카드에도 empirical calibrator 요약을 추가해, 운영 중인 API가 bootstrap prior 단계인지 실측 기반 재보정 단계인지 더 쉽게 확인할 수 있게 했습니다.
+- 회귀 테스트를 추가해 `calibration snapshot 저장`, `empirical profile fitting`, `예측 연구실 응답`, `forecast model calibration metadata` 계약을 고정했습니다.
+
 ## v2.46.0 - 2026-03-28
 
 - 표시 confidence를 단순 heuristic 합이 아니라, 분포 support·analog support·regime·probability edge·agreement·data quality·uncertainty·volatility를 합친 raw support 뒤 horizon별 bootstrap sigmoid calibrator로 보정하는 구조로 올렸습니다.

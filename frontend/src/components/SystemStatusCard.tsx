@@ -28,6 +28,7 @@ function statusLabel(status: string) {
 export default function SystemStatusCard({ diagnostics, frontendVersion }: Props) {
   const primaryModel = diagnostics.forecast_models[0];
   const criticalSources = diagnostics.data_sources.slice(0, 4);
+  const calibrationProfiles = diagnostics.confidence_calibration_profiles ?? [];
   const versionsAligned = frontendVersion === diagnostics.version;
   const backendStartedAtLabel = diagnostics.started_at
     ? new Date(diagnostics.started_at).toLocaleString("ko-KR")
@@ -180,6 +181,41 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
           </div>
         </div>
       ) : null}
+
+      <div className="mt-4 rounded-xl border border-border p-3">
+        <div className="text-xs font-medium text-text-secondary mb-2">Confidence calibrator</div>
+        {calibrationProfiles.length === 0 ? (
+          <div className="text-sm text-text-secondary">
+            아직 충분한 실측 예측 로그가 쌓이지 않아 bootstrap prior 중심으로 confidence를 보정하고 있습니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {calibrationProfiles.map((profile) => (
+              <div key={profile.prediction_type} className="rounded-lg bg-border/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm">
+                    {profile.prediction_type === "next_day"
+                      ? "1D"
+                      : profile.prediction_type === "distributional_5d"
+                        ? "5D"
+                        : "20D"}
+                  </span>
+                  <span className="text-xs text-text-secondary">{profile.method}</span>
+                </div>
+                <div className="mt-1 text-xs text-text-secondary">
+                  샘플 {profile.sample_count}건 · positive rate {(profile.positive_rate * 100).toFixed(1)}%
+                </div>
+                <div className="mt-1 text-xs text-text-secondary">
+                  Brier {profile.brier_score.toFixed(4)}
+                  {Number.isFinite(profile.prior_brier_score)
+                    ? ` / prior ${profile.prior_brier_score.toFixed(4)}`
+                    : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

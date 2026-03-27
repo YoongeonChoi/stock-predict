@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.46.0`
+현재 릴리즈: `v2.47.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -70,6 +70,9 @@
 - 다음 거래일 예측
 - 무료 KR 확률 엔진
 - 과거 유사 국면 예측
+- 예측 연구실
+  - `1D / 5D / 20D` 실측 성과
+  - empirical calibrator 샘플 수와 Brier score 확인
 
 공개 API의 운영 원칙도 현재 구조에 맞춰 정리되어 있습니다.
 
@@ -368,7 +371,19 @@ display_confidence_h = 100 * G_h(raw_confidence_h)
 
 를 뜻합니다.
 
-현재는 horizon별 bootstrap sigmoid calibrator를 사용합니다. 표본이 더 충분해지면 walk-forward 로그를 기반으로 `isotonic` 같은 더 강한 calibrator로 교체할 수 있도록 설계해 두었습니다. 또한 bootstrap 단계에서는 과신을 막기 위해 표시 confidence를 `88점`에서 포화시키며, 실제 적중률 로그가 쌓이기 전에는 `95+` 같은 극단 점수를 거의 내지 않도록 막아 둡니다. 중요한 점은 “점수를 높게 보이게” 하는 것이 아니라, 예를 들어 `70점이면 실제로 약 70% 수준으로 맞는 점수`가 되게 만드는 것입니다.
+현재는 `bootstrap prior -> empirical sigmoid calibrator` 2단계 구조를 사용합니다. 처음에는 horizon별 bootstrap prior가 confidence를 보수적으로 잡고, 이후 `prediction_records`에 쌓이는 실측 결과를 바탕으로 `next_day / 5D / 20D`별 empirical sigmoid가 다시 맞춰집니다. 즉, 시간이 지날수록 단순 heuristic이 아니라 실제 적중 로그가 confidence를 재학습합니다.
+
+운영 루프는 다음과 같습니다.
+
+```text
+예측 저장
+  -> prediction_records에 calibration snapshot 함께 적재
+  -> target_date 이후 actual_close 평가
+  -> horizon별 empirical sigmoid 재학습
+  -> 다음 예측의 표시 confidence에 다시 반영
+```
+
+표본이 충분해지기 전에는 과신을 막기 위해 bootstrap prior 비중과 confidence 상한을 유지합니다. 반대로 실측 로그가 늘어나면 bootstrap prior에서 점차 벗어나 empirical profile이 더 큰 영향을 갖습니다. 중요한 점은 “점수를 높게 보이게” 하는 것이 아니라, 예를 들어 `70점이면 실제로 약 70% 수준으로 맞는 점수`가 되게 만드는 것입니다.
 
 ### 4. 공개시차 안전 거시 압축
 
@@ -653,6 +668,7 @@ selection
 - `가격이 주신호`이고 뉴스/공시는 보조 신호라 과적합 가능성이 낮음
 - 장세 변화에 따라 기간 가중과 regime gate가 적응함
 - 종목 예측과 포트폴리오 비중이 같은 엔진 철학 위에서 연결됨
+- 표시 confidence를 실측 적중 로그로 계속 다시 맞춰, 시간이 갈수록 confidence와 실제 적중률의 간격을 줄임
 
 ## 현재 주요 라우트
 

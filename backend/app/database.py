@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS prediction_records (
     confidence REAL,
     direction TEXT,
     drivers_json TEXT,
+    calibration_json TEXT,
     model_version TEXT,
     created_at REAL NOT NULL,
     actual_close REAL,
@@ -169,6 +170,7 @@ class Database:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         async with self._connect() as conn:
             await conn.executescript(_SCHEMA)
+            await self._ensure_prediction_record_schema(conn)
             await conn.execute(
                 """
                 INSERT OR IGNORE INTO portfolio_profile (
@@ -178,6 +180,13 @@ class Database:
                 (time.time(),),
             )
             await conn.commit()
+
+    async def _ensure_prediction_record_schema(self, conn) -> None:
+        cur = await conn.execute("PRAGMA table_info(prediction_records)")
+        rows = await cur.fetchall()
+        existing_columns = {row[1] for row in rows}
+        if "calibration_json" not in existing_columns:
+            await conn.execute("ALTER TABLE prediction_records ADD COLUMN calibration_json TEXT")
 
     # ── cache ──────────────────────────────────────────────
 
@@ -525,6 +534,7 @@ class Database:
         confidence: float | None,
         direction: str | None,
         drivers_json: list[dict] | None,
+        calibration_json: dict | None,
         model_version: str | None,
     ):
         async with self._connect() as conn:
@@ -534,8 +544,8 @@ class Database:
                     scope, symbol, country_code, prediction_type, target_date,
                     reference_date, reference_price, predicted_close, predicted_low,
                     predicted_high, up_probability, confidence, direction,
-                    drivers_json, model_version, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    drivers_json, calibration_json, model_version, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(scope, symbol, prediction_type, target_date)
                 DO UPDATE SET
                     country_code = excluded.country_code,
@@ -548,6 +558,7 @@ class Database:
                     confidence = excluded.confidence,
                     direction = excluded.direction,
                     drivers_json = excluded.drivers_json,
+                    calibration_json = excluded.calibration_json,
                     model_version = excluded.model_version,
                     created_at = excluded.created_at
                 """,
@@ -566,6 +577,7 @@ class Database:
                     confidence,
                     direction,
                     json.dumps(drivers_json, default=str) if drivers_json else None,
+                    json.dumps(calibration_json, ensure_ascii=False, default=str) if calibration_json is not None else None,
                     model_version,
                     time.time(),
                 ),
@@ -663,6 +675,28 @@ class Database:
                 FROM prediction_records
                 WHERE prediction_type = ?
                 ORDER BY COALESCE(evaluated_at, created_at) DESC, created_at DESC
+                LIMIT ?
+                """,
+                (prediction_type, limit),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_evaluated_samples(
+        self,
+        *,
+        prediction_type: str,
+        limit: int = 2000,
+    ) -> list[dict]:
+        async with self._connect() as conn:
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """
+                SELECT *
+                FROM prediction_records
+                WHERE prediction_type = ?
+                  AND actual_close IS NOT NULL
+                  AND calibration_json IS NOT NULL
+                ORDER BY target_date DESC, created_at DESC
                 LIMIT ?
                 """,
                 (prediction_type, limit),

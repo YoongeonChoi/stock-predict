@@ -6,6 +6,11 @@ from datetime import datetime
 from app.data import yfinance_client
 from app.database import db
 
+MULTI_HORIZON_PREDICTION_TYPES = {
+    5: "distributional_5d",
+    20: "distributional_20d",
+}
+
 
 def _prediction_symbol(report_type: str, report: dict, ticker: str | None) -> str | None:
     if ticker:
@@ -62,8 +67,49 @@ async def save_report(
             confidence=next_day.get("confidence"),
             direction=next_day.get("direction"),
             drivers_json=next_day.get("drivers"),
+            calibration_json=next_day.get("calibration_snapshot"),
             model_version=next_day.get("model_version"),
         )
+
+    free_kr = report.get("free_kr_forecast")
+    if isinstance(free_kr, dict) and symbol and free_kr.get("reference_price") is not None:
+        evidence = free_kr.get("evidence")
+        model_version = free_kr.get("model_version")
+        horizons = free_kr.get("horizons") or []
+        for horizon in horizons:
+            if not isinstance(horizon, dict):
+                continue
+            horizon_days = int(horizon.get("horizon_days") or 0)
+            prediction_type = MULTI_HORIZON_PREDICTION_TYPES.get(horizon_days)
+            if not prediction_type:
+                continue
+            p_up = float(horizon.get("p_up") or 0.0)
+            p_down = float(horizon.get("p_down") or 0.0)
+            p_flat = float(horizon.get("p_flat") or 0.0)
+            if p_up >= max(p_down, p_flat):
+                direction = "up"
+            elif p_down >= max(p_up, p_flat):
+                direction = "down"
+            else:
+                direction = "flat"
+            await db.prediction_upsert(
+                scope=report_type,
+                symbol=symbol,
+                country_code=country_code or report.get("country_code") or report.get("country", {}).get("code"),
+                prediction_type=prediction_type,
+                target_date=horizon.get("target_date", ""),
+                reference_date=free_kr.get("reference_date"),
+                reference_price=float(free_kr.get("reference_price", 0)),
+                predicted_close=float(horizon.get("price_q50") or 0),
+                predicted_low=horizon.get("price_q10"),
+                predicted_high=horizon.get("price_q90"),
+                up_probability=horizon.get("p_up"),
+                confidence=horizon.get("confidence"),
+                direction=direction,
+                drivers_json=evidence,
+                calibration_json=horizon.get("calibration_snapshot"),
+                model_version=model_version,
+            )
 
     return report_id
 
@@ -127,6 +173,10 @@ async def refresh_prediction_accuracy(limit: int = 200):
             actual_low=matched.get("low"),
             actual_high=matched.get("high"),
         )
+
+    from app.services import confidence_calibration_service
+
+    await confidence_calibration_service.refresh_empirical_profiles()
 
 
 async def get_accuracy(refresh: bool = True) -> dict:

@@ -7,7 +7,7 @@ from app.analysis.historical_pattern_forecast import MODEL_VERSION as HISTORICAL
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.config import get_settings
 from app.runtime import get_runtime_state
-from app.services import archive_service, research_archive_service
+from app.services import archive_service, confidence_calibration_service, research_archive_service
 from app.version import APP_VERSION
 
 
@@ -38,6 +38,7 @@ async def get_diagnostics() -> dict:
     accuracy_error = None
     research_archive = None
     research_archive_error = None
+    calibration_profiles = None
     try:
         accuracy = await archive_service.get_accuracy(refresh=False)
     except Exception as exc:
@@ -49,6 +50,11 @@ async def get_diagnostics() -> dict:
         )
     except Exception as exc:
         research_archive_error = str(exc)
+
+    try:
+        calibration_profiles = confidence_calibration_service.get_profile_summary()
+    except Exception:
+        calibration_profiles = None
 
     data_sources = [
         _source(
@@ -152,7 +158,7 @@ async def get_diagnostics() -> dict:
                     "가격·변동성·상대강도 같은 숫자 시계열이 주신호이고, 뉴스·공시는 보조 신호로만 게이트 결합합니다.",
                     "OpenAI는 수익률을 직접 예측하지 않고, 뉴스·보도자료·공시를 구조화 이벤트 벡터로 추출하는 데만 사용합니다.",
                     "다음 거래일 예측은 Bull/Base/Bear 시나리오와 실행 바이어스를 같은 분포 예측 결과에서 파생합니다.",
-                    "표시 confidence는 raw support를 horizon별 bootstrap sigmoid calibrator로 보정한 값이라, 높게 보이기보다 실제 적중률과 맞도록 설계합니다.",
+                    "표시 confidence는 raw support를 bootstrap prior로 시작한 empirical sigmoid calibrator가 실측 로그 기준으로 다시 맞춘 값이라, 높게 보이기보다 실제 적중률과 맞도록 설계합니다.",
                 ],
             },
             {
@@ -194,6 +200,7 @@ async def get_diagnostics() -> dict:
                 ],
             },
         ],
+        "confidence_calibration_profiles": calibration_profiles,
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,
         "research_archive": research_archive,

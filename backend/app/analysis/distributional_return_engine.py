@@ -170,11 +170,15 @@ class DistributionalHorizon:
     calibrated_probability: float | None = None
     probability_edge: float | None = None
     analog_support: float | None = None
+    distribution_support: float | None = None
     regime_support: float | None = None
     agreement_support: float | None = None
     data_quality_support: float | None = None
+    uncertainty_support: float | None = None
+    volatility_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
+    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
 
 
 @dataclass
@@ -891,6 +895,7 @@ def _build_horizon_distribution(
         event_uncertainty=events.uncertainty,
         forecast_volatility_pct=max(float(np.std(distribution, ddof=1)) * 100.0, 0.0),
         realized_volatility_reference_pct=max(hist_vol * 100.0, 1e-6),
+        prediction_type=f"distributional_{horizon}d" if horizon > 1 else "next_day",
     )
 
     return DistributionalHorizon(
@@ -911,11 +916,15 @@ def _build_horizon_distribution(
         calibrated_probability=round(calibrated.calibrated_probability, 4),
         probability_edge=round((p_up - p_down) / 100.0, 4),
         analog_support=None,
+        distribution_support=round(calibrated.distribution_support, 4),
         regime_support=round(calibrated.regime_support, 4),
         agreement_support=round(calibrated.agreement_support, 4) if calibrated.agreement_support is not None else None,
         data_quality_support=round(calibrated.data_quality_support, 4),
+        uncertainty_support=round(calibrated.uncertainty_support, 4),
+        volatility_support=round(calibrated.volatility_support, 4),
         volatility_ratio=round(calibrated.volatility_ratio, 4),
         confidence_calibrator=calibrated.calibrator_method,
+        calibration_snapshot=calibrated.calibration_snapshot,
     )
 
 
