@@ -99,6 +99,9 @@ class ApiErrorContractTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["error_code"], "SP-6016")
         self.assertEqual(body["message"], "Too many public account requests")
+        retry_after = response.headers.get("Retry-After")
+        self.assertIsNotNone(retry_after)
+        self.assertGreaterEqual(int(retry_after), 1)
 
 
 if __name__ == "__main__":

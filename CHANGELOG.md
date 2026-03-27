@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.29.0 - 2026-03-27
+
+- 공개 계정 rate limit(`SP-6016`) 응답에 `Retry-After` 헤더를 추가해, 프론트가 문구 파싱에만 기대지 않고 표준 헤더로 남은 대기 시간을 읽을 수 있도록 정리했습니다.
+- `/auth`, `/settings` 계정 흐름은 먼저 `Retry-After`를 읽고, 헤더가 없을 때만 기존 상세 문구를 보조 fallback으로 사용하도록 맞췄습니다.
+- 공개 가입 API contract 테스트와 문서를 최신 계약에 맞춰 갱신했습니다.
+
 ## v2.28.0 - 2026-03-27
 
 - `/settings` 계정 관리 패널에서도 공개 아이디 중복 확인 API의 rate limit(`SP-6016`)을 읽어 남은 대기 시간을 바로 표시하고, 버튼을 잠시 잠가 같은 요청을 반복하지 않도록 정리했습니다.

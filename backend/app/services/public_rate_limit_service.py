@@ -88,6 +88,7 @@ def enforce_public_account_rate_limit(request: Request, scope: str) -> None:
                 f"{retry_after}초 후 다시 시도해 주세요."
             )
         ),
+        headers={"Retry-After": str(retry_after)},
     )
 
 

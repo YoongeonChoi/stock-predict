@@ -78,12 +78,16 @@ export class ApiError extends Error {
   status: number;
   errorCode: string;
   detail: string;
+  retryAfterSeconds: number | null;
 
-  constructor(status: number, info: ApiErrorInfo) {
+  constructor(status: number, info: ApiErrorInfo, headers?: Headers) {
     super(info.message);
     this.status = status;
     this.errorCode = info.error_code || `HTTP-${status}`;
     this.detail = info.detail || "";
+    const retryAfterHeader = headers?.get("Retry-After") || headers?.get("retry-after") || "";
+    const retryAfterSeconds = Number.parseInt(retryAfterHeader, 10);
+    this.retryAfterSeconds = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : null;
   }
 }
 
@@ -106,6 +110,9 @@ export function isApiErrorCode(error: unknown, code: string): error is ApiError 
 export function getApiRetryAfterSeconds(error: unknown): number | null {
   if (!(error instanceof ApiError)) {
     return null;
+  }
+  if (error.retryAfterSeconds) {
+    return error.retryAfterSeconds;
   }
   const match = `${error.detail} ${error.message}`.match(/(\d+)초\s*후/);
   if (!match) {
@@ -193,7 +200,7 @@ async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
     } catch {
       info = { error_code: `HTTP-${res.status}`, message: res.statusText };
     }
-    throw new ApiError(res.status, info);
+    throw new ApiError(res.status, info, res.headers);
   }
   return res.json();
 }
