@@ -273,6 +273,14 @@
 
 `--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다.
 
+운영 배포가 로컬 버전으로 실제 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
+
+```powershell
+& .\venv\Scripts\python.exe .\scripts\wait_for_deployed_version.py
+```
+
+이 스크립트는 기본적으로 로컬 `backend/app/version.py`의 `APP_VERSION`을 읽고, `https://api.yoongeon.xyz/api/health`가 같은 `version`과 `status=ok`를 반환할 때까지 주기적으로 확인합니다.
+
 PowerShell 실행 정책이나 `cmd` 자동 실행 훅이 있는 Windows 환경에서는 `start.py`, `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본 진입점으로 사용합니다.
 프론트 의존성 설치는 저장소 루트에서 `npm install`을 기본 진입점으로 사용해도 되며, 이 경우 `frontend` 설치까지 자동 위임되고 PowerShell provider path 환경에서도 같은 흐름이 유지되도록 관리합니다.
 

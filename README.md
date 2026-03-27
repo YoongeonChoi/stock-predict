@@ -721,6 +721,14 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 `--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다.
 
+`main` 머지 후 실제 운영 배포가 새 버전으로 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
+
+```powershell
+& .\venv\Scripts\python.exe .\scripts\wait_for_deployed_version.py
+```
+
+이 스크립트는 기본적으로 로컬 `backend/app/version.py`의 `APP_VERSION`을 읽고, 운영 `api.yoongeon.xyz/api/health`가 같은 `version`과 `status=ok`를 반환할 때까지 주기적으로 확인합니다.
+
 ## 주요 파일
 
 - 에이전트 규칙: `AGENTS.md`
