@@ -20,7 +20,7 @@ import {
   normalizePhoneNumber,
   normalizeUsername,
 } from "@/lib/account";
-import { api } from "@/lib/api";
+import { api, getApiRetryAfterSeconds, isApiErrorCode } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type AuthMode = "signin" | "signup" | "recovery";
@@ -99,6 +99,8 @@ function AuthPageContent() {
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [supportAction, setSupportAction] = useState<"verification" | "reset" | null>(null);
+  const [usernameCooldownSeconds, setUsernameCooldownSeconds] = useState(0);
+  const [signupCooldownSeconds, setSignupCooldownSeconds] = useState(0);
   const [usernameState, setUsernameState] = useState<UsernameCheckState>({
     checkedValue: "",
     available: false,
@@ -116,6 +118,19 @@ function AuthPageContent() {
       router.replace(nextPath);
     }
   }, [loading, mode, nextPath, router, session]);
+
+  useEffect(() => {
+    if (usernameCooldownSeconds <= 0 && signupCooldownSeconds <= 0) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setUsernameCooldownSeconds((value) => Math.max(0, value - 1));
+      setSignupCooldownSeconds((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [signupCooldownSeconds, usernameCooldownSeconds]);
 
   const setModeInUrl = (nextMode: AuthMode) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -188,6 +203,15 @@ function AuthPageContent() {
   };
 
   const handleUsernameCheck = async () => {
+    if (usernameCooldownSeconds > 0) {
+      setUsernameState((prev) => ({
+        ...prev,
+        checking: false,
+        message: `중복 확인 요청이 많아 ${usernameCooldownSeconds}초 후 다시 시도해 주세요.`,
+      }));
+      return;
+    }
+
     if (!isValidUsername(signup.username)) {
       setUsernameState({
         checkedValue: normalizedUsername,
@@ -209,7 +233,19 @@ function AuthPageContent() {
         message: result.message,
         checking: false,
       });
-    } catch {
+    } catch (error) {
+      if (isApiErrorCode(error, "SP-6016")) {
+        const retryAfter = getApiRetryAfterSeconds(error) ?? 30;
+        setUsernameCooldownSeconds(retryAfter);
+        setUsernameState({
+          checkedValue: normalizedUsername,
+          valid: false,
+          available: false,
+          message: error.detail || `중복 확인 요청이 많아 ${retryAfter}초 후 다시 시도해 주세요.`,
+          checking: false,
+        });
+        return;
+      }
       setUsernameState({
         checkedValue: normalizedUsername,
         valid: false,
@@ -290,6 +326,10 @@ function AuthPageContent() {
       if (mode === "signup") {
         if (!signUpReady) {
           toast("회원가입 필수 입력과 보안 조건을 모두 확인해 주세요.", "error");
+          return;
+        }
+        if (signupCooldownSeconds > 0) {
+          toast(`회원가입 검증 요청이 많아 ${signupCooldownSeconds}초 후 다시 시도해 주세요.`, "error");
           return;
         }
 
@@ -374,6 +414,10 @@ function AuthPageContent() {
       toast("로그인되었습니다.", "success");
       router.replace(nextPath);
     } catch (error) {
+      if (mode === "signup" && isApiErrorCode(error, "SP-6016")) {
+        const retryAfter = getApiRetryAfterSeconds(error) ?? 30;
+        setSignupCooldownSeconds(retryAfter);
+      }
       toast(describeAuthErrorMessage(error, "인증 처리 중 문제가 발생했습니다."), "error");
     } finally {
       setSubmitting(false);
@@ -501,10 +545,14 @@ function AuthPageContent() {
                     <button
                       type="button"
                       onClick={handleUsernameCheck}
-                      disabled={usernameState.checking}
+                      disabled={usernameState.checking || usernameCooldownSeconds > 0}
                       className="action-chip-secondary shrink-0"
                     >
-                      {usernameState.checking ? "확인 중..." : "중복 확인"}
+                      {usernameState.checking
+                        ? "확인 중..."
+                        : usernameCooldownSeconds > 0
+                          ? `${usernameCooldownSeconds}초 후 다시`
+                          : "중복 확인"}
                     </button>
                   </div>
                 </FormField>
@@ -588,6 +636,11 @@ function AuthPageContent() {
               </div>
 
               <PasswordStrengthChecklist result={passwordStrength} />
+              {signupCooldownSeconds > 0 ? (
+                <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-text-secondary">
+                  회원가입 검증 요청이 잠시 많았습니다. {signupCooldownSeconds}초 후 다시 시도해 주세요.
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -638,6 +691,8 @@ function AuthPageContent() {
             disabled={
               submitting ||
               loading ||
+              usernameCooldownSeconds > 0 ||
+              signupCooldownSeconds > 0 ||
               (mode === "signup" && !signUpReady) ||
               (mode === "recovery" && !recoveryReady)
             }
@@ -645,6 +700,8 @@ function AuthPageContent() {
           >
             {submitting
               ? "처리 중..."
+              : mode === "signup" && signupCooldownSeconds > 0
+                ? `${signupCooldownSeconds}초 후 다시 시도`
               : mode === "signup"
                 ? "회원가입하고 계속하기"
                 : mode === "recovery"

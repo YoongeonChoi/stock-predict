@@ -1,5 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 
+import { ApiError } from "@/lib/api";
+
 export interface AccountProfileShape {
   user_id?: string;
   email?: string | null;
@@ -139,6 +141,9 @@ export function getPasswordStrength(password: string, confirmation = ""): Passwo
 }
 
 export function describeAuthErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.errorCode === "SP-6016") {
+    return error.detail || "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
+  }
   const message = error instanceof Error ? error.message : fallback;
   if (message.toLowerCase().includes("email not confirmed")) {
     return "이메일 인증이 아직 완료되지 않았습니다. 받은 편지함에서 인증 링크를 확인해 주세요.";
