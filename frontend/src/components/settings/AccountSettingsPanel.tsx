@@ -105,6 +105,7 @@ export default function AccountSettingsPanel() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const usernameCooldown = useCooldownTimer();
+  const emailChangeCooldown = useCooldownTimer();
   const verificationCooldown = useCooldownTimer();
   const resetCooldown = useCooldownTimer();
 
@@ -357,6 +358,10 @@ export default function AccountSettingsPanel() {
       toast("Supabase 설정이 비어 있어 이메일을 변경할 수 없습니다.", "error");
       return;
     }
+    if (emailChangeCooldown.active) {
+      toast(`이메일 변경 요청은 ${emailChangeCooldown.seconds}초 후 다시 보낼 수 있습니다.`, "error");
+      return;
+    }
     if (!isValidEmail(normalizedNextEmail)) {
       toast("새 이메일 형식을 올바르게 입력해 주세요.", "error");
       return;
@@ -383,6 +388,7 @@ export default function AccountSettingsPanel() {
       if (error) {
         throw error;
       }
+      emailChangeCooldown.start(60);
       setEmailDraft({ nextEmail: "", confirmEmail: "" });
       await refreshProfile();
       toast("이메일 변경 요청을 보냈습니다. 새 주소의 인증 메일을 확인해 주세요.", "success");
@@ -733,7 +739,11 @@ export default function AccountSettingsPanel() {
               </Field>
               <Field
                 label="새 이메일"
-                helper={pendingEmail ? "이미 변경 대기 중인 주소와 다른 이메일만 새로 요청할 수 있습니다." : "인증 메일은 새 이메일 주소로 발송됩니다."}
+                helper={
+                  pendingEmail
+                    ? "이미 변경 대기 중인 주소와 다른 이메일만 새로 요청할 수 있습니다."
+                    : "인증 메일은 새 이메일 주소로 발송되며 같은 요청은 60초 동안 잠시 쉬어 갑니다."
+                }
               >
                 <input
                   value={emailDraft.nextEmail}
@@ -769,11 +779,18 @@ export default function AccountSettingsPanel() {
               <button
                 type="button"
                 onClick={handleEmailChange}
-                disabled={updatingEmail || !emailReady}
+                disabled={updatingEmail || emailChangeCooldown.active || !emailReady}
                 className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {updatingEmail ? "변경 요청 중..." : "새 이메일로 변경 요청"}
+                {updatingEmail
+                  ? "변경 요청 중..."
+                  : emailChangeCooldown.active
+                    ? `${emailChangeCooldown.seconds}초 후 다시`
+                    : "새 이메일로 변경 요청"}
               </button>
+              <p className="text-xs leading-6 text-text-secondary">
+                이메일 변경 요청도 같은 주소로 60초 동안 연속 발송되지 않도록 잠시 대기합니다.
+              </p>
             </div>
           </div>
 
