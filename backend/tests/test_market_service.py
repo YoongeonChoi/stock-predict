@@ -282,6 +282,65 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(result["actionable_count"], 0)
         self.assertIn("기본 종목군 2개", result["universe_note"])
 
+    async def test_get_market_opportunities_quick_returns_quote_only_response(self):
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.services.market_service.cache.get",
+                new=AsyncMock(
+                    return_value={
+                        "sectors": {"Information Technology": ["005930.KS", "000660.KS"]},
+                        "total": 2,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.market_service.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(
+                    return_value={
+                        "005930.KS": {
+                            "ticker": "005930.KS",
+                            "name": "삼성전자",
+                            "current_price": 70100.0,
+                            "prev_close": 69300.0,
+                            "change_pct": 1.15,
+                            "market_cap": 420000000000.0,
+                        },
+                        "000660.KS": {
+                            "ticker": "000660.KS",
+                            "name": "SK하이닉스",
+                            "current_price": 201000.0,
+                            "prev_close": 198500.0,
+                            "change_pct": 1.26,
+                            "market_cap": 146000000000.0,
+                        },
+                    }
+                ),
+            ),
+        ):
+            result = await market_service.get_market_opportunities_quick("KR", limit=2)
+
+        self.assertEqual(result["country_code"], "KR")
+        self.assertEqual(result["universe_size"], 2)
+        self.assertEqual(result["quote_available_count"], 2)
+        self.assertEqual(result["detailed_scanned_count"], 0)
+        self.assertEqual(len(result["opportunities"]), 2)
+        self.assertIn("1차 시세 스캔 후보", result["universe_note"])
+
+    async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_before_dynamic_fetch(self):
+        with (
+            patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
+            patch(
+                "app.services.market_service.resolve_universe",
+                new=AsyncMock(side_effect=AssertionError("quick KR fallback should not wait for resolve_universe")),
+            ),
+        ):
+            selection = await market_service._resolve_quick_opportunity_universe("KR")
+
+        self.assertEqual(selection.source, "fallback")
+        self.assertTrue(selection.sectors)
+        self.assertIn("KRX 상장사 목록 캐시가 아직 준비되지 않아", selection.note)
+
     async def test_lightweight_opportunities_cap_candidate_budget(self):
         market_regime = MarketRegime(
             label="중립",

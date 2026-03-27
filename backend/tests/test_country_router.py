@@ -9,6 +9,20 @@ from app.routers import country
 class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_market_opportunities_timeout_keeps_background_build_running(self):
         completion_gate = asyncio.Event()
+        quick_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": None,
+            "universe_size": 201,
+            "total_scanned": 201,
+            "quote_available_count": 180,
+            "detailed_scanned_count": 0,
+            "actionable_count": 6,
+            "bullish_count": 4,
+            "universe_source": "fallback",
+            "universe_note": "기본 종목군 quick fallback",
+            "opportunities": [],
+        }
 
         async def slow_builder(*args, **kwargs):
             await asyncio.sleep(0.03)
@@ -17,14 +31,14 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=slow_builder)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(return_value=quick_payload)),
             patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.001),
         ):
             response = await country.get_market_opportunities("KR", limit=12)
 
-        self.assertEqual(response.status_code, 504)
-        payload = json.loads(response.body.decode("utf-8"))
-        self.assertEqual(payload["error_code"], "SP-5018")
-        self.assertIn("백그라운드 계산은 계속 진행", payload["detail"])
+        self.assertEqual(response["country_code"], "KR")
+        self.assertEqual(response["detailed_scanned_count"], 0)
+        self.assertEqual(response["universe_note"], "기본 종목군 quick fallback")
         await asyncio.wait_for(completion_gate.wait(), timeout=0.2)
 
 

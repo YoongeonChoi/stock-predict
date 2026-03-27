@@ -31,6 +31,7 @@ NAVER_KOSDAQ = 1
 NAVER_PAGE_CONCURRENCY = 6
 KR_BULK_QUOTE_TTL = 900
 KR_REMAINDER_FALLBACK_LIMIT = 180
+KR_SMALL_REQUEST_FAST_PATH_LIMIT = 120
 TICKER_CODE_PATTERN = re.compile(r"\d{6}")
 
 
@@ -176,10 +177,36 @@ async def _fetch_full_kr_market_quotes() -> dict[str, dict]:
     )
 
 
+def _normalize_yfinance_quote(ticker: str, quote: dict) -> dict | None:
+    current_price = float(quote.get("current_price") or 0.0)
+    if current_price <= 0:
+        return None
+    return {
+        "ticker": ticker,
+        "name": yfinance_client._kr_ticker_name(ticker) or ticker.split(".")[0],
+        "current_price": round(current_price, 2),
+        "prev_close": round(float(quote.get("prev_close") or current_price), 2),
+        "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+        "market_cap": 0.0,
+        "session_date": quote.get("session_date"),
+    }
+
+
 async def get_kr_bulk_quotes(requested_tickers: list[str]) -> dict[str, dict]:
     requested = list(dict.fromkeys(str(ticker or "").upper() for ticker in requested_tickers if ticker))
     if not requested:
         return {}
+
+    if len(requested) <= KR_SMALL_REQUEST_FAST_PATH_LIMIT:
+        fast_quotes = await yfinance_client.get_batch_stock_quotes(requested, period="5d")
+        normalized_fast = {
+            ticker: normalized
+            for ticker in requested
+            if (normalized := _normalize_yfinance_quote(ticker, fast_quotes.get(ticker) or {})) is not None
+        }
+        minimum_coverage = min(len(requested), max(4, (len(requested) * 3 + 3) // 4))
+        if len(normalized_fast) >= minimum_coverage:
+            return normalized_fast
 
     available = await _fetch_full_kr_market_quotes()
     quotes = {
@@ -192,18 +219,8 @@ async def get_kr_bulk_quotes(requested_tickers: list[str]) -> dict[str, dict]:
     if missing and len(missing) <= KR_REMAINDER_FALLBACK_LIMIT:
         fallback_quotes = await yfinance_client.get_batch_stock_quotes(missing, period="5d")
         for ticker in missing:
-            quote = fallback_quotes.get(ticker) or {}
-            current_price = float(quote.get("current_price") or 0.0)
-            if current_price <= 0:
-                continue
-            quotes[ticker] = {
-                "ticker": ticker,
-                "name": ticker.split(".")[0],
-                "current_price": round(current_price, 2),
-                "prev_close": round(float(quote.get("prev_close") or current_price), 2),
-                "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
-                "market_cap": 0.0,
-                "session_date": quote.get("session_date"),
-            }
+            normalized = _normalize_yfinance_quote(ticker, fallback_quotes.get(ticker) or {})
+            if normalized is not None:
+                quotes[ticker] = normalized
 
     return quotes

@@ -1,18 +1,24 @@
 import asyncio
 import logging
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from app.models.country import COUNTRY_REGISTRY
-from app.data import yfinance_client
+from app.data import kr_market_quote_client, yfinance_client
 from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
+from app.analysis.market_regime import build_market_regime
+from app.analysis.next_day_forecast import forecast_next_day
+from app.scoring.country_scorer import build_country_score
+from app.scoring.fear_greed import calculate_fear_greed
 from app.services import archive_service, export_service, market_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
-OPPORTUNITY_TIMEOUT_SECONDS = 45
+OPPORTUNITY_TIMEOUT_SECONDS = 12
+OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 8
 HEATMAP_TIMEOUT_SECONDS = 10
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
@@ -99,6 +105,242 @@ def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
         logging.warning("%s background task failed: %s", label, exc, exc_info=True)
 
 
+def _empty_institutional_analysis() -> dict:
+    return {
+        "policy_institutions": [],
+        "sell_side": [],
+        "policy_sellside_aligned": False,
+        "consensus_count": 0,
+        "consensus_summary": "정밀 기관 해석이 아직 준비되지 않아 1차 시장 스냅샷을 먼저 제공합니다.",
+    }
+
+
+def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
+    refs: list[dict] = []
+    for rank, item in enumerate(opportunities[:5], start=1):
+        refs.append(
+            {
+                "rank": rank,
+                "ticker": item.get("ticker", ""),
+                "name": item.get("name") or item.get("ticker", ""),
+                "score": round(float(item.get("opportunity_score") or 0.0), 1),
+                "current_price": round(float(item.get("current_price") or 0.0), 2),
+                "change_pct": round(float(item.get("change_pct") or 0.0), 2),
+                "reason": (item.get("execution_note") or (item.get("thesis") or [""])[0] or "").strip(),
+            }
+        )
+    return refs
+
+
+async def _build_country_report_fallback(
+    code: str,
+    *,
+    reason: str,
+    error_code: str,
+    detail: str,
+) -> dict:
+    country = COUNTRY_REGISTRY[code]
+    primary_index = country.indices[0]
+    primary_index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
+
+    market_quotes = await asyncio.gather(
+        *(yfinance_client.get_index_quote(idx.ticker) for idx in country.indices),
+        return_exceptions=True,
+    )
+    market_data = {}
+    for idx, quote in zip(country.indices, market_quotes):
+        if isinstance(quote, Exception):
+            SP_2005(idx.ticker).log("warning")
+            market_data[idx.name] = {"price": 0, "change_pct": 0}
+        else:
+            market_data[idx.name] = quote
+
+    fear_greed = calculate_fear_greed(primary_index_history, country_code=code)
+    next_day = forecast_next_day(
+        ticker=primary_index.ticker,
+        name=primary_index.name,
+        country_code=code,
+        price_history=primary_index_history,
+        benchmark_history=primary_index_history,
+        asset_type="index",
+    )
+    market_regime = build_market_regime(
+        country_code=code,
+        name=primary_index.name,
+        price_history=primary_index_history,
+        fear_greed=fear_greed,
+        next_day_forecast=next_day,
+    )
+    forecast = await forecast_index(
+        primary_index.ticker,
+        primary_index.name,
+        {},
+        "",
+        price_history=primary_index_history,
+        benchmark_history=primary_index_history,
+    )
+
+    quick_opportunities: list[dict] = []
+    try:
+        quick_response = await asyncio.wait_for(
+            market_service.get_market_opportunities_quick(code, limit=5),
+            timeout=max(3.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 6.0)),
+        )
+        quick_opportunities = list(quick_response.get("opportunities") or [])
+    except Exception as exc:
+        logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
+
+    market_summary = (
+        f"{country.name_local} 정밀 시장 리포트 생성이 길어져 1차 시장 스냅샷을 먼저 제공합니다. "
+        "대표 지수 흐름과 상위 후보는 바로 확인할 수 있고, 잠시 뒤 다시 열면 기관·뉴스 해석이 반영된 정밀 리포트로 회복될 수 있습니다."
+    )
+    if detail:
+        market_summary = f"{market_summary} {detail}"
+
+    return {
+        "country": country.model_dump(),
+        "score": build_country_score({}).model_dump(),
+        "market_summary": market_summary,
+        "key_news": [],
+        "institutional_analysis": _empty_institutional_analysis(),
+        "top_stocks": _build_top_stock_refs(quick_opportunities),
+        "fear_greed": fear_greed.model_dump(),
+        "forecast": forecast.model_dump(),
+        "next_day_forecast": next_day.model_dump(),
+        "market_regime": market_regime.model_dump(),
+        "primary_index_history": primary_index_history,
+        "market_data": market_data,
+        "llm_available": False,
+        "errors": [error_code],
+        "partial": True,
+        "fallback_reason": reason,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
+async def _load_country_report_with_fallback(
+    code: str,
+    *,
+    timeout_seconds: float,
+    keep_background: bool,
+) -> tuple[dict, bool]:
+    if keep_background:
+        report_task = asyncio.create_task(analyze_country(code))
+        report_task.add_done_callback(
+            lambda task, label=f"Country report for {code}": _log_background_completion(task, label=label)
+        )
+        try:
+            report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
+            return report, False
+        except asyncio.TimeoutError:
+            detail = (
+                f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
+                "백그라운드 계산은 계속 진행되니 잠시 뒤 다시 열면 정밀 리포트가 바로 보일 수 있습니다."
+            )
+            return (
+                await _build_country_report_fallback(
+                    code,
+                    reason="country_report_timeout",
+                    error_code="SP-5018",
+                    detail=detail,
+                ),
+                True,
+            )
+        except Exception as exc:
+            logging.warning("country report failed for %s: %s", code, exc, exc_info=True)
+            return (
+                await _build_country_report_fallback(
+                    code,
+                    reason="country_report_error",
+                    error_code="SP-3001",
+                    detail="정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷으로 우선 전환했습니다.",
+                ),
+                True,
+            )
+
+    try:
+        report = await asyncio.wait_for(analyze_country(code), timeout=timeout_seconds)
+        return report, False
+    except asyncio.TimeoutError:
+        return (
+            await _build_country_report_fallback(
+                code,
+                reason="country_report_timeout",
+                error_code="SP-5018",
+                detail="내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+            ),
+            True,
+        )
+    except Exception as exc:
+        logging.warning("country report export load failed for %s: %s", code, exc, exc_info=True)
+        return (
+            await _build_country_report_fallback(
+                code,
+                reason="country_report_error",
+                error_code="SP-5004",
+                detail="내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+            ),
+            True,
+        )
+
+
+async def _build_sector_performance_payload(code: str) -> list[dict]:
+    from app.data.universe_data import get_universe
+
+    universe = await get_universe(code)
+
+    if code == "KR":
+        sector_candidates = {
+            sector_name: tickers[:8]
+            for sector_name, tickers in universe.items()
+            if tickers
+        }
+        requested = [ticker for tickers in sector_candidates.values() for ticker in tickers]
+        quotes = await kr_market_quote_client.get_kr_bulk_quotes(requested)
+        results = []
+        for sector_name, tickers in sector_candidates.items():
+            valid = [quotes[ticker] for ticker in tickers if ticker in quotes]
+            if not valid:
+                continue
+            leader = max(valid, key=lambda item: float(item.get("market_cap") or item.get("current_price") or 0.0))
+            avg_change = sum(float(item.get("change_pct") or 0.0) for item in valid) / len(valid)
+            results.append(
+                {
+                    "sector": sector_name,
+                    "ticker": leader["ticker"],
+                    "price": round(float(leader.get("current_price") or 0.0), 2),
+                    "change_pct": round(avg_change, 2),
+                    "breadth": len(valid),
+                    "leader_name": leader.get("name", leader["ticker"]),
+                }
+            )
+        results.sort(key=lambda item: item["change_pct"], reverse=True)
+        return results
+
+    results = []
+    for sector_name, tickers in universe.items():
+        fetched = await gather_limited(tickers[:8], lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=4)
+        valid = [item for item in fetched if not isinstance(item, Exception) and item is not None]
+        if not valid:
+            continue
+
+        leader = max(valid, key=lambda item: float(item.get("market_cap") or item.get("current_price") or 0.0))
+        avg_change = sum(float(item.get("change_pct") or 0.0) for item in valid) / len(valid)
+        results.append(
+            {
+                "sector": sector_name,
+                "ticker": leader["ticker"],
+                "price": round(float(leader.get("price") or 0.0), 2),
+                "change_pct": round(avg_change, 2),
+                "breadth": len(valid),
+                "leader_name": leader.get("name", leader["ticker"]),
+            }
+        )
+
+    results.sort(key=lambda item: item["change_pct"], reverse=True)
+    return results
+
+
 @router.get("/countries")
 async def list_countries():
     results = []
@@ -135,21 +377,22 @@ async def get_country_report(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     try:
-        report = await asyncio.wait_for(analyze_country(code), timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
-        err = SP_5018(f"Country report for {code} exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
-        err.log("warning")
-        return JSONResponse(status_code=504, content=err.to_dict())
+        report, partial = await _load_country_report_with_fallback(
+            code,
+            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            keep_background=True,
+        )
     except Exception as e:
         err = SP_3001(code)
         err.detail = str(e)[:200]
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
-    try:
-        await archive_service.save_report("country", report, country_code=code)
-    except Exception as e:
-        SP_5002(str(e)[:100]).log()
+    if not partial:
+        try:
+            await archive_service.save_report("country", report, country_code=code)
+        except Exception as e:
+            SP_5002(str(e)[:100]).log()
 
     return report
 
@@ -186,7 +429,11 @@ async def download_country_report_pdf(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     try:
-        report = await analyze_country(code)
+        report, _ = await _load_country_report_with_fallback(
+            code,
+            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            keep_background=False,
+        )
         country_name = COUNTRY_REGISTRY[code].name_local or COUNTRY_REGISTRY[code].name
         pdf_bytes = export_service.export_pdf(report, title=f"{country_name} Market Report")
         return Response(
@@ -209,7 +456,11 @@ async def download_country_report_csv(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     try:
-        report = await analyze_country(code)
+        report, _ = await _load_country_report_with_fallback(
+            code,
+            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            keep_background=False,
+        )
         csv_content = export_service.export_csv(report)
         return Response(
             content=csv_content,
@@ -277,37 +528,12 @@ async def get_sector_performance(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     from app.data import cache as data_cache
-    cache_key = f"sector_perf:v2:{code}"
-    cached = await data_cache.get(cache_key)
-    if cached:
-        return cached
+    cache_key = f"sector_perf:v3:{code}"
 
-    from app.data.universe_data import get_universe
-    universe = await get_universe(code)
-    results = []
-    for sector_name, tickers in universe.items():
-        fetched = await gather_limited(tickers[:8], lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=4)
-        valid = [item for item in fetched if not isinstance(item, Exception) and item is not None]
-        if not valid:
-            continue
+    async def _fetch_sector_performance():
+        return await _build_sector_performance_payload(code)
 
-        leader = max(valid, key=lambda item: float(item.get("market_cap") or item.get("current_price") or 0.0))
-        avg_change = sum(float(item.get("change_pct") or 0.0) for item in valid) / len(valid)
-        results.append(
-            {
-                "sector": sector_name,
-                "ticker": leader["ticker"],
-                "price": round(float(leader.get("price") or 0.0), 2),
-                "change_pct": round(avg_change, 2),
-                "breadth": len(valid),
-                "leader_name": leader.get("name", leader["ticker"]),
-            }
-        )
-
-    results.sort(key=lambda item: item["change_pct"], reverse=True)
-
-    await data_cache.set(cache_key, results, 300)
-    return results
+    return await data_cache.get_or_fetch(cache_key, _fetch_sector_performance, ttl=300)
 
 
 @router.get("/country/{code}/sectors")
@@ -389,16 +615,28 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     opportunity_task.add_done_callback(
         lambda task, label=f"Opportunity radar for {code}": _log_background_completion(task, label=label)
     )
+    quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
+    quick_task.add_done_callback(
+        lambda task, label=f"Opportunity quick fallback for {code}": _log_background_completion(task, label=label)
+    )
     try:
         return await asyncio.wait_for(
             asyncio.shield(opportunity_task),
             timeout=OPPORTUNITY_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
-        err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
-        err.detail = (
-            f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
-            "백그라운드 계산은 계속 진행되니 잠시 후 다시 시도해 주세요."
-        )
-        err.log("warning")
-        return JSONResponse(status_code=504, content=err.to_dict())
+        try:
+            quick_response = await asyncio.wait_for(
+                asyncio.shield(quick_task),
+                timeout=max(1.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 2.0)),
+            )
+            return quick_response
+        except Exception as quick_exc:
+            logging.warning("opportunity quick fallback failed for %s: %s", code, quick_exc, exc_info=True)
+            err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
+            err.detail = (
+                f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
+                "백그라운드 계산은 계속 진행되니 잠시 후 다시 시도해 주세요."
+            )
+            err.log("warning")
+            return JSONResponse(status_code=504, content=err.to_dict())

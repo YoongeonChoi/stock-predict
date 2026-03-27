@@ -2,7 +2,7 @@ import asyncio
 import logging
 from fastapi import APIRouter, Query
 from fastapi.params import Param
-from app.data import yfinance_client, cache
+from app.data import cache, kr_market_quote_client, yfinance_client
 from app.data.universe_data import get_universe
 from app.errors import SP_5018
 from app.scoring.stock_scorer import score_stock
@@ -132,6 +132,47 @@ def _build_snapshot_result(snapshot: dict, *, ticker: str, sector: str, country:
     }
 
 
+def _find_owning_sector(universe: dict[str, list[str]], ticker: str, sector: str | None) -> str:
+    if sector:
+        return sector
+    return next(
+        (sector_name for sector_name, sector_tickers in universe.items() if ticker in sector_tickers),
+        "N/A",
+    )
+
+
+async def _build_kr_bulk_snapshot_results(
+    *,
+    tickers: list[str],
+    universe: dict[str, list[str]],
+    sector: str | None,
+    country: str,
+) -> list[dict]:
+    quotes = await kr_market_quote_client.get_kr_bulk_quotes(tickers)
+    results: list[dict] = []
+    for ticker in tickers:
+        quote = quotes.get(ticker)
+        if not quote:
+            continue
+        owning_sector = _find_owning_sector(universe, ticker, sector)
+        result = _build_snapshot_result(
+            {
+                "current_price": quote.get("current_price"),
+                "price": quote.get("current_price"),
+                "prev_close": quote.get("prev_close"),
+                "change_pct": quote.get("change_pct"),
+                "market_cap": quote.get("market_cap"),
+                "name": quote.get("name") or ticker,
+            },
+            ticker=ticker,
+            sector=owning_sector,
+            country=country,
+        )
+        if result is not None:
+            results.append(result)
+    return results
+
+
 async def _build_snapshot_fallback(
     *,
     country: str,
@@ -140,6 +181,21 @@ async def _build_snapshot_fallback(
 ) -> dict:
     universe = await get_universe(country)
     selected = _select_candidate_tickers(universe, sector)[: max(limit, 10)]
+
+    if country == "KR":
+        results = (await _build_kr_bulk_snapshot_results(
+            tickers=selected,
+            universe=universe,
+            sector=sector,
+            country=country,
+        ))[:limit]
+        return {
+            "results": results,
+            "total": len(results),
+            "sectors": list(universe.keys()),
+            "partial": True,
+            "fallback_reason": "kr_bulk_snapshot_only",
+        }
 
     async def _snapshot_only(ticker: str):
         try:
@@ -388,6 +444,42 @@ async def screen_stocks(
         nonlocal universe
         universe = await get_universe(country)
         tickers = _select_candidate_tickers(universe, sector)
+        if not needs_enrichment and country == "KR":
+            bulk_results = await _build_kr_bulk_snapshot_results(
+                tickers=tickers,
+                universe=universe,
+                sector=sector,
+                country=country,
+            )
+            filtered_results = []
+            for item in bulk_results:
+                market_cap = float(item.get("market_cap") or 0.0)
+                current_price = float(item.get("current_price") or 0.0)
+                change_pct = float(item.get("change_pct") or 0.0)
+
+                if market_cap_min and market_cap < market_cap_min:
+                    continue
+                if market_cap_max and market_cap > market_cap_max:
+                    continue
+                if price_min and current_price < price_min:
+                    continue
+                if price_max and current_price > price_max:
+                    continue
+                if change_pct_min is not None and change_pct < change_pct_min:
+                    continue
+                if change_pct_max is not None and change_pct > change_pct_max:
+                    continue
+                filtered_results.append(item)
+
+            reverse = sort_dir == "desc"
+            sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
+            filtered_results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
+            return {
+                "results": filtered_results[:limit],
+                "total": len(filtered_results[:limit]),
+                "sectors": list(universe.keys()),
+            }
+
         if needs_enrichment:
             tickers = tickers[: max(limit * 2, SCREENER_ENRICHMENT_BUDGET)]
         screened = await gather_limited(tickers, _screen_ticker, limit=SCREENER_CONCURRENCY)

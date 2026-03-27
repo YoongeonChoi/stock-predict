@@ -20,6 +20,11 @@ from app.utils.market_calendar import (
 log = logging.getLogger("stock_predict.yfinance")
 BATCH_QUOTE_PRIME_LIMIT = 40
 
+try:
+    from pykrx import stock as pykrx_stock
+except Exception:  # pragma: no cover - optional dependency safety
+    pykrx_stock = None
+
 FINANCIAL_LABELS = {
     "revenue": ("Total Revenue", "Operating Revenue", "Revenue"),
     "operating_income": ("Operating Income", "Operating Profit"),
@@ -55,6 +60,15 @@ def _empty_market_snapshot(ticker: str) -> dict:
 
 def _is_index_like(ticker: str) -> bool:
     return str(ticker).startswith("^")
+
+
+def _is_kr_equity(ticker: str) -> bool:
+    upper = str(ticker or "").upper()
+    return upper.endswith(".KS") or upper.endswith(".KQ")
+
+
+def _kr_base_ticker(ticker: str) -> str:
+    return str(ticker or "").split(".")[0].upper()
 
 
 def _as_dict(value) -> dict:
@@ -95,7 +109,15 @@ def _fast_get(container, key: str):
         if char.isupper() and index > 0:
             snake_key.append("_")
         snake_key.append(char.lower())
-    return getattr(container, "".join(snake_key), getattr(container, key, None))
+    for candidate in ("".join(snake_key), key):
+        try:
+            value = getattr(container, candidate, None)
+        except Exception as exc:
+            log.debug("fast_info access failed for %s: %s", candidate, exc)
+            continue
+        if value is not None:
+            return value
+    return None
 
 
 def _coalesce(*values, default=None):
@@ -150,6 +172,65 @@ def _completed_history_df(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return df.loc[mask]
 
 
+def _period_lookback_days(period: str) -> int:
+    return {
+        "5d": 14,
+        "1mo": 45,
+        "3mo": 120,
+        "6mo": 240,
+        "1y": 420,
+        "2y": 820,
+    }.get(str(period or "").lower(), 180)
+
+
+def _normalize_kr_history_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    normalized = df.rename(
+        columns={
+            "시가": "Open",
+            "고가": "High",
+            "저가": "Low",
+            "종가": "Close",
+            "거래량": "Volume",
+        }
+    ).copy()
+    required = ["Open", "High", "Low", "Close", "Volume"]
+    if any(column not in normalized.columns for column in required):
+        return pd.DataFrame()
+    normalized.index = pd.to_datetime(normalized.index)
+    return normalized[required].dropna(how="all")
+
+
+def _kr_history_sync(ticker: str, period: str) -> pd.DataFrame:
+    if pykrx_stock is None or not _is_kr_equity(ticker):
+        return pd.DataFrame()
+    try:
+        end_date = latest_closed_trading_day("KR")
+        start_date = end_date - timedelta(days=_period_lookback_days(period))
+        df = pykrx_stock.get_market_ohlcv_by_date(
+            start_date.strftime("%Y%m%d"),
+            end_date.strftime("%Y%m%d"),
+            _kr_base_ticker(ticker),
+            adjusted=True,
+        )
+        return _normalize_kr_history_df(df)
+    except Exception as exc:
+        log.debug("pykrx history fetch failed for %s (%s): %s", ticker, period, exc)
+        return pd.DataFrame()
+
+
+def _kr_ticker_name(ticker: str) -> str | None:
+    if pykrx_stock is None or not _is_kr_equity(ticker):
+        return None
+    try:
+        name = str(pykrx_stock.get_market_ticker_name(_kr_base_ticker(ticker)) or "").strip()
+    except Exception as exc:
+        log.debug("pykrx ticker name fetch failed for %s: %s", ticker, exc)
+        return None
+    return name or None
+
+
 def _last_history_date(df: pd.DataFrame) -> str | None:
     if df is None or df.empty:
         return None
@@ -163,6 +244,10 @@ def _history_sync(
     start: str | None = None,
     end: str | None = None,
 ) -> pd.DataFrame:
+    if start is None and end is None and _is_kr_equity(ticker):
+        kr_df = _kr_history_sync(ticker, period or "6mo")
+        if not kr_df.empty:
+            return kr_df
     ticker_obj = yf.Ticker(ticker)
     attempts = [
         {"period": period, "start": start, "end": end, "auto_adjust": False, "actions": False, "interval": "1d"},
@@ -319,6 +404,7 @@ def _history_stat(rows: list[dict], key: str, *, window: int, reducer):
 
 
 def _snapshot_to_market_snapshot(snapshot: _TickerSnapshot) -> dict:
+    name_fallback = _kr_ticker_name(snapshot.ticker) or snapshot.ticker
     current_price = _resolve_market_number(
         snapshot,
         info_keys=("currentPrice", "regularMarketPrice"),
@@ -346,7 +432,7 @@ def _snapshot_to_market_snapshot(snapshot: _TickerSnapshot) -> dict:
             snapshot,
             info_keys=("shortName", "longName"),
             metadata_keys=("shortName", "longName"),
-            fallback=snapshot.ticker,
+            fallback=name_fallback,
         ),
         "price": round(float(current_price), 2),
         "prev_close": round(float(prev_close), 2),
@@ -364,6 +450,23 @@ async def get_market_snapshot(ticker: str, *, period: str = "6mo") -> dict:
 
     async def _fetch():
         def _sync():
+            if _is_kr_equity(ticker):
+                history_df = _kr_history_sync(ticker, period)
+                if not history_df.empty:
+                    quote = _quote_from_history_df(history_df, ticker)
+                    current_price = float(quote.get("price") or 0.0)
+                    prev_close = float(quote.get("prev_close") or current_price)
+                    return {
+                        "ticker": ticker,
+                        "name": _kr_ticker_name(ticker) or ticker,
+                        "price": round(current_price, 2),
+                        "prev_close": round(prev_close, 2),
+                        "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+                        "market_cap": 0.0,
+                        "current_price": round(current_price, 2),
+                        "session_date": quote.get("session_date"),
+                        "valid": bool(current_price > 0),
+                    }
             snapshot = _load_snapshot(ticker, history_period=period, include_info=True)
             market_snapshot = _snapshot_to_market_snapshot(snapshot)
             if not market_snapshot["valid"] and not snapshot.history_rows:
@@ -412,6 +515,19 @@ async def get_stock_quote(ticker: str) -> dict:
 
     async def _fetch():
         def _sync():
+            if _is_kr_equity(ticker):
+                history_df = _kr_history_sync(ticker, "5d")
+                if not history_df.empty:
+                    quote = _quote_from_history_df(history_df, ticker)
+                    current_price = float(quote.get("price") or 0.0)
+                    prev_close = float(quote.get("prev_close") or current_price)
+                    return {
+                        "ticker": ticker,
+                        "current_price": round(current_price, 2),
+                        "prev_close": round(prev_close, 2),
+                        "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+                        "session_date": quote.get("session_date"),
+                    }
             snapshot = _load_snapshot(ticker, history_period="5d", include_info=False)
             market_snapshot = _snapshot_to_market_snapshot(snapshot)
             if not market_snapshot["valid"] and not snapshot.history_rows:
@@ -527,7 +643,7 @@ async def _get_stock_fundamentals(ticker: str) -> dict:
                     snapshot,
                     info_keys=("shortName", "longName"),
                     metadata_keys=("shortName", "longName"),
-                    fallback=ticker,
+                    fallback=_kr_ticker_name(ticker) or ticker,
                 ),
                 "sector": snapshot.info.get("sector") or "N/A",
                 "industry": snapshot.info.get("industry") or "N/A",
