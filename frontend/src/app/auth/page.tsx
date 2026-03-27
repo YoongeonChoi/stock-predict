@@ -23,7 +23,7 @@ import {
 import { api } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-type AuthMode = "signin" | "signup";
+type AuthMode = "signin" | "signup" | "recovery";
 
 interface SignUpFormState {
   username: string;
@@ -53,6 +53,16 @@ const EMPTY_SIGNUP_FORM: SignUpFormState = {
   passwordConfirm: "",
 };
 
+function resolveMode(rawMode: string | null): AuthMode {
+  if (rawMode === "signup") {
+    return "signup";
+  }
+  if (rawMode === "recovery") {
+    return "recovery";
+  }
+  return "signin";
+}
+
 function FormField({
   label,
   children,
@@ -77,11 +87,18 @@ function AuthPageContent() {
   const { toast } = useToast();
   const { configured, loading, session, refreshProfile } = useAuth();
 
-  const [mode, setMode] = useState<AuthMode>(searchParams.get("mode") === "signup" ? "signup" : "signin");
+  const nextParam = searchParams.get("next");
+  const nextPath = nextParam && nextParam.startsWith("/") ? nextParam : "/portfolio";
+  const modeFromParams = useMemo(() => resolveMode(searchParams.get("mode")), [searchParams]);
+
+  const [mode, setMode] = useState<AuthMode>(modeFromParams);
   const [signinEmail, setSigninEmail] = useState("");
   const [signinPassword, setSigninPassword] = useState("");
   const [signup, setSignup] = useState<SignUpFormState>(EMPTY_SIGNUP_FORM);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [supportAction, setSupportAction] = useState<"verification" | "reset" | null>(null);
   const [usernameState, setUsernameState] = useState<UsernameCheckState>({
     checkedValue: "",
     available: false,
@@ -90,17 +107,38 @@ function AuthPageContent() {
     checking: false,
   });
 
-  const nextPath = searchParams.get("next") || "/portfolio";
+  useEffect(() => {
+    setMode(modeFromParams);
+  }, [modeFromParams]);
 
   useEffect(() => {
-    if (!loading && session) {
+    if (!loading && session && mode !== "recovery") {
       router.replace(nextPath);
     }
-  }, [loading, nextPath, router, session]);
+  }, [loading, mode, nextPath, router, session]);
+
+  const setModeInUrl = (nextMode: AuthMode) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextMode === "signin") {
+      params.delete("mode");
+    } else {
+      params.set("mode", nextMode);
+    }
+    if (nextPath) {
+      params.set("next", nextPath);
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    setMode(nextMode);
+    router.replace(`/auth${suffix}`);
+  };
 
   const passwordStrength = useMemo(
     () => getPasswordStrength(signup.password, signup.passwordConfirm),
     [signup.password, signup.passwordConfirm],
+  );
+  const recoveryStrength = useMemo(
+    () => getPasswordStrength(recoveryPassword, recoveryConfirm),
+    [recoveryPassword, recoveryConfirm],
   );
 
   const normalizedUsername = normalizeUsername(signup.username);
@@ -125,6 +163,16 @@ function AuthPageContent() {
     passwordStrength.checks.symbol &&
     passwordStrength.checks.match &&
     usernameValidated,
+  );
+
+  const recoveryReady = Boolean(
+    session &&
+    recoveryStrength.checks.minLength &&
+    recoveryStrength.checks.uppercase &&
+    recoveryStrength.checks.lowercase &&
+    recoveryStrength.checks.number &&
+    recoveryStrength.checks.symbol &&
+    recoveryStrength.checks.match,
   );
 
   const updateSignupField = <K extends keyof SignUpFormState>(key: K, value: SignUpFormState[K]) => {
@@ -172,7 +220,65 @@ function AuthPageContent() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleResendVerification = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!configured || !client) {
+      toast("Supabase 설정이 비어 있어 인증 메일을 보낼 수 없습니다.", "error");
+      return;
+    }
+    if (!signinEmail.trim()) {
+      toast("인증 메일을 보낼 이메일을 먼저 입력해 주세요.", "error");
+      return;
+    }
+
+    setSupportAction("verification");
+    try {
+      const { error } = await client.auth.resend({
+        type: "signup",
+        email: signinEmail.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}${nextPath}`,
+        },
+      });
+      if (error) {
+        throw error;
+      }
+      toast("가입 확인 메일을 다시 보냈습니다. 받은 편지함을 확인해 주세요.", "success");
+    } catch (error) {
+      toast(describeAuthErrorMessage(error, "인증 메일 재전송 중 문제가 발생했습니다."), "error");
+    } finally {
+      setSupportAction(null);
+    }
+  };
+
+  const handlePasswordResetRequest = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!configured || !client) {
+      toast("Supabase 설정이 비어 있어 재설정 메일을 보낼 수 없습니다.", "error");
+      return;
+    }
+    if (!signinEmail.trim()) {
+      toast("비밀번호 재설정 메일을 보낼 이메일을 먼저 입력해 주세요.", "error");
+      return;
+    }
+
+    setSupportAction("reset");
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(signinEmail.trim(), {
+        redirectTo: `${window.location.origin}/auth?mode=recovery&next=${encodeURIComponent(nextPath)}`,
+      });
+      if (error) {
+        throw error;
+      }
+      toast("비밀번호 재설정 메일을 보냈습니다. 메일의 링크에서 새 비밀번호를 설정해 주세요.", "success");
+    } catch (error) {
+      toast(describeAuthErrorMessage(error, "비밀번호 재설정 메일 전송 중 문제가 발생했습니다."), "error");
+    } finally {
+      setSupportAction(null);
+    }
+  };
+
+  const handleAuthSubmit = async () => {
     const client = getSupabaseBrowserClient();
     if (!configured || !client) {
       toast("Supabase 설정이 비어 있어 로그인 화면을 열 수 없습니다.", "error");
@@ -212,10 +318,33 @@ function AuthPageContent() {
           router.replace(nextPath);
         } else {
           toast("가입 확인 메일을 보냈습니다. 인증 링크를 눌러 계정을 활성화해 주세요.", "info");
-          setMode("signin");
           setSigninEmail(signup.email.trim());
           setSignup(EMPTY_SIGNUP_FORM);
+          setModeInUrl("signin");
         }
+        return;
+      }
+
+      if (mode === "recovery") {
+        if (!session) {
+          toast("복구 세션이 확인되지 않습니다. 비밀번호 재설정 메일을 다시 요청해 주세요.", "error");
+          return;
+        }
+        if (!recoveryReady) {
+          toast("새 비밀번호 보안 조건을 모두 충족해 주세요.", "error");
+          return;
+        }
+
+        const { error } = await client.auth.updateUser({ password: recoveryPassword });
+        if (error) {
+          throw error;
+        }
+
+        await refreshProfile();
+        toast("새 비밀번호가 저장되었습니다.", "success");
+        setRecoveryPassword("");
+        setRecoveryConfirm("");
+        router.replace(nextPath);
         return;
       }
 
@@ -246,27 +375,47 @@ function AuthPageContent() {
     <div className="page-shell space-y-5">
       <PageHeader
         eyebrow="계정"
-        title="로그인 및 회원가입"
-        description="보유 종목, 추천 결과, 자산 기준을 계정별로 안전하게 분리하려면 먼저 로그인부터 연결해 주세요."
+        title={mode === "recovery" ? "비밀번호 재설정" : "로그인 및 회원가입"}
+        description={
+          mode === "recovery"
+            ? "복구 링크를 통해 들어왔다면 새 비밀번호를 바로 설정할 수 있습니다."
+            : "보유 종목, 추천 결과, 자산 기준을 계정별로 안전하게 분리하려면 먼저 로그인부터 연결해 주세요."
+        }
         meta={<span className="info-chip">로그인 후 이동: {nextPath}</span>}
       />
 
       <section className="mx-auto grid max-w-[1180px] gap-5 xl:grid-cols-[minmax(0,1.12fr)_360px]">
         <div className="card !p-5 space-y-5">
-          <div className="flex gap-2 rounded-2xl border border-border/70 bg-surface/50 p-1">
-            <button
-              onClick={() => setMode("signin")}
-              className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signin" ? "bg-accent text-white" : "text-text-secondary"}`}
-            >
-              로그인
-            </button>
-            <button
-              onClick={() => setMode("signup")}
-              className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signup" ? "bg-accent text-white" : "text-text-secondary"}`}
-            >
-              회원가입
-            </button>
-          </div>
+          {mode !== "recovery" ? (
+            <div className="flex gap-2 rounded-2xl border border-border/70 bg-surface/50 p-1">
+              <button
+                onClick={() => setModeInUrl("signin")}
+                className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signin" ? "bg-accent text-white" : "text-text-secondary"}`}
+              >
+                로그인
+              </button>
+              <button
+                onClick={() => setModeInUrl("signup")}
+                className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signup" ? "bg-accent text-white" : "text-text-secondary"}`}
+              >
+                회원가입
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border/70 bg-surface/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-text">비밀번호 재설정 모드</div>
+                  <p className="mt-1 text-xs leading-6 text-text-secondary">
+                    복구 링크의 세션이 살아 있으면 여기서 새 비밀번호를 설정할 수 있습니다.
+                  </p>
+                </div>
+                <button onClick={() => setModeInUrl("signin")} className="action-chip-secondary shrink-0">
+                  로그인으로 돌아가기
+                </button>
+              </div>
+            </div>
+          )}
 
           {mode === "signin" ? (
             <div className="space-y-4">
@@ -290,8 +439,34 @@ function AuthPageContent() {
                   placeholder="비밀번호 입력"
                 />
               </FormField>
+              <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">로그인 지원</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={supportAction !== null}
+                    className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {supportAction === "verification" ? "전송 중..." : "인증 메일 다시 보내기"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePasswordResetRequest}
+                    disabled={supportAction !== null}
+                    className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {supportAction === "reset" ? "전송 중..." : "비밀번호 재설정 메일"}
+                  </button>
+                </div>
+                <p className="mt-3 text-xs leading-6 text-text-secondary">
+                  로그인에 문제가 있으면 이메일을 먼저 입력한 뒤 인증 메일 재전송 또는 비밀번호 재설정 메일을 요청해 주세요.
+                </p>
+              </div>
             </div>
-          ) : (
+          ) : null}
+
+          {mode === "signup" ? (
             <div className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <FormField
@@ -405,14 +580,67 @@ function AuthPageContent() {
 
               <PasswordStrengthChecklist result={passwordStrength} />
             </div>
-          )}
+          ) : null}
+
+          {mode === "recovery" ? (
+            <div className="space-y-5">
+              {session ? (
+                <>
+                  <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm text-text-secondary">
+                    현재 복구 세션으로 연결된 계정은 <span className="font-medium text-text">{session.user.email ?? "이메일 정보 없음"}</span> 입니다.
+                    새 비밀번호를 저장하면 다음 접속부터 새 비밀번호가 적용됩니다.
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField label="새 비밀번호">
+                      <input
+                        value={recoveryPassword}
+                        onChange={(event) => setRecoveryPassword(event.target.value)}
+                        type="password"
+                        autoComplete="new-password"
+                        maxLength={128}
+                        className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                        placeholder="새 비밀번호 입력"
+                      />
+                    </FormField>
+                    <FormField label="새 비밀번호 재확인">
+                      <input
+                        value={recoveryConfirm}
+                        onChange={(event) => setRecoveryConfirm(event.target.value)}
+                        type="password"
+                        autoComplete="new-password"
+                        maxLength={128}
+                        className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                        placeholder="새 비밀번호 다시 입력"
+                      />
+                    </FormField>
+                  </div>
+                  <PasswordStrengthChecklist result={recoveryStrength} />
+                </>
+              ) : (
+                <div className="rounded-[22px] border border-warning/30 bg-warning/10 px-4 py-4 text-sm leading-6 text-text-secondary">
+                  복구 세션이 아직 확인되지 않았습니다. 메일의 링크가 만료되었을 수 있으니 로그인 화면으로 돌아가 재설정 메일을 다시 요청해 주세요.
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <button
-            onClick={handleSubmit}
-            disabled={submitting || loading || (mode === "signup" && !signUpReady)}
+            onClick={handleAuthSubmit}
+            disabled={
+              submitting ||
+              loading ||
+              (mode === "signup" && !signUpReady) ||
+              (mode === "recovery" && !recoveryReady)
+            }
             className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? "처리 중..." : mode === "signup" ? "회원가입하고 계속하기" : "로그인하고 계속하기"}
+            {submitting
+              ? "처리 중..."
+              : mode === "signup"
+                ? "회원가입하고 계속하기"
+                : mode === "recovery"
+                  ? "새 비밀번호 저장"
+                  : "로그인하고 계속하기"}
           </button>
 
           {!configured ? (

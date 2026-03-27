@@ -19,11 +19,20 @@ export interface RequestOptions extends RequestInit {
 export interface AccountProfile {
   user_id: string;
   email?: string | null;
+  email_verified: boolean;
+  email_confirmed_at?: string | null;
   username?: string | null;
   full_name?: string | null;
   phone_number?: string | null;
   phone_masked?: string | null;
   birth_date?: string | null;
+}
+
+export interface AccountProfileUpdateRequest {
+  username: string;
+  full_name: string;
+  phone_number: string;
+  birth_date: string;
 }
 
 export interface UsernameAvailabilityResponse {
@@ -1105,6 +1114,12 @@ export interface ForecastDeltaResponse {
 
 export const api = {
   getMyAccountProfile: () => get<AccountProfile>("/api/account/me"),
+  updateMyAccountProfile: (payload: AccountProfileUpdateRequest) =>
+    request<AccountProfile>("/api/account/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   checkUsernameAvailability: (username: string) =>
     get<UsernameAvailabilityResponse>(`/api/account/username-availability?username=${encodeURIComponent(username)}`),
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),

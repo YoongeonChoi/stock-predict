@@ -3,6 +3,8 @@ import type { User } from "@supabase/supabase-js";
 export interface AccountProfileShape {
   user_id?: string;
   email?: string | null;
+  email_verified?: boolean;
+  email_confirmed_at?: string | null;
   username?: string | null;
   full_name?: string | null;
   phone_number?: string | null;
@@ -149,10 +151,13 @@ export function extractAccountProfileFromUser(user: User | null): AccountProfile
   const metadata = user.user_metadata ?? user.identities?.[0]?.identity_data ?? {};
   const phoneNumber = readMetadataValue(metadata, ["phone_number", "phone"]);
   const username = readMetadataValue(metadata, ["username"]);
+  const emailConfirmedAt = user.email_confirmed_at ?? null;
 
   return {
     user_id: user.id,
     email: user.email ?? null,
+    email_verified: Boolean(emailConfirmedAt),
+    email_confirmed_at: emailConfirmedAt,
     username: username ? normalizeUsername(username) : null,
     full_name: readMetadataValue(metadata, ["full_name", "name"]),
     phone_number: phoneNumber ? formatPhoneNumber(phoneNumber) : null,
