@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.39.0 - 2026-03-27
+
+- 공개 대시보드의 `heatmap`과 `screener` 경로를 Render free 환경 기준으로 다시 다듬어, 대표 종목 표본만 먼저 계산하고 서버측 timeout을 구조화된 `504 / SP-5018`로 반환하도록 정리했습니다.
+- 홈 대시보드는 서버 timeout보다 짧게 끊기지 않도록 workspace 대기 시간을 늘렸고, 스크리너 페이지는 실패 시 조용히 비는 대신 인라인 오류 문구와 재시도 버튼을 보여주도록 보강했습니다.
+- `scripts/deployed_site_smoke.py`는 운영 검증 범위에 `KR heatmap`, `opportunities`, `screener`를 추가해, 사용자 체감이 큰 느린 공개 API 회귀를 배포 단계에서 바로 잡을 수 있게 했습니다.
+
 ## v2.38.0 - 2026-03-27
 
 - `/settings`의 즉시 비밀번호 변경 카드에 `보안 확인 코드 보내기`와 `reauth nonce` 입력 흐름을 추가해, Supabase가 오래된 세션에 추가 확인을 요구할 때도 같은 패널 안에서 비밀번호를 바로 바꿀 수 있도록 정리했습니다.

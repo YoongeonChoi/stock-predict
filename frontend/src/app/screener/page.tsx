@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-import { api } from "@/lib/api";
+import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 import type { ScreenerResult } from "@/lib/api";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
@@ -80,12 +80,30 @@ const PRESETS: Array<{ label: string; description: string; values: Partial<Scree
   },
 ];
 
+const SCREENER_TIMEOUT_MS = 22_000;
+
+function describeScreenerError(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.errorCode === "SP-5018") {
+      return "대표 종목군 기준 스크리닝이 길어져 이번 계산은 중단되었습니다. 잠시 후 다시 시도해 주세요.";
+    }
+    return `${error.errorCode} · ${error.message}`;
+  }
+  if (error instanceof ApiTimeoutError) {
+    return "스크리너 응답이 길어져 브라우저에서 요청을 중단했습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  if (error instanceof Error && error.message) {
+    return `스크리너를 불러오지 못했습니다. (${error.message})`;
+  }
+  return "스크리너를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.";
+}
+
 function buildParams(filters: ScreenerFilters): Record<string, string> {
   const params: Record<string, string> = {
     country: filters.country,
     sort_by: filters.sortBy,
     sort_dir: filters.sortDir,
-    limit: "120",
+    limit: "60",
   };
   if (filters.sector) params.sector = filters.sector;
   if (filters.marketCapMin) params.market_cap_min = filters.marketCapMin;
@@ -121,16 +139,19 @@ export default function ScreenerPage() {
   const [sectors, setSectors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const runSearch = async (nextFilters: ScreenerFilters = filters) => {
     setLoading(true);
     setSearched(true);
+    setErrorMessage(null);
     try {
-      const data = await api.getScreener(buildParams(nextFilters));
+      const data = await api.getScreener(buildParams(nextFilters), { timeoutMs: SCREENER_TIMEOUT_MS });
       setResults(data.results);
       setSectors(data.sectors);
     } catch (error) {
       console.error(error);
+      setErrorMessage(describeScreenerError(error));
     } finally {
       setLoading(false);
     }
@@ -354,6 +375,15 @@ export default function ScreenerPage() {
             </div>
           </div>
         </div>
+
+        {errorMessage ? (
+          <div className="mx-5 mt-5 rounded-[22px] border border-warning/35 bg-warning/8 px-4 py-4 text-sm text-text-secondary">
+            <div>{errorMessage}</div>
+            <button onClick={() => runSearch()} className="mt-3 action-chip-secondary">
+              다시 시도
+            </button>
+          </div>
+        ) : null}
 
         <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
           <table className="w-full min-w-[1240px] text-sm">
