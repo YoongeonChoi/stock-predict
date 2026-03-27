@@ -44,7 +44,7 @@ async def _build_heatmap_payload(code: str) -> dict:
         )
         stocks = []
         for item in fetched:
-            if isinstance(item, Exception) or item is None:
+            if not isinstance(item, dict):
                 continue
             stocks.append({
                 "name": item["ticker"].split(".")[0],
