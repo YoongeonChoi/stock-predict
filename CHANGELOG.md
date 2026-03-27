@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.30.0 - 2026-03-27
+
+- `/auth`와 `/settings`의 인증 메일 재전송, 비밀번호 재설정 메일 액션에 60초 로컬 cooldown을 추가해 같은 메일 액션을 연속으로 반복하지 않도록 정리했습니다.
+- 계정 화면의 초 단위 카운트다운 로직을 `frontend/src/hooks/useCooldownTimer.ts`로 공통화해, 공개 rate limit과 메일 액션 cooldown이 같은 방식으로 보이도록 맞췄습니다.
+- README를 현재 운영 기준의 계정 보안 흐름과 메일 액션 cooldown 규칙까지 포함하도록 갱신했습니다.
+
 ## v2.29.0 - 2026-03-27
 
 - 공개 계정 rate limit(`SP-6016`) 응답에 `Retry-After` 헤더를 추가해, 프론트가 문구 파싱에만 기대지 않고 표준 헤더로 남은 대기 시간을 읽을 수 있도록 정리했습니다.
