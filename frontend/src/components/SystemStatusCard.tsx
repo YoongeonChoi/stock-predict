@@ -6,6 +6,7 @@ import type { SystemDiagnostics } from "@/lib/api";
 
 interface Props {
   diagnostics: SystemDiagnostics;
+  frontendVersion: string;
 }
 
 function statusTone(status: string) {
@@ -24,9 +25,10 @@ function statusLabel(status: string) {
   return "주의";
 }
 
-export default function SystemStatusCard({ diagnostics }: Props) {
+export default function SystemStatusCard({ diagnostics, frontendVersion }: Props) {
   const primaryModel = diagnostics.forecast_models[0];
   const criticalSources = diagnostics.data_sources.slice(0, 4);
+  const versionsAligned = frontendVersion === diagnostics.version;
 
   return (
     <div className="card !p-4">
@@ -46,6 +48,40 @@ export default function SystemStatusCard({ diagnostics }: Props) {
         <Link href="/lab" className="text-sm text-accent hover:underline">
           예측 연구실 열기
         </Link>
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary">프론트 배포 버전</div>
+          <div className="mt-1 text-lg font-semibold text-text">v{frontendVersion}</div>
+          <div className="mt-2 text-xs leading-5 text-text-secondary">
+            현재 브라우저에 내려온 UI 빌드 버전입니다.
+          </div>
+        </div>
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary">백엔드 배포 버전</div>
+          <div className="mt-1 text-lg font-semibold text-text">v{diagnostics.version}</div>
+          <div className="mt-2 text-xs leading-5 text-text-secondary">
+            시스템 진단과 `/api/health`가 보고하는 API 버전입니다.
+          </div>
+        </div>
+        <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary">운영 반영 상태</div>
+          <div className="mt-1 flex items-center gap-2">
+            <span
+              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${
+                versionsAligned ? "bg-positive/10 text-positive" : "bg-warning/10 text-warning"
+              }`}
+            >
+              {versionsAligned ? "프론트·백엔드 버전 일치" : "배포 전파 확인 필요"}
+            </span>
+          </div>
+          <div className="mt-2 text-xs leading-5 text-text-secondary">
+            {versionsAligned
+              ? "현재 화면과 API가 같은 릴리즈 버전을 사용 중입니다."
+              : "머지 직후에는 프론트와 백엔드 버전이 잠시 어긋날 수 있습니다. 운영 반영 대기 스크립트나 health를 다시 확인해 주세요."}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

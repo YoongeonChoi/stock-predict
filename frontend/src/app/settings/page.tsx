@@ -7,6 +7,7 @@ import ErrorBanner from "@/components/ErrorBanner";
 import MarketSessionPanel from "@/components/MarketSessionPanel";
 import SystemStatusCard from "@/components/SystemStatusCard";
 import { api, apiPath } from "@/lib/api";
+import { FRONTEND_APP_VERSION } from "@/lib/app-meta";
 import type { MarketSessionsResponse, ResearchArchiveStatus, SystemDiagnostics } from "@/lib/api";
 
 function toError(error: unknown): Error {
@@ -90,7 +91,7 @@ export default function SettingsPage() {
       ) : (
         <>
           {marketSessions ? <MarketSessionPanel sessions={marketSessions.sessions} /> : null}
-          {diagnostics ? <SystemStatusCard diagnostics={diagnostics} /> : null}
+          {diagnostics ? <SystemStatusCard diagnostics={diagnostics} frontendVersion={FRONTEND_APP_VERSION} /> : null}
 
           <div className="card !p-4 space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -185,6 +186,10 @@ export default function SettingsPage() {
               <div className="rounded-xl border border-border p-3">
                 <div className="font-medium">프론트 API 경로</div>
                 <div className="mt-1 break-all text-text-secondary">{apiPath("/api/health")}</div>
+              </div>
+              <div className="rounded-xl border border-border p-3">
+                <div className="font-medium">현재 프론트 버전</div>
+                <div className="mt-1 text-text-secondary">v{FRONTEND_APP_VERSION}</div>
               </div>
             </div>
           </div>

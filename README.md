@@ -719,7 +719,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
 ```
 
-`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다.
+`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout에는 짧게 재시도합니다.
 
 `main` 머지 후 실제 운영 배포가 새 버전으로 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
 
@@ -728,6 +728,8 @@ BACKEND_PROXY_URL=http://localhost:8000
 ```
 
 이 스크립트는 기본적으로 로컬 `backend/app/version.py`의 `APP_VERSION`을 읽고, 운영 `api.yoongeon.xyz/api/health`가 같은 `version`과 `status=ok`를 반환할 때까지 주기적으로 확인합니다.
+
+`/settings`의 시스템 진단 카드에서는 현재 프론트 빌드 버전과 백엔드 API 버전을 함께 보여 주며, 두 버전이 어긋나면 배포 전파 확인이 필요하다는 안내를 표시합니다.
 
 ## 주요 파일
 
