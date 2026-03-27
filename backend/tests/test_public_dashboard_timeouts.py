@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routers import country as country_router
 
 
 @contextmanager
@@ -63,6 +64,15 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
+
+    def test_heatmap_skips_cancelled_items_from_snapshot_gather(self):
+        with (
+            patch("app.data.universe_data.get_universe", new=AsyncMock(return_value={"Information Technology": ["005930.KS"]})),
+            patch("app.routers.country.gather_limited", new=AsyncMock(return_value=[asyncio.CancelledError(), None, {"ticker": "005930.KS", "name": "Samsung Electronics", "market_cap": 420000000000.0, "change_pct": 1.5}])),
+        ):
+            response = asyncio.run(country_router._build_heatmap_payload("KR"))
+
+        self.assertIn("children", response)
 
     def test_daily_briefing_timeout_returns_structured_error(self):
         with (

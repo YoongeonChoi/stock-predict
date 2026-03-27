@@ -2,6 +2,10 @@
 
 All notable changes to this project are tracked here.
 
+## v2.39.3 - 2026-03-27
+
+- `heatmap` fallback 경로에서 취소된 비동기 작업 객체를 스냅샷처럼 읽다가 `SP-9999`로 터질 수 있던 버그를 수정했습니다. 이제 timeout 직후 `CancelledError`가 섞여도 사전 타입 검사로 안전하게 건너뜁니다.
+
 ## v2.39.2 - 2026-03-27
 
 - `market opportunities`는 cold-start 직후에도 router timeout에 덜 걸리도록 스캔 예산을 더 줄였습니다. 무거운 스캔 timeout과 경량 fallback 예산을 함께 낮추고, 최대 후보 수도 다시 줄여 첫 요청에서 `SP-5018`이 반복되는 빈도를 낮췄습니다.
