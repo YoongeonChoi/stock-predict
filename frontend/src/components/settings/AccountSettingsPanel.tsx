@@ -9,6 +9,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import {
   formatPhoneNumber,
+  describeAuthErrorMessage,
   getPasswordStrength,
   isValidEmail,
   isValidBirthDate,
@@ -20,7 +21,7 @@ import {
   normalizePhoneNumber,
   normalizeUsername,
 } from "@/lib/account";
-import { api, type AccountProfile } from "@/lib/api";
+import { api, getApiRetryAfterSeconds, isApiErrorCode, type AccountProfile } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface ProfileDraft {
@@ -91,6 +92,7 @@ export default function AccountSettingsPanel() {
   const { toast } = useToast();
   const [draft, setDraft] = useState<ProfileDraft>(buildDraft(profile));
   const [usernameState, setUsernameState] = useState<UsernameState>(buildUsernameState(profile));
+  const [usernameCooldownSeconds, setUsernameCooldownSeconds] = useState(0);
   const [saving, setSaving] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
@@ -107,6 +109,18 @@ export default function AccountSettingsPanel() {
     setDraft(buildDraft(profile));
     setUsernameState(buildUsernameState(profile));
   }, [profile?.birth_date, profile?.full_name, profile?.phone_number, profile?.user_id, profile?.username]);
+
+  useEffect(() => {
+    if (usernameCooldownSeconds <= 0) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setUsernameCooldownSeconds((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [usernameCooldownSeconds]);
 
   const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
   const normalizedDraftUsername = normalizeUsername(draft.username);
@@ -187,6 +201,15 @@ export default function AccountSettingsPanel() {
   };
 
   const handleUsernameCheck = async () => {
+    if (usernameCooldownSeconds > 0) {
+      setUsernameState((prev) => ({
+        ...prev,
+        checking: false,
+        message: `중복 확인 요청이 많아 ${usernameCooldownSeconds}초 후 다시 시도해 주세요.`,
+      }));
+      return;
+    }
+
     if (!isValidUsername(draft.username)) {
       setUsernameState({
         checkedValue: normalizedDraftUsername,
@@ -212,13 +235,25 @@ export default function AccountSettingsPanel() {
           ? (result.normalized_username === normalizedCurrentUsername ? "현재 아이디를 그대로 사용할 수 있습니다." : "사용 가능한 아이디입니다.")
           : result.message,
       });
-    } catch {
+    } catch (error) {
+      if (isApiErrorCode(error, "SP-6016")) {
+        const retryAfter = getApiRetryAfterSeconds(error) ?? 30;
+        setUsernameCooldownSeconds(retryAfter);
+        setUsernameState({
+          checkedValue: normalizedDraftUsername,
+          valid: false,
+          available: false,
+          checking: false,
+          message: error.detail || `중복 확인 요청이 많아 ${retryAfter}초 후 다시 시도해 주세요.`,
+        });
+        return;
+      }
       setUsernameState({
         checkedValue: normalizedDraftUsername,
         valid: false,
         available: false,
         checking: false,
-        message: "중복 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        message: describeAuthErrorMessage(error, "중복 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."),
       });
     }
   };
@@ -508,7 +543,7 @@ export default function AccountSettingsPanel() {
             </span>
           </div>
           <p className="text-sm leading-6 text-text-secondary">
-            프로필 정보와 보안 관련 작업을 한 곳에서 관리합니다. 아이디를 바꾸는 경우에는 다시 중복 확인을 거쳐야 합니다.
+            프로필 정보와 보안 관련 작업을 한 곳에서 관리합니다. 아이디를 바꾸는 경우에는 다시 중복 확인을 거쳐야 하며, 요청이 많으면 잠시 후 재시도 안내가 표시됩니다.
           </p>
         </div>
         <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-3 text-sm">
@@ -548,10 +583,14 @@ export default function AccountSettingsPanel() {
                 <button
                   type="button"
                   onClick={handleUsernameCheck}
-                  disabled={usernameState.checking}
+                  disabled={usernameState.checking || usernameCooldownSeconds > 0}
                   className="action-chip-secondary shrink-0"
                 >
-                  {usernameState.checking ? "확인 중..." : "중복 확인"}
+                  {usernameState.checking
+                    ? "확인 중..."
+                    : usernameCooldownSeconds > 0
+                      ? `${usernameCooldownSeconds}초 후 다시`
+                      : "중복 확인"}
                 </button>
               </div>
             </Field>
