@@ -172,6 +172,26 @@ export default function AccountSettingsPanel() {
       draft.birthDate !== (profile?.birth_date ?? "")
     );
   }, [draft, profile]);
+  const emailDirty = Boolean(emailDraft.nextEmail.trim() || emailDraft.confirmEmail.trim());
+  const passwordDirty = Boolean(passwordDraft.nextPassword || passwordDraft.confirmPassword);
+  const deleteDirty = Boolean(deleteConfirmation.trim());
+  const hasPendingChanges = isDirty || emailDirty || passwordDirty || deleteDirty;
+  const pendingSectionSummary = useMemo(() => {
+    const sections: string[] = [];
+    if (isDirty) {
+      sections.push("프로필");
+    }
+    if (emailDirty) {
+      sections.push("이메일 변경");
+    }
+    if (passwordDirty) {
+      sections.push("비밀번호 변경");
+    }
+    if (deleteDirty) {
+      sections.push("회원 탈퇴");
+    }
+    return sections.join(", ");
+  }, [deleteDirty, emailDirty, isDirty, passwordDirty]);
 
   const formValid =
     isValidUsername(draft.username) &&
@@ -179,6 +199,20 @@ export default function AccountSettingsPanel() {
     isValidPhoneNumber(draft.phoneNumber) &&
     isValidBirthDate(draft.birthDate) &&
     usernameReady;
+
+  useEffect(() => {
+    if (!hasPendingChanges) {
+      return undefined;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasPendingChanges]);
 
   const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -190,6 +224,30 @@ export default function AccountSettingsPanel() {
         message: "아이디가 변경되었습니다. 다시 중복 확인해 주세요.",
       }));
     }
+  };
+
+  const resetProfileDraft = () => {
+    setDraft(buildDraft(profile));
+    setUsernameState(buildUsernameState(profile));
+  };
+
+  const resetEmailDraft = () => {
+    setEmailDraft({ nextEmail: "", confirmEmail: "" });
+  };
+
+  const resetPasswordDraft = () => {
+    setPasswordDraft({ nextPassword: "", confirmPassword: "" });
+  };
+
+  const resetDeleteDraft = () => {
+    setDeleteConfirmation("");
+  };
+
+  const resetAllDrafts = () => {
+    resetProfileDraft();
+    resetEmailDraft();
+    resetPasswordDraft();
+    resetDeleteDraft();
   };
 
   const handleUsernameCheck = async () => {
@@ -564,6 +622,26 @@ export default function AccountSettingsPanel() {
         </div>
       </div>
 
+      {hasPendingChanges ? (
+        <div className="rounded-[22px] border border-warning/30 bg-warning/10 px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-text">저장되지 않은 입력이 있습니다.</div>
+              <p className="mt-1 text-sm leading-6 text-text-secondary">
+                현재 수정 중인 항목: {pendingSectionSummary}. 이 상태에서 새로고침하거나 브라우저를 닫으면 입력이 사라질 수 있습니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={resetAllDrafts}
+              className="inline-flex shrink-0 items-center justify-center rounded-2xl border border-warning/40 bg-white/80 px-4 py-3 text-sm font-semibold text-warning transition hover:bg-warning/10"
+            >
+              변경 모두 초기화
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.16fr)_340px]">
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2">
@@ -663,6 +741,14 @@ export default function AccountSettingsPanel() {
               className="action-chip-primary disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "저장 중..." : "프로필 저장"}
+            </button>
+            <button
+              type="button"
+              onClick={resetProfileDraft}
+              disabled={saving || !isDirty}
+              className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              프로필 입력 초기화
             </button>
           </div>
         </div>
@@ -788,6 +874,14 @@ export default function AccountSettingsPanel() {
                     ? `${emailChangeCooldown.seconds}초 후 다시`
                     : "새 이메일로 변경 요청"}
               </button>
+              <button
+                type="button"
+                onClick={resetEmailDraft}
+                disabled={updatingEmail || !emailDirty}
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                이메일 입력 지우기
+              </button>
               <p className="text-xs leading-6 text-text-secondary">
                 이메일 변경 요청도 같은 주소로 60초 동안 연속 발송되지 않도록 잠시 대기합니다.
               </p>
@@ -880,6 +974,14 @@ export default function AccountSettingsPanel() {
               >
                 {updatingPassword ? "비밀번호 저장 중..." : "새 비밀번호 저장"}
               </button>
+              <button
+                type="button"
+                onClick={resetPasswordDraft}
+                disabled={updatingPassword || !passwordDirty}
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                비밀번호 입력 지우기
+              </button>
             </div>
           </div>
 
@@ -946,6 +1048,14 @@ export default function AccountSettingsPanel() {
                 className="inline-flex w-full items-center justify-center rounded-2xl border border-warning/40 bg-white/80 px-4 py-3 text-sm font-semibold text-warning transition hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {deletingAccount ? "계정 삭제 중..." : "회원 탈퇴"}
+              </button>
+              <button
+                type="button"
+                onClick={resetDeleteDraft}
+                disabled={deletingAccount || !deleteDirty}
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                탈퇴 확인 입력 지우기
               </button>
             </div>
           </div>
