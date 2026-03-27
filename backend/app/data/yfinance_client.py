@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -185,6 +186,27 @@ def _quote_from_history_df(df: pd.DataFrame, ticker: str) -> dict:
         "change_pct": round(((price - prev) / prev * 100.0) if prev else 0.0, 2),
         "session_date": _last_history_date(df),
     }
+
+
+def _extract_download_frame(downloaded: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    if downloaded is None or getattr(downloaded, "empty", True):
+        return pd.DataFrame()
+    if isinstance(downloaded.columns, pd.MultiIndex):
+        level_0 = set(downloaded.columns.get_level_values(0))
+        level_1 = set(downloaded.columns.get_level_values(1))
+        if ticker in level_0:
+            frame = downloaded[ticker]
+        elif ticker in level_1:
+            frame = downloaded.xs(ticker, axis=1, level=1)
+        else:
+            return pd.DataFrame()
+    else:
+        frame = downloaded
+    if isinstance(frame.columns, pd.MultiIndex):
+        frame.columns = frame.columns.get_level_values(-1)
+    normalized = frame.copy()
+    normalized.columns = [str(column) for column in normalized.columns]
+    return normalized.dropna(how="all")
 
 
 def _load_snapshot(ticker: str, *, history_period: str = "6mo", include_info: bool = True) -> _TickerSnapshot:
@@ -403,6 +425,54 @@ async def get_stock_quote(ticker: str) -> dict:
 
     return await cache.get_or_fetch(
         f"stock_quote:{ticker}:{session_token}",
+        _fetch,
+        _fresh_price_ttl(settings.cache_ttl_price),
+    )
+
+
+async def get_batch_stock_quotes(tickers: list[str], period: str = "5d") -> dict[str, dict]:
+    settings = get_settings()
+    unique_tickers = list(dict.fromkeys(str(ticker).upper() for ticker in tickers if ticker))
+    if not unique_tickers:
+        return {}
+    session_token = market_session_cache_token(ticker=unique_tickers[0])
+    tickers_digest = hashlib.sha1(",".join(sorted(unique_tickers)).encode("utf-8")).hexdigest()[:16]
+
+    async def _fetch():
+        def _sync():
+            quotes: dict[str, dict] = {}
+            chunk_size = 80
+            for index in range(0, len(unique_tickers), chunk_size):
+                chunk = unique_tickers[index : index + chunk_size]
+                try:
+                    downloaded = yf.download(
+                        tickers=" ".join(chunk),
+                        period=period,
+                        interval="1d",
+                        group_by="ticker",
+                        auto_adjust=False,
+                        progress=False,
+                        threads=True,
+                        timeout=12,
+                    )
+                except Exception as exc:
+                    log.warning("batch quote download failed for %s tickers: %s", len(chunk), exc)
+                    downloaded = pd.DataFrame()
+                for ticker in chunk:
+                    quote = _quote_from_history_df(_extract_download_frame(downloaded, ticker), ticker)
+                    quotes[ticker] = {
+                        "ticker": ticker,
+                        "current_price": round(_safe_float(quote.get("price"), 0.0) or 0.0, 2),
+                        "prev_close": round(_safe_float(quote.get("prev_close"), 0.0) or 0.0, 2),
+                        "change_pct": round(_safe_float(quote.get("change_pct"), 0.0) or 0.0, 2),
+                        "session_date": quote.get("session_date"),
+                    }
+            return quotes
+
+        return await asyncio.to_thread(_sync)
+
+    return await cache.get_or_fetch(
+        f"stock_batch_quotes:{tickers_digest}:{period}:{session_token}",
         _fetch,
         _fresh_price_ttl(settings.cache_ttl_price),
     )

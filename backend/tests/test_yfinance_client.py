@@ -51,6 +51,43 @@ async def _passthrough_cache(_key, fetch, _ttl):
 
 
 class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_batch_stock_quotes_parses_multi_ticker_download(self):
+        columns = pd.MultiIndex.from_tuples(
+            [
+                ("005930.KS", "Open"),
+                ("005930.KS", "High"),
+                ("005930.KS", "Low"),
+                ("005930.KS", "Close"),
+                ("005930.KS", "Volume"),
+                ("000660.KS", "Open"),
+                ("000660.KS", "High"),
+                ("000660.KS", "Low"),
+                ("000660.KS", "Close"),
+                ("000660.KS", "Volume"),
+            ],
+            names=["Ticker", "Price"],
+        )
+        download_df = pd.DataFrame(
+            [
+                [70000.0, 71000.0, 69500.0, 70500.0, 1000000, 120000.0, 123000.0, 119000.0, 121000.0, 800000],
+                [70800.0, 71500.0, 70200.0, 71200.0, 1100000, 121500.0, 124000.0, 120500.0, 123500.0, 850000],
+            ],
+            index=pd.to_datetime(["2026-03-26", "2026-03-27"]),
+            columns=columns,
+        )
+
+        with (
+            patch("app.data.yfinance_client.cache.get_or_fetch", new=_passthrough_cache),
+            patch("app.data.yfinance_client.yf.download", return_value=download_df),
+            patch("app.data.yfinance_client.latest_closed_trading_day", return_value=pd.Timestamp("2026-03-27").date()),
+        ):
+            quotes = await yfinance_client.get_batch_stock_quotes(["005930.KS", "000660.KS"])
+
+        self.assertEqual(set(quotes.keys()), {"005930.KS", "000660.KS"})
+        self.assertEqual(quotes["005930.KS"]["current_price"], 71200.0)
+        self.assertEqual(quotes["005930.KS"]["prev_close"], 70500.0)
+        self.assertAlmostEqual(quotes["000660.KS"]["change_pct"], round(((123500.0 - 121000.0) / 121000.0) * 100.0, 2))
+
     async def test_get_stock_info_uses_history_and_metadata_fallbacks(self):
         history = pd.DataFrame(
             {
