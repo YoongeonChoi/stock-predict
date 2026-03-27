@@ -16,6 +16,7 @@ interface AuthContextValue {
   profileLoading: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextValue>({
   profileLoading: false,
   refreshProfile: async () => {},
   signOut: async () => {},
+  signOutEverywhere: async () => {},
 });
 
 export function useAuth() {
@@ -130,7 +132,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!client) {
       return;
     }
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: "local" });
+    setProfile(null);
+  };
+
+  const signOutEverywhere = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      return;
+    }
+    await client.auth.signOut({ scope: "global" });
     setProfile(null);
   };
 
@@ -145,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileLoading,
         refreshProfile,
         signOut,
+        signOutEverywhere,
       }}
     >
       {children}
