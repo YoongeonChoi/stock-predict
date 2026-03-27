@@ -29,6 +29,21 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
   const primaryModel = diagnostics.forecast_models[0];
   const criticalSources = diagnostics.data_sources.slice(0, 4);
   const versionsAligned = frontendVersion === diagnostics.version;
+  const backendStartedAtLabel = diagnostics.started_at
+    ? new Date(diagnostics.started_at).toLocaleString("ko-KR")
+    : "알 수 없음";
+  const deploymentStateLabel = versionsAligned
+    ? diagnostics.status === "ok"
+      ? "프론트·백엔드 버전 일치"
+      : "버전은 일치하지만 운영 주의"
+    : "배포 전파 확인 필요";
+  const deploymentStateTone =
+    versionsAligned && diagnostics.status === "ok" ? "bg-positive/10 text-positive" : "bg-warning/10 text-warning";
+  const deploymentStateMessage = versionsAligned
+    ? diagnostics.status === "ok"
+      ? "현재 화면과 API가 같은 릴리즈 버전을 사용 중입니다."
+      : "현재 화면과 API 버전은 맞지만, 백엔드 startup 작업이나 외부 소스 상태 때문에 운영 주의가 남아 있습니다."
+    : "머지 직후에는 프론트와 백엔드 버전이 잠시 어긋날 수 있습니다. 브라우저 새로고침 후에도 계속 다르면 `/api/health`와 Render/Vercel 배포 상태를 다시 확인해 주세요.";
 
   return (
     <div className="card !p-4">
@@ -50,7 +65,7 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
         </Link>
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-border p-3">
           <div className="text-xs font-medium text-text-secondary">프론트 배포 버전</div>
           <div className="mt-1 text-lg font-semibold text-text">v{frontendVersion}</div>
@@ -66,21 +81,20 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
           </div>
         </div>
         <div className="rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary">백엔드 시작 시각</div>
+          <div className="mt-1 text-sm font-semibold text-text">{backendStartedAtLabel}</div>
+          <div className="mt-2 text-xs leading-5 text-text-secondary">
+            현재 API 프로세스가 마지막으로 시작된 시각입니다. 머지 직후 반영 여부를 볼 때 함께 확인합니다.
+          </div>
+        </div>
+        <div className="rounded-xl border border-border p-3">
           <div className="text-xs font-medium text-text-secondary">운영 반영 상태</div>
           <div className="mt-1 flex items-center gap-2">
-            <span
-              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${
-                versionsAligned ? "bg-positive/10 text-positive" : "bg-warning/10 text-warning"
-              }`}
-            >
-              {versionsAligned ? "프론트·백엔드 버전 일치" : "배포 전파 확인 필요"}
+            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${deploymentStateTone}`}>
+              {deploymentStateLabel}
             </span>
           </div>
-          <div className="mt-2 text-xs leading-5 text-text-secondary">
-            {versionsAligned
-              ? "현재 화면과 API가 같은 릴리즈 버전을 사용 중입니다."
-              : "머지 직후에는 프론트와 백엔드 버전이 잠시 어긋날 수 있습니다. 운영 반영 대기 스크립트나 health를 다시 확인해 주세요."}
-          </div>
+          <div className="mt-2 text-xs leading-5 text-text-secondary">{deploymentStateMessage}</div>
         </div>
       </div>
 

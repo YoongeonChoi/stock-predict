@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.45.4 - 2026-03-28
+
+- `AGENTS.md`와 `README.md`에 버전 관리 기준을 추가했습니다. 이제 `PATCH / MINOR / MAJOR`를 언제 올리는지와 어떤 파일을 반드시 같이 동기화해야 하는지 문서 기준으로 바로 확인할 수 있습니다.
+- `/settings`의 시스템 준비 상태 카드에 `백엔드 시작 시각`을 추가하고, 버전 일치 여부와 실제 운영 상태를 함께 읽을 수 있게 문구를 보강했습니다. 그래서 프론트·백엔드 버전이 같아도 backend startup 주의가 남아 있는 경우를 더 자연스럽게 이해할 수 있습니다.
+
 ## v2.45.3 - 2026-03-27
 
 - KR `Opportunity Radar`의 batch quote screen에서 첫 종목만 담고 조기 반환하던 회귀를 수정했습니다. 이제 quick/full 경로 모두 실제 확보한 시세 종목 수만큼 정상 정렬합니다.
