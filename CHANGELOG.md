@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.36.0 - 2026-03-27
+
+- `scripts/wait_for_deployed_version.py`를 추가해, 로컬 `APP_VERSION` 기준으로 운영 `api.yoongeon.xyz/api/health`가 같은 버전과 `status=ok`를 반환할 때까지 주기적으로 확인할 수 있도록 했습니다.
+- README와 AGENTS 문서에 운영 배포 반영 대기 명령을 추가해, `main` 머지 후 실제 서비스 반영 시점을 같은 기준으로 확인할 수 있게 정리했습니다.
+
 ## v2.35.0 - 2026-03-27
 
 - `scripts/deployed_site_smoke.py`를 추가해 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출하는 배포 스모크 체크를 만들었습니다.
