@@ -7,6 +7,8 @@ from app.auth import AuthenticatedUser
 from app.errors import SP_6015
 from app.exceptions import ApiAppException
 from app.models.account import (
+    AccountDeleteRequest,
+    AccountDeleteResponse,
     AccountProfile,
     AccountProfileUpdateRequest,
     SignUpValidationRequest,
@@ -218,6 +220,29 @@ async def validate_signup(payload: SignUpValidationRequest) -> SignUpValidationR
         normalized_phone_number=normalized_phone_number,
         birth_date=birth_date,
     )
+
+
+async def delete_current_account(
+    user: AuthenticatedUser,
+    payload: AccountDeleteRequest,
+) -> AccountDeleteResponse:
+    expected_username = normalize_username(user.username or "")
+    expected_email = normalize_email(user.email or "")
+    confirmation_raw = payload.confirmation_text.strip()
+    confirmation_username = normalize_username(confirmation_raw)
+    confirmation_email = normalize_email(confirmation_raw)
+
+    if expected_username:
+        if confirmation_username != expected_username:
+            raise ApiAppException(400, SP_6015("회원 탈퇴를 진행하려면 현재 아이디를 정확히 입력해 주세요."))
+    elif expected_email:
+        if confirmation_email != expected_email:
+            raise ApiAppException(400, SP_6015("회원 탈퇴를 진행하려면 현재 이메일을 정확히 입력해 주세요."))
+    else:
+        raise ApiAppException(400, SP_6015("계정 확인 기준을 찾을 수 없습니다. 다시 로그인한 뒤 시도해 주세요."))
+
+    await supabase_client.admin_delete_user(user.id)
+    return AccountDeleteResponse()
 
 
 async def check_username_availability(

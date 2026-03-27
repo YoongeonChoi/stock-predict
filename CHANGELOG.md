@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.22.0 - 2026-03-27
+
+- `/settings` 계정 관리 패널에 `회원 탈퇴` 위험 작업 영역을 추가해, 현재 아이디 또는 이메일을 다시 입력해야만 탈퇴가 진행되도록 보강했습니다.
+- 백엔드에 `DELETE /api/account/me`를 추가하고 Supabase Admin 삭제를 연결해, 계정 삭제 시 Auth 계정과 연결된 관심종목·포트폴리오 데이터가 함께 정리되도록 맞췄습니다.
+- README와 AGENTS 문서를 현재 운영 기준의 탈퇴 흐름까지 포함하도록 갱신하고, account service/router 회귀 테스트를 추가했습니다.
+
 ## v2.21.0 - 2026-03-27
 
 - 회원가입 직전에 `POST /api/account/signup/validate`를 호출하도록 추가해, 아이디/이메일/이름/전화번호/생년월일/비밀번호 규칙을 서버에서도 같은 의미로 다시 검증하도록 보강했습니다.

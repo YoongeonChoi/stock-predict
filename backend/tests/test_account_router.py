@@ -124,6 +124,38 @@ class AccountRouterTests(unittest.TestCase):
         self.assertEqual(body["username"], "beta_02")
         self.assertTrue(body["email_verified"])
 
+    def test_account_delete_route_requires_confirmation(self):
+        async def override_user():
+            return AuthenticatedUser(
+                id="user-123",
+                email="tester@example.com",
+                username="alpha_01",
+            )
+
+        app.dependency_overrides[get_current_user] = override_user
+        try:
+            with patch(
+                "app.routers.account.account_service.delete_current_account",
+                new=AsyncMock(
+                    return_value={
+                        "status": "deleted",
+                        "message": "계정이 삭제되었습니다. 관심종목과 포트폴리오 데이터도 함께 정리되었습니다.",
+                    }
+                ),
+            ):
+                with patched_client() as client:
+                    response = client.request(
+                        "DELETE",
+                        "/api/account/me",
+                        json={"confirmation_text": "alpha_01"},
+                    )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "deleted")
+
 
 if __name__ == "__main__":
     unittest.main()
