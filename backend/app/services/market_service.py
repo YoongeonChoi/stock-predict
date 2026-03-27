@@ -30,6 +30,7 @@ QUICK_UNIVERSE_QUOTE_CONCURRENCY = 18
 MIN_DETAILED_OPPORTUNITY_CANDIDATES = 12
 MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
 LARGE_UNIVERSE_DETAILED_SCAN_CAP = 4
+LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD = 120
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -87,6 +88,20 @@ def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidat
     if available >= 120:
         preferred = min(preferred, LARGE_UNIVERSE_DETAILED_SCAN_CAP)
     return max(1, min(available, min(preferred, MAX_DETAILED_OPPORTUNITY_CANDIDATES)))
+
+
+def _should_skip_detailed_scan(
+    *,
+    country_code: str,
+    universe_source: str,
+    ranked_count: int,
+    limit: int,
+) -> bool:
+    return (
+        country_code == "KR"
+        and universe_source == "fallback"
+        and ranked_count >= max(limit, LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD)
+    )
 
 
 def _build_quote_only_opportunity_item(
@@ -692,15 +707,21 @@ async def get_market_opportunities(
                     break
             return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(merged[:limit], start=1)]
 
-        try:
-            scanned = await asyncio.wait_for(
-                gather_limited(candidates, _scan, limit=OPPORTUNITY_CONCURRENCY),
-                timeout=OPPORTUNITY_SCAN_TIMEOUT_SECONDS,
-            )
-            opportunities = [item for item in scanned if not isinstance(item, Exception) and item is not None]
-            detailed_ranked = _rank_items(opportunities)
-        except asyncio.TimeoutError:
-            detailed_ranked = []
+        if not _should_skip_detailed_scan(
+            country_code=country_code,
+            universe_source=universe_selection.source,
+            ranked_count=len(ranked_quotes),
+            limit=limit,
+        ):
+            try:
+                scanned = await asyncio.wait_for(
+                    gather_limited(candidates, _scan, limit=OPPORTUNITY_CONCURRENCY),
+                    timeout=OPPORTUNITY_SCAN_TIMEOUT_SECONDS,
+                )
+                opportunities = [item for item in scanned if not isinstance(item, Exception) and item is not None]
+                detailed_ranked = _rank_items(opportunities)
+            except asyncio.TimeoutError:
+                detailed_ranked = []
 
         ranked = _merge_items(detailed_ranked, quote_only_ranked)
         if not ranked:
@@ -717,6 +738,15 @@ async def get_market_opportunities(
             scope_hint = f"현재 레이더는 운영용 기본 종목군 {resolved_universe_size}개를 1차 스캔합니다."
             if scope_hint not in resolved_universe_note:
                 resolved_universe_note = f"{resolved_universe_note} {scope_hint}".strip()
+        if _should_skip_detailed_scan(
+            country_code=country_code,
+            universe_source=universe_selection.source,
+            ranked_count=len(ranked_quotes),
+            limit=limit,
+        ):
+            skip_hint = "운영 환경에서는 응답 안정성을 위해 1차 스캔 상위 후보를 우선 반환합니다."
+            if skip_hint not in resolved_universe_note:
+                resolved_universe_note = f"{resolved_universe_note} {skip_hint}".strip()
 
         return OpportunityRadarResponse(
             country_code=country_code,

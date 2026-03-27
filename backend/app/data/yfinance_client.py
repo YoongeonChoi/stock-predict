@@ -469,7 +469,15 @@ async def get_batch_stock_quotes(tickers: list[str], period: str = "5d") -> dict
                     }
             return quotes
 
-        return await asyncio.to_thread(_sync)
+        quotes = await asyncio.to_thread(_sync)
+        ttl = _fresh_price_ttl(settings.cache_ttl_price)
+        for ticker, quote in quotes.items():
+            await cache.set(
+                f"stock_quote:{ticker}:{market_session_cache_token(ticker=ticker)}",
+                quote,
+                ttl,
+            )
+        return quotes
 
     return await cache.get_or_fetch(
         f"stock_batch_quotes:{tickers_digest}:{period}:{session_token}",
