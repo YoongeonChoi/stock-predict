@@ -76,9 +76,11 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
             columns=columns,
         )
 
+        cache_set = AsyncMock()
+
         with (
             patch("app.data.yfinance_client.cache.get_or_fetch", new=_passthrough_cache),
-            patch("app.data.yfinance_client.cache.set", new=AsyncMock()),
+            patch("app.data.yfinance_client.cache.set", new=cache_set),
             patch("app.data.yfinance_client.yf.download", return_value=download_df),
             patch("app.data.yfinance_client.latest_closed_trading_day", return_value=pd.Timestamp("2026-03-27").date()),
         ):
@@ -88,6 +90,44 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quotes["005930.KS"]["current_price"], 71200.0)
         self.assertEqual(quotes["005930.KS"]["prev_close"], 70500.0)
         self.assertAlmostEqual(quotes["000660.KS"]["change_pct"], round(((123500.0 - 121000.0) / 121000.0) * 100.0, 2))
+        self.assertEqual(cache_set.await_count, 2)
+
+    async def test_get_batch_stock_quotes_skips_individual_cache_priming_for_large_batch(self):
+        tickers = [f"{index:06d}.KS" for index in range(yfinance_client.BATCH_QUOTE_PRIME_LIMIT + 2)]
+        columns = []
+        row_one = []
+        row_two = []
+        for index, ticker in enumerate(tickers):
+            base = 100.0 + index
+            columns.extend(
+                [
+                    (ticker, "Open"),
+                    (ticker, "High"),
+                    (ticker, "Low"),
+                    (ticker, "Close"),
+                    (ticker, "Volume"),
+                ]
+            )
+            row_one.extend([base - 1.0, base + 1.0, base - 2.0, base, 100000 + index])
+            row_two.extend([base, base + 2.0, base - 1.0, base + 0.5, 120000 + index])
+
+        download_df = pd.DataFrame(
+            [row_one, row_two],
+            index=pd.to_datetime(["2026-03-26", "2026-03-27"]),
+            columns=pd.MultiIndex.from_tuples(columns, names=["Ticker", "Price"]),
+        )
+        cache_set = AsyncMock()
+
+        with (
+            patch("app.data.yfinance_client.cache.get_or_fetch", new=_passthrough_cache),
+            patch("app.data.yfinance_client.cache.set", new=cache_set),
+            patch("app.data.yfinance_client.yf.download", return_value=download_df),
+            patch("app.data.yfinance_client.latest_closed_trading_day", return_value=pd.Timestamp("2026-03-27").date()),
+        ):
+            quotes = await yfinance_client.get_batch_stock_quotes(tickers)
+
+        self.assertEqual(len(quotes), len(tickers))
+        self.assertEqual(cache_set.await_count, 0)
 
     async def test_get_stock_info_uses_history_and_metadata_fallbacks(self):
         history = pd.DataFrame(

@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.40.3 - 2026-03-27
+
+- `market opportunities`의 무거운 시장 컨텍스트 계산을 최종 응답 캐시 안으로 옮겨, 같은 KR 레이더 요청이 들어올 때마다 `지수 이력 -> 거시 스냅샷 -> 유니버스 해석 -> 1차 스캔`을 다시 수행하던 병목을 줄였습니다.
+- KR 대량 fallback 유니버스 batch quote는 더 이상 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않도록 조정해, Render free 환경에서 레이더 첫 응답 뒤 SQLite 캐시 쓰기 때문에 다시 느려지던 문제를 완화했습니다.
+- 회귀 테스트를 추가해 캐시된 레이더 응답은 무거운 전처리를 다시 타지 않고, 큰 batch quote는 개별 캐시 priming을 건너뛰는 계약을 고정했습니다.
+
 ## v2.40.2 - 2026-03-27
 
 - `market opportunities`는 큰 KR fallback 유니버스에서 응답 안정성을 우선해 `1차 전수 스캔 상위 후보`를 먼저 반환하도록 바꿨습니다. Render free cold-start 구간에서 정밀 분석 때문에 전체 응답이 `SP-5018`로 끊기던 문제를 줄이기 위한 조정입니다.

@@ -456,7 +456,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v11:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = f"opportunity_radar:v12:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -474,215 +474,215 @@ async def get_market_opportunities(
             "opportunities": [],
         }
 
-    primary_index = country.indices[0]
-    index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
-    macro_snapshot = await ecos_client.get_kr_economic_snapshot() if country_code == "KR" else {}
-    kosis_snapshot = await kosis_client.get_kr_macro_snapshot() if country_code == "KR" else {}
-    regime_forecast = forecast_next_day(
-        ticker=primary_index.ticker,
-        name=primary_index.name,
-        country_code=country_code,
-        price_history=index_history,
-        benchmark_history=index_history,
-        macro_snapshot=macro_snapshot,
-        kosis_snapshot=kosis_snapshot,
-        asset_type="index",
-    )
-    market_regime = build_market_regime(
-        country_code=country_code,
-        name=primary_index.name,
-        price_history=index_history,
-        next_day_forecast=regime_forecast,
-    )
-
-    universe_selection = await resolve_universe(country_code)
-    quote_screen = await _build_quote_screen(
-        country_code=country_code,
-        universe_selection=universe_selection,
-        market_regime=market_regime,
-    )
-    ranked_quotes = list(quote_screen.get("ranked") or [])
-    detail_budget = _resolve_detail_candidate_budget(
-        limit=limit,
-        available=len(ranked_quotes),
-        max_candidates=max_candidates,
-    )
-    candidates: list[tuple[str, str]] = [
-        (item["sector"], item["ticker"])
-        for item in ranked_quotes[:detail_budget]
-    ]
-    lightweight_candidates: list[tuple[str, str]] = candidates or _flatten_universe(universe_selection.sectors)
-
-    async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
-        sector, ticker = candidate
-        snapshot = await asyncio.wait_for(
-            yfinance_client.get_market_snapshot(ticker, period="6mo"),
-            timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS,
-        )
-        if not snapshot.get("valid"):
-            return None
-
-        info, prices, analyst_raw = await asyncio.gather(
-            asyncio.wait_for(yfinance_client.get_stock_info(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
-            asyncio.wait_for(yfinance_client.get_price_history(ticker, period="6mo"), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
-            asyncio.wait_for(yfinance_client.get_analyst_ratings(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
-        )
-        current_price = float(info.get("current_price") or snapshot.get("current_price") or 0)
-        if current_price <= 0 or len(prices) < 40:
-            return None
-
-        quant_score = score_stock(info, price_hist=prices, analyst_counts=analyst_raw)
-        buy_sell = build_quick_buy_sell(info)
-        technical: TechnicalIndicators = _calc_technicals(prices)
-        forecast = forecast_next_day(
-            ticker=ticker,
-            name=info.get("name", ticker),
+    async def _build_response() -> dict:
+        primary_index = country.indices[0]
+        index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
+        macro_snapshot = await ecos_client.get_kr_economic_snapshot() if country_code == "KR" else {}
+        kosis_snapshot = await kosis_client.get_kr_macro_snapshot() if country_code == "KR" else {}
+        regime_forecast = forecast_next_day(
+            ticker=primary_index.ticker,
+            name=primary_index.name,
             country_code=country_code,
-            price_history=prices,
-            analyst_context={
-                **analyst_raw,
-                "target_mean": info.get("target_mean"),
-                "target_median": info.get("target_median"),
-                "target_high": info.get("target_high"),
-                "target_low": info.get("target_low"),
-            },
-            context_bias=((quant_score.total - 50.0) / 50.0) + (0.18 if market_regime.stance == "risk_on" else -0.18 if market_regime.stance == "risk_off" else 0.0),
-            asset_type="stock",
+            price_history=index_history,
             benchmark_history=index_history,
             macro_snapshot=macro_snapshot,
             kosis_snapshot=kosis_snapshot,
-            fundamental_context=info,
+            asset_type="index",
         )
-        distributional_forecast = build_distributional_forecast(
-            price_history=prices,
-            benchmark_history=index_history,
-            macro_snapshot=macro_snapshot,
-            kosis_snapshot=kosis_snapshot,
-            analyst_context={
-                **analyst_raw,
-                "target_mean": info.get("target_mean"),
-                "target_median": info.get("target_median"),
-                "target_high": info.get("target_high"),
-                "target_low": info.get("target_low"),
-            },
-            fundamental_context=info,
-            asset_type="stock",
+        market_regime = build_market_regime(
+            country_code=country_code,
+            name=primary_index.name,
+            price_history=index_history,
+            next_day_forecast=regime_forecast,
         )
-        price_points = [PricePoint(**point) for point in prices]
-        trade_plan = build_trade_plan(
-            ticker=ticker,
-            current_price=current_price,
-            price_history=price_points,
-            technical=technical,
-            buy_sell_guide=buy_sell,
-            next_day_forecast=forecast,
+
+        universe_selection = await resolve_universe(country_code)
+        quote_screen = await _build_quote_screen(
+            country_code=country_code,
+            universe_selection=universe_selection,
             market_regime=market_regime,
         )
+        ranked_quotes = list(quote_screen.get("ranked") or [])
+        detail_budget = _resolve_detail_candidate_budget(
+            limit=limit,
+            available=len(ranked_quotes),
+            max_candidates=max_candidates,
+        )
+        candidates: list[tuple[str, str]] = [
+            (item["sector"], item["ticker"])
+            for item in ranked_quotes[:detail_budget]
+        ]
+        lightweight_candidates: list[tuple[str, str]] = candidates or _flatten_universe(universe_selection.sectors)
 
-        prev_close = float(info.get("prev_close") or current_price)
-        change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
-        valuation_gap = ((buy_sell.fair_value / current_price) - 1.0) * 100.0 if current_price else 0.0
-        scenario_snapshot = _scenario_snapshot(forecast)
-        horizon_20 = build_horizon_snapshot(
-            distributional_forecast,
-            horizon_days=20,
-            country_code=country_code,
-        )
-        expected_return_pct_20d = float(horizon_20.get("expected_return_pct") or forecast.predicted_return_pct)
-        expected_excess_return_pct_20d = float(horizon_20.get("expected_excess_return_pct") or 0.0)
-        median_return_pct_20d = float(horizon_20.get("median_return_pct") or expected_return_pct_20d)
-        forecast_volatility_pct_20d = float(horizon_20.get("forecast_volatility_pct") or 0.0)
-        up_probability_20d = float(horizon_20.get("up_probability") or forecast.up_probability)
-        flat_probability_20d = float(horizon_20.get("flat_probability") or 0.0)
-        down_probability_20d = float(horizon_20.get("down_probability") or max(100.0 - up_probability_20d, 0.0))
-        distribution_confidence_20d = float(horizon_20.get("confidence") or forecast.confidence)
-        price_q25_20d = horizon_20.get("price_q25")
-        price_q50_20d = horizon_20.get("price_q50")
-        price_q75_20d = horizon_20.get("price_q75")
-        signal_profile = build_distributional_signal_profile(
-            current_price=current_price,
-            bull_case_price=price_q75_20d or scenario_snapshot["bull_case_price"],
-            base_case_price=price_q50_20d or scenario_snapshot["base_case_price"],
-            bear_case_price=price_q25_20d or scenario_snapshot["bear_case_price"],
-            bull_probability=up_probability_20d or scenario_snapshot["bull_probability"],
-            base_probability=flat_probability_20d or scenario_snapshot["base_probability"],
-            bear_probability=down_probability_20d or scenario_snapshot["bear_probability"],
-            predicted_return_pct=expected_return_pct_20d,
-            up_probability=up_probability_20d,
-            confidence=distribution_confidence_20d,
-        )
-        opportunity_score = (
-            signal_profile["directional_score"] * 0.58
-            + quant_score.total * 0.14
-            + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 5.5
-            + signal_profile["expected_return_pct"] * 4.8
-            + signal_profile["probability_edge"] * 0.18
-            + signal_profile["tail_ratio"] * 2.8
-            + (5.0 if market_regime.stance == "risk_on" else -3.5 if market_regime.stance == "risk_off" else 1.0)
-            + (4.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.0)
-            + _clip(valuation_gap, -20.0, 20.0) * 0.12
-        )
-        execution_bias_bonus = {
-            "press_long": 7.0,
-            "lean_long": 4.0,
-            "stay_selective": 1.0,
-            "reduce_risk": -4.0,
-            "capital_preservation": -8.0,
-        }.get(forecast.execution_bias, 0.0)
-        opportunity_score += execution_bias_bonus
-        opportunity_score -= len(forecast.risk_flags[:2]) * 1.2
-        opportunity_score = round(_clip(opportunity_score, 0.0, 100.0), 1)
-        regime_tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed"
+        async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
+            sector, ticker = candidate
+            snapshot = await asyncio.wait_for(
+                yfinance_client.get_market_snapshot(ticker, period="6mo"),
+                timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS,
+            )
+            if not snapshot.get("valid"):
+                return None
 
-        return OpportunityItem(
-            rank=0,
-            ticker=ticker,
-            name=info.get("name") or snapshot.get("name") or ticker,
-            sector=sector,
-            country_code=country_code,
-            current_price=round(current_price, 2),
-            change_pct=round(change_pct, 2),
-            opportunity_score=opportunity_score,
-            quant_score=round(quant_score.total, 1),
-            up_probability=round(up_probability_20d, 1),
-            confidence=round(distribution_confidence_20d, 1),
-            predicted_return_pct=round(expected_return_pct_20d, 2),
-            target_horizon_days=20,
-            target_date_20d=horizon_20.get("target_date"),
-            expected_return_pct_20d=round(expected_return_pct_20d, 2),
-            expected_excess_return_pct_20d=round(expected_excess_return_pct_20d, 2),
-            median_return_pct_20d=round(median_return_pct_20d, 2),
-            forecast_volatility_pct_20d=round(forecast_volatility_pct_20d, 2),
-            up_probability_20d=round(up_probability_20d, 1),
-            flat_probability_20d=round(flat_probability_20d, 1),
-            down_probability_20d=round(down_probability_20d, 1),
-            distribution_confidence_20d=round(distribution_confidence_20d, 1),
-            price_q25_20d=round(float(price_q25_20d), 2) if price_q25_20d is not None else None,
-            price_q50_20d=round(float(price_q50_20d), 2) if price_q50_20d is not None else None,
-            price_q75_20d=round(float(price_q75_20d), 2) if price_q75_20d is not None else None,
-            bull_case_price=round(float(price_q75_20d), 2) if price_q75_20d is not None else scenario_snapshot["bull_case_price"],
-            base_case_price=round(float(price_q50_20d), 2) if price_q50_20d is not None else scenario_snapshot["base_case_price"],
-            bear_case_price=round(float(price_q25_20d), 2) if price_q25_20d is not None else scenario_snapshot["bear_case_price"],
-            bull_probability=round(up_probability_20d, 1),
-            base_probability=round(flat_probability_20d, 1),
-            bear_probability=round(down_probability_20d, 1),
-            setup_label=trade_plan.setup_label,
-            action=trade_plan.action,
-            execution_bias=forecast.execution_bias,
-            execution_note=forecast.execution_note,
-            regime_tailwind=regime_tailwind,
-            entry_low=trade_plan.entry_low,
-            entry_high=trade_plan.entry_high,
-            stop_loss=trade_plan.stop_loss,
-            take_profit_1=trade_plan.take_profit_1,
-            take_profit_2=trade_plan.take_profit_2,
-            risk_reward_estimate=trade_plan.risk_reward_estimate,
-            thesis=trade_plan.thesis[:2],
-            risk_flags=forecast.risk_flags[:2],
+            info, prices, analyst_raw = await asyncio.gather(
+                asyncio.wait_for(yfinance_client.get_stock_info(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
+                asyncio.wait_for(yfinance_client.get_price_history(ticker, period="6mo"), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
+                asyncio.wait_for(yfinance_client.get_analyst_ratings(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
+            )
+            current_price = float(info.get("current_price") or snapshot.get("current_price") or 0)
+            if current_price <= 0 or len(prices) < 40:
+                return None
+
+            quant_score = score_stock(info, price_hist=prices, analyst_counts=analyst_raw)
+            buy_sell = build_quick_buy_sell(info)
+            technical: TechnicalIndicators = _calc_technicals(prices)
+            forecast = forecast_next_day(
+                ticker=ticker,
+                name=info.get("name", ticker),
+                country_code=country_code,
+                price_history=prices,
+                analyst_context={
+                    **analyst_raw,
+                    "target_mean": info.get("target_mean"),
+                    "target_median": info.get("target_median"),
+                    "target_high": info.get("target_high"),
+                    "target_low": info.get("target_low"),
+                },
+                context_bias=((quant_score.total - 50.0) / 50.0) + (0.18 if market_regime.stance == "risk_on" else -0.18 if market_regime.stance == "risk_off" else 0.0),
+                asset_type="stock",
+                benchmark_history=index_history,
+                macro_snapshot=macro_snapshot,
+                kosis_snapshot=kosis_snapshot,
+                fundamental_context=info,
+            )
+            distributional_forecast = build_distributional_forecast(
+                price_history=prices,
+                benchmark_history=index_history,
+                macro_snapshot=macro_snapshot,
+                kosis_snapshot=kosis_snapshot,
+                analyst_context={
+                    **analyst_raw,
+                    "target_mean": info.get("target_mean"),
+                    "target_median": info.get("target_median"),
+                    "target_high": info.get("target_high"),
+                    "target_low": info.get("target_low"),
+                },
+                fundamental_context=info,
+                asset_type="stock",
+            )
+            price_points = [PricePoint(**point) for point in prices]
+            trade_plan = build_trade_plan(
+                ticker=ticker,
+                current_price=current_price,
+                price_history=price_points,
+                technical=technical,
+                buy_sell_guide=buy_sell,
+                next_day_forecast=forecast,
+                market_regime=market_regime,
+            )
+
+            prev_close = float(info.get("prev_close") or current_price)
+            change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
+            valuation_gap = ((buy_sell.fair_value / current_price) - 1.0) * 100.0 if current_price else 0.0
+            scenario_snapshot = _scenario_snapshot(forecast)
+            horizon_20 = build_horizon_snapshot(
+                distributional_forecast,
+                horizon_days=20,
+                country_code=country_code,
+            )
+            expected_return_pct_20d = float(horizon_20.get("expected_return_pct") or forecast.predicted_return_pct)
+            expected_excess_return_pct_20d = float(horizon_20.get("expected_excess_return_pct") or 0.0)
+            median_return_pct_20d = float(horizon_20.get("median_return_pct") or expected_return_pct_20d)
+            forecast_volatility_pct_20d = float(horizon_20.get("forecast_volatility_pct") or 0.0)
+            up_probability_20d = float(horizon_20.get("up_probability") or forecast.up_probability)
+            flat_probability_20d = float(horizon_20.get("flat_probability") or 0.0)
+            down_probability_20d = float(horizon_20.get("down_probability") or max(100.0 - up_probability_20d, 0.0))
+            distribution_confidence_20d = float(horizon_20.get("confidence") or forecast.confidence)
+            price_q25_20d = horizon_20.get("price_q25")
+            price_q50_20d = horizon_20.get("price_q50")
+            price_q75_20d = horizon_20.get("price_q75")
+            signal_profile = build_distributional_signal_profile(
+                current_price=current_price,
+                bull_case_price=price_q75_20d or scenario_snapshot["bull_case_price"],
+                base_case_price=price_q50_20d or scenario_snapshot["base_case_price"],
+                bear_case_price=price_q25_20d or scenario_snapshot["bear_case_price"],
+                bull_probability=up_probability_20d or scenario_snapshot["bull_probability"],
+                base_probability=flat_probability_20d or scenario_snapshot["base_probability"],
+                bear_probability=down_probability_20d or scenario_snapshot["bear_probability"],
+                predicted_return_pct=expected_return_pct_20d,
+                up_probability=up_probability_20d,
+                confidence=distribution_confidence_20d,
+            )
+            opportunity_score = (
+                signal_profile["directional_score"] * 0.58
+                + quant_score.total * 0.14
+                + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 5.5
+                + signal_profile["expected_return_pct"] * 4.8
+                + signal_profile["probability_edge"] * 0.18
+                + signal_profile["tail_ratio"] * 2.8
+                + (5.0 if market_regime.stance == "risk_on" else -3.5 if market_regime.stance == "risk_off" else 1.0)
+                + (4.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.0)
+                + _clip(valuation_gap, -20.0, 20.0) * 0.12
+            )
+            execution_bias_bonus = {
+                "press_long": 7.0,
+                "lean_long": 4.0,
+                "stay_selective": 1.0,
+                "reduce_risk": -4.0,
+                "capital_preservation": -8.0,
+            }.get(forecast.execution_bias, 0.0)
+            opportunity_score += execution_bias_bonus
+            opportunity_score -= len(forecast.risk_flags[:2]) * 1.2
+            opportunity_score = round(_clip(opportunity_score, 0.0, 100.0), 1)
+            regime_tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed"
+
+            return OpportunityItem(
+                rank=0,
+                ticker=ticker,
+                name=info.get("name") or snapshot.get("name") or ticker,
+                sector=sector,
+                country_code=country_code,
+                current_price=round(current_price, 2),
+                change_pct=round(change_pct, 2),
+                opportunity_score=opportunity_score,
+                quant_score=round(quant_score.total, 1),
+                up_probability=round(up_probability_20d, 1),
+                confidence=round(distribution_confidence_20d, 1),
+                predicted_return_pct=round(expected_return_pct_20d, 2),
+                target_horizon_days=20,
+                target_date_20d=horizon_20.get("target_date"),
+                expected_return_pct_20d=round(expected_return_pct_20d, 2),
+                expected_excess_return_pct_20d=round(expected_excess_return_pct_20d, 2),
+                median_return_pct_20d=round(median_return_pct_20d, 2),
+                forecast_volatility_pct_20d=round(forecast_volatility_pct_20d, 2),
+                up_probability_20d=round(up_probability_20d, 1),
+                flat_probability_20d=round(flat_probability_20d, 1),
+                down_probability_20d=round(down_probability_20d, 1),
+                distribution_confidence_20d=round(distribution_confidence_20d, 1),
+                price_q25_20d=round(float(price_q25_20d), 2) if price_q25_20d is not None else None,
+                price_q50_20d=round(float(price_q50_20d), 2) if price_q50_20d is not None else None,
+                price_q75_20d=round(float(price_q75_20d), 2) if price_q75_20d is not None else None,
+                bull_case_price=round(float(price_q75_20d), 2) if price_q75_20d is not None else scenario_snapshot["bull_case_price"],
+                base_case_price=round(float(price_q50_20d), 2) if price_q50_20d is not None else scenario_snapshot["base_case_price"],
+                bear_case_price=round(float(price_q25_20d), 2) if price_q25_20d is not None else scenario_snapshot["bear_case_price"],
+                bull_probability=round(up_probability_20d, 1),
+                base_probability=round(flat_probability_20d, 1),
+                bear_probability=round(down_probability_20d, 1),
+                setup_label=trade_plan.setup_label,
+                action=trade_plan.action,
+                execution_bias=forecast.execution_bias,
+                execution_note=forecast.execution_note,
+                regime_tailwind=regime_tailwind,
+                entry_low=trade_plan.entry_low,
+                entry_high=trade_plan.entry_high,
+                stop_loss=trade_plan.stop_loss,
+                take_profit_1=trade_plan.take_profit_1,
+                take_profit_2=trade_plan.take_profit_2,
+                risk_reward_estimate=trade_plan.risk_reward_estimate,
+                thesis=trade_plan.thesis[:2],
+                risk_flags=forecast.risk_flags[:2],
                 forecast_date=horizon_20.get("target_date") or forecast.target_date,
             )
 
-    async def _build_response() -> dict:
         detailed_ranked: list[OpportunityItem] = []
         quote_only_ranked = _build_quote_only_opportunities(
             ranked_quotes=ranked_quotes,

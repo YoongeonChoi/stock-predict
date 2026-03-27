@@ -18,6 +18,7 @@ from app.utils.market_calendar import (
 )
 
 log = logging.getLogger("stock_predict.yfinance")
+BATCH_QUOTE_PRIME_LIMIT = 40
 
 FINANCIAL_LABELS = {
     "revenue": ("Total Revenue", "Operating Revenue", "Revenue"),
@@ -470,13 +471,14 @@ async def get_batch_stock_quotes(tickers: list[str], period: str = "5d") -> dict
             return quotes
 
         quotes = await asyncio.to_thread(_sync)
-        ttl = _fresh_price_ttl(settings.cache_ttl_price)
-        for ticker, quote in quotes.items():
-            await cache.set(
-                f"stock_quote:{ticker}:{market_session_cache_token(ticker=ticker)}",
-                quote,
-                ttl,
-            )
+        if len(unique_tickers) <= BATCH_QUOTE_PRIME_LIMIT:
+            ttl = _fresh_price_ttl(settings.cache_ttl_price)
+            for ticker, quote in quotes.items():
+                await cache.set(
+                    f"stock_quote:{ticker}:{market_session_cache_token(ticker=ticker)}",
+                    quote,
+                    ttl,
+                )
         return quotes
 
     return await cache.get_or_fetch(
