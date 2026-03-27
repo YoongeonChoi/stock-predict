@@ -91,7 +91,9 @@ class OpportunityRadarResponse(BaseModel):
     country_code: str
     generated_at: str
     market_regime: MarketRegime
+    universe_size: int
     total_scanned: int
+    detailed_scanned_count: int
     actionable_count: int
     bullish_count: int
     universe_source: Literal["dynamic", "fallback"] = "fallback"

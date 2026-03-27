@@ -41,7 +41,7 @@ export default function RadarPage() {
           <>
             <span className="info-chip">실행 후보 우선</span>
             <span className="info-chip">시장 국면 반영</span>
-            {data ? <span className="info-chip">스캔 {data.total_scanned}개</span> : null}
+            {data ? <span className="info-chip">1차 스캔 {data.total_scanned}개</span> : null}
           </>
         }
         actions={
