@@ -19,6 +19,7 @@ class ApiCheck:
     method: str
     path: str
     expected_status: int = 200
+    expected_error_code: str | None = None
     json_body: dict | None = None
 
 
@@ -41,9 +42,9 @@ CHECKS = [
     ApiCheck("GET", "/api/stock/AAPL/technical-summary"),
     ApiCheck("GET", "/api/stock/AAPL/pivot-points"),
     ApiCheck("GET", "/api/search?q=apple"),
-    ApiCheck("GET", "/api/watchlist"),
-    ApiCheck("POST", "/api/watchlist/AAPL?country_code=US"),
-    ApiCheck("DELETE", "/api/watchlist/AAPL"),
+    ApiCheck("GET", "/api/watchlist", expected_status=401, expected_error_code="SP-6014"),
+    ApiCheck("POST", "/api/watchlist/AAPL?country_code=US", expected_status=401, expected_error_code="SP-6014"),
+    ApiCheck("DELETE", "/api/watchlist/AAPL", expected_status=401, expected_error_code="SP-6014"),
     ApiCheck("GET", "/api/compare?tickers=AAPL,MSFT"),
     ApiCheck("GET", "/api/archive"),
     ApiCheck("GET", "/api/archive/accuracy/stats"),
@@ -52,12 +53,12 @@ CHECKS = [
     ApiCheck("POST", "/api/archive/research/refresh"),
     ApiCheck("GET", "/api/calendar/KR?year=2026&month=3"),
     ApiCheck("GET", "/api/screener?country=KR&limit=20"),
-    ApiCheck("GET", "/api/portfolio"),
+    ApiCheck("GET", "/api/portfolio", expected_status=401, expected_error_code="SP-6014"),
     ApiCheck("GET", "/api/portfolio/ideal?refresh=false&history_limit=10"),
     ApiCheck("GET", "/api/system/diagnostics"),
     ApiCheck("GET", "/api/research/predictions?limit_recent=20&refresh=false"),
-    ApiCheck("POST", "/api/portfolio/holdings", expected_status=422, json_body={"ticker": "AAPL"}),
-    ApiCheck("GET", "/api/does-not-exist", expected_status=404),
+    ApiCheck("POST", "/api/portfolio/holdings", expected_status=401, expected_error_code="SP-6014", json_body={"ticker": "AAPL"}),
+    ApiCheck("GET", "/api/does-not-exist", expected_status=404, expected_error_code="SP-6011"),
 ]
 
 
@@ -78,15 +79,19 @@ def main() -> int:
                     extra = f" {payload['error_code']}"
             except Exception:
                 payload = None
+            error_code_ok = True
+            if check.expected_error_code:
+                error_code_ok = isinstance(payload, dict) and payload.get("error_code") == check.expected_error_code
             print(f"[{marker}] {check.method:6} {check.path} -> {response.status_code} in {duration_ms}ms{extra}")
-            if not ok:
+            if not ok or not error_code_ok:
                 body_preview = response.text[:300]
                 failures.append((check, response.status_code, body_preview))
 
     if failures:
         print("\n[live-smoke] failures detected:")
         for check, status_code, preview in failures:
-            print(f"- {check.method} {check.path} expected {check.expected_status}, got {status_code}: {preview}")
+            suffix = f" and error_code {check.expected_error_code}" if check.expected_error_code else ""
+            print(f"- {check.method} {check.path} expected {check.expected_status}{suffix}, got {status_code}: {preview}")
         return 1
 
     print("\n[live-smoke] all checks passed")
