@@ -160,7 +160,16 @@ def build_free_kr_forecast(
                 p_flat=horizon.p_flat,
                 p_up=horizon.p_up,
                 vol_forecast=horizon.vol_forecast,
-                confidence=min(horizon.confidence, 88.0),
+                confidence=horizon.confidence,
+                raw_confidence=horizon.raw_confidence,
+                calibrated_probability=horizon.calibrated_probability,
+                probability_edge=horizon.probability_edge,
+                analog_support=horizon.analog_support,
+                regime_support=horizon.regime_support,
+                agreement_support=horizon.agreement_support,
+                data_quality_support=horizon.data_quality_support,
+                volatility_ratio=horizon.volatility_ratio,
+                confidence_calibrator=horizon.confidence_calibrator,
             )
         )
 

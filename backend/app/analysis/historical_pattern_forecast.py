@@ -17,9 +17,10 @@ from app.models.forecast import (
     HistoricalPatternForecast,
     SetupBacktest,
 )
+from app.scoring.confidence import analog_support_score, effective_sample_size
 from app.utils.market_calendar import trading_days_forward
 
-MODEL_VERSION = "analog-v1.0"
+MODEL_VERSION = "analog-v1.1"
 FEATURE_COLUMNS = [
     "momentum_5",
     "momentum_20",
@@ -289,7 +290,21 @@ def build_historical_pattern_forecast(
         avg_drawdown = float(np.average(drawdowns, weights=weights[: len(drawdowns)])) if drawdowns else 0.0
         avg_vol = float(np.average(realized_vols, weights=weights[: len(realized_vols)])) if realized_vols else 0.0
         dispersion = float(np.sqrt(np.average((forward_returns - expected_return) ** 2, weights=weights)))
-        confidence = _clip(50.0 + len(analogs) * 0.9 + weights.max() * 20.0 - dispersion * 1.2, 36.0, 88.0)
+        weighted_win_rate = float(np.average((forward_returns > 0).astype(float), weights=weights) * 100.0)
+        ess = float(effective_sample_size(weights.tolist()))
+        gains = np.clip(forward_returns, 0.0, None)
+        losses = np.clip(-forward_returns, 0.0, None)
+        weighted_gain = float(np.average(gains, weights=weights)) if np.any(gains > 0) else 0.0
+        weighted_loss = float(np.average(losses, weights=weights)) if np.any(losses > 0) else 0.0
+        profit_factor = float(weighted_gain / weighted_loss) if weighted_loss > 1e-6 else (2.5 if weighted_gain > 0 else 1.0)
+        analog_support = analog_support_score(
+            win_rate_pct=weighted_win_rate,
+            ess=ess,
+            profit_factor=profit_factor,
+            dispersion_pct=dispersion,
+            reference_volatility_pct=max(avg_vol, 1.0),
+        )
+        confidence = _clip(36.0 + analog_support * 52.0, 36.0, 88.0)
 
         horizons.append(
             HistoricalForecastHorizon(
@@ -304,6 +319,9 @@ def build_historical_pattern_forecast(
                 realized_volatility_pct=round(avg_vol, 2),
                 avg_max_drawdown_pct=round(avg_drawdown, 2),
                 confidence=round(confidence, 2),
+                analog_support=round(analog_support, 4),
+                effective_sample_size=round(ess, 2),
+                profit_factor=round(profit_factor, 3),
             )
         )
 

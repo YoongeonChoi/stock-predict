@@ -2,6 +2,15 @@
 
 All notable changes to this project are tracked here.
 
+## v2.46.0 - 2026-03-28
+
+- 표시 confidence를 단순 heuristic 합이 아니라, 분포 support·analog support·regime·probability edge·agreement·data quality·uncertainty·volatility를 합친 raw support 뒤 horizon별 bootstrap sigmoid calibrator로 보정하는 구조로 올렸습니다.
+- bootstrap calibrator 단계에서는 표시 confidence를 `88점`에서 포화시켜, walk-forward 적중률 로그가 충분히 쌓이기 전 과도한 high-confidence 표시를 억제했습니다.
+- historical analog confidence는 단순 `max weight` 대신 weighted win rate, effective sample size, profit factor, dispersion을 함께 반영합니다. 그 결과 한 사례 쏠림이 큰 analog set이 과신으로 이어지는 문제를 줄였습니다.
+- 기회 레이더와 포트폴리오 후보 정렬은 더 이상 `directional_score`와 기대수익·confidence를 중복 합산하지 않고, `기대초과수익률 + 보정 confidence + probability edge + tail ratio + regime alignment` 중심의 selection score를 사용합니다.
+- 신규 편입 후보와 일일 이상적 포트폴리오에는 `confidence floor`를 실제로 강제해, confidence가 낮은 후보가 단순 기대수익만으로 상단에 올라오는 흐름을 줄였습니다.
+- 응답 스키마, 시스템 설명, 프론트 타입, 회귀 테스트, README를 새 confidence/selection 계약에 맞게 동기화했습니다.
+
 ## v2.45.4 - 2026-03-28
 
 - `AGENTS.md`와 `README.md`에 버전 관리 기준을 추가했습니다. 이제 `PATCH / MINOR / MAJOR`를 언제 올리는지와 어떤 파일을 반드시 같이 동기화해야 하는지 문서 기준으로 바로 확인할 수 있습니다.

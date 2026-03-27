@@ -17,6 +17,7 @@ from app.data.universe_data import UNIVERSE, resolve_opportunity_universe, resol
 from app.models.country import COUNTRY_REGISTRY
 from app.models.market import MarketRegime, OpportunityItem, OpportunityRadarResponse
 from app.models.stock import PricePoint, TechnicalIndicators
+from app.scoring.selection import regime_alignment_score, score_selection_candidate
 from app.scoring.stock_scorer import score_stock
 from app.services.portfolio_optimizer import build_horizon_snapshot
 from app.utils.async_tools import gather_limited
@@ -531,7 +532,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v15:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = f"opportunity_radar:v16:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -673,6 +674,15 @@ async def get_market_opportunities(
             flat_probability_20d = float(horizon_20.get("flat_probability") or 0.0)
             down_probability_20d = float(horizon_20.get("down_probability") or max(100.0 - up_probability_20d, 0.0))
             distribution_confidence_20d = float(horizon_20.get("confidence") or forecast.confidence)
+            raw_confidence_20d = horizon_20.get("raw_confidence")
+            calibrated_probability_20d = horizon_20.get("calibrated_probability")
+            probability_edge_20d = horizon_20.get("probability_edge")
+            analog_support_20d = horizon_20.get("analog_support")
+            regime_support_20d = horizon_20.get("regime_support")
+            agreement_support_20d = horizon_20.get("agreement_support")
+            data_quality_support_20d = horizon_20.get("data_quality_support")
+            volatility_ratio_20d = horizon_20.get("volatility_ratio")
+            confidence_calibrator_20d = horizon_20.get("confidence_calibrator")
             price_q25_20d = horizon_20.get("price_q25")
             price_q50_20d = horizon_20.get("price_q50")
             price_q75_20d = horizon_20.get("price_q75")
@@ -688,28 +698,29 @@ async def get_market_opportunities(
                 up_probability=up_probability_20d,
                 confidence=distribution_confidence_20d,
             )
-            opportunity_score = (
-                signal_profile["directional_score"] * 0.58
-                + quant_score.total * 0.14
-                + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 5.5
-                + signal_profile["expected_return_pct"] * 4.8
-                + signal_profile["probability_edge"] * 0.18
-                + signal_profile["tail_ratio"] * 2.8
-                + (5.0 if market_regime.stance == "risk_on" else -3.5 if market_regime.stance == "risk_off" else 1.0)
-                + (4.0 if current_price <= buy_sell.buy_zone_high * 1.02 else 1.0)
-                + _clip(valuation_gap, -20.0, 20.0) * 0.12
-            )
-            execution_bias_bonus = {
-                "press_long": 7.0,
-                "lean_long": 4.0,
-                "stay_selective": 1.0,
-                "reduce_risk": -4.0,
-                "capital_preservation": -8.0,
-            }.get(forecast.execution_bias, 0.0)
-            opportunity_score += execution_bias_bonus
-            opportunity_score -= len(forecast.risk_flags[:2]) * 1.2
-            opportunity_score = round(_clip(opportunity_score, 0.0, 100.0), 1)
             regime_tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed"
+            selection = score_selection_candidate(
+                expected_excess_return_pct=expected_excess_return_pct_20d,
+                calibrated_confidence=distribution_confidence_20d,
+                probability_edge=signal_profile["probability_edge"],
+                tail_ratio=signal_profile["tail_ratio"],
+                regime_alignment=regime_alignment_score(
+                    regime_tailwind=regime_tailwind,
+                    market_stance=market_regime.stance,
+                ),
+                analog_support=analog_support_20d,
+                data_quality_support=data_quality_support_20d,
+                downside_pct=signal_profile["downside_pct"],
+                forecast_volatility_pct=forecast_volatility_pct_20d,
+                action=trade_plan.action,
+                execution_bias=forecast.execution_bias,
+                legacy_score=(
+                    float(quant_score.total)
+                    + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 6.0
+                    + max(_clip(valuation_gap, -20.0, 20.0), 0.0) * 0.12
+                ),
+            )
+            opportunity_score = selection.score
 
             return OpportunityItem(
                 rank=0,
@@ -734,6 +745,15 @@ async def get_market_opportunities(
                 flat_probability_20d=round(flat_probability_20d, 1),
                 down_probability_20d=round(down_probability_20d, 1),
                 distribution_confidence_20d=round(distribution_confidence_20d, 1),
+                raw_confidence_20d=round(float(raw_confidence_20d), 1) if raw_confidence_20d is not None else None,
+                calibrated_probability_20d=round(float(calibrated_probability_20d), 4) if calibrated_probability_20d is not None else None,
+                probability_edge_20d=round(float(probability_edge_20d), 4) if probability_edge_20d is not None else None,
+                analog_support_20d=round(float(analog_support_20d), 4) if analog_support_20d is not None else None,
+                regime_support_20d=round(float(regime_support_20d), 4) if regime_support_20d is not None else None,
+                agreement_support_20d=round(float(agreement_support_20d), 4) if agreement_support_20d is not None else None,
+                data_quality_support_20d=round(float(data_quality_support_20d), 4) if data_quality_support_20d is not None else None,
+                volatility_ratio_20d=round(float(volatility_ratio_20d), 4) if volatility_ratio_20d is not None else None,
+                confidence_calibrator_20d=confidence_calibrator_20d,
                 price_q25_20d=round(float(price_q25_20d), 2) if price_q25_20d is not None else None,
                 price_q50_20d=round(float(price_q50_20d), 2) if price_q50_20d is not None else None,
                 price_q75_20d=round(float(price_q75_20d), 2) if price_q75_20d is not None else None,

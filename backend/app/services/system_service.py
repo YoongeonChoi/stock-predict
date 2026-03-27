@@ -152,6 +152,7 @@ async def get_diagnostics() -> dict:
                     "가격·변동성·상대강도 같은 숫자 시계열이 주신호이고, 뉴스·공시는 보조 신호로만 게이트 결합합니다.",
                     "OpenAI는 수익률을 직접 예측하지 않고, 뉴스·보도자료·공시를 구조화 이벤트 벡터로 추출하는 데만 사용합니다.",
                     "다음 거래일 예측은 Bull/Base/Bear 시나리오와 실행 바이어스를 같은 분포 예측 결과에서 파생합니다.",
+                    "표시 confidence는 raw support를 horizon별 bootstrap sigmoid calibrator로 보정한 값이라, 높게 보이기보다 실제 적중률과 맞도록 설계합니다.",
                 ],
             },
             {
@@ -167,6 +168,7 @@ async def get_diagnostics() -> dict:
                 "notes": [
                     "최근 2년 가격 이력에서 현재와 비슷한 국면을 찾아 5·20·60거래일 기대 분포를 계산합니다.",
                     "유사 국면이 충분하지 않으면 이 모델은 조용히 생략되고 기존 다음 거래일 예측만 표시됩니다.",
+                    "analog confidence는 weighted win rate, effective sample size, profit factor, dispersion을 함께 본 support score로 재정의했습니다.",
                 ],
             },
             {

@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.45.4`
+현재 릴리즈: `v2.46.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -14,6 +14,8 @@
   - 대시보드, 레이더, 포트폴리오, 리서치가 서로 이어집니다.
 - `확률 기반 예측`
   - 점 하나를 찍는 대신 미래 로그수익률의 조건부 분포를 예측합니다.
+- `보정된 확신도`
+  - 표시 confidence는 단순 heuristic 점수가 아니라, 실제 적중률과 맞도록 보정된 확률을 사용합니다.
 - `계정별 데이터 분리`
   - 워치리스트, 보유 종목, 자산 기준은 로그인 사용자별로 저장됩니다.
 - `무료 스택 우선`
@@ -333,6 +335,41 @@ h_i,t^p = sum_L alpha_i,t^(L) h_i,t^(L)
 
 거시 상태 `m_t`를 보고 어떤 기간 표현을 더 믿을지 동적으로 조정합니다.
 
+### 3-1. 표시 confidence와 calibration
+
+현재 화면에 노출되는 confidence는 “100점에 가까워 보이게 만드는 점수”가 아니라, 실제 적중률과 맞도록 보정된 확률입니다. 먼저 분포 엔진, analog 백테스트, 시장 regime, 방향 확률 차이, 모델 간 합의, 데이터 품질, 이벤트 불확실성, 예측 변동성을 합쳐 raw support를 만든 뒤, horizon별 calibrator로 다시 눌러 UI confidence를 계산합니다.
+
+```text
+raw_confidence_h
+  = 100 * (
+      0.35 d_h
+    + 0.18 a_h
+    + 0.08 r_h
+    + 0.12 e_h
+    + 0.10 g_h
+    + 0.07 q_h
+    + 0.05 (1 - u_h)
+    + 0.05 (1 - v_h)
+  )
+
+display_confidence_h = 100 * G_h(raw_confidence_h)
+```
+
+여기서
+
+- `d_h`: 분포 엔진 raw confidence support
+- `a_h`: analog win rate, effective sample size, profit factor, dispersion 기반 support
+- `r_h`: 시장 regime의 명확도
+- `e_h`: `up/down` 확률 차이
+- `g_h`: 분포/analog/regime 방향 합의 정도
+- `q_h`: 데이터 품질과 가용성
+- `u_h`: 이벤트 불확실성
+- `v_h`: 예측 변동성 대비 기준 변동성
+
+를 뜻합니다.
+
+현재는 horizon별 bootstrap sigmoid calibrator를 사용합니다. 표본이 더 충분해지면 walk-forward 로그를 기반으로 `isotonic` 같은 더 강한 calibrator로 교체할 수 있도록 설계해 두었습니다. 또한 bootstrap 단계에서는 과신을 막기 위해 표시 confidence를 `88점`에서 포화시키며, 실제 적중률 로그가 쌓이기 전에는 `95+` 같은 극단 점수를 거의 내지 않도록 막아 둡니다. 중요한 점은 “점수를 높게 보이게” 하는 것이 아니라, 예를 들어 `70점이면 실제로 약 70% 수준으로 맞는 점수`가 되게 만드는 것입니다.
+
 ### 4. 공개시차 안전 거시 압축
 
 거시는 `ECOS + KOSIS + 일부 FMP macro proxy`를 사용합니다.
@@ -578,6 +615,29 @@ w*_t = argmax_{w >= 0, 1^T w <= 1} (
 - 포트폴리오 모델 패널
 
 즉, 이제 포트폴리오 전체가 `같은 20거래일 분포 스냅샷` 위에서 읽히도록 맞춰져 있습니다.
+
+### selection score와 confidence floor
+
+레이더 후보와 포트폴리오 신규 편입 정렬도 단순 중복합산에서 정리했습니다. 이제 selection score는 `기대초과수익률 + 보정 confidence + 확률 격차 + tail ratio + regime 정렬 + analog 확인 + 데이터 품질 - downside - 예측 변동성`을 중심으로 계산합니다.
+
+```text
+selection
+= 100 * clip(
+    0.30 expected_excess_return
+  + 0.25 calibrated_confidence
+  + 0.15 probability_edge
+  + 0.10 tail_ratio
+  + 0.08 regime_alignment
+  + 0.07 analog_support
+  + 0.05 data_quality
+  - 0.10 downside
+  - 0.05 forecast_volatility
+)
+```
+
+이전처럼 `directional_score` 안에 이미 들어 있는 기대수익, confidence, edge를 다시 바깥 점수에서 중복 합산하지 않고, action과 execution bias는 tie-breaker 수준의 작은 보정으로만 남겼습니다.
+
+또한 신규 레이더 후보와 일일 이상적 포트폴리오 편입 후보에는 `confidence floor`를 둡니다. 현재 기본값은 `62점`이며, 이 기준을 넘지 못하면 기대수익이 높아도 신규 편입 후보에서 제외합니다. 이 방식은 기대수익만 높고 신뢰도가 낮은 후보가 상단으로 튀는 현상을 줄이고, 사용자가 보는 confidence와 실제 성과를 더 가깝게 맞추는 데 목적이 있습니다.
 
 ## 왜 이 구조가 이전 방식보다 나은가
 

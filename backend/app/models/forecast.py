@@ -51,6 +51,15 @@ class NextDayForecast(BaseModel):
     predicted_low: float
     predicted_return_pct: float
     confidence: float
+    raw_confidence: float | None = None
+    calibrated_probability: float | None = None
+    probability_edge: float | None = None
+    analog_support: float | None = None
+    regime_support: float | None = None
+    agreement_support: float | None = None
+    data_quality_support: float | None = None
+    volatility_ratio: float | None = None
+    confidence_calibrator: str | None = None
     confidence_note: str = ""
     news_sentiment: float = 0
     raw_signal: float = 0
@@ -66,7 +75,7 @@ class NextDayForecast(BaseModel):
     execution_note: str = ""
     flow_signal: FlowSignal | None = None
     drivers: list[ForecastDriver] = Field(default_factory=list)
-    model_version: str = "dist-studentt-v3.1"
+    model_version: str = "dist-studentt-v3.2"
 
 
 class FreeKrForecastDataSource(BaseModel):
@@ -105,6 +114,15 @@ class FreeKrForecastHorizon(BaseModel):
     p_up: float
     vol_forecast: float
     confidence: float
+    raw_confidence: float | None = None
+    calibrated_probability: float | None = None
+    probability_edge: float | None = None
+    analog_support: float | None = None
+    regime_support: float | None = None
+    agreement_support: float | None = None
+    data_quality_support: float | None = None
+    volatility_ratio: float | None = None
+    confidence_calibrator: str | None = None
 
 
 class FreeKrForecast(BaseModel):
@@ -117,7 +135,7 @@ class FreeKrForecast(BaseModel):
     data_sources: list[FreeKrForecastDataSource] = Field(default_factory=list)
     confidence_note: str = ""
     summary: str = ""
-    model_version: str = "dist-studentt-v3.1"
+    model_version: str = "dist-studentt-v3.2"
 
 
 class HistoricalForecastHorizon(BaseModel):
@@ -132,6 +150,9 @@ class HistoricalForecastHorizon(BaseModel):
     realized_volatility_pct: float
     avg_max_drawdown_pct: float
     confidence: float
+    analog_support: float | None = None
+    effective_sample_size: float | None = None
+    profit_factor: float | None = None
 
 
 class HistoricalAnalogCase(BaseModel):
@@ -160,7 +181,7 @@ class HistoricalPatternForecast(BaseModel):
     horizons: list[HistoricalForecastHorizon]
     analog_cases: list[HistoricalAnalogCase]
     projected_path: list[HistoricalPathPoint]
-    model_version: str = "analog-v1.0"
+    model_version: str = "analog-v1.1"
 
 
 class SetupBacktest(BaseModel):
