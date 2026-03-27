@@ -12,7 +12,7 @@ from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
-OPPORTUNITY_TIMEOUT_SECONDS = 12
+OPPORTUNITY_TIMEOUT_SECONDS = 15
 HEATMAP_TIMEOUT_SECONDS = 10
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
@@ -377,7 +377,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         return JSONResponse(status_code=404, content=err.to_dict())
     try:
         return await asyncio.wait_for(
-            market_service.get_market_opportunities(code, limit, max_candidates=min(max(limit, 8), 10)),
+            market_service.get_market_opportunities(code, limit, max_candidates=min(max(limit, 6), 8)),
             timeout=OPPORTUNITY_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
