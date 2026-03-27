@@ -111,10 +111,20 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.market_service.resolve_universe",
                 new=AsyncMock(
                     return_value=SimpleNamespace(
-                        sectors={"Information Technology": ["005930.KS"]},
+                        sectors={"Information Technology": ["005930.KS", "000660.KS", "035420.KS"]},
                         source="fallback",
                         note="test universe",
                     )
+                ),
+            ),
+            patch(
+                "app.services.market_service.yfinance_client.get_stock_quote",
+                new=AsyncMock(
+                    side_effect=[
+                        {"current_price": 101.0, "change_pct": 1.8},
+                        {"current_price": 87.0, "change_pct": 0.5},
+                        {"current_price": 195.0, "change_pct": -0.3},
+                    ]
                 ),
             ),
             patch(
@@ -167,12 +177,14 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await market_service.get_market_opportunities("KR", limit=1, max_candidates=1)
 
         self.assertEqual(result["country_code"], "KR")
-        self.assertEqual(result["total_scanned"], 1)
+        self.assertEqual(result["universe_size"], 3)
+        self.assertEqual(result["total_scanned"], 3)
+        self.assertEqual(result["detailed_scanned_count"], 1)
         self.assertEqual(len(result["opportunities"]), 1)
         self.assertEqual(result["opportunities"][0]["ticker"], "005930.KS")
         self.assertGreater(result["opportunities"][0]["predicted_return_pct"], 0.0)
 
-    async def test_get_market_opportunities_falls_back_to_lightweight_scan_on_timeout(self):
+    async def test_get_market_opportunities_falls_back_to_quote_screen_candidates(self):
         market_regime = MarketRegime(
             label="중립",
             stance="neutral",
@@ -187,10 +199,6 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
         )
 
-        async def _slow_scan(*args, **kwargs):
-            await asyncio.sleep(0.05)
-            return []
-
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
@@ -204,18 +212,21 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
+                "app.services.market_service.yfinance_client.get_stock_quote",
+                new=AsyncMock(
+                    side_effect=[
+                        {"current_price": 101.0, "change_pct": 1.2},
+                        {"current_price": 87.0, "change_pct": 0.6},
+                    ]
+                ),
+            ),
+            patch(
                 "app.services.market_service.yfinance_client.get_price_history",
                 new=AsyncMock(return_value=_sample_prices(90, 3000.0)),
             ),
             patch(
                 "app.services.market_service.yfinance_client.get_market_snapshot",
-                new=AsyncMock(
-                    side_effect=[
-                        {"valid": True, "current_price": 3200.0, "name": "KOSPI"},
-                        {"valid": True, "current_price": 101.0, "change_pct": 1.2, "market_cap": 400000000000.0, "name": "삼성전자"},
-                        {"valid": True, "current_price": 87.0, "change_pct": 0.6, "market_cap": 210000000000.0, "name": "SK hynix"},
-                    ]
-                ),
+                new=AsyncMock(side_effect=asyncio.TimeoutError()),
             ),
             patch(
                 "app.services.market_service.ecos_client.get_kr_economic_snapshot",
@@ -226,37 +237,17 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value={}),
             ),
             patch("app.services.market_service.build_market_regime", return_value=market_regime),
-            patch("app.services.market_service.gather_limited", new=AsyncMock(side_effect=_slow_scan)),
-            patch("app.services.market_service.OPPORTUNITY_SCAN_TIMEOUT_SECONDS", 0.01),
-            patch(
-                "app.services.market_service._build_lightweight_opportunities",
-                new=AsyncMock(
-                    return_value=[
-                        market_service._build_lightweight_opportunity_item(
-                            rank=1,
-                            sector="Information Technology",
-                            ticker="005930.KS",
-                            snapshot={"current_price": 101.0, "change_pct": 1.2, "market_cap": 400000000000.0, "name": "삼성전자"},
-                            country_code="KR",
-                            market_regime=market_regime,
-                        ),
-                        market_service._build_lightweight_opportunity_item(
-                            rank=2,
-                            sector="Information Technology",
-                            ticker="000660.KS",
-                            snapshot={"current_price": 87.0, "change_pct": 0.6, "market_cap": 210000000000.0, "name": "SK hynix"},
-                            country_code="KR",
-                            market_regime=market_regime,
-                        ),
-                    ]
-                ),
-            ),
+            patch("app.services.market_service.gather_limited", new=_gather_sequential),
         ):
             result = await market_service.get_market_opportunities("KR", limit=2, max_candidates=2)
 
         self.assertEqual(result["country_code"], "KR")
+        self.assertEqual(result["universe_size"], 2)
+        self.assertEqual(result["total_scanned"], 2)
+        self.assertEqual(result["detailed_scanned_count"], 0)
         self.assertEqual(len(result["opportunities"]), 2)
-        self.assertEqual(result["opportunities"][0]["setup_label"], "축약 스캔")
+        self.assertEqual(result["opportunities"][0]["setup_label"], "전수 1차 스캔")
+        self.assertGreater(result["actionable_count"], 0)
 
     async def test_lightweight_opportunities_cap_candidate_budget(self):
         market_regime = MarketRegime(

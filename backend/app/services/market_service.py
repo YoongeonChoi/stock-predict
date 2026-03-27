@@ -24,7 +24,11 @@ OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 4
 OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 4
 OPPORTUNITY_CONCURRENCY = 4
 LIGHTWEIGHT_OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 2
-LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES = 6
+LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES = 12
+QUICK_UNIVERSE_QUOTE_TIMEOUT_SECONDS = 1.2
+QUICK_UNIVERSE_QUOTE_CONCURRENCY = 18
+MIN_DETAILED_OPPORTUNITY_CANDIDATES = 12
+MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -59,6 +63,95 @@ def _regime_tailwind_label(stance: str) -> str:
     if stance == "risk_off":
         return "headwind"
     return "mixed"
+
+
+def _flatten_universe(universe: dict[str, list[str]]) -> list[tuple[str, str]]:
+    flattened: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for sector, tickers in universe.items():
+        for ticker in tickers:
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            flattened.append((sector, ticker))
+    return flattened
+
+
+def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidates: int | None) -> int:
+    if available <= 0:
+        return 0
+    if max_candidates is not None:
+        return max(1, min(available, max_candidates))
+    preferred = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
+    return max(1, min(available, min(preferred, MAX_DETAILED_OPPORTUNITY_CANDIDATES)))
+
+
+def _build_quote_only_opportunity_item(
+    *,
+    rank: int,
+    sector: str,
+    ticker: str,
+    current_price: float,
+    change_pct: float,
+    country_code: str,
+    market_regime,
+) -> OpportunityItem:
+    regime_bias = 4.0 if market_regime.stance == "risk_on" else -4.0 if market_regime.stance == "risk_off" else 0.0
+    opportunity_score = _clip(55.0 + change_pct * 3.4 + regime_bias, 15.0, 90.0)
+    up_probability = _clip(50.0 + change_pct * 1.9 + regime_bias * 0.7, 34.0, 77.0)
+    predicted_return_pct = round(_clip(change_pct * 0.55, -5.0, 6.5), 2)
+    target_date = (datetime.now() + timedelta(days=20)).date().isoformat()
+    bull_case_price = round(current_price * 1.04, 2)
+    base_case_price = round(current_price * (1.0 + predicted_return_pct / 100.0), 2)
+    bear_case_price = round(current_price * 0.97, 2)
+    action = "accumulate" if predicted_return_pct >= 1.4 else "breakout_watch" if predicted_return_pct >= 0.2 else "wait_pullback"
+    return OpportunityItem(
+        rank=rank,
+        ticker=ticker,
+        name=ticker.split(".")[0],
+        sector=sector,
+        country_code=country_code,
+        current_price=round(current_price, 2),
+        change_pct=round(change_pct, 2),
+        opportunity_score=round(opportunity_score, 1),
+        quant_score=round(_clip(50.0 + change_pct * 1.8, 22.0, 78.0), 1),
+        up_probability=round(up_probability, 1),
+        confidence=41.0,
+        predicted_return_pct=predicted_return_pct,
+        target_horizon_days=20,
+        target_date_20d=target_date,
+        expected_return_pct_20d=predicted_return_pct,
+        expected_excess_return_pct_20d=round(predicted_return_pct * 0.72, 2),
+        median_return_pct_20d=predicted_return_pct,
+        forecast_volatility_pct_20d=round(max(abs(change_pct) * 1.4, 2.4), 2),
+        up_probability_20d=round(up_probability, 1),
+        flat_probability_20d=round(max(100.0 - up_probability - 20.0, 6.0), 1),
+        down_probability_20d=round(max(100.0 - up_probability - max(100.0 - up_probability - 20.0, 6.0), 6.0), 1),
+        distribution_confidence_20d=41.0,
+        price_q25_20d=bear_case_price,
+        price_q50_20d=base_case_price,
+        price_q75_20d=bull_case_price,
+        bull_case_price=bull_case_price,
+        base_case_price=base_case_price,
+        bear_case_price=bear_case_price,
+        bull_probability=round(up_probability, 1),
+        base_probability=20.0,
+        bear_probability=round(max(100.0 - up_probability - 20.0, 6.0), 1),
+        setup_label="전수 1차 스캔",
+        action=action,
+        execution_bias="stay_selective",
+        execution_note="KR 전체 유니버스를 1차 스캔했고, 상세 분포 계산이 지연된 종목은 시세 스냅샷 기준으로 먼저 정리했습니다.",
+        regime_tailwind=_regime_tailwind_label(market_regime.stance),
+        entry_low=round(current_price * 0.99, 2),
+        entry_high=round(current_price * 1.01, 2),
+        stop_loss=round(current_price * 0.96, 2),
+        take_profit_1=round(current_price * 1.03, 2),
+        take_profit_2=round(current_price * 1.06, 2),
+        risk_reward_estimate=1.15,
+        thesis=["KR 전체 유니버스를 1차로 훑은 뒤 상위 종목을 먼저 정렬한 결과입니다."],
+        risk_flags=["상세 분포 계산이 지연돼 시세 스냅샷 기반 후보로 표시합니다."],
+        forecast_date=target_date,
+    )
 
 
 def _build_lightweight_opportunity_item(
@@ -171,6 +264,78 @@ async def _build_lightweight_opportunities(
     return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
 
 
+def _build_quote_only_opportunities(
+    *,
+    ranked_quotes: list[dict],
+    country_code: str,
+    market_regime,
+    limit: int,
+) -> list[OpportunityItem]:
+    items = [
+        _build_quote_only_opportunity_item(
+            rank=idx,
+            sector=item["sector"],
+            ticker=item["ticker"],
+            current_price=float(item["current_price"]),
+            change_pct=float(item["change_pct"]),
+            country_code=country_code,
+            market_regime=market_regime,
+        )
+        for idx, item in enumerate(ranked_quotes[:limit], start=1)
+    ]
+    items.sort(key=lambda item: item.opportunity_score, reverse=True)
+    return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
+
+
+async def _build_quote_screen(
+    *,
+    country_code: str,
+    universe_selection,
+    market_regime,
+) -> dict:
+    universe_pairs = _flatten_universe(universe_selection.sectors)
+    cache_key = f"opportunity_quote_screen:v1:{country_code}:{universe_selection.source}:{len(universe_pairs)}"
+
+    async def _fetch_quotes():
+        async def _scan_quote(candidate: tuple[str, str]) -> dict | None:
+            sector, ticker = candidate
+            try:
+                quote = await asyncio.wait_for(
+                    yfinance_client.get_stock_quote(ticker),
+                    timeout=QUICK_UNIVERSE_QUOTE_TIMEOUT_SECONDS,
+                )
+            except Exception:
+                return None
+            current_price = _safe_float(quote.get("current_price"), 0.0)
+            if current_price <= 0:
+                return None
+            change_pct = _safe_float(quote.get("change_pct"))
+            regime_bias = 0.75 if market_regime.stance == "risk_on" else -0.55 if market_regime.stance == "risk_off" else 0.0
+            quick_score = change_pct * 2.2 + regime_bias
+            return {
+                "sector": sector,
+                "ticker": ticker,
+                "current_price": round(current_price, 2),
+                "change_pct": round(change_pct, 2),
+                "quick_score": round(quick_score, 4),
+            }
+
+        scanned = await gather_limited(
+            universe_pairs,
+            _scan_quote,
+            limit=QUICK_UNIVERSE_QUOTE_CONCURRENCY,
+        )
+        ranked = [item for item in scanned if not isinstance(item, Exception) and item is not None]
+        ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
+        return {
+            "universe_size": len(universe_pairs),
+            "scanned_count": len(ranked),
+            "ranked": ranked,
+        }
+
+    return await cache.get_or_fetch(cache_key, _fetch_quotes, ttl=900)
+
+
 def build_distributional_signal_profile(
     *,
     current_price: float,
@@ -239,8 +404,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    candidate_budget = max_candidates if max_candidates is not None else max(12, min(24, limit * 2))
-    cache_key = f"opportunity_radar:v9:{country_code}:{limit}:{candidate_budget}"
+    cache_key = f"opportunity_radar:v10:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -248,9 +412,13 @@ async def get_market_opportunities(
             "country_code": country_code,
             "generated_at": datetime.now().isoformat(),
             "market_regime": None,
+            "universe_size": 0,
             "total_scanned": 0,
+            "detailed_scanned_count": 0,
             "actionable_count": 0,
             "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "",
             "opportunities": [],
         }
 
@@ -276,17 +444,22 @@ async def get_market_opportunities(
     )
 
     universe_selection = await resolve_universe(country_code)
-    universe = universe_selection.sectors
-    candidates: list[tuple[str, str]] = []
-    sector_count = max(1, len(universe))
-    per_sector = max(1, min(3, candidate_budget // sector_count))
-    for sector, tickers in universe.items():
-        for ticker in tickers[:per_sector]:
-            candidates.append((sector, ticker))
-            if len(candidates) >= candidate_budget:
-                break
-        if len(candidates) >= candidate_budget:
-            break
+    quote_screen = await _build_quote_screen(
+        country_code=country_code,
+        universe_selection=universe_selection,
+        market_regime=market_regime,
+    )
+    ranked_quotes = list(quote_screen.get("ranked") or [])
+    detail_budget = _resolve_detail_candidate_budget(
+        limit=limit,
+        available=len(ranked_quotes),
+        max_candidates=max_candidates,
+    )
+    candidates: list[tuple[str, str]] = [
+        (item["sector"], item["ticker"])
+        for item in ranked_quotes[:detail_budget]
+    ]
+    lightweight_candidates: list[tuple[str, str]] = candidates or _flatten_universe(universe_selection.sectors)
 
     async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
         sector, ticker = candidate
@@ -458,24 +631,44 @@ async def get_market_opportunities(
             )
 
     async def _build_response() -> dict:
+        detailed_ranked: list[OpportunityItem] = []
+        quote_only_ranked = _build_quote_only_opportunities(
+            ranked_quotes=ranked_quotes,
+            country_code=country_code,
+            market_regime=market_regime,
+            limit=max(limit, min(detail_budget, MAX_DETAILED_OPPORTUNITY_CANDIDATES)),
+        )
+
+        def _rank_items(items: list[OpportunityItem]) -> list[OpportunityItem]:
+            items.sort(key=lambda item: item.opportunity_score, reverse=True)
+            return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
+
+        def _merge_items(primary: list[OpportunityItem], secondary: list[OpportunityItem]) -> list[OpportunityItem]:
+            merged: list[OpportunityItem] = []
+            seen: set[str] = set()
+            for item in [*primary, *secondary]:
+                if item.ticker in seen:
+                    continue
+                seen.add(item.ticker)
+                merged.append(item)
+                if len(merged) >= limit:
+                    break
+            return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(merged[:limit], start=1)]
+
         try:
             scanned = await asyncio.wait_for(
                 gather_limited(candidates, _scan, limit=OPPORTUNITY_CONCURRENCY),
                 timeout=OPPORTUNITY_SCAN_TIMEOUT_SECONDS,
             )
             opportunities = [item for item in scanned if not isinstance(item, Exception) and item is not None]
-            opportunities.sort(key=lambda item: item.opportunity_score, reverse=True)
-            ranked = [item.model_copy(update={"rank": idx}) for idx, item in enumerate(opportunities[:limit], start=1)]
-            if len(ranked) < min(limit, 4):
-                ranked = await _build_lightweight_opportunities(
-                    candidates=candidates,
-                    country_code=country_code,
-                    market_regime=market_regime,
-                    limit=limit,
-                )
+            detailed_ranked = _rank_items(opportunities)
         except asyncio.TimeoutError:
+            detailed_ranked = []
+
+        ranked = _merge_items(detailed_ranked, quote_only_ranked)
+        if not ranked:
             ranked = await _build_lightweight_opportunities(
-                candidates=candidates,
+                candidates=lightweight_candidates,
                 country_code=country_code,
                 market_regime=market_regime,
                 limit=limit,
@@ -485,8 +678,10 @@ async def get_market_opportunities(
             country_code=country_code,
             generated_at=datetime.now().isoformat(),
             market_regime=market_regime,
-            total_scanned=len(candidates),
-            actionable_count=sum(1 for item in ranked if item.action in {"accumulate", "breakout_watch"}),
+            universe_size=int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors))),
+            total_scanned=int(quote_screen.get("scanned_count") or 0),
+            detailed_scanned_count=len(detailed_ranked),
+            actionable_count=sum(1 for item in ranked if item.action != "avoid"),
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),
             universe_source=universe_selection.source,
             universe_note=universe_selection.note,

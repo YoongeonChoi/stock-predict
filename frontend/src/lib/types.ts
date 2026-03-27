@@ -292,7 +292,9 @@ export interface OpportunityRadarResponse {
   country_code: string;
   generated_at: string;
   market_regime: MarketRegime;
+  universe_size: number;
   total_scanned: number;
+  detailed_scanned_count: number;
   actionable_count: number;
   bullish_count: number;
   universe_source?: "dynamic" | "fallback";

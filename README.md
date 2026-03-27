@@ -23,6 +23,7 @@
 
 - 대시보드
 - Opportunity Radar
+  - KR 유니버스 1차 전수 스캔 후 상위 종목 정밀 분석
 - 스크리너
 - 종목 검색 / 비교
 - 이메일 회원가입 / 로그인
@@ -658,7 +659,8 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - Render free는 유휴 시 spin-down 될 수 있습니다.
 - Supabase free도 저활동 상태면 pause될 수 있습니다.
-- 공개 대시보드와 스크리너는 Render free 환경에서 전체 유니버스를 전수 조회하지 않고, 대표 표본 + 캐시 + 부분 응답 fallback 기준으로 먼저 안정적으로 응답하도록 설계합니다.
+- 공개 대시보드와 스크리너는 Render free 환경에서 대표 표본 + 캐시 + 부분 응답 fallback을 우선합니다.
+- `market opportunities`는 예외적으로 KR 유니버스 전체를 1차 quote screen으로 스캔하고, 상위 종목만 정밀 분포 분석하는 2단계 구조를 사용합니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계하며, 가능한 경우 `504` 대신 `200 + partial` 응답으로 먼저 살아남는 것을 우선합니다.
 
@@ -773,7 +775,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - 공개 대시보드에서 특정 패널이 오래 멈추면 `SP-5018` timeout 응답뿐 아니라 `partial`, `fallback_reason` 필드가 먼저 내려오는지 확인합니다.
 - `heatmap`과 `screener`는 대표 종목군 기준으로 먼저 계산하므로, 화면이 바로 뜨는 안정성을 우선하고 전체 전수 스캔은 후순위로 둡니다.
-- `market opportunities`는 무거운 전수 스캔이 늦을 때 compact 후보군 기반의 경량 추천으로 먼저 내려가며, cold-start 직후에도 같은 fallback 경로가 router timeout보다 먼저 끝나도록 더 짧은 예산을 사용합니다.
+- `market opportunities`는 KR 유니버스를 먼저 quote screen으로 전수 스캔하고, 상위 종목만 정밀 분포 분석합니다. 정밀 분석이 늦거나 일부 종목이 실패해도 전수 1차 스캔 결과를 후보 카드로 먼저 내려 빈 화면이나 `후보 0개` 상태가 오래 고정되지 않게 합니다.
 - 인증 관련 문제가 나면 `/api/account/me`와 `/api/account/username-availability` 계약부터 확인하는 것이 가장 빠릅니다.
 
 ## 버전 정책

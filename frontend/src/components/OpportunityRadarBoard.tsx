@@ -60,7 +60,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             <div>
               <h2 className="font-semibold">기회 레이더</h2>
               <p className="mt-1 text-sm text-text-secondary">
-                총 {data.total_scanned}개 종목 중 지금 바로 볼 만한 후보 {data.actionable_count}개를 추려냈습니다.
+                KR 유니버스 {data.universe_size}개 중 {data.total_scanned}개를 1차 스캔했고, 상위 {data.detailed_scanned_count}개를 정밀 분석했습니다.
               </p>
             </div>
           ) : null}
@@ -75,18 +75,22 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                 실시간 유니버스 기반 추천
               </div>
             )}
-            <div className="grid grid-cols-3 gap-2 lg:w-[280px]">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[420px]">
               <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">스캔 수</div>
+                <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+                <div className="mt-1 font-semibold">{data.universe_size}</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-center">
+                <div className="text-[11px] text-text-secondary">1차 스캔</div>
                 <div className="mt-1 font-semibold">{data.total_scanned}</div>
               </div>
-              <div className="rounded-2xl border border-border/70 bg-positive/10 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">실행 후보</div>
-                <div className="mt-1 font-semibold text-positive">{data.actionable_count}</div>
-              </div>
               <div className="rounded-2xl border border-border/70 bg-accent/10 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">강세 우위</div>
-                <div className="mt-1 font-semibold text-accent">{data.bullish_count}</div>
+                <div className="text-[11px] text-text-secondary">정밀 분석</div>
+                <div className="mt-1 font-semibold text-accent">{data.detailed_scanned_count}</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-positive/10 px-3 py-2 text-center">
+                <div className="text-[11px] text-text-secondary">표시 후보</div>
+                <div className="mt-1 font-semibold text-positive">{data.actionable_count}</div>
               </div>
             </div>
           </div>
@@ -170,7 +174,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
         <div>
           <h2 className="font-semibold">기회 레이더</h2>
           <p className="mt-1 text-sm text-text-secondary">
-            총 {data.total_scanned}개 종목을 스캔했고, 실행 가능한 후보 {data.actionable_count}개 중 강세 우위 {data.bullish_count}개가 추려졌습니다.
+            KR 유니버스 {data.universe_size}개 중 {data.total_scanned}개를 1차 스캔했고, 상위 {data.detailed_scanned_count}개를 정밀 분석해 {data.opportunities.length}개 후보를 표시합니다.
           </p>
           {usingFallbackUniverse ? (
             <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
@@ -182,18 +186,22 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             </div>
           )}
         </div>
-        <div className="grid shrink-0 grid-cols-3 gap-2 text-center">
+        <div className="grid shrink-0 grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <div className="rounded-lg bg-border/40 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">스캔 수</div>
+            <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+            <div className="font-bold">{data.universe_size}</div>
+          </div>
+          <div className="rounded-lg bg-border/40 px-3 py-2">
+            <div className="text-[11px] text-text-secondary">1차 스캔</div>
             <div className="font-bold">{data.total_scanned}</div>
           </div>
-          <div className="rounded-lg bg-positive/10 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">실행 후보</div>
-            <div className="font-bold text-positive">{data.actionable_count}</div>
-          </div>
           <div className="rounded-lg bg-accent/10 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">강세 우위</div>
-            <div className="font-bold text-accent">{data.bullish_count}</div>
+            <div className="text-[11px] text-text-secondary">정밀 분석</div>
+            <div className="font-bold text-accent">{data.detailed_scanned_count}</div>
+          </div>
+          <div className="rounded-lg bg-positive/10 px-3 py-2">
+            <div className="text-[11px] text-text-secondary">표시 후보</div>
+            <div className="font-bold text-positive">{data.actionable_count}</div>
           </div>
         </div>
       </div>
