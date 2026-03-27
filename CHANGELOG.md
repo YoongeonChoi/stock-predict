@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.27.0 - 2026-03-27
+
+- `/auth`에서 공개 계정 rate limit(`SP-6016`)이 걸릴 때 남은 대기 시간을 바로 보여주고, 중복 확인 버튼과 회원가입 제출 버튼을 잠시 잠가 같은 요청을 반복하지 않도록 정리했습니다.
+- 공개 계정 엔드포인트가 제한될 때 토스트와 인라인 helper text가 같은 의미의 재시도 안내를 보여주도록 맞췄습니다.
+- README와 버전을 현재 운영 UX 기준으로 다시 동기화했습니다.
+
 ## v2.26.0 - 2026-03-27
 
 - `GET /api/account/username-availability`와 `POST /api/account/signup/validate`에 IP 기준의 짧은 sliding-window rate limit을 추가해 공개 가입 API 남용을 완화했습니다.

@@ -99,6 +99,22 @@ export class ApiTimeoutError extends Error {
   }
 }
 
+export function isApiErrorCode(error: unknown, code: string): error is ApiError {
+  return error instanceof ApiError && error.errorCode === code;
+}
+
+export function getApiRetryAfterSeconds(error: unknown): number | null {
+  if (!(error instanceof ApiError)) {
+    return null;
+  }
+  const match = `${error.detail} ${error.message}`.match(/(\d+)초\s*후/);
+  if (!match) {
+    return null;
+  }
+  const seconds = Number.parseInt(match[1] ?? "", 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
 export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP-6014");
 }
