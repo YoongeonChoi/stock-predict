@@ -35,6 +35,35 @@ async def _return_fetcher(key, fetcher, ttl=None):
 
 
 class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_market_opportunities_uses_cached_payload_before_heavy_prework(self):
+        cached_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T00:00:00",
+            "market_regime": None,
+            "universe_size": 201,
+            "total_scanned": 201,
+            "detailed_scanned_count": 0,
+            "actionable_count": 12,
+            "bullish_count": 6,
+            "universe_source": "fallback",
+            "universe_note": "cached payload",
+            "opportunities": [],
+        }
+
+        async def _cached_only(_key, _fetcher, ttl=None):
+            return cached_payload
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_cached_only)),
+            patch(
+                "app.services.market_service.yfinance_client.get_price_history",
+                new=AsyncMock(side_effect=AssertionError("heavy prework should not run on cached response")),
+            ),
+        ):
+            result = await market_service.get_market_opportunities("KR", limit=12)
+
+        self.assertEqual(result, cached_payload)
+
     async def test_get_market_opportunities_returns_distributional_signal_profile(self):
         forecast = NextDayForecast(
             target_date="2026-03-27",
