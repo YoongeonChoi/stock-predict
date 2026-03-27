@@ -258,6 +258,47 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["opportunities"]), 2)
         self.assertEqual(result["opportunities"][0]["setup_label"], "축약 스캔")
 
+    async def test_lightweight_opportunities_cap_candidate_budget(self):
+        market_regime = MarketRegime(
+            label="중립",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=55.0,
+            conviction=48.0,
+            summary="중립 장세",
+            playbook=["선별 대응"],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
+        )
+        candidates = [("Information Technology", f"{index:06d}.KS") for index in range(10)]
+        seen: list[str] = []
+
+        async def _snapshot(ticker: str, period: str = "3mo"):
+            seen.append(ticker)
+            return {
+                "valid": True,
+                "current_price": 100.0,
+                "change_pct": 1.2,
+                "market_cap": 1000000000.0,
+                "name": ticker,
+            }
+
+        with patch(
+            "app.services.market_service.yfinance_client.get_market_snapshot",
+            new=AsyncMock(side_effect=_snapshot),
+        ):
+            result = await market_service._build_lightweight_opportunities(
+                candidates=candidates,
+                country_code="KR",
+                market_regime=market_regime,
+                limit=12,
+            )
+
+        self.assertLessEqual(len(seen), market_service.LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)
+        self.assertLessEqual(len(result), market_service.LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)
+
 
 if __name__ == "__main__":
     unittest.main()

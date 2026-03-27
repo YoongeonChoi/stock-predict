@@ -20,9 +20,11 @@ from app.scoring.stock_scorer import score_stock
 from app.services.portfolio_optimizer import build_horizon_snapshot
 from app.utils.async_tools import gather_limited
 
-OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 8
-OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 5
+OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 4
+OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 4
 OPPORTUNITY_CONCURRENCY = 4
+LIGHTWEIGHT_OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 2
+LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES = 6
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -144,7 +146,7 @@ async def _build_lightweight_opportunities(
         try:
             snapshot = await asyncio.wait_for(
                 yfinance_client.get_market_snapshot(ticker, period="3mo"),
-                timeout=3,
+                timeout=LIGHTWEIGHT_OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS,
             )
         except Exception:
             return None
@@ -159,7 +161,11 @@ async def _build_lightweight_opportunities(
             market_regime=market_regime,
         )
 
-    scanned = await gather_limited(candidates[: max(limit, 8)], _scan_snapshot, limit=OPPORTUNITY_CONCURRENCY)
+    scanned = await gather_limited(
+        candidates[: min(max(limit, 4), LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)],
+        _scan_snapshot,
+        limit=OPPORTUNITY_CONCURRENCY,
+    )
     items = [item for item in scanned if not isinstance(item, Exception) and item is not None]
     items.sort(key=lambda item: item.opportunity_score, reverse=True)
     return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]

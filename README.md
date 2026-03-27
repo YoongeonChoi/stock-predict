@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.39.1`
+현재 릴리즈: `v2.39.2`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -773,7 +773,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - 공개 대시보드에서 특정 패널이 오래 멈추면 `SP-5018` timeout 응답뿐 아니라 `partial`, `fallback_reason` 필드가 먼저 내려오는지 확인합니다.
 - `heatmap`과 `screener`는 대표 종목군 기준으로 먼저 계산하므로, 화면이 바로 뜨는 안정성을 우선하고 전체 전수 스캔은 후순위로 둡니다.
-- `market opportunities`는 무거운 전수 스캔이 늦을 때 compact 후보군 기반의 경량 추천으로 먼저 내려갈 수 있습니다.
+- `market opportunities`는 무거운 전수 스캔이 늦을 때 compact 후보군 기반의 경량 추천으로 먼저 내려가며, cold-start 직후에도 같은 fallback 경로가 router timeout보다 먼저 끝나도록 더 짧은 예산을 사용합니다.
 - 인증 관련 문제가 나면 `/api/account/me`와 `/api/account/username-availability` 계약부터 확인하는 것이 가장 빠릅니다.
 
 ## 버전 정책

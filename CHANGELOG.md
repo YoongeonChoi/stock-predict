@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.39.2 - 2026-03-27
+
+- `market opportunities`는 cold-start 직후에도 router timeout에 덜 걸리도록 스캔 예산을 더 줄였습니다. 무거운 스캔 timeout과 경량 fallback 예산을 함께 낮추고, 최대 후보 수도 다시 줄여 첫 요청에서 `SP-5018`이 반복되는 빈도를 낮췄습니다.
+- 경량 fallback이 과도하게 많은 후보를 다시 스캔하지 않도록 상한을 테스트로 고정했습니다.
+
 ## v2.39.1 - 2026-03-27
 
 - 공개 `heatmap` 경로는 Render free 환경에서 외부 시세가 느릴 때도 `200` 기반의 부분 응답으로 먼저 살아남도록 바꿨습니다. 섹터 구조와 대표 종목군은 먼저 보여주고, 상세 시세 스냅샷이 늦을 때만 `partial` 플래그와 fallback 이유를 함께 반환합니다.
