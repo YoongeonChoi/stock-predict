@@ -116,11 +116,13 @@
 ## 예측 엔진 기준선
 
 현재 예측 엔진의 canonical backbone은 `backend/app/analysis/distributional_return_engine.py` 입니다.
+표시 confidence의 canonical calibration loop는 `backend/app/scoring/confidence.py` + `backend/app/services/confidence_calibration_service.py` 입니다.
 
 - 숫자 예측은 확률모형이 담당합니다.
 - `OpenAI / GPT-4o`는 숫자 예측기가 아니라 구조화 이벤트 추출기와 서술형 요약기입니다.
 - 뉴스, 보도자료, 공시는 보조 신호이고 가격·변동성·상대강도 같은 수치 시계열이 주신호입니다.
 - 출력은 점예측보다 조건부 수익률 분포를 우선하며, 가격은 분위수, 방향은 `up / flat / down` 확률로 파생합니다.
+- 표시 confidence는 고정 heuristic를 그대로 노출하지 않고, raw support를 만든 뒤 실측 prediction log 기준의 empirical calibrator로 다시 맞춥니다.
 - 새 예측 로직을 넣을 때는 Monte Carlo + LLM 숫자 보정 방식이나 상수 가중 휴리스틱을 다시 들여오지 않습니다.
 - 예측 엔진을 수정하면 wrapper, 시스템 진단, README, CHANGELOG, 버전, 회귀 테스트를 함께 맞춥니다.
 

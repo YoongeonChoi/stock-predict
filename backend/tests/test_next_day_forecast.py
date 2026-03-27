@@ -51,6 +51,9 @@ class NextDayForecastTests(unittest.TestCase):
         self.assertGreater(len(forecast.drivers), 0)
         self.assertEqual(len(forecast.scenarios), 3)
         self.assertAlmostEqual(sum(item.probability for item in forecast.scenarios), 100.0, places=1)
+        self.assertTrue(forecast.confidence_calibrator)
+        self.assertIsNotNone(forecast.calibration_snapshot)
+        self.assertEqual(forecast.calibration_snapshot["prediction_type"], "next_day")
         self.assertIn(
             forecast.execution_bias,
             {"press_long", "lean_long", "stay_selective", "reduce_risk", "capital_preservation"},

@@ -60,6 +60,7 @@ class NextDayForecast(BaseModel):
     data_quality_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
+    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
     confidence_note: str = ""
     news_sentiment: float = 0
     raw_signal: float = 0
@@ -123,6 +124,7 @@ class FreeKrForecastHorizon(BaseModel):
     data_quality_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
+    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
 
 
 class FreeKrForecast(BaseModel):

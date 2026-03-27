@@ -129,17 +129,41 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "app.services.research_service.db.prediction_stats",
                 new=AsyncMock(
-                    return_value={
-                        "stored_predictions": 12,
-                        "pending_predictions": 2,
-                        "total_predictions": 10,
-                        "within_range": 7,
-                        "within_range_rate": 0.7,
-                        "direction_hits": 6,
-                        "direction_accuracy": 0.6,
-                        "avg_error_pct": 1.8,
-                        "avg_confidence": 63.0,
-                    }
+                    side_effect=[
+                        {
+                            "stored_predictions": 12,
+                            "pending_predictions": 2,
+                            "total_predictions": 10,
+                            "within_range": 7,
+                            "within_range_rate": 0.7,
+                            "direction_hits": 6,
+                            "direction_accuracy": 0.6,
+                            "avg_error_pct": 1.8,
+                            "avg_confidence": 63.0,
+                        },
+                        {
+                            "stored_predictions": 8,
+                            "pending_predictions": 1,
+                            "total_predictions": 7,
+                            "within_range": 5,
+                            "within_range_rate": 0.714,
+                            "direction_hits": 5,
+                            "direction_accuracy": 0.714,
+                            "avg_error_pct": 2.1,
+                            "avg_confidence": 61.0,
+                        },
+                        {
+                            "stored_predictions": 6,
+                            "pending_predictions": 2,
+                            "total_predictions": 4,
+                            "within_range": 3,
+                            "within_range_rate": 0.75,
+                            "direction_hits": 3,
+                            "direction_accuracy": 0.75,
+                            "avg_error_pct": 3.4,
+                            "avg_confidence": 58.0,
+                        },
+                    ]
                 ),
             ),
             patch(
@@ -243,10 +267,37 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     ]
                 ),
             ),
+            patch(
+                "app.services.research_service.confidence_calibration_service.get_profile_summary",
+                return_value=[
+                    {
+                        "prediction_type": "next_day",
+                        "method": "empirical_sigmoid_1d",
+                        "sample_count": 48,
+                        "positive_rate": 0.62,
+                        "brier_score": 0.1842,
+                        "prior_brier_score": 0.2111,
+                        "fitted_at": "2026-03-28T10:00:00",
+                    },
+                    {
+                        "prediction_type": "distributional_5d",
+                        "method": "empirical_sigmoid_5d",
+                        "sample_count": 26,
+                        "positive_rate": 0.58,
+                        "brier_score": 0.1931,
+                        "prior_brier_score": 0.2089,
+                        "fitted_at": "2026-03-28T10:00:00",
+                    },
+                ],
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
         self.assertEqual(result["accuracy"]["total_predictions"], 10)
+        self.assertEqual(len(result["horizon_accuracy"]), 3)
+        self.assertEqual(result["horizon_accuracy"][1]["label"], "5D")
+        self.assertEqual(len(result["empirical_calibration"]), 2)
+        self.assertEqual(result["empirical_calibration"][0]["prediction_type"], "next_day")
         self.assertEqual(result["breakdown"]["by_country"][0]["label"], "KR")
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
         self.assertTrue(result["insights"])

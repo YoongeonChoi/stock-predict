@@ -170,6 +170,7 @@ def build_free_kr_forecast(
                 data_quality_support=horizon.data_quality_support,
                 volatility_ratio=horizon.volatility_ratio,
                 confidence_calibrator=horizon.confidence_calibrator,
+                calibration_snapshot=horizon.calibration_snapshot,
             )
         )
 

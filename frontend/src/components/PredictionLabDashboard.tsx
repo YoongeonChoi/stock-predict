@@ -37,6 +37,8 @@ export default function PredictionLabDashboard({ data }: Props) {
     direction_accuracy_pct: row.direction_accuracy * 100,
     within_range_rate_pct: row.within_range_rate * 100,
   }));
+  const horizonRows = data.horizon_accuracy ?? [];
+  const empiricalRows = data.empirical_calibration ?? [];
 
   return (
     <div className="space-y-6">
@@ -99,6 +101,64 @@ export default function PredictionLabDashboard({ data }: Props) {
                 <Bar dataKey="avg_confidence" name="평균 신뢰도" fill="#f59e0b" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-5">
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">Horizon별 실측 성과</h2>
+            <p className="text-sm text-text-secondary mt-1">1D, 5D, 20D 예측이 각자 어느 정도의 표본과 적중률을 갖는지 같은 기준으로 봅니다.</p>
+          </div>
+          <div className="space-y-2">
+            {horizonRows.map((row) => (
+              <div key={row.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{row.label}</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      저장 {row.stored_predictions}건 · 평가 완료 {row.total_predictions}건 · 대기 {row.pending_predictions}건
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{pct(row.direction_accuracy)}</div>
+                    <div className="text-xs text-text-secondary mt-1">평균 오차 {row.avg_error_pct.toFixed(2)}%</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">Empirical calibrator 상태</h2>
+            <p className="text-sm text-text-secondary mt-1">실측 로그가 쌓일수록 bootstrap prior에서 벗어나 horizon별 sigmoid가 다시 맞춰집니다.</p>
+          </div>
+          <div className="space-y-2">
+            {empiricalRows.length === 0 ? (
+              <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
+                아직 충분한 실측 로그가 쌓이지 않아 empirical calibrator가 bootstrap prior 위주로 동작하고 있습니다.
+              </div>
+            ) : (
+              empiricalRows.map((row) => (
+                <div key={row.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{row.label}</div>
+                      <div className="text-xs text-text-secondary mt-1">
+                        {row.method} · 표본 {row.sample_count}건 · positive rate {row.positive_rate.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{row.brier_score.toFixed(4)}</div>
+                      <div className="text-xs text-text-secondary mt-1">prior {row.prior_brier_score.toFixed(4)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

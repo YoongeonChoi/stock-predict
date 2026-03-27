@@ -73,6 +73,14 @@ class FreeKrForecastTests(unittest.TestCase):
             self.assertAlmostEqual(horizon.p_up + horizon.p_flat + horizon.p_down, 100.0, places=1)
             self.assertGreaterEqual(horizon.confidence, 38.0)
             self.assertLessEqual(horizon.confidence, 88.0)
+            self.assertTrue(horizon.confidence_calibrator)
+            self.assertIsNotNone(horizon.calibration_snapshot)
+            expected_prediction_type = {
+                1: "next_day",
+                5: "distributional_5d",
+                20: "distributional_20d",
+            }[horizon.horizon_days]
+            self.assertEqual(horizon.calibration_snapshot["prediction_type"], expected_prediction_type)
 
     def test_bullish_inputs_raise_up_probability_vs_bearish_inputs(self):
         common_kwargs = {

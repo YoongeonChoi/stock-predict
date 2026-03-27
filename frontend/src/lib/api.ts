@@ -943,6 +943,27 @@ export interface PredictionRecentRecord {
 export interface PredictionLabResponse {
   generated_at: string;
   accuracy: PredictionAccuracyStats;
+  horizon_accuracy: {
+    prediction_type: string;
+    label: string;
+    stored_predictions: number;
+    pending_predictions: number;
+    total_predictions: number;
+    direction_accuracy: number;
+    within_range_rate: number;
+    avg_error_pct: number;
+    avg_confidence: number;
+  }[];
+  empirical_calibration: {
+    prediction_type: string;
+    label: string;
+    method: string;
+    sample_count: number;
+    positive_rate: number;
+    brier_score: number;
+    prior_brier_score: number;
+    fitted_at?: string | null;
+  }[];
   breakdown: {
     by_country: PredictionBreakdownRow[];
     by_scope: PredictionBreakdownRow[];
@@ -984,6 +1005,15 @@ export interface SystemDiagnostics {
   startup_tasks: StartupTaskStatus[];
   data_sources: DataSourceStatus[];
   forecast_models: ForecastModelSummary[];
+  confidence_calibration_profiles?: {
+    prediction_type: string;
+    method: string;
+    sample_count: number;
+    positive_rate: number;
+    brier_score: number;
+    prior_brier_score: number;
+    fitted_at?: string | null;
+  }[] | null;
   prediction_accuracy?: PredictionAccuracyStats | null;
   prediction_accuracy_error?: string | null;
   research_archive?: ResearchArchiveStatus | null;
