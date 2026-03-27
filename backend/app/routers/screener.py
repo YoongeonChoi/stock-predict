@@ -2,7 +2,6 @@ import asyncio
 import logging
 from fastapi import APIRouter, Query
 from fastapi.params import Param
-from fastapi.responses import JSONResponse
 from app.data import yfinance_client, cache
 from app.data.universe_data import get_universe
 from app.errors import SP_5018
@@ -10,11 +9,12 @@ from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["screener"])
-PUBLIC_SCREENER_TIMEOUT_SECONDS = 16
-SCREENER_MAX_CANDIDATES = 88
-SCREENER_MAX_SECTOR_CANDIDATES = 28
-SCREENER_MAX_PER_SECTOR = 8
+PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
+SCREENER_MAX_CANDIDATES = 36
+SCREENER_MAX_SECTOR_CANDIDATES = 16
+SCREENER_MAX_PER_SECTOR = 4
 SCREENER_CONCURRENCY = 4
+SCREENER_ENRICHMENT_BUDGET = 12
 
 ALLOWED_SORT_FIELDS = {
     "market_cap",
@@ -61,6 +61,112 @@ def _select_candidate_tickers(universe: dict[str, list[str]], sector: str | None
                 return tickers
 
     return tickers
+
+
+def _needs_enrichment(
+    *,
+    pe_min: float | None,
+    pe_max: float | None,
+    pb_max: float | None,
+    dividend_yield_min: float | None,
+    beta_max: float | None,
+    pct_from_52w_high_min: float | None,
+    pct_from_52w_high_max: float | None,
+    revenue_growth_min: float | None,
+    roe_min: float | None,
+    debt_to_equity_max: float | None,
+    avg_volume_min: float | None,
+    profitable_only: bool,
+    score_min: float | None,
+    sort_by: str,
+) -> bool:
+    info_filters = [
+        pe_min,
+        pe_max,
+        pb_max,
+        dividend_yield_min,
+        beta_max,
+        pct_from_52w_high_min,
+        pct_from_52w_high_max,
+        revenue_growth_min,
+        roe_min,
+        debt_to_equity_max,
+        avg_volume_min,
+        score_min,
+    ]
+    if profitable_only:
+        return True
+    if any(value is not None for value in info_filters):
+        return True
+    return sort_by not in {"market_cap", "current_price", "change_pct"}
+
+
+def _build_snapshot_result(snapshot: dict, *, ticker: str, sector: str, country: str) -> dict | None:
+    current_price = float(snapshot.get("current_price") or snapshot.get("price") or 0.0)
+    if current_price <= 0:
+        return None
+    prev_close = float(snapshot.get("prev_close") or current_price)
+    change_pct = float(snapshot.get("change_pct") or (((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0))
+    return {
+        "ticker": ticker,
+        "name": snapshot.get("name") or ticker,
+        "sector": sector,
+        "industry": "N/A",
+        "market_cap": float(snapshot.get("market_cap") or 0.0),
+        "current_price": round(current_price, 2),
+        "change_pct": round(change_pct, 2),
+        "pe_ratio": None,
+        "pb_ratio": None,
+        "dividend_yield": None,
+        "beta": None,
+        "week52_high": None,
+        "week52_low": None,
+        "pct_from_52w_high": None,
+        "revenue_growth": None,
+        "roe": None,
+        "debt_to_equity": None,
+        "avg_volume": None,
+        "profit_margins": None,
+        "score": None,
+        "country_code": country,
+    }
+
+
+async def _build_snapshot_fallback(
+    *,
+    country: str,
+    sector: str | None,
+    limit: int,
+) -> dict:
+    universe = await get_universe(country)
+    selected = _select_candidate_tickers(universe, sector)[: max(limit, 10)]
+
+    async def _snapshot_only(ticker: str):
+        try:
+            snapshot = await asyncio.wait_for(
+                yfinance_client.get_market_snapshot(ticker, period="3mo"),
+                timeout=3,
+            )
+        except Exception as exc:
+            logging.warning("screener fallback snapshot failed for %s: %s", ticker, exc)
+            return None
+        if not snapshot.get("valid"):
+            return None
+        owning_sector = sector or next(
+            (sector_name for sector_name, sector_tickers in universe.items() if ticker in sector_tickers),
+            "N/A",
+        )
+        return _build_snapshot_result(snapshot, ticker=ticker, sector=owning_sector, country=country)
+
+    snapshots = await gather_limited(selected, _snapshot_only, limit=SCREENER_CONCURRENCY)
+    results = [item for item in snapshots if not isinstance(item, Exception) and item is not None][:limit]
+    return {
+        "results": results,
+        "total": len(results),
+        "sectors": list(universe.keys()),
+        "partial": True,
+        "fallback_reason": "snapshot_only",
+    }
 
 
 @router.get("/screener")
@@ -119,23 +225,64 @@ async def screen_stocks(
     if country != "KR":
         country = "KR"
     cache_key = (
-        f"screener:v5:{country}:{sector}:{market_cap_min}:{market_cap_max}:{price_min}:{price_max}:"
+        f"screener:v6:{country}:{sector}:{market_cap_min}:{market_cap_max}:{price_min}:{price_max}:"
         f"{pe_min}:{pe_max}:{pb_max}:{dividend_yield_min}:{beta_max}:{change_pct_min}:{change_pct_max}:"
         f"{pct_from_52w_high_min}:{pct_from_52w_high_max}:{revenue_growth_min}:{roe_min}:{debt_to_equity_max}:"
         f"{avg_volume_min}:{profitable_only}:{score_min}:{sort_by}:{sort_dir}:{limit}"
     )
-    
-    cached = await cache.get(cache_key)
-    if cached is not None:
-        return cached
+    needs_enrichment = _needs_enrichment(
+        pe_min=pe_min,
+        pe_max=pe_max,
+        pb_max=pb_max,
+        dividend_yield_min=dividend_yield_min,
+        beta_max=beta_max,
+        pct_from_52w_high_min=pct_from_52w_high_min,
+        pct_from_52w_high_max=pct_from_52w_high_max,
+        revenue_growth_min=revenue_growth_min,
+        roe_min=roe_min,
+        debt_to_equity_max=debt_to_equity_max,
+        avg_volume_min=avg_volume_min,
+        profitable_only=profitable_only,
+        score_min=score_min,
+        sort_by=sort_by,
+    )
 
     async def _screen_ticker(ticker: str):
         try:
-            snapshot = await yfinance_client.get_market_snapshot(ticker, period="6mo")
+            snapshot = await asyncio.wait_for(
+                yfinance_client.get_market_snapshot(ticker, period="6mo"),
+                timeout=4,
+            )
             if not snapshot.get("valid"):
                 return None
 
-            info = await yfinance_client.get_stock_info(ticker)
+            owning_sector = sector or next(
+                (sector_name for sector_name, sector_tickers in universe.items() if ticker in sector_tickers),
+                "N/A",
+            )
+
+            if not needs_enrichment:
+                market_cap = float(snapshot.get("market_cap") or 0.0)
+                current_price = float(snapshot.get("current_price") or snapshot.get("price") or 0.0)
+                prev_close = float(snapshot.get("prev_close") or current_price)
+                change_pct = float(snapshot.get("change_pct") or (((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0))
+
+                if market_cap_min and market_cap < market_cap_min:
+                    return None
+                if market_cap_max and market_cap > market_cap_max:
+                    return None
+                if price_min and current_price < price_min:
+                    return None
+                if price_max and current_price > price_max:
+                    return None
+                if change_pct_min is not None and change_pct < change_pct_min:
+                    return None
+                if change_pct_max is not None and change_pct > change_pct_max:
+                    return None
+
+                return _build_snapshot_result(snapshot, ticker=ticker, sector=owning_sector, country=country)
+
+            info = await asyncio.wait_for(yfinance_client.get_stock_info(ticker), timeout=4)
             price = float(info.get("current_price") or snapshot.get("current_price") or 0.0)
             if price <= 0:
                 return None
@@ -213,7 +360,7 @@ async def screen_stocks(
             return {
                 "ticker": ticker,
                 "name": info.get("name") or snapshot.get("name") or ticker,
-                "sector": info.get("sector", "N/A"),
+                "sector": info.get("sector") or owning_sector,
                 "industry": info.get("industry", "N/A"),
                 "market_cap": mc,
                 "current_price": round(price, 2),
@@ -238,8 +385,11 @@ async def screen_stocks(
             return None
 
     async def _build_response():
+        nonlocal universe
         universe = await get_universe(country)
         tickers = _select_candidate_tickers(universe, sector)
+        if needs_enrichment:
+            tickers = tickers[: max(limit * 2, SCREENER_ENRICHMENT_BUDGET)]
         screened = await gather_limited(tickers, _screen_ticker, limit=SCREENER_CONCURRENCY)
         results = [item for item in screened if not isinstance(item, Exception) and item is not None]
 
@@ -254,12 +404,16 @@ async def screen_stocks(
             "sectors": list(universe.keys()),
         }
 
+    universe: dict[str, list[str]] = {}
     try:
-        response = await asyncio.wait_for(_build_response(), timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS)
+        response = await cache.get_or_fetch(
+            cache_key,
+            lambda: asyncio.wait_for(_build_response(), timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS),
+            ttl=600,
+        )
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
-        return JSONResponse(status_code=504, content=err.to_dict())
+        return await _build_snapshot_fallback(country=country, sector=sector, limit=limit)
 
-    await cache.set(cache_key, response, 600)
     return response

@@ -12,10 +12,11 @@ from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
-HEATMAP_TIMEOUT_SECONDS = 16
-HEATMAP_TICKERS_PER_SECTOR = 5
-HEATMAP_CHILDREN_PER_SECTOR = 5
-HEATMAP_CONCURRENCY = 3
+OPPORTUNITY_TIMEOUT_SECONDS = 12
+HEATMAP_TIMEOUT_SECONDS = 10
+HEATMAP_TICKERS_PER_SECTOR = 2
+HEATMAP_CHILDREN_PER_SECTOR = 2
+HEATMAP_CONCURRENCY = 2
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -57,6 +58,35 @@ async def _build_heatmap_payload(code: str) -> dict:
             sectors.append({"name": sector_name, "children": stocks[:HEATMAP_CHILDREN_PER_SECTOR]})
 
     return {"children": sectors}
+
+
+async def _build_heatmap_fallback(code: str) -> dict:
+    from app.data.universe_data import get_universe
+
+    universe = await get_universe(code)
+    max_sector_size = max((len(tickers) for tickers in universe.values()), default=1)
+    sectors = []
+    for sector_name, tickers in universe.items():
+        if not tickers:
+            continue
+        children = []
+        for idx, ticker in enumerate(tickers[:HEATMAP_CHILDREN_PER_SECTOR], start=1):
+            relative_size = max(len(tickers) - idx + 1, 1) / max(max_sector_size, 1)
+            children.append(
+                {
+                    "name": ticker.split(".")[0],
+                    "ticker": ticker,
+                    "fullName": ticker,
+                    "size": round(relative_size * 1_000_000_000, 2),
+                    "change": 0.0,
+                }
+            )
+        sectors.append({"name": sector_name, "children": children})
+    return {
+        "children": sectors,
+        "partial": True,
+        "fallback_reason": "live_snapshot_timeout",
+    }
 
 
 @router.get("/countries")
@@ -124,20 +154,17 @@ async def get_heatmap(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     from app.data import cache as data_cache
-    cache_key = f"heatmap:{code}"
-    cached = await data_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    cache_key = f"heatmap:v3:{code}"
 
-    try:
-        result = await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
-        err = SP_5018(f"Heatmap for {code} exceeded {HEATMAP_TIMEOUT_SECONDS} seconds.")
-        err.log("warning")
-        return JSONResponse(status_code=504, content=err.to_dict())
+    async def _fetch_heatmap():
+        try:
+            return await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            err = SP_5018(f"Heatmap for {code} exceeded {HEATMAP_TIMEOUT_SECONDS} seconds.")
+            err.log("warning")
+            return await _build_heatmap_fallback(code)
 
-    await data_cache.set(cache_key, result, 900)
-    return result
+    return await data_cache.get_or_fetch(cache_key, _fetch_heatmap, ttl=900)
 
 
 @router.get("/country/{code}/report/pdf")
@@ -350,10 +377,10 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         return JSONResponse(status_code=404, content=err.to_dict())
     try:
         return await asyncio.wait_for(
-            market_service.get_market_opportunities(code, limit),
-            timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            market_service.get_market_opportunities(code, limit, max_candidates=min(max(limit, 8), 10)),
+            timeout=OPPORTUNITY_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
-        err = SP_5018(f"Opportunity radar for {code} exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
+        err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
         return JSONResponse(status_code=504, content=err.to_dict())

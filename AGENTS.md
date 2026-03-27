@@ -170,6 +170,7 @@
    - 느린 외부 소스 하나 때문에 전체 화면이 `불러오는 중` 상태로 고정되지 않게 합니다.
    - timeout을 추가하면 관련 에러 코드와 사용자 안내 문구도 함께 맞춥니다.
    - Render free 환경에서 공개 경로는 가능한 한 `대표 표본 + 캐시 + 구조화된 timeout`을 우선하고, 전체 유니버스 전수 조회는 기본값으로 두지 않습니다.
+   - 공개 패널은 가능하면 `504`로 바로 실패시키기보다 `200 + partial + fallback_reason`으로 먼저 살려 두고, 정말 핵심 결과를 만들 수 없을 때만 구조화된 timeout 오류를 반환합니다.
 13. 소개 문구, 헤더 설명, README 첫 문단은 `제약`보다 `효용`을 먼저 설명합니다.
    - 시장 범위, free 플랜 제약, 외부 API 한계는 숨기지 않되, headline처럼 반복하지 않습니다.
 14. AI 과장 카피를 금지합니다.
@@ -274,7 +275,7 @@
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
 ```
 
-`--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout은 짧게 재시도합니다.
+`--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout은 짧게 재시도하며, 느린 공개 API는 `partial` fallback까지 함께 확인합니다.
 
 운영 배포가 로컬 버전으로 실제 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
 
