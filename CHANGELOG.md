@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.35.0 - 2026-03-27
+
+- `scripts/deployed_site_smoke.py`를 추가해 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출하는 배포 스모크 체크를 만들었습니다.
+- `verify.py --deployed-site-smoke`로 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 한 번에 점검할 수 있도록 런처를 확장했습니다.
+- README와 AGENTS 문서를 운영 스모크 명령까지 포함하도록 다시 동기화했습니다.
+
 ## v2.34.0 - 2026-03-27
 
 - 보호된 API가 `401 / SP-6014`를 반환할 때 프론트가 공통 인증 이벤트를 발생시키고, `AuthProvider`가 현재 Supabase 세션을 한 번 더 재검증하도록 정리했습니다.
