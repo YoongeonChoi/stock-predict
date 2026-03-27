@@ -76,6 +76,46 @@ class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quotes["123456.KQ"]["current_price"], 1050.0)
         self.assertEqual(quotes["123456.KQ"]["name"], "123456")
 
+    async def test_get_kr_bulk_quotes_uses_fast_small_batch_path_without_full_market_fetch(self):
+        fallback_quotes = {
+            "005930.KS": {
+                "ticker": "005930.KS",
+                "current_price": 179700.0,
+                "prev_close": 180100.0,
+                "change_pct": -0.22,
+                "session_date": "2026-03-27",
+            },
+            "000660.KS": {
+                "ticker": "000660.KS",
+                "current_price": 922000.0,
+                "prev_close": 933000.0,
+                "change_pct": -1.18,
+                "session_date": "2026-03-27",
+            },
+        }
+
+        with (
+            patch(
+                "app.data.kr_market_quote_client.yfinance_client.get_batch_stock_quotes",
+                new=AsyncMock(return_value=fallback_quotes),
+            ) as batch_quotes,
+            patch(
+                "app.data.kr_market_quote_client._fetch_full_kr_market_quotes",
+                new=AsyncMock(side_effect=AssertionError("full market fetch should not run")),
+            ) as full_fetch,
+            patch(
+                "app.data.kr_market_quote_client.yfinance_client._kr_ticker_name",
+                side_effect=lambda ticker: {"005930.KS": "삼성전자", "000660.KS": "SK하이닉스"}.get(ticker),
+            ),
+        ):
+            quotes = await kr_market_quote_client.get_kr_bulk_quotes(["005930.KS", "000660.KS"])
+
+        self.assertEqual(set(quotes.keys()), {"005930.KS", "000660.KS"})
+        self.assertEqual(quotes["005930.KS"]["name"], "삼성전자")
+        self.assertEqual(quotes["000660.KS"]["name"], "SK하이닉스")
+        batch_quotes.assert_awaited_once()
+        full_fetch.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

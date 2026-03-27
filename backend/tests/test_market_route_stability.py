@@ -70,24 +70,24 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
         get_stock_info.assert_not_awaited()
 
     async def test_sector_performance_aggregates_live_constituent_snapshots(self):
-        cache_get = AsyncMock(return_value=None)
-        cache_set = AsyncMock()
-        load_snapshot = AsyncMock(
-            side_effect=[
-                {"ticker": "AAA", "name": "Alpha", "price": 100.0, "change_pct": 2.0, "market_cap": 900.0, "current_price": 100.0, "valid": True},
-                {"ticker": "BBB", "name": "Beta", "price": 80.0, "change_pct": -1.0, "market_cap": 700.0, "current_price": 80.0, "valid": True},
-                {"ticker": "CCC", "name": "Care", "price": 60.0, "change_pct": 4.0, "market_cap": 500.0, "current_price": 60.0, "valid": True},
-            ]
+        async def _return_fetcher(_key, fetcher, ttl=None):
+            return await fetcher()
+
+        bulk_quotes = AsyncMock(
+            return_value={
+                "AAA": {"ticker": "AAA", "name": "Alpha", "current_price": 100.0, "change_pct": 2.0, "market_cap": 900.0},
+                "BBB": {"ticker": "BBB", "name": "Beta", "current_price": 80.0, "change_pct": -1.0, "market_cap": 700.0},
+                "CCC": {"ticker": "CCC", "name": "Care", "current_price": 60.0, "change_pct": 4.0, "market_cap": 500.0},
+            }
         )
 
         with (
-            patch("app.data.cache.get", new=cache_get),
-            patch("app.data.cache.set", new=cache_set),
+            patch("app.data.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
                 "app.data.universe_data.get_universe",
                 new=AsyncMock(return_value={"Information Technology": ["AAA", "BBB"], "Health Care": ["CCC"]}),
             ),
-            patch("app.routers.country._load_market_snapshot", new=load_snapshot),
+            patch("app.routers.country.kr_market_quote_client.get_kr_bulk_quotes", new=bulk_quotes),
         ):
             result = await get_sector_performance("KR")
 
@@ -96,7 +96,7 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[1]["sector"], "Information Technology")
         self.assertEqual(result[1]["change_pct"], 0.5)
         self.assertEqual(result[1]["ticker"], "AAA")
-        cache_set.assert_awaited()
+        bulk_quotes.assert_awaited()
 
 
 if __name__ == "__main__":

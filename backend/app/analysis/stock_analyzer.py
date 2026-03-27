@@ -8,7 +8,11 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
-from app.analysis.distributional_return_engine import build_structured_event_context
+from app.analysis.distributional_return_engine import (
+    EventFeatures,
+    build_heuristic_event_context,
+    build_structured_event_context,
+)
 from app.analysis.free_kr_forecast import build_free_kr_forecast
 from app.analysis.historical_pattern_forecast import build_historical_pattern_forecast
 from app.analysis.llm_client import ask_json
@@ -17,6 +21,7 @@ from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import stock_analysis_prompt
 from app.analysis.trade_planner import build_trade_plan
 from app.config import get_settings
+from app.errors import SP_4004
 from app.data import (
     cache,
     ecos_client,
@@ -44,6 +49,9 @@ from app.models.stock import (
 from app.scoring import rubric
 from app.scoring.stock_scorer import score_composite, score_stock
 from app.utils.async_tools import gather_limited
+
+STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS = 8.0
+EVENT_CONTEXT_TIMEOUT_SECONDS = 8.0
 
 
 async def analyze_stock(ticker: str) -> dict:
@@ -122,10 +130,31 @@ async def analyze_stock(ticker: str) -> dict:
         analyst_counts=analyst_raw,
     )
 
+    technical = _calc_technicals(prices_raw)
+    price_history = [PricePoint(**p) for p in prices_raw]
+    financials = [QuarterlyFinancial(**f) for f in financials_raw[:8]]
+    earnings_history = [EarningsEvent(**e) for e in earnings_raw[:12]]
+    peer_comparisons = _build_peer_comparisons(info, peer_avg)
+
+    price = info.get("current_price", 0)
+    prev = info.get("prev_close", price)
+    change_pct = ((price - prev) / prev * 100) if prev else 0
+    combined_news = [*google_news, *naver_news]
+    reference_date = prices_6mo[-1]["date"] if prices_6mo else prices_raw[-1]["date"]
     system, user = stock_analysis_prompt(
         ticker, info, financials_raw, google_news, quant_score.model_dump()
     )
-    llm_result = await ask_json(system, user)
+    llm_result, event_context = await asyncio.gather(
+        _ask_stock_summary_with_timeout(system, user),
+        _build_event_context_with_timeout(
+            ticker=ticker,
+            asset_name=info.get("name", ticker),
+            country_code=country_code,
+            news_items=combined_news,
+            filings=filings,
+            reference_date=reference_date,
+        ),
+    )
     llm_failed = "error_code" in llm_result or "error" in llm_result
 
     if not llm_failed:
@@ -137,25 +166,7 @@ async def analyze_stock(ticker: str) -> dict:
             + quant_score.risk.total
         )
 
-    technical = _calc_technicals(prices_raw)
-    price_history = [PricePoint(**p) for p in prices_raw]
-    financials = [QuarterlyFinancial(**f) for f in financials_raw[:8]]
-    earnings_history = [EarningsEvent(**e) for e in earnings_raw[:12]]
-    peer_comparisons = _build_peer_comparisons(info, peer_avg)
     buy_sell = _build_buy_sell(info, llm_result, peer_avg)
-
-    price = info.get("current_price", 0)
-    prev = info.get("prev_close", price)
-    change_pct = ((price - prev) / prev * 100) if prev else 0
-    combined_news = [*google_news, *naver_news]
-    event_context = await build_structured_event_context(
-        ticker=ticker,
-        asset_name=info.get("name", ticker),
-        country_code=country_code,
-        news_items=combined_news,
-        filings=filings,
-        reference_date=(prices_6mo[-1]["date"] if prices_6mo else prices_raw[-1]["date"]),
-    )
 
     next_day_forecast = forecast_next_day(
         ticker=ticker,
@@ -313,6 +324,51 @@ async def _refresh_cached_stock_detail(cached: dict, ticker: str) -> dict:
     refreshed["current_price"] = round(current_price, 2)
     refreshed["change_pct"] = round(((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0, 2)
     return refreshed
+
+
+async def _ask_stock_summary_with_timeout(system_prompt: str, user_prompt: str) -> dict:
+    try:
+        return await asyncio.wait_for(
+            ask_json(system_prompt, user_prompt),
+            timeout=STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        err = SP_4004()
+        err.log("warning")
+        return err.to_dict()
+
+
+async def _build_event_context_with_timeout(
+    *,
+    ticker: str,
+    asset_name: str,
+    country_code: str,
+    news_items: list[dict],
+    filings: list[dict],
+    reference_date: str,
+) -> EventFeatures:
+    heuristic = build_heuristic_event_context(
+        news_items=news_items,
+        filings=filings,
+        reference_date=reference_date,
+    )
+    try:
+        return await asyncio.wait_for(
+            build_structured_event_context(
+                ticker=ticker,
+                asset_name=asset_name,
+                country_code=country_code,
+                news_items=news_items,
+                filings=filings,
+                reference_date=reference_date,
+            ),
+            timeout=EVENT_CONTEXT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        SP_4004().log("warning")
+        if not heuristic.summary:
+            heuristic.summary = "이벤트 구조화 응답이 늦어 정량 시계열 신호를 우선 사용했습니다."
+        return heuristic
 
 
 def _latest_price_stamp(prices: list[dict]) -> str:

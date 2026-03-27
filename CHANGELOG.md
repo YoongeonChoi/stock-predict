@@ -2,6 +2,25 @@
 
 All notable changes to this project are tracked here.
 
+## v2.45.1 - 2026-03-27
+
+- KR 소량 시세 조회는 이제 먼저 `yfinance batch quote` 경로를 시도하고, 커버리지가 충분할 때는 시장 전체 시가총액 페이지 fetch를 생략합니다. 그래서 `sector performance` 같은 첫 진입 카드가 서버가 막 깨어난 직후에도 덜 무겁게 시작됩니다.
+- 종목 상세 분석은 요약 생성과 이벤트 구조화를 병렬로 처리하고, 느린 AI 보조 단계는 timeout fallback으로 넘겨 정량 시계열 결과가 먼저 보이도록 응답 구조를 정리했습니다.
+- 회귀 테스트를 추가해 `KR small quote fast path`와 `stock analyzer timeout fallback` 계약을 고정했습니다.
+
+## v2.45.0 - 2026-03-27
+
+- `country report` 공개 경로는 Render free warmup이나 외부 소스 지연이 길어질 때 더 이상 raw `504 / SP-5018`만 반환하지 않고, 대표 지수와 빠른 후보를 담은 `partial` 보고서를 먼저 돌려줍니다. 같은 fallback은 `PDF / CSV export`에도 적용돼 cold start 직후 `500`으로 바로 끊기던 흐름을 줄였습니다.
+- `KR sector performance`는 개별 종목 스냅샷을 순차로 모으는 대신 `kr_market_quote_client` bulk quote를 먼저 사용하도록 정리해 첫 진입 latency를 줄였습니다.
+- `Opportunity Radar`의 quick path는 KRX 상장사 캐시가 아직 준비되지 않았을 때도 즉시 `운영용 기본 종목군`으로 내려가도록 바꿨습니다. 그래서 quick fallback이 다시 느린 유니버스 해석으로 빠지며 `8개/0개`처럼 왜곡된 숫자를 오래 보여주던 구간을 줄였습니다.
+- 라이브 API 스모크 스크립트도 현재 운영 기준선에 맞춰 `AAPL/MSFT` 대신 `005930.KS`, `000660.KS`를 사용하도록 다시 맞췄습니다.
+
+## v2.44.0 - 2026-03-27
+
+- `Opportunity Radar`는 Render free warmup이나 외부 데이터 지연으로 정밀 분포 계산이 늦어질 때, 더 이상 바로 `504 / SP-5018`로 끊지 않고 `1차 시세 스캔 후보`를 먼저 반환합니다. 백그라운드 계산은 계속 진행되며 같은 조건의 다음 재조회에서는 정밀 후보가 캐시로 바로 보일 수 있습니다.
+- `KR Screener` 기본 조회는 개별 종목 `yfinance` 스냅샷을 순차로 긁지 않고 `kr_market_quote_client`의 bulk quote 경로를 먼저 사용하도록 바꿨습니다. 그래서 첫 진입에서 오래 멈추거나 timeout 뒤 fallback까지 느리던 문제가 줄어들고, timeout이 나더라도 `kr_bulk_snapshot_only` 부분 응답이 더 빠르게 살아남습니다.
+- 공개 fallback/timeout 회귀 테스트를 추가해, `레이더 timeout -> quick fallback`, `KR 스크리너 기본 조회 -> bulk quotes`, `무거운 스크리너 -> partial fallback` 계약을 고정했습니다.
+
 ## v2.43.0 - 2026-03-27
 
 - `Opportunity Radar`의 KR 응답은 이제 `전체 유니버스`와 `실제 시세 확보 수`를 분리해 내려, 전종목 1차 스캔을 시도했는데 일부 종목만 데이터 원본에서 빠진 경우에도 왜 숫자가 작아졌는지 더 정확히 설명합니다.

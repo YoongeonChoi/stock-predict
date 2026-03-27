@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from app.analysis.distributional_return_engine import build_distributional_forecast
 from app.analysis.market_regime import build_market_regime
@@ -12,9 +13,9 @@ from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.analysis.stock_analyzer import _calc_technicals
 from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, yfinance_client
-from app.data.universe_data import resolve_opportunity_universe, resolve_universe
+from app.data.universe_data import UNIVERSE, resolve_opportunity_universe, resolve_universe
 from app.models.country import COUNTRY_REGISTRY
-from app.models.market import OpportunityItem, OpportunityRadarResponse
+from app.models.market import MarketRegime, OpportunityItem, OpportunityRadarResponse
 from app.models.stock import PricePoint, TechnicalIndicators
 from app.scoring.stock_scorer import score_stock
 from app.services.portfolio_optimizer import build_horizon_snapshot
@@ -31,6 +32,7 @@ MIN_DETAILED_OPPORTUNITY_CANDIDATES = 12
 MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
 LARGE_UNIVERSE_DETAILED_SCAN_CAP = 4
 LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD = 120
+QUICK_OPPORTUNITY_CACHE_TTL_SECONDS = 300
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -65,6 +67,30 @@ def _regime_tailwind_label(stance: str) -> str:
     if stance == "risk_off":
         return "headwind"
     return "mixed"
+
+
+def _build_placeholder_market_regime(
+    *,
+    country_code: str,
+    index_name: str,
+    note: str,
+) -> MarketRegime:
+    return MarketRegime(
+        label=f"{country_code} 빠른 스냅샷",
+        stance="neutral",
+        trend="range",
+        volatility="normal",
+        breadth="mixed",
+        score=50.0,
+        conviction=38.0,
+        summary=note,
+        playbook=[
+            f"{index_name} 정밀 국면 계산이 완료되기 전까지 1차 시세 스캔 후보를 우선 제공합니다.",
+            "강한 후보를 먼저 확인하고, 잠시 뒤 다시 열어 정밀 분포 신호를 확인해 주세요.",
+        ],
+        warnings=["시장 국면과 분포 신호는 백그라운드 계산이 끝난 뒤 더 정교하게 갱신됩니다."],
+        signals=[],
+    )
 
 
 def _flatten_universe(universe: dict[str, list[str]]) -> list[tuple[str, str]]:
@@ -388,6 +414,39 @@ async def _build_quote_screen(
     return await cache.get_or_fetch(cache_key, _fetch_quotes, ttl=900)
 
 
+async def _resolve_quick_opportunity_universe(country_code: str):
+    country_code = country_code.upper()
+    if country_code == "KR":
+        cached = await cache.get("krx_listing_universe:KR")
+        if cached and isinstance(cached, dict):
+            sectors = {
+                sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
+                for sector, tickers in (cached.get("sectors") or {}).items()
+            }
+            total = int(cached.get("total") or sum(len(tickers) for tickers in sectors.values()))
+            if total > 0:
+                return SimpleNamespace(
+                    sectors=sectors,
+                    source="krx_listing",
+                    note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 백그라운드에서 이어집니다.",
+                )
+        fallback_sectors = {
+            sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
+            for sector, tickers in UNIVERSE.get(country_code, {}).items()
+        }
+        fallback_total = sum(len(tickers) for tickers in fallback_sectors.values())
+        if fallback_total > 0:
+            return SimpleNamespace(
+                sectors=fallback_sectors,
+                source="fallback",
+                note=(
+                    f"KRX 상장사 목록 캐시가 아직 준비되지 않아 운영용 기본 종목군 {fallback_total}개를 먼저 1차 스캔합니다. "
+                    "정식 전종목 스캔은 캐시가 준비되는 즉시 이어집니다."
+                ),
+            )
+    return await resolve_universe(country_code)
+
+
 def build_distributional_signal_profile(
     *,
     current_price: float,
@@ -456,7 +515,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v14:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = f"opportunity_radar:v15:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -765,3 +824,75 @@ async def get_market_opportunities(
         ).model_dump()
 
     return await cache.get_or_fetch(cache_key, _build_response, ttl=900)
+
+
+async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> dict:
+    country_code = country_code.upper()
+    cache_key = f"opportunity_radar_quick:v2:{country_code}:{limit}"
+
+    country = COUNTRY_REGISTRY.get(country_code)
+    if not country:
+        return {
+            "country_code": country_code,
+            "generated_at": datetime.now().isoformat(),
+            "market_regime": None,
+            "universe_size": 0,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "",
+            "opportunities": [],
+        }
+
+    async def _build_response() -> dict:
+        market_regime = _build_placeholder_market_regime(
+            country_code=country_code,
+            index_name=country.indices[0].name,
+            note="정밀 시장 국면 계산이 길어져 1차 시세 스캔 후보를 먼저 제공합니다.",
+        )
+        universe_selection = await _resolve_quick_opportunity_universe(country_code)
+        quote_screen = await _build_quote_screen(
+            country_code=country_code,
+            universe_selection=universe_selection,
+            market_regime=market_regime,
+        )
+        ranked_quotes = list(quote_screen.get("ranked") or [])
+        ranked = _build_quote_only_opportunities(
+            ranked_quotes=ranked_quotes,
+            country_code=country_code,
+            market_regime=market_regime,
+            limit=limit,
+        )
+        if not ranked:
+            ranked = await _build_lightweight_opportunities(
+                candidates=_flatten_universe(universe_selection.sectors),
+                country_code=country_code,
+                market_regime=market_regime,
+                limit=limit,
+            )
+
+        resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
+        note_parts = [universe_selection.note.strip()]
+        note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
+        note_parts.append("같은 조건으로 다시 열면 백그라운드 계산이 끝난 정밀 후보가 바로 보일 수 있습니다.")
+        resolved_universe_note = " ".join(part for part in note_parts if part).strip()
+
+        return OpportunityRadarResponse(
+            country_code=country_code,
+            generated_at=datetime.now().isoformat(),
+            market_regime=market_regime,
+            universe_size=resolved_universe_size,
+            total_scanned=resolved_universe_size,
+            quote_available_count=int(quote_screen.get("quote_available_count") or 0),
+            detailed_scanned_count=0,
+            actionable_count=sum(1 for item in ranked if item.action != "avoid"),
+            bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),
+            universe_source=universe_selection.source,
+            universe_note=resolved_universe_note,
+            opportunities=ranked,
+        ).model_dump()
+
+    return await cache.get_or_fetch(cache_key, _build_response, ttl=QUICK_OPPORTUNITY_CACHE_TTL_SECONDS)
