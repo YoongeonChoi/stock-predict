@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from app.auth import AuthenticatedUser, get_current_user
 from app.main import app
 
 
@@ -39,6 +40,55 @@ class AccountRouterTests(unittest.TestCase):
         body = response.json()
         self.assertTrue(body["available"])
         self.assertEqual(body["normalized_username"], "alpha_01")
+
+    def test_account_profile_update_route_returns_updated_profile(self):
+        async def override_user():
+            return AuthenticatedUser(
+                id="user-123",
+                email="tester@example.com",
+                email_verified=True,
+                email_confirmed_at="2026-03-27T10:00:00Z",
+                username="alpha_01",
+                full_name="홍 길동",
+                phone_number="01012345678",
+                birth_date="1998-03-14",
+            )
+
+        app.dependency_overrides[get_current_user] = override_user
+        try:
+            with patch(
+                "app.routers.account.account_service.update_current_profile",
+                new=AsyncMock(
+                    return_value={
+                        "user_id": "user-123",
+                        "email": "tester@example.com",
+                        "email_verified": True,
+                        "email_confirmed_at": "2026-03-27T10:00:00Z",
+                        "username": "beta_02",
+                        "full_name": "김 가은",
+                        "phone_number": "010-7777-8888",
+                        "phone_masked": "010-****-8888",
+                        "birth_date": "1997-08-11",
+                    }
+                ),
+            ):
+                with patched_client() as client:
+                    response = client.patch(
+                        "/api/account/me",
+                        json={
+                            "username": "beta_02",
+                            "full_name": "김 가은",
+                            "phone_number": "010-7777-8888",
+                            "birth_date": "1997-08-11",
+                        },
+                    )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["username"], "beta_02")
+        self.assertTrue(body["email_verified"])
 
 
 if __name__ == "__main__":

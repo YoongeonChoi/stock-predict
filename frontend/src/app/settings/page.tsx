@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import AccountSettingsPanel from "@/components/settings/AccountSettingsPanel";
 import ErrorBanner from "@/components/ErrorBanner";
 import MarketSessionPanel from "@/components/MarketSessionPanel";
 import SystemStatusCard from "@/components/SystemStatusCard";
@@ -75,6 +76,8 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold tracking-tight">설정 및 시스템</h1>
         <p className="mt-1 text-text-secondary">시장 세션, 시스템 상태, 공식 기관 리서치 동기화를 한 곳에서 확인합니다.</p>
       </div>
+
+      <AccountSettingsPanel />
 
       {error ? <ErrorBanner error={error} onRetry={load} /> : null}
 

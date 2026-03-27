@@ -138,6 +138,15 @@ class SupabaseClient:
                 return None
         return None
 
+    async def admin_update_user_metadata(self, user_id: str, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        payload = await self._request_json(
+            "PUT",
+            f"/auth/v1/admin/users/{user_id}",
+            headers=self._admin_headers(),
+            json={"user_metadata": metadata},
+        )
+        return dict(payload) if isinstance(payload, dict) else None
+
     async def watchlist_list(self, user_id: str) -> list[dict]:
         payload = await self._request_json(
             "GET",

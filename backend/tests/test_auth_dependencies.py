@@ -34,6 +34,7 @@ class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
                 return_value={
                     "id": "user-123",
                     "email": "user@example.com",
+                    "email_confirmed_at": "2026-03-27T10:00:00Z",
                     "user_metadata": {
                         "username": "alpha_user",
                         "full_name": "홍 길동",
@@ -47,6 +48,8 @@ class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(user.id, "user-123")
         self.assertEqual(user.email, "user@example.com")
+        self.assertTrue(user.email_verified)
+        self.assertEqual(user.email_confirmed_at, "2026-03-27T10:00:00Z")
         self.assertEqual(user.username, "alpha_user")
         self.assertEqual(user.full_name, "홍 길동")
         self.assertEqual(user.phone_number, "01012345678")

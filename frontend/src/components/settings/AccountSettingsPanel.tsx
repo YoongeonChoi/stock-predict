@@ -1,0 +1,502 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { KeyRound, MailCheck, ShieldAlert, UserRound } from "lucide-react";
+
+import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/components/Toast";
+import {
+  formatPhoneNumber,
+  isValidBirthDate,
+  isValidFullName,
+  isValidPhoneNumber,
+  isValidUsername,
+  normalizeFullName,
+  normalizePhoneNumber,
+  normalizeUsername,
+} from "@/lib/account";
+import { api, type AccountProfile } from "@/lib/api";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+
+interface ProfileDraft {
+  username: string;
+  fullName: string;
+  phoneNumber: string;
+  birthDate: string;
+}
+
+interface UsernameState {
+  checkedValue: string;
+  valid: boolean;
+  available: boolean;
+  checking: boolean;
+  message: string;
+}
+
+function buildDraft(profile: AccountProfile | null): ProfileDraft {
+  return {
+    username: profile?.username ?? "",
+    fullName: profile?.full_name ?? "",
+    phoneNumber: profile?.phone_number ?? "",
+    birthDate: profile?.birth_date ?? "",
+  };
+}
+
+function buildUsernameState(profile: AccountProfile | null): UsernameState {
+  const current = normalizeUsername(profile?.username ?? "");
+  return {
+    checkedValue: current,
+    valid: Boolean(current),
+    available: Boolean(current),
+    checking: false,
+    message: current ? "현재 아이디가 유지됩니다." : "아이디를 입력하고 중복 확인을 진행해 주세요.",
+  };
+}
+
+function Field({
+  label,
+  helper,
+  children,
+}: {
+  label: string;
+  helper?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">{label}</label>
+      {children}
+      {helper ? <div className="mt-2 text-xs leading-5 text-text-secondary">{helper}</div> : null}
+    </div>
+  );
+}
+
+export default function AccountSettingsPanel() {
+  const { configured, loading, session, user, profile, profileLoading, refreshProfile, signOut } = useAuth();
+  const { toast } = useToast();
+  const [draft, setDraft] = useState<ProfileDraft>(buildDraft(profile));
+  const [usernameState, setUsernameState] = useState<UsernameState>(buildUsernameState(profile));
+  const [saving, setSaving] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    setDraft(buildDraft(profile));
+    setUsernameState(buildUsernameState(profile));
+  }, [profile?.birth_date, profile?.full_name, profile?.phone_number, profile?.user_id, profile?.username]);
+
+  const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
+  const normalizedDraftUsername = normalizeUsername(draft.username);
+  const usernameReady =
+    Boolean(normalizedDraftUsername) &&
+    (
+      normalizedDraftUsername === normalizedCurrentUsername ||
+      (
+        usernameState.checkedValue === normalizedDraftUsername &&
+        usernameState.valid &&
+        usernameState.available
+      )
+    );
+
+  const isDirty = useMemo(() => {
+    return (
+      normalizeUsername(draft.username) !== normalizeUsername(profile?.username ?? "") ||
+      normalizeFullName(draft.fullName) !== normalizeFullName(profile?.full_name ?? "") ||
+      normalizePhoneNumber(draft.phoneNumber) !== normalizePhoneNumber(profile?.phone_number ?? "") ||
+      draft.birthDate !== (profile?.birth_date ?? "")
+    );
+  }, [draft, profile]);
+
+  const formValid =
+    isValidUsername(draft.username) &&
+    isValidFullName(draft.fullName) &&
+    isValidPhoneNumber(draft.phoneNumber) &&
+    isValidBirthDate(draft.birthDate) &&
+    usernameReady;
+
+  const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+    if (key === "username") {
+      setUsernameState((prev) => ({
+        ...prev,
+        valid: false,
+        available: false,
+        message: "아이디가 변경되었습니다. 다시 중복 확인해 주세요.",
+      }));
+    }
+  };
+
+  const handleUsernameCheck = async () => {
+    if (!isValidUsername(draft.username)) {
+      setUsernameState({
+        checkedValue: normalizedDraftUsername,
+        valid: false,
+        available: false,
+        checking: false,
+        message: "아이디는 영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 4~20자까지 사용할 수 있습니다.",
+      });
+      return;
+    }
+
+    setUsernameState((prev) => ({ ...prev, checking: true }));
+    try {
+      const result = await api.checkUsernameAvailability(draft.username);
+      const available =
+        result.available || result.normalized_username === normalizedCurrentUsername;
+      setUsernameState({
+        checkedValue: result.normalized_username,
+        valid: result.valid,
+        available,
+        checking: false,
+        message: available
+          ? (result.normalized_username === normalizedCurrentUsername ? "현재 아이디를 그대로 사용할 수 있습니다." : "사용 가능한 아이디입니다.")
+          : result.message,
+      });
+    } catch {
+      setUsernameState({
+        checkedValue: normalizedDraftUsername,
+        valid: false,
+        available: false,
+        checking: false,
+        message: "중복 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      });
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formValid) {
+      toast("필수 입력과 아이디 중복 확인을 먼저 완료해 주세요.", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const nextProfile = await api.updateMyAccountProfile({
+        username: normalizedDraftUsername,
+        full_name: normalizeFullName(draft.fullName),
+        phone_number: normalizePhoneNumber(draft.phoneNumber),
+        birth_date: draft.birthDate,
+      });
+      const client = getSupabaseBrowserClient();
+      if (client) {
+        await client.auth.refreshSession();
+      }
+      await refreshProfile();
+      setDraft(buildDraft(nextProfile));
+      setUsernameState(buildUsernameState(nextProfile));
+      toast("계정 정보가 저장되었습니다.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "계정 정보 저장 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!profile?.email) {
+      toast("인증 메일을 보낼 이메일이 없습니다.", "error");
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      toast("Supabase 설정이 비어 있어 인증 메일을 보낼 수 없습니다.", "error");
+      return;
+    }
+
+    setSendingVerification(true);
+    try {
+      const { error } = await client.auth.resend({
+        type: "signup",
+        email: profile.email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/settings`,
+        },
+      });
+      if (error) {
+        throw error;
+      }
+      toast("인증 메일을 다시 보냈습니다. 받은 편지함을 확인해 주세요.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "인증 메일 재전송에 실패했습니다.";
+      toast(message, "error");
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    if (!profile?.email) {
+      toast("비밀번호 재설정 메일을 보낼 이메일이 없습니다.", "error");
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      toast("Supabase 설정이 비어 있어 재설정 메일을 보낼 수 없습니다.", "error");
+      return;
+    }
+
+    setSendingReset(true);
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: `${window.location.origin}/auth?mode=recovery&next=/settings`,
+      });
+      if (error) {
+        throw error;
+      }
+      toast("비밀번호 재설정 메일을 보냈습니다. 메일의 링크에서 새 비밀번호를 설정해 주세요.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "비밀번호 재설정 메일 전송에 실패했습니다.";
+      toast(message, "error");
+    } finally {
+      setSendingReset(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      toast("로그아웃되었습니다.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "로그아웃 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
+  if (!configured) {
+    return (
+      <section className="card !p-5 space-y-3">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <ShieldAlert size={18} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">계정 관리</h2>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              Supabase 브라우저 설정이 비어 있어 계정 정보를 불러올 수 없습니다.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (loading || profileLoading) {
+    return <div className="card h-[320px] animate-pulse" />;
+  }
+
+  if (!session || !user || !profile) {
+    return (
+      <section className="card !p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <UserRound size={18} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">계정 관리</h2>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              계정별 포트폴리오와 관심종목을 관리하려면 로그인부터 연결해 주세요.
+            </p>
+          </div>
+        </div>
+        <div className="rounded-[22px] border border-border/70 bg-surface/55 p-4 text-sm text-text-secondary">
+          로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송이나 비밀번호 재설정도 바로 처리할 수 있습니다.
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/auth?next=/settings" className="action-chip-primary">
+            로그인하러 가기
+          </Link>
+          <Link href="/auth?mode=signup&next=/settings" className="action-chip-secondary">
+            회원가입하기
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card !p-5 space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">계정 관리</h2>
+            <span className={`info-chip ${profile.email_verified ? "!bg-positive/10 !text-positive" : "!bg-warning/10 !text-warning"}`}>
+              {profile.email_verified ? "이메일 인증 완료" : "이메일 인증 필요"}
+            </span>
+          </div>
+          <p className="text-sm leading-6 text-text-secondary">
+            프로필 정보와 보안 관련 작업을 한 곳에서 관리합니다. 아이디를 바꾸는 경우에는 다시 중복 확인을 거쳐야 합니다.
+          </p>
+        </div>
+        <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-3 text-sm">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">로그인 계정</div>
+          <div className="mt-2 font-medium text-text">{profile.email ?? "이메일 없음"}</div>
+          <div className="mt-1 text-xs text-text-secondary">
+            {profile.email_confirmed_at
+              ? `인증 완료 시각 ${new Date(profile.email_confirmed_at).toLocaleString("ko-KR")}`
+              : "아직 이메일 인증이 완료되지 않았습니다."}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.16fr)_340px]">
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="아이디"
+              helper="영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 4~20자까지 사용할 수 있습니다."
+            >
+              <div className="flex gap-2">
+                <input
+                  value={draft.username}
+                  onChange={(event) =>
+                    updateDraft(
+                      "username",
+                      normalizeUsername(event.target.value.replace(/\s+/g, "")).slice(0, 20),
+                    )
+                  }
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={20}
+                  className="min-w-0 flex-1 rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  placeholder="alpha_user"
+                />
+                <button
+                  type="button"
+                  onClick={handleUsernameCheck}
+                  disabled={usernameState.checking}
+                  className="action-chip-secondary shrink-0"
+                >
+                  {usernameState.checking ? "확인 중..." : "중복 확인"}
+                </button>
+              </div>
+            </Field>
+
+            <Field label="이메일" helper="이메일은 인증과 비밀번호 재설정에 사용됩니다.">
+              <input
+                value={profile.email ?? ""}
+                readOnly
+                className="w-full rounded-2xl border border-border bg-surface/40 px-4 py-3 text-sm text-text-secondary"
+              />
+            </Field>
+
+            <Field label="이름">
+              <input
+                value={draft.fullName}
+                onChange={(event) => updateDraft("fullName", normalizeFullName(event.target.value).slice(0, 40))}
+                autoComplete="name"
+                maxLength={40}
+                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                placeholder="홍길동"
+              />
+            </Field>
+
+            <Field label="전화번호" helper="하이픈 없이 입력해도 자동으로 정리됩니다.">
+              <input
+                value={draft.phoneNumber}
+                onChange={(event) => updateDraft("phoneNumber", formatPhoneNumber(event.target.value))}
+                inputMode="numeric"
+                autoComplete="tel"
+                maxLength={15}
+                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                placeholder="010-1234-5678"
+              />
+            </Field>
+
+            <Field label="생년월일">
+              <input
+                value={draft.birthDate}
+                onChange={(event) => updateDraft("birthDate", event.target.value)}
+                type="date"
+                autoComplete="bday"
+                max={new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}
+                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+              />
+            </Field>
+
+            <div className="rounded-[22px] border border-border/70 bg-surface/50 px-4 py-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">현재 검증 상태</div>
+              <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+                <li>{isValidFullName(draft.fullName) ? "이름 형식이 확인되었습니다." : "이름은 2자 이상으로 입력해 주세요."}</li>
+                <li>{isValidPhoneNumber(draft.phoneNumber) ? "전화번호 형식이 확인되었습니다." : "전화번호를 올바르게 입력해 주세요."}</li>
+                <li>{isValidBirthDate(draft.birthDate) ? "생년월일 형식이 확인되었습니다." : "생년월일을 선택해 주세요."}</li>
+                <li className={usernameReady ? "text-positive" : ""}>{usernameState.message}</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !isDirty || !formValid}
+              className="action-chip-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? "저장 중..." : "프로필 저장"}
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {signingOut ? "로그아웃 중..." : "로그아웃"}
+            </button>
+          </div>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <MailCheck size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">이메일 인증 관리</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  인증이 완료되지 않았거나 메일을 다시 받아야 할 때 바로 재전송할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={sendingVerification || !profile.email || profile.email_verified}
+              className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {profile.email_verified ? "이메일 인증 완료" : sendingVerification ? "재전송 중..." : "인증 메일 다시 보내기"}
+            </button>
+          </div>
+
+          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <KeyRound size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">비밀번호 재설정</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  보안 이슈가 의심되거나 비밀번호를 바꾸고 싶다면 재설정 메일을 보내 새 비밀번호를 설정할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSendPasswordReset}
+              disabled={sendingReset || !profile.email}
+              className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {sendingReset ? "메일 전송 중..." : "비밀번호 재설정 메일 보내기"}
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
