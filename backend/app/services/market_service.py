@@ -11,8 +11,8 @@ from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.analysis.stock_analyzer import _calc_technicals
-from app.data import cache, ecos_client, kosis_client, yfinance_client
-from app.data.universe_data import resolve_universe
+from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, yfinance_client
+from app.data.universe_data import resolve_opportunity_universe, resolve_universe
 from app.models.country import COUNTRY_REGISTRY
 from app.models.market import OpportunityItem, OpportunityRadarResponse
 from app.models.stock import PricePoint, TechnicalIndicators
@@ -99,7 +99,7 @@ def _should_skip_detailed_scan(
 ) -> bool:
     return (
         country_code == "KR"
-        and universe_source == "fallback"
+        and universe_source in {"fallback", "krx_listing"}
         and ranked_count >= max(limit, LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD)
     )
 
@@ -318,7 +318,7 @@ async def _build_quote_screen(
         if country_code == "KR":
             try:
                 batch_quotes = await asyncio.wait_for(
-                    yfinance_client.get_batch_stock_quotes([ticker for _, ticker in universe_pairs], period="5d"),
+                    kr_market_quote_client.get_kr_bulk_quotes([ticker for _, ticker in universe_pairs]),
                     timeout=9,
                 )
             except Exception:
@@ -345,7 +345,7 @@ async def _build_quote_screen(
                 ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
                 return {
                     "universe_size": len(universe_pairs),
-                    "scanned_count": len(ranked),
+                    "quote_available_count": len(ranked),
                     "ranked": ranked,
                 }
 
@@ -381,7 +381,7 @@ async def _build_quote_screen(
         ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
         return {
             "universe_size": len(universe_pairs),
-            "scanned_count": len(ranked),
+            "quote_available_count": len(ranked),
             "ranked": ranked,
         }
 
@@ -456,7 +456,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v12:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = f"opportunity_radar:v14:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -466,6 +466,7 @@ async def get_market_opportunities(
             "market_regime": None,
             "universe_size": 0,
             "total_scanned": 0,
+            "quote_available_count": 0,
             "detailed_scanned_count": 0,
             "actionable_count": 0,
             "bullish_count": 0,
@@ -496,7 +497,7 @@ async def get_market_opportunities(
             next_day_forecast=regime_forecast,
         )
 
-        universe_selection = await resolve_universe(country_code)
+        universe_selection = await resolve_opportunity_universe(country_code)
         quote_screen = await _build_quote_screen(
             country_code=country_code,
             universe_selection=universe_selection,
@@ -753,7 +754,8 @@ async def get_market_opportunities(
             generated_at=datetime.now().isoformat(),
             market_regime=market_regime,
             universe_size=resolved_universe_size,
-            total_scanned=int(quote_screen.get("scanned_count") or 0),
+            total_scanned=resolved_universe_size,
+            quote_available_count=int(quote_screen.get("quote_available_count") or 0),
             detailed_scanned_count=len(detailed_ranked),
             actionable_count=sum(1 for item in ranked if item.action != "avoid"),
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),

@@ -93,9 +93,10 @@ class OpportunityRadarResponse(BaseModel):
     market_regime: MarketRegime
     universe_size: int
     total_scanned: int
+    quote_available_count: int = 0
     detailed_scanned_count: int
     actionable_count: int
     bullish_count: int
-    universe_source: Literal["dynamic", "fallback"] = "fallback"
+    universe_source: Literal["dynamic", "fallback", "krx_listing"] = "fallback"
     universe_note: str = ""
     opportunities: list[OpportunityItem]

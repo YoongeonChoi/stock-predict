@@ -51,6 +51,17 @@ function priceRange(low?: number | null, high?: number | null, key = "KR") {
 export default function OpportunityRadarBoard({ data, compact = false, embedded = false }: Props) {
   const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
   const usingFallbackUniverse = data.universe_source === "fallback";
+  const usingKrxListingUniverse = data.universe_source === "krx_listing";
+  const quoteAvailableCount = data.quote_available_count ?? data.total_scanned;
+  const visibleCandidateCount = Math.max(data.opportunities.length, data.actionable_count);
+  const quoteCoverageNote =
+    quoteAvailableCount < data.total_scanned
+      ? `실제 시세를 확보한 종목은 ${quoteAvailableCount}개입니다. 일부 종목은 데이터 원본 제한이나 거래 상태에 따라 1차 점수 계산에서 제외될 수 있습니다.`
+      : "";
+  const radarSummary =
+    data.detailed_scanned_count > 0
+      ? `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
+      : `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
 
   if (compact) {
     return (
@@ -59,9 +70,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           {!embedded ? (
             <div>
               <h2 className="font-semibold">기회 레이더</h2>
-              <p className="mt-1 text-sm text-text-secondary">
-                KR 유니버스 {data.universe_size}개 중 {data.total_scanned}개를 1차 스캔했고, 상위 {data.detailed_scanned_count}개를 정밀 분석했습니다.
-              </p>
+              <p className="mt-1 text-sm text-text-secondary">{radarSummary}</p>
             </div>
           ) : null}
 
@@ -69,6 +78,10 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             {usingFallbackUniverse ? (
               <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
                 {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
+              </div>
+            ) : usingKrxListingUniverse ? (
+              <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
+                {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
               </div>
             ) : (
               <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
@@ -85,15 +98,18 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                 <div className="mt-1 font-semibold">{data.total_scanned}</div>
               </div>
               <div className="rounded-2xl border border-border/70 bg-accent/10 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">정밀 분석</div>
-                <div className="mt-1 font-semibold text-accent">{data.detailed_scanned_count}</div>
+                <div className="text-[11px] text-text-secondary">시세 확보</div>
+                <div className="mt-1 font-semibold text-accent">{quoteAvailableCount}</div>
               </div>
               <div className="rounded-2xl border border-border/70 bg-positive/10 px-3 py-2 text-center">
                 <div className="text-[11px] text-text-secondary">표시 후보</div>
-                <div className="mt-1 font-semibold text-positive">{data.actionable_count}</div>
+                <div className="mt-1 font-semibold text-positive">{visibleCandidateCount}</div>
               </div>
             </div>
           </div>
+          {quoteCoverageNote ? (
+            <p className="text-xs text-text-secondary">{quoteCoverageNote}</p>
+          ) : null}
         </div>
 
         <div className="space-y-3">
@@ -173,12 +189,17 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
       <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="font-semibold">기회 레이더</h2>
-          <p className="mt-1 text-sm text-text-secondary">
-            KR 유니버스 {data.universe_size}개 중 {data.total_scanned}개를 1차 스캔했고, 상위 {data.detailed_scanned_count}개를 정밀 분석해 {data.opportunities.length}개 후보를 표시합니다.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">{radarSummary}</p>
+          {quoteCoverageNote ? (
+            <p className="mt-2 text-xs text-text-secondary">{quoteCoverageNote}</p>
+          ) : null}
           {usingFallbackUniverse ? (
             <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
               {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
+            </div>
+          ) : usingKrxListingUniverse ? (
+            <div className="mt-2 inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
+              {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
             </div>
           ) : (
             <div className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
@@ -196,12 +217,12 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             <div className="font-bold">{data.total_scanned}</div>
           </div>
           <div className="rounded-lg bg-accent/10 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">정밀 분석</div>
-            <div className="font-bold text-accent">{data.detailed_scanned_count}</div>
+            <div className="text-[11px] text-text-secondary">시세 확보</div>
+            <div className="font-bold text-accent">{quoteAvailableCount}</div>
           </div>
           <div className="rounded-lg bg-positive/10 px-3 py-2">
             <div className="text-[11px] text-text-secondary">표시 후보</div>
-            <div className="font-bold text-positive">{data.actionable_count}</div>
+            <div className="font-bold text-positive">{visibleCandidateCount}</div>
           </div>
         </div>
       </div>

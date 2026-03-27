@@ -51,6 +51,11 @@ async def _passthrough_cache(_key, fetch, _ttl):
 
 
 class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_batch_quote_chunk_size_avoids_slow_80_name_slice(self):
+        self.assertEqual(yfinance_client._batch_quote_chunk_size(201), 240)
+        self.assertEqual(yfinance_client._batch_quote_chunk_size(100), 120)
+        self.assertEqual(yfinance_client._batch_quote_chunk_size(12), 12)
+
     async def test_get_batch_stock_quotes_parses_multi_ticker_download(self):
         columns = pd.MultiIndex.from_tuples(
             [

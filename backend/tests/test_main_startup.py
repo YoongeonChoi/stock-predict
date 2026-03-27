@@ -31,12 +31,16 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_runs_background_tasks_without_blocking_app_boot(self):
         accuracy_gate = asyncio.Event()
         research_gate = asyncio.Event()
+        radar_gate = asyncio.Event()
 
         async def wait_for_accuracy(*args, **kwargs):
             await accuracy_gate.wait()
 
         async def wait_for_research(*args, **kwargs):
             await research_gate.wait()
+
+        async def wait_for_radar(*args, **kwargs):
+            await radar_gate.wait()
 
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
@@ -48,6 +52,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.research_archive_service.sync_public_research_reports",
                 new=AsyncMock(side_effect=wait_for_research),
             ),
+            patch(
+                "app.main.market_service.get_market_opportunities",
+                new=AsyncMock(side_effect=wait_for_radar),
+            ),
         ):
             async with lifespan(app):
                 state = get_runtime_state()
@@ -56,20 +64,24 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(tasks["database_initialize"]["status"], "ok")
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "running")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "running")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "running")
 
                 accuracy_gate.set()
                 research_gate.set()
+                radar_gate.set()
                 state = await self._wait_for_status(
                     "ok",
                     {
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
                     },
                 )
                 self.assertEqual(state["status"], "ok")
                 tasks = {task["name"]: task for task in state["startup_tasks"]}
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "ok")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
 
     async def test_startup_continues_when_accuracy_refresh_fails(self):
         with (
@@ -82,6 +94,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.research_archive_service.sync_public_research_reports",
                 new=AsyncMock(return_value={"processed_total": 0}),
             ),
+            patch(
+                "app.main.market_service.get_market_opportunities",
+                new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
+            ),
         ):
             async with lifespan(app):
                 state = await self._wait_for_status(
@@ -89,6 +105,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "prediction_accuracy_refresh": "warning",
                         "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
                     },
                 )
                 self.assertEqual(state["status"], "degraded")
@@ -96,6 +113,37 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(tasks["database_initialize"]["status"], "ok")
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "warning")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
+
+    async def test_startup_continues_when_market_opportunity_prewarm_fails(self):
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(return_value={"processed_total": 0}),
+            ),
+            patch(
+                "app.main.market_service.get_market_opportunities",
+                new=AsyncMock(side_effect=RuntimeError("radar prewarm failed")),
+            ),
+        ):
+            async with lifespan(app):
+                state = await self._wait_for_status(
+                    "degraded",
+                    {
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "warning",
+                    },
+                )
+                self.assertEqual(state["status"], "degraded")
+                tasks = {task["name"]: task for task in state["startup_tasks"]}
+                self.assertEqual(tasks["database_initialize"]["status"], "ok")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "warning")
 
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):

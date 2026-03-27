@@ -31,6 +31,10 @@ services:
         value: "true"
       - key: STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT
         value: "35"
+      - key: STARTUP_MARKET_OPPORTUNITY_PREWARM
+        value: "true"
+      - key: STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT
+        value: "180"
       - key: OPENAI_API_KEY
         sync: false
       - key: ECOS_API_KEY

@@ -294,10 +294,11 @@ export interface OpportunityRadarResponse {
   market_regime: MarketRegime;
   universe_size: number;
   total_scanned: number;
+  quote_available_count?: number;
   detailed_scanned_count: number;
   actionable_count: number;
   bullish_count: number;
-  universe_source?: "dynamic" | "fallback";
+  universe_source?: "dynamic" | "fallback" | "krx_listing";
   universe_note?: string;
   opportunities: OpportunityItem[];
 }
