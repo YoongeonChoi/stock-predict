@@ -29,6 +29,7 @@ QUICK_UNIVERSE_QUOTE_TIMEOUT_SECONDS = 1.2
 QUICK_UNIVERSE_QUOTE_CONCURRENCY = 18
 MIN_DETAILED_OPPORTUNITY_CANDIDATES = 12
 MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
+LARGE_UNIVERSE_DETAILED_SCAN_CAP = 4
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -83,6 +84,8 @@ def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidat
     if max_candidates is not None:
         return max(1, min(available, max_candidates))
     preferred = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
+    if available >= 120:
+        preferred = min(preferred, LARGE_UNIVERSE_DETAILED_SCAN_CAP)
     return max(1, min(available, min(preferred, MAX_DETAILED_OPPORTUNITY_CANDIDATES)))
 
 
@@ -140,7 +143,7 @@ def _build_quote_only_opportunity_item(
         setup_label="전수 1차 스캔",
         action=action,
         execution_bias="stay_selective",
-        execution_note="KR 전체 유니버스를 1차 스캔했고, 상세 분포 계산이 지연된 종목은 시세 스냅샷 기준으로 먼저 정리했습니다.",
+        execution_note="현재 KR 레이더 유니버스를 1차 스캔했고, 상세 분포 계산이 지연된 종목은 시세 스냅샷 기준으로 먼저 정리했습니다.",
         regime_tailwind=_regime_tailwind_label(market_regime.stance),
         entry_low=round(current_price * 0.99, 2),
         entry_high=round(current_price * 1.01, 2),
@@ -148,7 +151,7 @@ def _build_quote_only_opportunity_item(
         take_profit_1=round(current_price * 1.03, 2),
         take_profit_2=round(current_price * 1.06, 2),
         risk_reward_estimate=1.15,
-        thesis=["KR 전체 유니버스를 1차로 훑은 뒤 상위 종목을 먼저 정렬한 결과입니다."],
+        thesis=["현재 KR 레이더 유니버스를 1차로 훑은 뒤 상위 종목을 먼저 정렬한 결과입니다."],
         risk_flags=["상세 분포 계산이 지연돼 시세 스냅샷 기반 후보로 표시합니다."],
         forecast_date=target_date,
     )
@@ -294,9 +297,43 @@ async def _build_quote_screen(
     market_regime,
 ) -> dict:
     universe_pairs = _flatten_universe(universe_selection.sectors)
-    cache_key = f"opportunity_quote_screen:v1:{country_code}:{universe_selection.source}:{len(universe_pairs)}"
+    cache_key = f"opportunity_quote_screen:v2:{country_code}:{universe_selection.source}:{len(universe_pairs)}"
 
     async def _fetch_quotes():
+        if country_code == "KR":
+            try:
+                batch_quotes = await asyncio.wait_for(
+                    yfinance_client.get_batch_stock_quotes([ticker for _, ticker in universe_pairs], period="5d"),
+                    timeout=9,
+                )
+            except Exception:
+                batch_quotes = {}
+            ranked: list[dict] = []
+            for sector, ticker in universe_pairs:
+                quote = batch_quotes.get(ticker) or {}
+                current_price = _safe_float(quote.get("current_price"), 0.0)
+                if current_price <= 0:
+                    continue
+                change_pct = _safe_float(quote.get("change_pct"))
+                regime_bias = 0.75 if market_regime.stance == "risk_on" else -0.55 if market_regime.stance == "risk_off" else 0.0
+                quick_score = change_pct * 2.2 + regime_bias
+                ranked.append(
+                    {
+                        "sector": sector,
+                        "ticker": ticker,
+                        "current_price": round(current_price, 2),
+                        "change_pct": round(change_pct, 2),
+                        "quick_score": round(quick_score, 4),
+                    }
+                )
+            if ranked:
+                ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
+                return {
+                    "universe_size": len(universe_pairs),
+                    "scanned_count": len(ranked),
+                    "ranked": ranked,
+                }
+
         async def _scan_quote(candidate: tuple[str, str]) -> dict | None:
             sector, ticker = candidate
             try:
@@ -404,7 +441,7 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v10:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = f"opportunity_radar:v11:{country_code}:{limit}:{max_candidates or 'auto'}"
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -674,17 +711,24 @@ async def get_market_opportunities(
                 limit=limit,
             )
 
+        resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
+        resolved_universe_note = universe_selection.note
+        if universe_selection.source == "fallback" and resolved_universe_size > 0:
+            scope_hint = f"현재 레이더는 운영용 기본 종목군 {resolved_universe_size}개를 1차 스캔합니다."
+            if scope_hint not in resolved_universe_note:
+                resolved_universe_note = f"{resolved_universe_note} {scope_hint}".strip()
+
         return OpportunityRadarResponse(
             country_code=country_code,
             generated_at=datetime.now().isoformat(),
             market_regime=market_regime,
-            universe_size=int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors))),
+            universe_size=resolved_universe_size,
             total_scanned=int(quote_screen.get("scanned_count") or 0),
             detailed_scanned_count=len(detailed_ranked),
             actionable_count=sum(1 for item in ranked if item.action != "avoid"),
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),
             universe_source=universe_selection.source,
-            universe_note=universe_selection.note,
+            universe_note=resolved_universe_note,
             opportunities=ranked,
         ).model_dump()
 

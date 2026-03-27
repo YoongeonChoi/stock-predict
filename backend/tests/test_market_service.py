@@ -118,13 +118,13 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.services.market_service.yfinance_client.get_stock_quote",
+                "app.services.market_service.yfinance_client.get_batch_stock_quotes",
                 new=AsyncMock(
-                    side_effect=[
-                        {"current_price": 101.0, "change_pct": 1.8},
-                        {"current_price": 87.0, "change_pct": 0.5},
-                        {"current_price": 195.0, "change_pct": -0.3},
-                    ]
+                    return_value={
+                        "005930.KS": {"ticker": "005930.KS", "current_price": 101.0, "prev_close": 99.2, "change_pct": 1.8, "session_date": "2026-03-26"},
+                        "000660.KS": {"ticker": "000660.KS", "current_price": 87.0, "prev_close": 86.57, "change_pct": 0.5, "session_date": "2026-03-26"},
+                        "035420.KS": {"ticker": "035420.KS", "current_price": 195.0, "prev_close": 195.59, "change_pct": -0.3, "session_date": "2026-03-26"},
+                    }
                 ),
             ),
             patch(
@@ -212,12 +212,12 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.services.market_service.yfinance_client.get_stock_quote",
+                "app.services.market_service.yfinance_client.get_batch_stock_quotes",
                 new=AsyncMock(
-                    side_effect=[
-                        {"current_price": 101.0, "change_pct": 1.2},
-                        {"current_price": 87.0, "change_pct": 0.6},
-                    ]
+                    return_value={
+                        "005930.KS": {"ticker": "005930.KS", "current_price": 101.0, "prev_close": 99.8, "change_pct": 1.2, "session_date": "2026-03-26"},
+                        "000660.KS": {"ticker": "000660.KS", "current_price": 87.0, "prev_close": 86.48, "change_pct": 0.6, "session_date": "2026-03-26"},
+                    }
                 ),
             ),
             patch(
@@ -248,6 +248,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["opportunities"]), 2)
         self.assertEqual(result["opportunities"][0]["setup_label"], "전수 1차 스캔")
         self.assertGreater(result["actionable_count"], 0)
+        self.assertIn("기본 종목군 2개", result["universe_note"])
 
     async def test_lightweight_opportunities_cap_candidate_budget(self):
         market_regime = MarketRegime(
