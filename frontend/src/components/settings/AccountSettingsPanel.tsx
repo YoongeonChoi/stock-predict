@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { KeyRound, MailCheck, ShieldAlert, Trash2, UserRound } from "lucide-react";
 
+import PasswordStrengthChecklist from "@/components/auth/PasswordStrengthChecklist";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import {
   formatPhoneNumber,
+  getPasswordStrength,
   isValidBirthDate,
   isValidFullName,
   isValidPhoneNumber,
@@ -32,6 +34,11 @@ interface UsernameState {
   available: boolean;
   checking: boolean;
   message: string;
+}
+
+interface PasswordDraft {
+  nextPassword: string;
+  confirmPassword: string;
 }
 
 function buildDraft(profile: AccountProfile | null): ProfileDraft {
@@ -81,6 +88,8 @@ export default function AccountSettingsPanel() {
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({ nextPassword: "", confirmPassword: "" });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
 
@@ -91,6 +100,18 @@ export default function AccountSettingsPanel() {
 
   const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
   const normalizedDraftUsername = normalizeUsername(draft.username);
+  const passwordStrength = useMemo(
+    () => getPasswordStrength(passwordDraft.nextPassword, passwordDraft.confirmPassword),
+    [passwordDraft.confirmPassword, passwordDraft.nextPassword],
+  );
+  const passwordReady = Boolean(
+    passwordStrength.checks.minLength &&
+    passwordStrength.checks.uppercase &&
+    passwordStrength.checks.lowercase &&
+    passwordStrength.checks.number &&
+    passwordStrength.checks.symbol &&
+    passwordStrength.checks.match,
+  );
   const deleteTargetLabel = profile?.username ? "현재 아이디" : "현재 이메일";
   const deleteTargetValue = profile?.username ? normalizedCurrentUsername : (profile?.email ?? "").trim().toLowerCase();
   const deleteReady = Boolean(deleteTargetValue) && (
@@ -261,6 +282,33 @@ export default function AccountSettingsPanel() {
       toast(message, "error");
     } finally {
       setSendingReset(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      toast("Supabase 설정이 비어 있어 비밀번호를 변경할 수 없습니다.", "error");
+      return;
+    }
+    if (!passwordReady) {
+      toast("새 비밀번호 보안 조건과 재확인을 모두 만족해 주세요.", "error");
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const { error } = await client.auth.updateUser({ password: passwordDraft.nextPassword });
+      if (error) {
+        throw error;
+      }
+      setPasswordDraft({ nextPassword: "", confirmPassword: "" });
+      toast("새 비밀번호가 저장되었습니다.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "비밀번호 변경 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -519,9 +567,56 @@ export default function AccountSettingsPanel() {
                 <KeyRound size={18} />
               </span>
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-text">비밀번호 재설정</div>
+                <div className="text-sm font-semibold text-text">비밀번호 바로 변경</div>
                 <p className="mt-1 text-xs leading-6 text-text-secondary">
-                  보안 이슈가 의심되거나 비밀번호를 바꾸고 싶다면 재설정 메일을 보내 새 비밀번호를 설정할 수 있습니다.
+                  로그인된 상태라면 새 비밀번호를 바로 적용할 수 있습니다. 회원가입과 같은 강도 규칙을 만족해야 저장됩니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <Field label="새 비밀번호">
+                <input
+                  value={passwordDraft.nextPassword}
+                  onChange={(event) => setPasswordDraft((prev) => ({ ...prev, nextPassword: event.target.value }))}
+                  type="password"
+                  autoComplete="new-password"
+                  maxLength={128}
+                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  placeholder="새 비밀번호 입력"
+                />
+              </Field>
+              <Field label="새 비밀번호 재확인">
+                <input
+                  value={passwordDraft.confirmPassword}
+                  onChange={(event) => setPasswordDraft((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+                  type="password"
+                  autoComplete="new-password"
+                  maxLength={128}
+                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  placeholder="새 비밀번호 다시 입력"
+                />
+              </Field>
+              <PasswordStrengthChecklist result={passwordStrength} />
+              <button
+                type="button"
+                onClick={handleUpdatePassword}
+                disabled={updatingPassword || !passwordReady}
+                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {updatingPassword ? "비밀번호 저장 중..." : "새 비밀번호 저장"}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <MailCheck size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">비밀번호 재설정 메일</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  현재 세션이 불안정하거나 메일 링크 방식이 더 편할 때는 재설정 메일을 보내 새 비밀번호를 설정할 수 있습니다.
                 </p>
               </div>
             </div>
