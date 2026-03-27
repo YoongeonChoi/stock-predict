@@ -4,8 +4,10 @@ from pydantic import BaseModel
 class AccountProfile(BaseModel):
     user_id: str
     email: str | None = None
+    pending_email: str | None = None
     email_verified: bool = False
     email_confirmed_at: str | None = None
+    email_change_sent_at: str | None = None
     username: str | None = None
     full_name: str | None = None
     phone_number: str | None = None

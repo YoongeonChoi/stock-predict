@@ -19,8 +19,10 @@ export interface RequestOptions extends RequestInit {
 export interface AccountProfile {
   user_id: string;
   email?: string | null;
+  pending_email?: string | null;
   email_verified: boolean;
   email_confirmed_at?: string | null;
+  email_change_sent_at?: string | null;
   username?: string | null;
   full_name?: string | null;
   phone_number?: string | null;
