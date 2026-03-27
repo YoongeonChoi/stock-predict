@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.20.0`
+현재 릴리즈: `v2.21.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -98,10 +98,19 @@
 회원가입 화면은 다음 요구사항을 모두 만족해야 통과하도록 구성되어 있습니다.
 
 - 아이디 중복 확인
+- 서버 사전 검증 통과
 - 비밀번호 보안 강도 실시간 표시
 - 비밀번호 확인 입력
 - 이름, 전화번호, 생년월일 필수 입력
 - 이메일 인증 기반 가입
+
+회원가입 제출 직전에는 프론트가 `POST /api/account/signup/validate`를 먼저 호출해 아래 항목을 서버에서도 다시 확인합니다.
+
+- 아이디 형식과 중복 여부
+- 이메일 형식
+- 이름 / 전화번호 / 생년월일 형식
+- 비밀번호 강도
+- 비밀번호 재확인 일치
 
 ### 아이디 규칙
 
@@ -147,6 +156,10 @@
 - `PATCH /api/account/me`
   - `username`, `full_name`, `phone_number`, `birth_date` 수정
   - 아이디 형식과 중복 여부를 서버에서 다시 검증
+- `POST /api/account/signup/validate`
+  - 로그인 전 공개 회원가입 사전 검증
+  - 이메일, 아이디, 이름, 전화번호, 생년월일, 비밀번호 규칙을 서버에서 확인
+  - 프론트는 이 응답의 정규화 값을 사용해 Supabase 가입을 진행
 - `GET /api/account/username-availability`
   - 로그인 전에도 사용 가능한 아이디인지 확인
 
@@ -505,6 +518,7 @@ w*_t = argmax_{w >= 0, 1^T w <= 1} (
 ### 인증 / 계정
 
 - `GET /api/account/me`
+- `POST /api/account/signup/validate`
 - `PATCH /api/account/me`
 - `GET /api/account/username-availability`
 

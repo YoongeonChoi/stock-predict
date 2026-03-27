@@ -6,20 +6,37 @@ from datetime import date
 from app.auth import AuthenticatedUser
 from app.errors import SP_6015
 from app.exceptions import ApiAppException
-from app.models.account import AccountProfile, AccountProfileUpdateRequest, UsernameAvailabilityResponse
+from app.models.account import (
+    AccountProfile,
+    AccountProfileUpdateRequest,
+    SignUpValidationRequest,
+    SignUpValidationResponse,
+    UsernameAvailabilityResponse,
+)
 from app.data.supabase_client import supabase_client
 
 USERNAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{3,19}$")
 PHONE_DIGIT_PATTERN = re.compile(r"^\d{9,15}$")
 FULL_NAME_PATTERN = re.compile(r"^[A-Za-z가-힣\s]{2,40}$")
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+PASSWORD_SYMBOL_PATTERN = re.compile(r"[^A-Za-z0-9]")
 
 
 def normalize_username(username: str) -> str:
     return username.strip().lower()
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def is_valid_username(username: str) -> bool:
     return bool(USERNAME_PATTERN.fullmatch(username.strip()))
+
+
+def is_valid_email(email: str | None) -> bool:
+    normalized = normalize_email(email or "")
+    return bool(normalized and EMAIL_PATTERN.fullmatch(normalized))
 
 
 def normalize_phone_number(phone_number: str | None) -> str | None:
@@ -76,6 +93,22 @@ def is_valid_birth_date(birth_date: str | None) -> bool:
     except ValueError:
         return False
     return date(1900, 1, 1) <= parsed < date.today()
+
+
+def describe_password_rule_failure(password: str, password_confirm: str) -> str | None:
+    if len(password) < 10:
+        return "비밀번호는 10자 이상이어야 합니다."
+    if not re.search(r"[A-Z]", password):
+        return "비밀번호에 영문 대문자를 포함해 주세요."
+    if not re.search(r"[a-z]", password):
+        return "비밀번호에 영문 소문자를 포함해 주세요."
+    if not re.search(r"\d", password):
+        return "비밀번호에 숫자를 포함해 주세요."
+    if not PASSWORD_SYMBOL_PATTERN.search(password):
+        return "비밀번호에 특수문자를 포함해 주세요."
+    if password != password_confirm:
+        return "비밀번호 재확인이 일치하지 않습니다."
+    return None
 
 
 def build_account_profile(user: AuthenticatedUser) -> AccountProfile:
@@ -153,6 +186,37 @@ async def update_current_profile(
             phone_number=normalized_phone_number,
             birth_date=birth_date,
         )
+    )
+
+
+async def validate_signup(payload: SignUpValidationRequest) -> SignUpValidationResponse:
+    normalized_email = normalize_email(payload.email)
+    if not is_valid_email(normalized_email):
+        raise ApiAppException(400, SP_6015("이메일 형식을 올바르게 입력해 주세요."))
+
+    normalized_username, normalized_full_name, normalized_phone_number, birth_date = _require_valid_account_profile(
+        AccountProfileUpdateRequest(
+            username=payload.username,
+            full_name=payload.full_name,
+            phone_number=payload.phone_number,
+            birth_date=payload.birth_date,
+        )
+    )
+
+    password_error = describe_password_rule_failure(payload.password, payload.password_confirm)
+    if password_error:
+        raise ApiAppException(400, SP_6015(password_error))
+
+    availability = await check_username_availability(normalized_username)
+    if not availability.available:
+        raise ApiAppException(409, SP_6015("이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요."))
+
+    return SignUpValidationResponse(
+        email=normalized_email,
+        normalized_username=normalized_username,
+        normalized_full_name=normalized_full_name,
+        normalized_phone_number=normalized_phone_number,
+        birth_date=birth_date,
     )
 
 

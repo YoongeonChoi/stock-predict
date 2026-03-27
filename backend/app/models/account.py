@@ -20,6 +20,26 @@ class AccountProfileUpdateRequest(BaseModel):
     birth_date: str
 
 
+class SignUpValidationRequest(BaseModel):
+    username: str
+    email: str
+    full_name: str
+    phone_number: str
+    birth_date: str
+    password: str
+    password_confirm: str
+
+
+class SignUpValidationResponse(BaseModel):
+    email: str
+    normalized_username: str
+    normalized_full_name: str
+    normalized_phone_number: str
+    birth_date: str
+    ready: bool = True
+    message: str = "회원가입 조건이 확인되었습니다."
+
+
 class UsernameAvailabilityResponse(BaseModel):
     username: str
     normalized_username: str

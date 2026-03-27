@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from app.auth import AuthenticatedUser, get_current_user
 from app.exceptions import ApiAppException
 from app.errors import SP_5019
-from app.models.account import AccountProfileUpdateRequest
+from app.models.account import AccountProfileUpdateRequest, SignUpValidationRequest
 from app.services import account_service
 
 router = APIRouter(prefix="/api", tags=["account"])
@@ -33,6 +33,20 @@ async def patch_account_me(
         raise
     except Exception as exc:
         err = SP_5019(f"profile update: {exc}")
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.post("/account/signup/validate")
+async def post_signup_validation(
+    payload: SignUpValidationRequest,
+):
+    try:
+        return await account_service.validate_signup(payload)
+    except ApiAppException:
+        raise
+    except Exception as exc:
+        err = SP_5019(f"signup validate: {exc}")
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 

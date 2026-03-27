@@ -60,6 +60,7 @@
   - `/api/diagnostics`
 - 계정 / 인증
   - `/api/account/me`
+  - `/api/account/signup/validate`
   - `/api/account/username-availability`
 - 시장/국가
   - `/api/countries`
@@ -202,6 +203,7 @@
 - 필수 가입 입력은 `아이디, 이메일, 이름, 전화번호, 생년월일, 비밀번호, 비밀번호 재확인` 입니다.
 - 아이디는 `영문 소문자 시작 + 영문 소문자/숫자/밑줄 + 4~20자` 규칙을 유지합니다.
 - 비밀번호는 `10자 이상 + 대문자 + 소문자 + 숫자 + 특수문자 + 재확인 일치` 규칙을 유지합니다.
+- 회원가입 직전에는 `POST /api/account/signup/validate`로 서버 사전 검증을 통과한 뒤 Supabase 가입을 진행합니다.
 - 로그인 후 `/settings`에서 아이디, 이름, 전화번호, 생년월일 수정, 인증 메일 재전송, 비밀번호 재설정 메일 발송, 로그아웃을 처리합니다.
 - 계정 프로필은 현재 `Supabase Auth user_metadata` 기반으로 읽고, `/api/account/me`에서 마스킹된 전화번호와 이메일 인증 상태를 함께 반환합니다.
 - 프로필 수정은 `PATCH /api/account/me`를 사용하며, 서버가 아이디 중복과 입력 형식을 다시 검증합니다.
