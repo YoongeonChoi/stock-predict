@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 
@@ -78,6 +78,7 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.data.yfinance_client.cache.get_or_fetch", new=_passthrough_cache),
+            patch("app.data.yfinance_client.cache.set", new=AsyncMock()),
             patch("app.data.yfinance_client.yf.download", return_value=download_df),
             patch("app.data.yfinance_client.latest_closed_trading_day", return_value=pd.Timestamp("2026-03-27").date()),
         ):

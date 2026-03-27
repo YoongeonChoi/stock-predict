@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.40.2 - 2026-03-27
+
+- `market opportunities`는 큰 KR fallback 유니버스에서 응답 안정성을 우선해 `1차 전수 스캔 상위 후보`를 먼저 반환하도록 바꿨습니다. Render free cold-start 구간에서 정밀 분석 때문에 전체 응답이 `SP-5018`로 끊기던 문제를 줄이기 위한 조정입니다.
+- batch quote 결과를 개별 `stock_quote` 캐시에도 함께 채워, 레이더 이후 상세 종목 조회가 같은 세션에서 다시 느려지지 않도록 보강했습니다.
+- 공개 opportunity timeout도 `24초`로 소폭 완화해, 현재 운영 구조에서 `201개 기본 종목군 1차 스캔 + 후보 반환`이 실제로 끝날 수 있는 여유를 추가했습니다.
+
 ## v2.40.1 - 2026-03-27
 
 - `market opportunities`의 KR 1차 스캔은 개별 종목 quote를 순차 호출하던 경로 대신 batch quote fetch를 우선 사용하도록 바꿔, Render free 환경에서도 `후보 0개`나 `504`로 무너질 확률을 크게 낮췄습니다.

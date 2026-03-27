@@ -291,6 +291,76 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(seen), market_service.LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)
         self.assertLessEqual(len(result), market_service.LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)
 
+    async def test_get_market_opportunities_skips_detailed_scan_for_large_kr_fallback_universe(self):
+        market_regime = MarketRegime(
+            label="중립",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=55.0,
+            conviction=48.0,
+            summary="중립 장세",
+            playbook=["선별 대응"],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
+        )
+        tickers = [f"{index:06d}.KS" for index in range(130)]
+        batch_quotes = {
+            ticker: {
+                "ticker": ticker,
+                "current_price": 100.0 + index,
+                "prev_close": 99.0 + index,
+                "change_pct": round(0.2 + index * 0.01, 2),
+                "session_date": "2026-03-26",
+            }
+            for index, ticker in enumerate(tickers)
+        }
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.services.market_service.resolve_universe",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        sectors={"Information Technology": tickers},
+                        source="fallback",
+                        note="test universe",
+                    )
+                ),
+            ),
+            patch(
+                "app.services.market_service.yfinance_client.get_batch_stock_quotes",
+                new=AsyncMock(return_value=batch_quotes),
+            ),
+            patch(
+                "app.services.market_service.yfinance_client.get_price_history",
+                new=AsyncMock(return_value=_sample_prices(90, 3000.0)),
+            ),
+            patch(
+                "app.services.market_service.yfinance_client.get_market_snapshot",
+                new=AsyncMock(side_effect=AssertionError("detailed scan should be skipped")),
+            ),
+            patch(
+                "app.services.market_service.ecos_client.get_kr_economic_snapshot",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.market_service.kosis_client.get_kr_macro_snapshot",
+                new=AsyncMock(return_value={}),
+            ),
+            patch("app.services.market_service.build_market_regime", return_value=market_regime),
+        ):
+            result = await market_service.get_market_opportunities("KR", limit=12)
+
+        self.assertEqual(result["universe_size"], 130)
+        self.assertEqual(result["total_scanned"], 130)
+        self.assertEqual(result["detailed_scanned_count"], 0)
+        self.assertEqual(len(result["opportunities"]), 12)
+        self.assertGreater(result["actionable_count"], 0)
+        self.assertEqual(result["opportunities"][0]["setup_label"], "전수 1차 스캔")
+        self.assertIn("운영 환경에서는 응답 안정성을 위해 1차 스캔 상위 후보를 우선 반환합니다.", result["universe_note"])
+
 
 if __name__ == "__main__":
     unittest.main()
