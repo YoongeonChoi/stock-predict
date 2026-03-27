@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { KeyRound, MailCheck, ShieldAlert, UserRound } from "lucide-react";
+import { KeyRound, MailCheck, ShieldAlert, Trash2, UserRound } from "lucide-react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
@@ -81,6 +81,8 @@ export default function AccountSettingsPanel() {
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     setDraft(buildDraft(profile));
@@ -89,6 +91,13 @@ export default function AccountSettingsPanel() {
 
   const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
   const normalizedDraftUsername = normalizeUsername(draft.username);
+  const deleteTargetLabel = profile?.username ? "현재 아이디" : "현재 이메일";
+  const deleteTargetValue = profile?.username ? normalizedCurrentUsername : (profile?.email ?? "").trim().toLowerCase();
+  const deleteReady = Boolean(deleteTargetValue) && (
+    profile?.username
+      ? normalizeUsername(deleteConfirmation) === deleteTargetValue
+      : deleteConfirmation.trim().toLowerCase() === deleteTargetValue
+  );
   const usernameReady =
     Boolean(normalizedDraftUsername) &&
     (
@@ -265,6 +274,36 @@ export default function AccountSettingsPanel() {
       toast(message, "error");
     } finally {
       setSigningOut(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deleteReady) {
+      toast(`${deleteTargetLabel}를 정확히 입력한 뒤 회원 탈퇴를 진행해 주세요.`, "error");
+      return;
+    }
+    if (!window.confirm("계정을 삭제하면 관심종목, 포트폴리오, 계정 설정이 함께 제거됩니다. 계속 진행할까요?")) {
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const result = await api.deleteMyAccount({ confirmation_text: deleteConfirmation });
+      const client = getSupabaseBrowserClient();
+      if (client) {
+        try {
+          await client.auth.signOut({ scope: "local" });
+        } catch {
+          // Deletion may invalidate the remote session before sign-out finishes.
+        }
+      }
+      toast(result.message, "success");
+      window.location.assign("/auth");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "회원 탈퇴 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -494,6 +533,44 @@ export default function AccountSettingsPanel() {
             >
               {sendingReset ? "메일 전송 중..." : "비밀번호 재설정 메일 보내기"}
             </button>
+          </div>
+
+          <div className="rounded-[24px] border border-warning/30 bg-warning/10 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-warning/20 text-warning">
+                <Trash2 size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">회원 탈퇴</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  계정을 삭제하면 관심종목, 보유 종목, 포트폴리오 프로필이 함께 정리되며 되돌릴 수 없습니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <Field
+                label={deleteTargetLabel}
+                helper={`탈퇴를 진행하려면 ${deleteTargetLabel} (${profile?.username ?? profile?.email ?? "-"})를 다시 입력해 주세요.`}
+              >
+                <input
+                  value={deleteConfirmation}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-2xl border border-warning/40 bg-surface/75 px-4 py-3 text-sm"
+                  placeholder={profile?.username ?? profile?.email ?? ""}
+                />
+              </Field>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount || !deleteReady}
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-warning/40 bg-white/80 px-4 py-3 text-sm font-semibold text-warning transition hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingAccount ? "계정 삭제 중..." : "회원 탈퇴"}
+              </button>
+            </div>
           </div>
         </aside>
       </div>

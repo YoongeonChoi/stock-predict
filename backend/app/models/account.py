@@ -40,6 +40,15 @@ class SignUpValidationResponse(BaseModel):
     message: str = "회원가입 조건이 확인되었습니다."
 
 
+class AccountDeleteRequest(BaseModel):
+    confirmation_text: str
+
+
+class AccountDeleteResponse(BaseModel):
+    status: str = "deleted"
+    message: str = "계정이 삭제되었습니다. 관심종목과 포트폴리오 데이터도 함께 정리되었습니다."
+
+
 class UsernameAvailabilityResponse(BaseModel):
     username: str
     normalized_username: str

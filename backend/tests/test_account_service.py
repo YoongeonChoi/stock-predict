@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.auth import AuthenticatedUser
 from app.exceptions import ApiAppException
-from app.models.account import AccountProfileUpdateRequest, SignUpValidationRequest
+from app.models.account import AccountDeleteRequest, AccountProfileUpdateRequest, SignUpValidationRequest
 from app.services import account_service
 
 
@@ -158,6 +158,41 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ApiAppException) as ctx:
             await account_service.validate_signup(payload)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.error.to_dict()["error_code"], "SP-6015")
+
+    async def test_delete_current_account_calls_supabase_admin_delete(self):
+        user = AuthenticatedUser(
+            id="user-123",
+            email="tester@example.com",
+            username="alpha_01",
+        )
+
+        with patch(
+            "app.services.account_service.supabase_client.admin_delete_user",
+            new=AsyncMock(return_value=None),
+        ) as mocked_delete:
+            result = await account_service.delete_current_account(
+                user,
+                AccountDeleteRequest(confirmation_text="Alpha_01"),
+            )
+
+        mocked_delete.assert_awaited_once_with("user-123")
+        self.assertEqual(result.status, "deleted")
+
+    async def test_delete_current_account_rejects_wrong_confirmation(self):
+        user = AuthenticatedUser(
+            id="user-123",
+            email="tester@example.com",
+            username="alpha_01",
+        )
+
+        with self.assertRaises(ApiAppException) as ctx:
+            await account_service.delete_current_account(
+                user,
+                AccountDeleteRequest(confirmation_text="wrong_name"),
+            )
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.error.to_dict()["error_code"], "SP-6015")

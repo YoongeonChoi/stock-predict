@@ -35,6 +35,15 @@ export interface AccountProfileUpdateRequest {
   birth_date: string;
 }
 
+export interface AccountDeleteRequest {
+  confirmation_text: string;
+}
+
+export interface AccountDeleteResponse {
+  status: "deleted";
+  message: string;
+}
+
 export interface SignUpValidationRequest {
   username: string;
   email: string;
@@ -1137,6 +1146,12 @@ export const api = {
   updateMyAccountProfile: (payload: AccountProfileUpdateRequest) =>
     request<AccountProfile>("/api/account/me", {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteMyAccount: (payload: AccountDeleteRequest) =>
+    request<AccountDeleteResponse>("/api/account/me", {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),

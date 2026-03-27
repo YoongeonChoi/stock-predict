@@ -147,6 +147,13 @@ class SupabaseClient:
         )
         return dict(payload) if isinstance(payload, dict) else None
 
+    async def admin_delete_user(self, user_id: str) -> None:
+        await self._request_json(
+            "DELETE",
+            f"/auth/v1/admin/users/{user_id}",
+            headers=self._admin_headers(),
+        )
+
     async def watchlist_list(self, user_id: str) -> list[dict]:
         payload = await self._request_json(
             "GET",
