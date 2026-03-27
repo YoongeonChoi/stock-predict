@@ -7,6 +7,7 @@ import { KeyRound, MailCheck, ShieldAlert, Trash2, UserRound } from "lucide-reac
 import PasswordStrengthChecklist from "@/components/auth/PasswordStrengthChecklist";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
+import { useCooldownTimer } from "@/hooks/useCooldownTimer";
 import {
   formatPhoneNumber,
   describeAuthErrorMessage,
@@ -92,7 +93,6 @@ export default function AccountSettingsPanel() {
   const { toast } = useToast();
   const [draft, setDraft] = useState<ProfileDraft>(buildDraft(profile));
   const [usernameState, setUsernameState] = useState<UsernameState>(buildUsernameState(profile));
-  const [usernameCooldownSeconds, setUsernameCooldownSeconds] = useState(0);
   const [saving, setSaving] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
@@ -104,23 +104,14 @@ export default function AccountSettingsPanel() {
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const usernameCooldown = useCooldownTimer();
+  const verificationCooldown = useCooldownTimer();
+  const resetCooldown = useCooldownTimer();
 
   useEffect(() => {
     setDraft(buildDraft(profile));
     setUsernameState(buildUsernameState(profile));
   }, [profile?.birth_date, profile?.full_name, profile?.phone_number, profile?.user_id, profile?.username]);
-
-  useEffect(() => {
-    if (usernameCooldownSeconds <= 0) {
-      return undefined;
-    }
-
-    const timer = window.setInterval(() => {
-      setUsernameCooldownSeconds((value) => Math.max(0, value - 1));
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [usernameCooldownSeconds]);
 
   const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
   const normalizedDraftUsername = normalizeUsername(draft.username);
@@ -201,11 +192,11 @@ export default function AccountSettingsPanel() {
   };
 
   const handleUsernameCheck = async () => {
-    if (usernameCooldownSeconds > 0) {
+    if (usernameCooldown.active) {
       setUsernameState((prev) => ({
         ...prev,
         checking: false,
-        message: `중복 확인 요청이 많아 ${usernameCooldownSeconds}초 후 다시 시도해 주세요.`,
+        message: `중복 확인 요청이 많아 ${usernameCooldown.seconds}초 후 다시 시도해 주세요.`,
       }));
       return;
     }
@@ -238,7 +229,7 @@ export default function AccountSettingsPanel() {
     } catch (error) {
       if (isApiErrorCode(error, "SP-6016")) {
         const retryAfter = getApiRetryAfterSeconds(error) ?? 30;
-        setUsernameCooldownSeconds(retryAfter);
+        usernameCooldown.start(retryAfter);
         setUsernameState({
           checkedValue: normalizedDraftUsername,
           valid: false,
@@ -295,6 +286,10 @@ export default function AccountSettingsPanel() {
       toast("인증 메일을 보낼 이메일이 없습니다.", "error");
       return;
     }
+    if (verificationCooldown.active) {
+      toast(`인증 메일은 ${verificationCooldown.seconds}초 후 다시 보낼 수 있습니다.`, "error");
+      return;
+    }
     const client = getSupabaseBrowserClient();
     if (!client) {
       toast("Supabase 설정이 비어 있어 인증 메일을 보낼 수 없습니다.", "error");
@@ -313,6 +308,7 @@ export default function AccountSettingsPanel() {
       if (error) {
         throw error;
       }
+      verificationCooldown.start(60);
       toast("인증 메일을 다시 보냈습니다. 받은 편지함을 확인해 주세요.", "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "인증 메일 재전송에 실패했습니다.";
@@ -325,6 +321,10 @@ export default function AccountSettingsPanel() {
   const handleSendPasswordReset = async () => {
     if (!profile?.email) {
       toast("비밀번호 재설정 메일을 보낼 이메일이 없습니다.", "error");
+      return;
+    }
+    if (resetCooldown.active) {
+      toast(`재설정 메일은 ${resetCooldown.seconds}초 후 다시 요청할 수 있습니다.`, "error");
       return;
     }
     const client = getSupabaseBrowserClient();
@@ -341,6 +341,7 @@ export default function AccountSettingsPanel() {
       if (error) {
         throw error;
       }
+      resetCooldown.start(60);
       toast("비밀번호 재설정 메일을 보냈습니다. 메일의 링크에서 새 비밀번호를 설정해 주세요.", "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "비밀번호 재설정 메일 전송에 실패했습니다.";
@@ -583,13 +584,13 @@ export default function AccountSettingsPanel() {
                 <button
                   type="button"
                   onClick={handleUsernameCheck}
-                  disabled={usernameState.checking || usernameCooldownSeconds > 0}
+                  disabled={usernameState.checking || usernameCooldown.active}
                   className="action-chip-secondary shrink-0"
                 >
                   {usernameState.checking
                     ? "확인 중..."
-                    : usernameCooldownSeconds > 0
-                      ? `${usernameCooldownSeconds}초 후 다시`
+                    : usernameCooldown.active
+                      ? `${usernameCooldown.seconds}초 후 다시`
                       : "중복 확인"}
                 </button>
               </div>
@@ -676,17 +677,31 @@ export default function AccountSettingsPanel() {
             <button
               type="button"
               onClick={handleResendVerification}
-              disabled={sendingVerification || (!profile.email && !profile.pending_email) || (profile.email_verified && !profile.pending_email)}
+              disabled={
+                sendingVerification ||
+                verificationCooldown.active ||
+                (!profile.email && !profile.pending_email) ||
+                (profile.email_verified && !profile.pending_email)
+              }
               className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
             >
               {profile.pending_email
-                ? (sendingVerification ? "재전송 중..." : "변경 확인 메일 다시 보내기")
+                ? (sendingVerification
+                  ? "재전송 중..."
+                  : verificationCooldown.active
+                    ? `${verificationCooldown.seconds}초 후 다시`
+                    : "변경 확인 메일 다시 보내기")
                 : profile.email_verified
                   ? "이메일 인증 완료"
                   : sendingVerification
                     ? "재전송 중..."
-                    : "인증 메일 다시 보내기"}
+                    : verificationCooldown.active
+                      ? `${verificationCooldown.seconds}초 후 다시`
+                      : "인증 메일 다시 보내기"}
             </button>
+            <p className="mt-3 text-xs leading-6 text-text-secondary">
+              같은 인증 메일 액션은 60초 동안 잠시 쉬어 갑니다.
+            </p>
             {profile.pending_email ? (
               <div className="mt-4 rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm text-text-secondary">
                 <div className="font-medium text-text">변경 대기 이메일</div>
@@ -866,11 +881,18 @@ export default function AccountSettingsPanel() {
             <button
               type="button"
               onClick={handleSendPasswordReset}
-              disabled={sendingReset || !profile.email}
+              disabled={sendingReset || resetCooldown.active || !profile.email}
               className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {sendingReset ? "메일 전송 중..." : "비밀번호 재설정 메일 보내기"}
+              {sendingReset
+                ? "메일 전송 중..."
+                : resetCooldown.active
+                  ? `${resetCooldown.seconds}초 후 다시`
+                  : "비밀번호 재설정 메일 보내기"}
             </button>
+            <p className="mt-3 text-xs leading-6 text-text-secondary">
+              재설정 메일도 같은 주소로 60초 동안 연속 발송되지 않도록 잠시 대기합니다.
+            </p>
           </div>
 
           <div className="rounded-[24px] border border-warning/30 bg-warning/10 p-4">

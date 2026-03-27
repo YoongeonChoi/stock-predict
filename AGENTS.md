@@ -210,6 +210,7 @@
 - 회원 탈퇴는 `DELETE /api/account/me`를 사용하며, 현재 아이디 또는 이메일 재입력을 확인한 뒤 `Supabase Auth` 계정과 연관 포트폴리오/관심종목 데이터를 함께 정리합니다.
 - 아이디 중복 확인은 `GET /api/account/username-availability`를 사용하며, 로그인 전에도 호출 가능해야 합니다.
 - 로그인 전 공개 계정 API는 UX를 해치지 않는 짧은 rate limit을 유지합니다.
+- 인증 메일 재전송과 비밀번호 재설정 메일은 `/auth`, `/settings` 모두에서 같은 60초 cooldown UX를 유지합니다.
 
 규칙:
 
