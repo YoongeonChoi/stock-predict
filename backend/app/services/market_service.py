@@ -28,6 +28,7 @@ LIGHTWEIGHT_OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 2
 LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES = 12
 QUICK_UNIVERSE_QUOTE_TIMEOUT_SECONDS = 1.2
 QUICK_UNIVERSE_QUOTE_CONCURRENCY = 18
+QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP = 120
 MIN_DETAILED_OPPORTUNITY_CANDIDATES = 12
 MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
 LARGE_UNIVERSE_DETAILED_SCAN_CAP = 4
@@ -336,15 +337,28 @@ async def _build_quote_screen(
     country_code: str,
     universe_selection,
     market_regime,
+    max_pairs: int | None = None,
 ) -> dict:
-    universe_pairs = _flatten_universe(universe_selection.sectors)
-    cache_key = f"opportunity_quote_screen:v2:{country_code}:{universe_selection.source}:{len(universe_pairs)}"
+    full_universe_pairs = _flatten_universe(universe_selection.sectors)
+    if max_pairs is not None and max_pairs > 0:
+        universe_pairs = full_universe_pairs[:max_pairs]
+        scope_token = f"cap{max_pairs}"
+    else:
+        universe_pairs = full_universe_pairs
+        scope_token = "full"
+    cache_key = (
+        f"opportunity_quote_screen:v3:{country_code}:{universe_selection.source}:"
+        f"{len(full_universe_pairs)}:{scope_token}"
+    )
 
     async def _fetch_quotes():
         if country_code == "KR":
             try:
                 batch_quotes = await asyncio.wait_for(
-                    kr_market_quote_client.get_kr_bulk_quotes([ticker for _, ticker in universe_pairs]),
+                    kr_market_quote_client.get_kr_bulk_quotes(
+                        [ticker for _, ticker in universe_pairs],
+                        skip_full_market_fallback=max_pairs is not None,
+                    ),
                     timeout=9,
                 )
             except Exception:
@@ -370,7 +384,8 @@ async def _build_quote_screen(
             if ranked:
                 ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
                 return {
-                    "universe_size": len(universe_pairs),
+                    "universe_size": len(full_universe_pairs),
+                    "scanned_count": len(universe_pairs),
                     "quote_available_count": len(ranked),
                     "ranked": ranked,
                 }
@@ -406,7 +421,8 @@ async def _build_quote_screen(
         ranked = [item for item in scanned if not isinstance(item, Exception) and item is not None]
         ranked.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
         return {
-            "universe_size": len(universe_pairs),
+            "universe_size": len(full_universe_pairs),
+            "scanned_count": len(universe_pairs),
             "quote_available_count": len(ranked),
             "ranked": ranked,
         }
@@ -793,6 +809,7 @@ async def get_market_opportunities(
             )
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
+        scanned_count = int(quote_screen.get("scanned_count") or resolved_universe_size)
         resolved_universe_note = universe_selection.note
         if universe_selection.source == "fallback" and resolved_universe_size > 0:
             scope_hint = f"현재 레이더는 운영용 기본 종목군 {resolved_universe_size}개를 1차 스캔합니다."
@@ -813,7 +830,7 @@ async def get_market_opportunities(
             generated_at=datetime.now().isoformat(),
             market_regime=market_regime,
             universe_size=resolved_universe_size,
-            total_scanned=resolved_universe_size,
+            total_scanned=scanned_count,
             quote_available_count=int(quote_screen.get("quote_available_count") or 0),
             detailed_scanned_count=len(detailed_ranked),
             actionable_count=sum(1 for item in ranked if item.action != "avoid"),
@@ -858,8 +875,10 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             country_code=country_code,
             universe_selection=universe_selection,
             market_regime=market_regime,
+            max_pairs=QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
         )
         ranked_quotes = list(quote_screen.get("ranked") or [])
+        scanned_count = int(quote_screen.get("scanned_count") or len(ranked_quotes))
         ranked = _build_quote_only_opportunities(
             ranked_quotes=ranked_quotes,
             country_code=country_code,
@@ -868,7 +887,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
         )
         if not ranked:
             ranked = await _build_lightweight_opportunities(
-                candidates=_flatten_universe(universe_selection.sectors),
+                candidates=_flatten_universe(universe_selection.sectors)[: max(scanned_count, limit)],
                 country_code=country_code,
                 market_regime=market_regime,
                 limit=limit,
@@ -876,6 +895,10 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         note_parts = [universe_selection.note.strip()]
+        if 0 < scanned_count < resolved_universe_size:
+            note_parts.append(
+                f"현재 응답은 전체 {resolved_universe_size}개 중 대표 1차 스캔 {scanned_count}개를 기준으로 먼저 계산했습니다."
+            )
         note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
         note_parts.append("같은 조건으로 다시 열면 백그라운드 계산이 끝난 정밀 후보가 바로 보일 수 있습니다.")
         resolved_universe_note = " ".join(part for part in note_parts if part).strip()
@@ -885,7 +908,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             generated_at=datetime.now().isoformat(),
             market_regime=market_regime,
             universe_size=resolved_universe_size,
-            total_scanned=resolved_universe_size,
+            total_scanned=scanned_count,
             quote_available_count=int(quote_screen.get("quote_available_count") or 0),
             detailed_scanned_count=0,
             actionable_count=sum(1 for item in ranked if item.action != "avoid"),

@@ -39,6 +39,21 @@ async def _run_startup_task(
     except asyncio.CancelledError:
         startup_log.info("Startup task '%s' cancelled during shutdown.", name)
         raise
+    except asyncio.TimeoutError:
+        startup_log.warning(
+            "%s: startup time budget (%ss) was reached; service will continue without waiting for completion.",
+            failure_prefix,
+            timeout_seconds,
+        )
+        readable_name = name.replace("_", " ")
+        upsert_startup_task(
+            name,
+            "ok",
+            (
+                f"Startup window ended before {readable_name} finished. "
+                "서비스는 계속 시작되며, 해당 보강 작업은 다음 워밍업이나 수동 재시도에서 다시 반영됩니다."
+            ),
+        )
     except Exception as exc:
         startup_log.warning("%s: %s", failure_prefix, exc, exc_info=True)
         upsert_startup_task(
@@ -122,7 +137,7 @@ async def lifespan(app: FastAPI):
                     success_detail="KR opportunity radar prewarm completed.",
                     failure_prefix="Market opportunity prewarm failed during startup",
                     timeout_seconds=settings.startup_market_opportunity_prewarm_timeout,
-                    job=lambda: market_service.get_market_opportunities("KR", limit=12),
+                    job=lambda: market_service.get_market_opportunities_quick("KR", limit=12),
                 )
             )
         )

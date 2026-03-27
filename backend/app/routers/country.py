@@ -628,9 +628,18 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         try:
             quick_response = await asyncio.wait_for(
                 asyncio.shield(quick_task),
-                timeout=max(1.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 2.0)),
+                timeout=max(2.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 4.0)),
             )
             return quick_response
+        except asyncio.TimeoutError:
+            logging.warning("opportunity quick fallback timed out for %s", code)
+            err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
+            err.detail = (
+                f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
+                "대표 1차 스캔도 아직 끝나지 않아 잠시 후 다시 시도해 주세요."
+            )
+            err.log("warning")
+            return JSONResponse(status_code=504, content=err.to_dict())
         except Exception as quick_exc:
             logging.warning("opportunity quick fallback failed for %s: %s", code, quick_exc, exc_info=True)
             err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")

@@ -192,7 +192,11 @@ def _normalize_yfinance_quote(ticker: str, quote: dict) -> dict | None:
     }
 
 
-async def get_kr_bulk_quotes(requested_tickers: list[str]) -> dict[str, dict]:
+async def get_kr_bulk_quotes(
+    requested_tickers: list[str],
+    *,
+    skip_full_market_fallback: bool = False,
+) -> dict[str, dict]:
     requested = list(dict.fromkeys(str(ticker or "").upper() for ticker in requested_tickers if ticker))
     if not requested:
         return {}
@@ -205,7 +209,7 @@ async def get_kr_bulk_quotes(requested_tickers: list[str]) -> dict[str, dict]:
             if (normalized := _normalize_yfinance_quote(ticker, fast_quotes.get(ticker) or {})) is not None
         }
         minimum_coverage = min(len(requested), max(4, (len(requested) * 3 + 3) // 4))
-        if len(normalized_fast) >= minimum_coverage:
+        if len(normalized_fast) >= minimum_coverage or skip_full_market_fallback:
             return normalized_fast
 
     available = await _fetch_full_kr_market_quotes()

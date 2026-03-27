@@ -1,6 +1,8 @@
 import aiosqlite
 import json
+import sqlite3
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from app.config import get_settings
 
@@ -137,14 +139,35 @@ CREATE INDEX IF NOT EXISTS idx_ideal_portfolio_reference_date
 ON ideal_portfolio_snapshots(reference_date DESC);
 """
 
+SQLITE_CONNECT_TIMEOUT_SECONDS = 30
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _is_sqlite_lock_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.OperationalError):
+        return "locked" in str(exc).lower()
+    return "database is locked" in str(exc).lower()
+
 
 class Database:
     def __init__(self):
         self.db_path = get_settings().db_path
 
+    @asynccontextmanager
+    async def _connect(self):
+        conn = await aiosqlite.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT_SECONDS)
+        try:
+            await conn.execute("PRAGMA journal_mode=WAL")
+            await conn.execute("PRAGMA synchronous=NORMAL")
+            await conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+            await conn.execute("PRAGMA foreign_keys=ON")
+            yield conn
+        finally:
+            await conn.close()
+
     async def initialize(self):
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             await conn.executescript(_SCHEMA)
             await conn.execute(
                 """
@@ -159,34 +182,51 @@ class Database:
     # ── cache ──────────────────────────────────────────────
 
     async def cache_get(self, key: str):
-        async with aiosqlite.connect(self.db_path) as conn:
-            cur = await conn.execute(
-                "SELECT value, created_at, ttl_seconds FROM cache WHERE key = ?",
-                (key,),
-            )
-            row = await cur.fetchone()
-            if row is None:
+        try:
+            async with self._connect() as conn:
+                cur = await conn.execute(
+                    "SELECT value, created_at, ttl_seconds FROM cache WHERE key = ?",
+                    (key,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    return None
+                value, created_at, ttl = row
+                if time.time() - created_at > ttl:
+                    try:
+                        await conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+                        await conn.commit()
+                    except Exception as exc:
+                        if not _is_sqlite_lock_error(exc):
+                            raise
+                    return None
+                return json.loads(value)
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
                 return None
-            value, created_at, ttl = row
-            if time.time() - created_at > ttl:
-                await conn.execute("DELETE FROM cache WHERE key = ?", (key,))
-                await conn.commit()
-                return None
-            return json.loads(value)
+            raise
 
     async def cache_set(self, key: str, value, ttl_seconds: int):
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute(
-                "INSERT OR REPLACE INTO cache (key, value, created_at, ttl_seconds) "
-                "VALUES (?, ?, ?, ?)",
-                (key, json.dumps(value, default=str), time.time(), ttl_seconds),
-            )
-            await conn.commit()
+        try:
+            async with self._connect() as conn:
+                await conn.execute(
+                    "INSERT OR REPLACE INTO cache (key, value, created_at, ttl_seconds) "
+                    "VALUES (?, ?, ?, ?)",
+                    (key, json.dumps(value, default=str), time.time(), ttl_seconds),
+                )
+                await conn.commit()
+        except Exception as exc:
+            if not _is_sqlite_lock_error(exc):
+                raise
 
     async def cache_invalidate(self, pattern: str):
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute("DELETE FROM cache WHERE key LIKE ?", (pattern,))
-            await conn.commit()
+        try:
+            async with self._connect() as conn:
+                await conn.execute("DELETE FROM cache WHERE key LIKE ?", (pattern,))
+                await conn.commit()
+        except Exception as exc:
+            if not _is_sqlite_lock_error(exc):
+                raise
 
     # ── watchlist ──────────────────────────────────────────
 
@@ -487,7 +527,7 @@ class Database:
         drivers_json: list[dict] | None,
         model_version: str | None,
     ):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             await conn.execute(
                 """
                 INSERT INTO prediction_records (
@@ -533,7 +573,7 @@ class Database:
             await conn.commit()
 
     async def prediction_pending(self, target_date_to: str, limit: int = 200) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -554,7 +594,7 @@ class Database:
         actual_low: float | None,
         actual_high: float | None,
     ):
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             await conn.execute(
                 """
                 UPDATE prediction_records
@@ -566,7 +606,7 @@ class Database:
             await conn.commit()
 
     async def prediction_stats(self, prediction_type: str = "next_day") -> dict:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             total_cur = await conn.execute(
                 """
                 SELECT COUNT(*) AS stored_total,
@@ -615,7 +655,7 @@ class Database:
             }
 
     async def prediction_recent(self, prediction_type: str = "next_day", limit: int = 40) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -637,7 +677,7 @@ class Database:
         prediction_type: str = "next_day",
         limit: int = 8,
     ) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -652,7 +692,7 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -691,7 +731,7 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_country_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -730,7 +770,7 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_scope_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -769,7 +809,7 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_model_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """
@@ -808,7 +848,7 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_confidence_buckets(self, prediction_type: str = "next_day") -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
             cur = await conn.execute(
                 """

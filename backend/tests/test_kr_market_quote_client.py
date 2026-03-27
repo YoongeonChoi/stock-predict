@@ -69,6 +69,10 @@ class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
                 "app.data.kr_market_quote_client.yfinance_client.get_batch_stock_quotes",
                 new=AsyncMock(return_value=fallback_quotes),
             ),
+            patch(
+                "app.data.kr_market_quote_client.yfinance_client._kr_ticker_name",
+                side_effect=lambda ticker: {"005930.KS": "삼성전자", "123456.KQ": "123456"}.get(ticker),
+            ),
         ):
             quotes = await kr_market_quote_client.get_kr_bulk_quotes(["005930.KS", "123456.KQ"])
 
@@ -113,6 +117,40 @@ class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(quotes.keys()), {"005930.KS", "000660.KS"})
         self.assertEqual(quotes["005930.KS"]["name"], "삼성전자")
         self.assertEqual(quotes["000660.KS"]["name"], "SK하이닉스")
+        batch_quotes.assert_awaited_once()
+        full_fetch.assert_not_awaited()
+
+    async def test_get_kr_bulk_quotes_can_skip_full_market_fallback_for_quick_path(self):
+        partial_fast_quotes = {
+            "005930.KS": {
+                "ticker": "005930.KS",
+                "current_price": 179700.0,
+                "prev_close": 180100.0,
+                "change_pct": -0.22,
+                "session_date": "2026-03-27",
+            }
+        }
+
+        with (
+            patch(
+                "app.data.kr_market_quote_client.yfinance_client.get_batch_stock_quotes",
+                new=AsyncMock(return_value=partial_fast_quotes),
+            ) as batch_quotes,
+            patch(
+                "app.data.kr_market_quote_client._fetch_full_kr_market_quotes",
+                new=AsyncMock(side_effect=AssertionError("full market fetch should be skipped for quick path")),
+            ) as full_fetch,
+            patch(
+                "app.data.kr_market_quote_client.yfinance_client._kr_ticker_name",
+                side_effect=lambda ticker: {"005930.KS": "삼성전자"}.get(ticker),
+            ),
+        ):
+            quotes = await kr_market_quote_client.get_kr_bulk_quotes(
+                ["005930.KS", "000660.KS"],
+                skip_full_market_fallback=True,
+            )
+
+        self.assertEqual(set(quotes.keys()), {"005930.KS"})
         batch_quotes.assert_awaited_once()
         full_fetch.assert_not_awaited()
 

@@ -2,6 +2,18 @@
 
 All notable changes to this project are tracked here.
 
+## v2.45.3 - 2026-03-27
+
+- KR `Opportunity Radar`의 batch quote screen에서 첫 종목만 담고 조기 반환하던 회귀를 수정했습니다. 이제 quick/full 경로 모두 실제 확보한 시세 종목 수만큼 정상 정렬합니다.
+- KR quick fallback은 더 이상 소량 `yfinance` 커버리지 부족 시 시장 전체 시가총액 scrape까지 이어지지 않고, 빠른 부분 시세만으로 먼저 응답합니다. 그래서 `다시 시도`를 눌러도 quick fallback 자체가 같이 timeout 나는 경우를 더 줄였습니다.
+- 예측 정확도 refresh와 관련된 SQLite prediction 조회/집계 경로도 `WAL + busy_timeout` 설정을 공유하도록 맞춰, startup/background 작업이 `database is locked`로 흔들리던 구간을 완화했습니다.
+
+## v2.45.2 - 2026-03-27
+
+- startup background timeout은 이제 긴 `CancelledError` stacktrace와 즉시 `degraded` 상태로 번지지 않고, 서비스 응답을 먼저 살린 채 보강 작업만 다음 워밍업/재요청으로 넘깁니다. 특히 `market opportunity prewarm`은 무거운 full radar 대신 quick prewarm을 사용합니다.
+- KR `Opportunity Radar`의 quick fallback은 전체 유니버스 수와 실제 quick 1차 스캔 수를 분리해 반환하고, 초기 응답에서는 대표 1차 스캔만 먼저 계산합니다. 그래서 quick 경로가 다시 전종목 bulk quote를 기다리다 `504 / SP-5018`로 같이 무너지는 문제를 줄였습니다.
+- SQLite 캐시 연결에 `WAL + busy_timeout`을 적용하고, `database is locked`가 cache 경로에서 발생하면 읽기는 cache miss, 쓰기는 no-op으로 떨어지게 바꿨습니다. 그 결과 `market snapshot fetch failed ... database is locked`가 공개 화면 전체 `SP-3001`로 번지던 구간을 완화했습니다.
+
 ## v2.45.1 - 2026-03-27
 
 - KR 소량 시세 조회는 이제 먼저 `yfinance batch quote` 경로를 시도하고, 커버리지가 충분할 때는 시장 전체 시가총액 페이지 fetch를 생략합니다. 그래서 `sector performance` 같은 첫 진입 카드가 서버가 막 깨어난 직후에도 덜 무겁게 시작됩니다.
