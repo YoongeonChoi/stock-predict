@@ -149,7 +149,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.exception_handler(ApiAppException)
 async def api_app_exception_handler(request: Request, exc: ApiAppException):
-    return JSONResponse(status_code=exc.status_code, content=exc.error.to_dict())
+    return JSONResponse(status_code=exc.status_code, content=exc.error.to_dict(), headers=exc.headers)
 
 
 @app.exception_handler(RequestValidationError)
