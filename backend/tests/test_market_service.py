@@ -327,6 +327,46 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["opportunities"]), 2)
         self.assertIn("1차 시세 스캔 후보", result["universe_note"])
 
+    async def test_get_market_opportunities_quick_caps_large_kr_quote_screen(self):
+        tickers = [f"{index:06d}.KS" for index in range(240)]
+        capped_tickers = tickers[: market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP]
+        batch_quotes = {
+            ticker: {
+                "ticker": ticker,
+                "name": ticker,
+                "current_price": 100.0 + index,
+                "prev_close": 99.0 + index,
+                "change_pct": round(0.3 + index * 0.01, 2),
+                "market_cap": 1000000000.0 + index,
+            }
+            for index, ticker in enumerate(capped_tickers)
+        }
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.services.market_service.cache.get",
+                new=AsyncMock(
+                    return_value={
+                        "sectors": {"Information Technology": tickers},
+                        "total": len(tickers),
+                    }
+                ),
+            ),
+            patch(
+                "app.services.market_service.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(return_value=batch_quotes),
+            ) as bulk_quotes_mock,
+        ):
+            result = await market_service.get_market_opportunities_quick("KR", limit=5)
+
+        requested_tickers = bulk_quotes_mock.await_args.args[0]
+        self.assertEqual(len(requested_tickers), market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
+        self.assertEqual(result["universe_size"], 240)
+        self.assertEqual(result["total_scanned"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
+        self.assertEqual(result["quote_available_count"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
+        self.assertIn("대표 1차 스캔 120개", result["universe_note"])
+
     async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_before_dynamic_fetch(self):
         with (
             patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
