@@ -420,7 +420,9 @@ export default function ScreenerPage() {
                     <td className="px-4 py-3 text-right">{stock.pe_ratio?.toFixed(1) ?? "-"} / {stock.pb_ratio?.toFixed(1) ?? "-"}</td>
                     <td className="px-4 py-3 text-right">{stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(1)}%` : "-"} / {stock.roe != null ? `${stock.roe.toFixed(1)}%` : "-"}</td>
                     <td className="px-4 py-3 text-right">{stock.revenue_growth != null ? `${stock.revenue_growth.toFixed(1)}%` : "-"} / {stock.debt_to_equity != null ? stock.debt_to_equity.toFixed(0) : "-"}</td>
-                    <td className={`px-4 py-3 text-right ${changeColor(stock.pct_from_52w_high ?? 0)}`}>{stock.pct_from_52w_high?.toFixed(1)}%</td>
+                    <td className={`px-4 py-3 text-right ${changeColor(stock.pct_from_52w_high ?? 0)}`}>
+                      {stock.pct_from_52w_high != null ? `${stock.pct_from_52w_high.toFixed(1)}%` : "-"}
+                    </td>
                     <td className="px-4 py-3 text-right font-semibold">{stock.score?.toFixed(1) ?? "-"}</td>
                   </tr>
                 ))

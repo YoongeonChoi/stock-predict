@@ -58,9 +58,11 @@ class ScreenerFilterTests(unittest.IsolatedAsyncioTestCase):
         async def stock_info_side_effect(ticker: str):
             return stock_info[ticker]
 
+        async def _return_fetcher(key, fetcher, ttl=None):
+            return await fetcher()
+
         with (
-            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
-            patch("app.routers.screener.cache.set", new=AsyncMock()),
+            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=universe)),
             patch("app.routers.screener.yfinance_client.get_market_snapshot", new=AsyncMock(side_effect=market_snapshot_side_effect)),
             patch("app.routers.screener.yfinance_client.get_stock_info", new=AsyncMock(side_effect=stock_info_side_effect)),

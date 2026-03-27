@@ -35,9 +35,11 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
 
         get_stock_info = AsyncMock(side_effect=stock_info_side_effect)
 
+        async def _return_fetcher(key, fetcher, ttl=None):
+            return await fetcher()
+
         with (
-            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
-            patch("app.routers.screener.cache.set", new=AsyncMock()),
+            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
                 "app.routers.screener.get_universe",
                 new=AsyncMock(return_value={"Information Technology": ["BAD", "GOOD"]}),
@@ -65,7 +67,7 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["results"][0]["ticker"], "GOOD")
-        get_stock_info.assert_awaited_once_with("GOOD")
+        get_stock_info.assert_not_awaited()
 
     async def test_sector_performance_aggregates_live_constituent_snapshots(self):
         cache_get = AsyncMock(return_value=None)
