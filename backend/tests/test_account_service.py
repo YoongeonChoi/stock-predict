@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.auth import AuthenticatedUser
 from app.exceptions import ApiAppException
-from app.models.account import AccountProfileUpdateRequest
+from app.models.account import AccountProfileUpdateRequest, SignUpValidationRequest
 from app.services import account_service
 
 
@@ -120,6 +120,46 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
                 await account_service.update_current_profile(user, payload)
 
         self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(ctx.exception.error.to_dict()["error_code"], "SP-6015")
+
+    async def test_validate_signup_returns_normalized_payload(self):
+        payload = SignUpValidationRequest(
+            username=" Beta_02 ",
+            email="Tester@Example.com ",
+            full_name=" 김  가은 ",
+            phone_number="010-7777-8888",
+            birth_date="1997-08-11",
+            password="Secure!234A",
+            password_confirm="Secure!234A",
+        )
+
+        with patch(
+            "app.services.account_service.supabase_client.find_user_by_username",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await account_service.validate_signup(payload)
+
+        self.assertTrue(result.ready)
+        self.assertEqual(result.email, "tester@example.com")
+        self.assertEqual(result.normalized_username, "beta_02")
+        self.assertEqual(result.normalized_full_name, "김 가은")
+        self.assertEqual(result.normalized_phone_number, "01077778888")
+
+    async def test_validate_signup_rejects_weak_password(self):
+        payload = SignUpValidationRequest(
+            username="beta_02",
+            email="tester@example.com",
+            full_name="김 가은",
+            phone_number="010-7777-8888",
+            birth_date="1997-08-11",
+            password="short",
+            password_confirm="short",
+        )
+
+        with self.assertRaises(ApiAppException) as ctx:
+            await account_service.validate_signup(payload)
+
+        self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.error.to_dict()["error_code"], "SP-6015")
 
 

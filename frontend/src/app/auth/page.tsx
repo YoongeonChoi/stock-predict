@@ -293,17 +293,26 @@ function AuthPageContent() {
           return;
         }
 
+        const validation = await api.validateSignup({
+          username: signup.username,
+          email: signup.email,
+          full_name: signup.fullName,
+          phone_number: signup.phoneNumber,
+          birth_date: signup.birthDate,
+          password: signup.password,
+          password_confirm: signup.passwordConfirm,
+        });
         const redirectTo = `${window.location.origin}${nextPath}`;
         const { data, error } = await client.auth.signUp({
-          email: signup.email.trim(),
+          email: validation.email,
           password: signup.password,
           options: {
             emailRedirectTo: redirectTo,
             data: {
-              username: normalizedUsername,
-              full_name: signup.fullName.trim(),
-              phone_number: normalizePhoneNumber(signup.phoneNumber),
-              birth_date: signup.birthDate,
+              username: validation.normalized_username,
+              full_name: validation.normalized_full_name,
+              phone_number: validation.normalized_phone_number,
+              birth_date: validation.birth_date,
             },
           },
         });
@@ -318,7 +327,7 @@ function AuthPageContent() {
           router.replace(nextPath);
         } else {
           toast("가입 확인 메일을 보냈습니다. 인증 링크를 눌러 계정을 활성화해 주세요.", "info");
-          setSigninEmail(signup.email.trim());
+          setSigninEmail(validation.email);
           setSignup(EMPTY_SIGNUP_FORM);
           setModeInUrl("signin");
         }

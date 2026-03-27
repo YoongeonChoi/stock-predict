@@ -35,6 +35,26 @@ export interface AccountProfileUpdateRequest {
   birth_date: string;
 }
 
+export interface SignUpValidationRequest {
+  username: string;
+  email: string;
+  full_name: string;
+  phone_number: string;
+  birth_date: string;
+  password: string;
+  password_confirm: string;
+}
+
+export interface SignUpValidationResponse {
+  email: string;
+  normalized_username: string;
+  normalized_full_name: string;
+  normalized_phone_number: string;
+  birth_date: string;
+  ready: boolean;
+  message: string;
+}
+
 export interface UsernameAvailabilityResponse {
   username: string;
   normalized_username: string;
@@ -1120,6 +1140,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  validateSignup: (payload: SignUpValidationRequest) =>
+    post<SignUpValidationResponse>("/api/account/signup/validate", payload),
   checkUsernameAvailability: (username: string) =>
     get<UsernameAvailabilityResponse>(`/api/account/username-availability?username=${encodeURIComponent(username)}`),
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),

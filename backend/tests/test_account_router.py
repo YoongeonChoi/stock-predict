@@ -20,6 +20,40 @@ def patched_client():
 
 
 class AccountRouterTests(unittest.TestCase):
+    def test_signup_validation_route_is_public(self):
+        with patch(
+            "app.routers.account.account_service.validate_signup",
+            new=AsyncMock(
+                return_value={
+                    "email": "tester@example.com",
+                    "normalized_username": "beta_02",
+                    "normalized_full_name": "김 가은",
+                    "normalized_phone_number": "01077778888",
+                    "birth_date": "1997-08-11",
+                    "ready": True,
+                    "message": "회원가입 조건이 확인되었습니다.",
+                }
+            ),
+        ):
+            with patched_client() as client:
+                response = client.post(
+                    "/api/account/signup/validate",
+                    json={
+                        "username": "beta_02",
+                        "email": "tester@example.com",
+                        "full_name": "김 가은",
+                        "phone_number": "010-7777-8888",
+                        "birth_date": "1997-08-11",
+                        "password": "Secure!234A",
+                        "password_confirm": "Secure!234A",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ready"])
+        self.assertEqual(body["normalized_username"], "beta_02")
+
     def test_username_availability_route_is_public(self):
         with patch(
             "app.routers.account.account_service.check_username_availability",
