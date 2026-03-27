@@ -114,6 +114,65 @@ class ConfidenceScoringTests(unittest.TestCase):
         self.assertEqual(calibrated.calibration_snapshot["prediction_type"], "next_day")
         self.assertGreater(calibrated.display_confidence, 50.0)
 
+    def test_isotonic_profile_post_calibrates_sigmoid_output(self):
+        set_empirical_calibration_profiles(
+            {
+                "distributional_5d": EmpiricalCalibrationProfile(
+                    prediction_type="distributional_5d",
+                    horizon_bucket=5,
+                    intercept=-1.0,
+                    feature_weights={
+                        "raw_support": 4.0,
+                        "distribution_support": 0.4,
+                        "analog_support": 0.2,
+                        "regime_support": 0.1,
+                        "edge_support": 0.2,
+                        "agreement_support": 0.15,
+                        "data_quality_support": 0.1,
+                        "uncertainty_support": 0.05,
+                        "volatility_support": 0.05,
+                        "analog_available": 0.0,
+                        "agreement_available": 0.0,
+                    },
+                    sample_count=180,
+                    positive_rate=0.58,
+                    brier_score=0.142,
+                    prior_brier_score=0.167,
+                    fitted_at="2026-03-28T09:30:00",
+                    method="empirical_isotonic_5d",
+                    isotonic_thresholds=[0.45, 0.7, 0.97],
+                    isotonic_values=[0.28, 0.61, 0.86],
+                    reliability_bins=[
+                        {"lower": 0.0, "upper": 0.2, "sample_count": 20, "predicted_mean": 0.18, "empirical_rate": 0.2, "gap": 0.02}
+                    ],
+                    max_reliability_gap=0.04,
+                )
+            }
+        )
+
+        calibrated = calibrate_direction_confidence(
+            horizon_days=5,
+            distribution_confidence=81.0,
+            regime_probs={"risk_on": 58.0, "neutral": 24.0, "risk_off": 18.0},
+            p_up=69.0,
+            p_down=13.0,
+            median_return_pct=2.2,
+            history_bars=252,
+            macro_available=True,
+            fundamental_available=True,
+            flow_available=True,
+            event_count=3,
+            event_uncertainty=0.14,
+            forecast_volatility_pct=7.0,
+            realized_volatility_reference_pct=8.8,
+            analog_support=0.74,
+            analog_expected_return_pct=1.6,
+            prediction_type="distributional_5d",
+        )
+
+        self.assertEqual(calibrated.calibrator_method, "empirical_isotonic_5d")
+        self.assertAlmostEqual(calibrated.calibrated_probability, 0.86, places=2)
+
     def test_selection_score_respects_confidence_floor(self):
         result = score_selection_candidate(
             expected_excess_return_pct=5.0,

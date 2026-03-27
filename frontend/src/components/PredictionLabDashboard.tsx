@@ -150,6 +150,9 @@ export default function PredictionLabDashboard({ data }: Props) {
                       <div className="text-xs text-text-secondary mt-1">
                         {row.method} · 표본 {row.sample_count}건 · positive rate {row.positive_rate.toFixed(1)}%
                       </div>
+                      <div className="text-xs text-text-secondary mt-1">
+                        reliability bin {row.reliability_bins.length}개 · 최대 gap {row.max_reliability_gap.toFixed(1)}%
+                      </div>
                     </div>
                     <div className="text-right">
                       <div className="font-semibold">{row.brier_score.toFixed(4)}</div>

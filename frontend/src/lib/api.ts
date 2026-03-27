@@ -962,6 +962,15 @@ export interface PredictionLabResponse {
     positive_rate: number;
     brier_score: number;
     prior_brier_score: number;
+    max_reliability_gap: number;
+    reliability_bins: {
+      lower: number;
+      upper: number;
+      sample_count: number;
+      predicted_mean: number;
+      empirical_rate: number;
+      gap: number;
+    }[];
     fitted_at?: string | null;
   }[];
   breakdown: {
@@ -1012,6 +1021,15 @@ export interface SystemDiagnostics {
     positive_rate: number;
     brier_score: number;
     prior_brier_score: number;
+    max_reliability_gap: number;
+    reliability_bins: {
+      lower: number;
+      upper: number;
+      sample_count: number;
+      predicted_mean: number;
+      empirical_rate: number;
+      gap: number;
+    }[];
     fitted_at?: string | null;
   }[] | null;
   prediction_accuracy?: PredictionAccuracyStats | null;

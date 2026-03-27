@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.48.0 - 2026-03-28
+
+- horizon별 empirical confidence calibrator를 `bootstrap prior -> empirical sigmoid -> isotonic 승격` 구조로 확장했습니다. 표본 수와 클래스 균형이 충분할 때만 isotonic을 적용해 과적합을 피하면서 reliability gap을 더 줄이도록 했습니다.
+- empirical calibration profile에는 이제 `reliability_bins`와 `max_reliability_gap`이 함께 저장됩니다. 예측 연구실과 시스템 상태 카드에서 각 horizon의 보정 방식, 샘플 수, Brier score와 함께 confidence 구간 최대 오차를 바로 확인할 수 있습니다.
+- 회귀 테스트를 추가해 `isotonic 승격`, `reliability bin summary`, `isotonic profile 적용 우선순위` 계약을 고정했습니다.
+
 ## v2.47.0 - 2026-03-28
 
 - 표시 confidence는 이제 `raw support -> bootstrap prior -> empirical sigmoid calibrator` 순서로 계산합니다. `next_day`, `distributional_5d`, `distributional_20d` 예측 결과가 실제 target date 이후 평가되면, 그 실측 로그를 다시 먹여 horizon별 calibrator를 점진적으로 재학습합니다.

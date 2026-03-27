@@ -19,6 +19,12 @@ CALIBRATED_PREDICTION_TYPES = ("next_day", "distributional_5d", "distributional_
 MAX_CALIBRATION_SAMPLES = 2500
 MIN_CALIBRATION_SAMPLES = 24
 MIN_CLASS_COUNT = 6
+MIN_ISOTONIC_SAMPLES = 120
+MIN_ISOTONIC_CLASS_COUNT = 20
+MIN_ISOTONIC_UNIQUE_PROBABILITIES = 4
+RELIABILITY_BIN_COUNT = 5
+ISOTONIC_BRIER_MARGIN = 0.00025
+ISOTONIC_GAP_IMPROVEMENT = 0.03
 
 
 def _sigmoid(values: np.ndarray) -> np.ndarray:
@@ -75,6 +81,119 @@ def _brier_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean((y_pred - y_true) ** 2)) if y_true.size else 0.0
 
 
+def _build_reliability_bins(
+    targets: np.ndarray,
+    probabilities: np.ndarray,
+    *,
+    bin_count: int = RELIABILITY_BIN_COUNT,
+) -> list[dict]:
+    if targets.size == 0:
+        return []
+
+    bins: list[dict] = []
+    edges = np.linspace(0.0, 1.0, bin_count + 1)
+    for index in range(bin_count):
+        lower = float(edges[index])
+        upper = float(edges[index + 1])
+        if index == bin_count - 1:
+            mask = (probabilities >= lower) & (probabilities <= upper)
+        else:
+            mask = (probabilities >= lower) & (probabilities < upper)
+        if not np.any(mask):
+            continue
+        bin_targets = targets[mask]
+        bin_probabilities = probabilities[mask]
+        predicted_mean = float(np.mean(bin_probabilities))
+        empirical_rate = float(np.mean(bin_targets))
+        gap = abs(predicted_mean - empirical_rate)
+        bins.append(
+            {
+                "lower": round(lower, 4),
+                "upper": round(upper, 4),
+                "sample_count": int(bin_targets.size),
+                "predicted_mean": round(predicted_mean, 4),
+                "empirical_rate": round(empirical_rate, 4),
+                "gap": round(gap, 4),
+            }
+        )
+    return bins
+
+
+def _max_reliability_gap(reliability_bins: list[dict]) -> float:
+    if not reliability_bins:
+        return 0.0
+    return max(float(item.get("gap") or 0.0) for item in reliability_bins)
+
+
+def _fit_isotonic_curve(probabilities: np.ndarray, targets: np.ndarray) -> tuple[list[float], list[float]] | None:
+    if probabilities.size == 0:
+        return None
+
+    order = np.argsort(probabilities, kind="mergesort")
+    sorted_probabilities = probabilities[order]
+    sorted_targets = targets[order]
+
+    blocks: list[dict[str, float | int]] = []
+    for probability, target in zip(sorted_probabilities, sorted_targets):
+        blocks.append(
+            {
+                "sum_targets": float(target),
+                "count": 1,
+                "avg_target": float(target),
+                "max_probability": float(probability),
+            }
+        )
+        while len(blocks) >= 2 and float(blocks[-2]["avg_target"]) > float(blocks[-1]["avg_target"]):
+            right = blocks.pop()
+            left = blocks.pop()
+            merged_count = int(left["count"]) + int(right["count"])
+            merged_sum = float(left["sum_targets"]) + float(right["sum_targets"])
+            blocks.append(
+                {
+                    "sum_targets": merged_sum,
+                    "count": merged_count,
+                    "avg_target": merged_sum / merged_count,
+                    "max_probability": float(right["max_probability"]),
+                }
+            )
+
+    compressed_blocks: list[dict[str, float | int]] = []
+    for block in blocks:
+        avg_target = float(block["avg_target"])
+        max_probability = float(block["max_probability"])
+        if compressed_blocks and np.isclose(float(compressed_blocks[-1]["avg_target"]), avg_target, atol=1e-12):
+            compressed_blocks[-1]["count"] = int(compressed_blocks[-1]["count"]) + int(block["count"])
+            compressed_blocks[-1]["sum_targets"] = float(compressed_blocks[-1]["sum_targets"]) + float(block["sum_targets"])
+            compressed_blocks[-1]["max_probability"] = max_probability
+            continue
+        compressed_blocks.append(
+            {
+                "sum_targets": float(block["sum_targets"]),
+                "count": int(block["count"]),
+                "avg_target": avg_target,
+                "max_probability": max_probability,
+            }
+        )
+
+    thresholds = [float(block["max_probability"]) for block in compressed_blocks]
+    values = [float(np.clip(float(block["avg_target"]), 0.0, 1.0)) for block in compressed_blocks]
+    if len(thresholds) != len(values) or not thresholds:
+        return None
+    return thresholds, values
+
+
+def _apply_isotonic_curve(probabilities: np.ndarray, thresholds: list[float], values: list[float]) -> np.ndarray:
+    calibrated = np.empty_like(probabilities)
+    for index, probability in enumerate(probabilities):
+        mapped = float(values[-1])
+        for threshold, candidate in zip(thresholds, values):
+            if float(probability) <= float(threshold):
+                mapped = float(candidate)
+                break
+        calibrated[index] = mapped
+    return calibrated
+
+
 def _fit_regularized_sigmoid(
     *,
     prediction_type: str,
@@ -128,6 +247,45 @@ def _fit_regularized_sigmoid(
         fitted_probabilities = _sigmoid(intercept + features @ weights)
         fitted_brier = _brier_score(targets, fitted_probabilities)
 
+    sigmoid_reliability_bins = _build_reliability_bins(targets, fitted_probabilities)
+    sigmoid_max_reliability_gap = _max_reliability_gap(sigmoid_reliability_bins)
+
+    final_method = f"empirical_sigmoid_{bucket}d"
+    final_probabilities = fitted_probabilities
+    isotonic_thresholds: list[float] | None = None
+    isotonic_values: list[float] | None = None
+    reliability_bins = sigmoid_reliability_bins
+    max_reliability_gap = sigmoid_max_reliability_gap
+
+    unique_probability_count = int(np.unique(np.round(fitted_probabilities, 4)).size)
+    if (
+        sample_count >= MIN_ISOTONIC_SAMPLES
+        and min(positive_count, negative_count) >= MIN_ISOTONIC_CLASS_COUNT
+        and unique_probability_count >= MIN_ISOTONIC_UNIQUE_PROBABILITIES
+    ):
+        isotonic_curve = _fit_isotonic_curve(fitted_probabilities, targets)
+        if isotonic_curve is not None:
+            candidate_thresholds, candidate_values = isotonic_curve
+            isotonic_probabilities = _apply_isotonic_curve(
+                fitted_probabilities,
+                candidate_thresholds,
+                candidate_values,
+            )
+            isotonic_brier = _brier_score(targets, isotonic_probabilities)
+            isotonic_reliability_bins = _build_reliability_bins(targets, isotonic_probabilities)
+            isotonic_max_reliability_gap = _max_reliability_gap(isotonic_reliability_bins)
+            brier_not_worse = isotonic_brier <= fitted_brier + ISOTONIC_BRIER_MARGIN
+            gap_improved = isotonic_max_reliability_gap <= sigmoid_max_reliability_gap - ISOTONIC_GAP_IMPROVEMENT
+            brier_improved = isotonic_brier <= fitted_brier - ISOTONIC_BRIER_MARGIN
+            if brier_improved or (brier_not_worse and gap_improved):
+                final_method = f"empirical_isotonic_{bucket}d"
+                final_probabilities = isotonic_probabilities
+                fitted_brier = isotonic_brier
+                isotonic_thresholds = candidate_thresholds
+                isotonic_values = candidate_values
+                reliability_bins = isotonic_reliability_bins
+                max_reliability_gap = isotonic_max_reliability_gap
+
     return EmpiricalCalibrationProfile(
         prediction_type=prediction_type,
         horizon_bucket=bucket,
@@ -141,7 +299,11 @@ def _fit_regularized_sigmoid(
         brier_score=round(fitted_brier, 6),
         prior_brier_score=round(prior_brier, 6),
         fitted_at=datetime.now().isoformat(),
-        method=f"empirical_sigmoid_{bucket}d",
+        method=final_method,
+        isotonic_thresholds=isotonic_thresholds,
+        isotonic_values=isotonic_values,
+        reliability_bins=reliability_bins,
+        max_reliability_gap=round(max_reliability_gap, 6),
     )
 
 
@@ -180,6 +342,8 @@ def get_profile_summary() -> list[dict]:
                 "positive_rate": profile.positive_rate,
                 "brier_score": profile.brier_score,
                 "prior_brier_score": profile.prior_brier_score,
+                "max_reliability_gap": profile.max_reliability_gap,
+                "reliability_bins": profile.reliability_bins or [],
                 "fitted_at": profile.fitted_at,
             }
         )

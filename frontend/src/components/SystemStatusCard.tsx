@@ -211,6 +211,9 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
                     ? ` / prior ${profile.prior_brier_score.toFixed(4)}`
                     : ""}
                 </div>
+                <div className="mt-1 text-xs text-text-secondary">
+                  reliability bin {profile.reliability_bins.length}개 · 최대 gap {(profile.max_reliability_gap * 100).toFixed(1)}%
+                </div>
               </div>
             ))}
           </div>

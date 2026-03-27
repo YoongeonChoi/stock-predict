@@ -158,7 +158,7 @@ async def get_diagnostics() -> dict:
                     "가격·변동성·상대강도 같은 숫자 시계열이 주신호이고, 뉴스·공시는 보조 신호로만 게이트 결합합니다.",
                     "OpenAI는 수익률을 직접 예측하지 않고, 뉴스·보도자료·공시를 구조화 이벤트 벡터로 추출하는 데만 사용합니다.",
                     "다음 거래일 예측은 Bull/Base/Bear 시나리오와 실행 바이어스를 같은 분포 예측 결과에서 파생합니다.",
-                    "표시 confidence는 raw support를 bootstrap prior로 시작한 empirical sigmoid calibrator가 실측 로그 기준으로 다시 맞춘 값이라, 높게 보이기보다 실제 적중률과 맞도록 설계합니다.",
+                    "표시 confidence는 raw support를 bootstrap prior로 시작한 empirical calibrator가 실측 로그 기준으로 다시 맞춘 값이며, 표본이 충분해지면 isotonic 단계와 reliability bin까지 함께 갱신해 실제 적중률과 더 가깝게 맞춥니다.",
                 ],
             },
             {
