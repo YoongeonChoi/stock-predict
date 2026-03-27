@@ -47,6 +47,7 @@
   - 예측 연구실
 - `/settings`
   - 계정 관리, 시스템/진단/운영 설정
+  - 프론트/백엔드 배포 버전과 운영 반영 상태 확인
 - 상세 라우트
   - `/country/[code]`
   - `/country/[code]/sector/[id]`
@@ -271,7 +272,7 @@
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
 ```
 
-`--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다.
+`--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout은 짧게 재시도합니다.
 
 운영 배포가 로컬 버전으로 실제 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
 

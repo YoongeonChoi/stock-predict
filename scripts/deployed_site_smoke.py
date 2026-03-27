@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RETRYABLE_STATUSES = {502, 503, 504}
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,33 @@ def fetch(url: str, timeout: int = 30) -> tuple[int, str, dict[str, str]]:
         raise RuntimeError(f"{url} 연결 실패: {exc}") from exc
 
 
+def fetch_with_retry(url: str, *, attempts: int = 3, timeout: int = 30, retry_delay: float = 4.0) -> tuple[int, str, dict[str, str]]:
+    last_error: Exception | None = None
+    last_response: tuple[int, str, dict[str, str]] | None = None
+
+    for attempt in range(1, max(attempts, 1) + 1):
+        try:
+            response = fetch(url, timeout=timeout)
+            status = response[0]
+            if status not in RETRYABLE_STATUSES or attempt >= attempts:
+                return response
+            print(f"[retry] {url} -> {status}, {attempt}/{attempts} 재시도 대기")
+            last_response = response
+        except Exception as exc:
+            last_error = exc
+            if attempt >= attempts:
+                raise
+            print(f"[retry] {url} -> {exc}, {attempt}/{attempts} 재시도 대기")
+
+        time.sleep(retry_delay * attempt)
+
+    if last_response is not None:
+        return last_response
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"{url} 응답을 확인할 수 없습니다.")
+
+
 def preview(text: str, limit: int = 180) -> str:
     compact = " ".join(text.split())
     return compact[:limit]
@@ -96,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     for check in checks:
         url = urljoin(f"{check.base}/", check.path.lstrip("/"))
         try:
-            status, body, _headers = fetch(url)
+            status, body, _headers = fetch_with_retry(url, attempts=3, timeout=45)
         except Exception as exc:
             failures.append(f"{check.name}: {exc}")
             print(f"[FAIL] {check.name:18} {url} -> {exc}")

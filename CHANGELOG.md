@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.37.0 - 2026-03-27
+
+- `/settings`의 시스템 진단 카드에 현재 프론트 배포 버전, 백엔드 API 버전, 두 버전의 일치 여부를 함께 표시하도록 보강했습니다.
+- README와 AGENTS 문서도 설정 화면에서 배포 반영 상태를 직접 확인할 수 있는 현재 운영 흐름 기준으로 다시 동기화했습니다.
+- `scripts/deployed_site_smoke.py`에 짧은 재시도 로직을 추가해, Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`·timeout 때문에 전체 검증이 불필요하게 깨지는 빈도를 낮췄습니다.
+
 ## v2.36.0 - 2026-03-27
 
 - `scripts/wait_for_deployed_version.py`를 추가해, 로컬 `APP_VERSION` 기준으로 운영 `api.yoongeon.xyz/api/health`가 같은 버전과 `status=ok`를 반환할 때까지 주기적으로 확인할 수 있도록 했습니다.
