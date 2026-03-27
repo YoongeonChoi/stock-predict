@@ -12,7 +12,7 @@ from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
-OPPORTUNITY_TIMEOUT_SECONDS = 24
+OPPORTUNITY_TIMEOUT_SECONDS = 45
 HEATMAP_TIMEOUT_SECONDS = 10
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
@@ -87,6 +87,16 @@ async def _build_heatmap_fallback(code: str) -> dict:
         "partial": True,
         "fallback_reason": "live_snapshot_timeout",
     }
+
+
+def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
+    if task.cancelled():
+        logging.info("%s background task was cancelled.", label)
+        return
+    try:
+        task.result()
+    except Exception as exc:
+        logging.warning("%s background task failed: %s", label, exc, exc_info=True)
 
 
 @router.get("/countries")
@@ -375,12 +385,20 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
+    opportunity_task = asyncio.create_task(market_service.get_market_opportunities(code, limit))
+    opportunity_task.add_done_callback(
+        lambda task, label=f"Opportunity radar for {code}": _log_background_completion(task, label=label)
+    )
     try:
         return await asyncio.wait_for(
-            market_service.get_market_opportunities(code, limit),
+            asyncio.shield(opportunity_task),
             timeout=OPPORTUNITY_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
+        err.detail = (
+            f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
+            "백그라운드 계산은 계속 진행되니 잠시 후 다시 시도해 주세요."
+        )
         err.log("warning")
         return JSONResponse(status_code=504, content=err.to_dict())

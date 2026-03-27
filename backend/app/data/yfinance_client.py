@@ -116,6 +116,14 @@ def _fresh_price_ttl(default_ttl: int) -> int:
     return max(60, min(default_ttl, 300))
 
 
+def _batch_quote_chunk_size(total_tickers: int) -> int:
+    if total_tickers >= 160:
+        return 240
+    if total_tickers >= 80:
+        return 120
+    return max(1, min(40, total_tickers))
+
+
 def _format_rows(df: pd.DataFrame) -> list[dict]:
     if df is None or df.empty:
         return []
@@ -442,7 +450,7 @@ async def get_batch_stock_quotes(tickers: list[str], period: str = "5d") -> dict
     async def _fetch():
         def _sync():
             quotes: dict[str, dict] = {}
-            chunk_size = 80
+            chunk_size = _batch_quote_chunk_size(len(unique_tickers))
             for index in range(0, len(unique_tickers), chunk_size):
                 chunk = unique_tickers[index : index + chunk_size]
                 try:

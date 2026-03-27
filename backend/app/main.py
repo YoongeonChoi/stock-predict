@@ -12,7 +12,7 @@ from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
 from app.exceptions import ApiAppException
 from app.routers import account, country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research, briefing
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
-from app.services import archive_service, research_archive_service
+from app.services import archive_service, market_service, research_archive_service
 from app.version import APP_VERSION
 
 logging.basicConfig(
@@ -106,6 +106,31 @@ async def lifespan(app: FastAPI):
             "research_archive_sync",
             "ok",
             "Curated research archive sync skipped by configuration.",
+        )
+
+    if settings.startup_market_opportunity_prewarm:
+        upsert_startup_task(
+            "market_opportunity_prewarm",
+            "running",
+            "Prewarming KR opportunity radar cache in background.",
+        )
+        background_tasks.append(
+            asyncio.create_task(
+                _run_startup_task(
+                    name="market_opportunity_prewarm",
+                    running_detail="Prewarming KR opportunity radar cache in background.",
+                    success_detail="KR opportunity radar prewarm completed.",
+                    failure_prefix="Market opportunity prewarm failed during startup",
+                    timeout_seconds=settings.startup_market_opportunity_prewarm_timeout,
+                    job=lambda: market_service.get_market_opportunities("KR", limit=12),
+                )
+            )
+        )
+    else:
+        upsert_startup_task(
+            "market_opportunity_prewarm",
+            "ok",
+            "KR opportunity radar prewarm skipped by configuration.",
         )
     try:
         yield

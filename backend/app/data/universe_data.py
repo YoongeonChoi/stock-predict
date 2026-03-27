@@ -7,7 +7,11 @@ or temporarily unstable.
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
+
+import requests
+from bs4 import BeautifulSoup
 
 from app.config import get_settings
 from app.utils.async_tools import gather_limited
@@ -46,6 +50,11 @@ INVALID_TICKERS = {
     "034300.KS",
     "049770.KS",
 }
+KIND_CORP_LIST_URL = "https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13"
+KIND_MARKET_KOSPI = "유가"
+KIND_MARKET_KOSDAQ = "코스닥"
+KIND_MARKET_KONEX = "코넥스"
+KIND_LISTING_TTL = 21600
 
 
 @dataclass(slots=True)
@@ -153,6 +162,97 @@ async def get_universe(country_code: str) -> dict[str, list[str]]:
     return (await resolve_universe(country_code)).sectors
 
 
+def _group_krx_listing_rows(rows: list[tuple[str, str, str]]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for market, industry, ticker in rows:
+        sector_name = industry or (
+            "코스피" if KIND_MARKET_KOSPI in market else
+            "코스닥" if KIND_MARKET_KOSDAQ in market else
+            "코넥스"
+        )
+        grouped.setdefault(sector_name, []).append(ticker)
+    return {
+        sector: _sanitize_tickers(tickers)
+        for sector, tickers in grouped.items()
+    }
+
+
+def _fetch_krx_listing_sync() -> list[tuple[str, str, str]]:
+    response = requests.get(KIND_CORP_LIST_URL, timeout=20)
+    response.raise_for_status()
+    response.encoding = "euc-kr"
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    rows: list[tuple[str, str, str]] = []
+    for row in soup.find_all("tr")[1:]:
+        cols = [td.get_text(" ", strip=True) for td in row.find_all("td")]
+        if len(cols) < 4:
+            continue
+        _, market, code, industry = cols[:4]
+        if not re.fullmatch(r"\d{6}", code):
+            continue
+        if KIND_MARKET_KOSPI in market:
+            suffix = ".KS"
+        elif KIND_MARKET_KOSDAQ in market or KIND_MARKET_KONEX in market:
+            suffix = ".KQ"
+        else:
+            continue
+        rows.append((market, industry, f"{code}{suffix}"))
+    return rows
+
+
+async def fetch_krx_listing_universe(country_code: str) -> UniverseSelection | None:
+    """Return a KR listed-name universe for opportunity radar first-pass scans."""
+    if country_code != "KR":
+        return None
+
+    from app.data import cache
+
+    cached = await cache.get("krx_listing_universe:KR")
+    if cached and isinstance(cached, dict):
+        sectors = {
+            sector: _sanitize_tickers(tickers)
+            for sector, tickers in cached.get("sectors", {}).items()
+        }
+        total = int(cached.get("total") or sum(len(tickers) for tickers in sectors.values()))
+        return UniverseSelection(
+            sectors=sectors,
+            source="krx_listing",
+            note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 상위 후보에만 적용합니다.",
+        )
+
+    try:
+        rows = await asyncio.to_thread(_fetch_krx_listing_sync)
+    except Exception as exc:
+        log.warning("KRX listing universe fetch failed for %s: %s", country_code, exc)
+        return None
+
+    if not rows:
+        return None
+
+    sectors = _group_krx_listing_rows(rows)
+    total = sum(len(tickers) for tickers in sectors.values())
+    if total < 1000:
+        return None
+
+    await cache.set(
+        "krx_listing_universe:KR",
+        {"sectors": sectors, "total": total},
+        KIND_LISTING_TTL,
+    )
+    log.info(
+        "KRX listing universe for %s: %s tickers across %s groups",
+        country_code,
+        total,
+        len(sectors),
+    )
+    return UniverseSelection(
+        sectors=sectors,
+        source="krx_listing",
+        note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 상위 후보에만 적용합니다.",
+    )
+
+
 def _fallback_universe(country_code: str) -> dict[str, list[str]]:
     return {
         sector: _sanitize_tickers(tickers)
@@ -180,6 +280,15 @@ async def resolve_universe(country_code: str) -> UniverseSelection:
         source="fallback",
         note=_fallback_note(),
     )
+
+
+async def resolve_opportunity_universe(country_code: str) -> UniverseSelection:
+    """Return the best universe for market opportunity scanning."""
+    if country_code == "KR":
+        krx_listing = await fetch_krx_listing_universe(country_code)
+        if krx_listing:
+            return krx_listing
+    return await resolve_universe(country_code)
 
 
 KR = {

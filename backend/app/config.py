@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     startup_prediction_accuracy_refresh_timeout: int = 20
     startup_research_archive_sync: bool = True
     startup_research_archive_sync_timeout: int = 35
+    startup_market_opportunity_prewarm: bool = True
+    startup_market_opportunity_prewarm_timeout: int = 180
 
     cache_ttl_price: int = 900
     cache_ttl_chart: int = 3600

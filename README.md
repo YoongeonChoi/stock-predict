@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.40.3`
+현재 릴리즈: `v2.43.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -23,7 +23,7 @@
 
 - 대시보드
 - Opportunity Radar
-  - 현재 KR 레이더 유니버스를 1차 전수 스캔한 뒤 상위 종목을 정밀 분석
+  - 현재 KR 레이더는 KRX 상장사 전종목을 1차 스캔하고, 실제 시세 확보 수를 분리해 보여준 뒤 상위 종목만 정밀 분석
 - 스크리너
 - 종목 검색 / 비교
 - 이메일 회원가입 / 로그인
@@ -630,6 +630,8 @@ STARTUP_PREDICTION_ACCURACY_REFRESH=true
 STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT=20
 STARTUP_RESEARCH_ARCHIVE_SYNC=true
 STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
+STARTUP_MARKET_OPPORTUNITY_PREWARM=true
+STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=180
 ```
 
 프론트 `frontend/.env.example` 예시:
@@ -663,6 +665,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 - `market opportunities`는 예외적으로 현재 KR 레이더 유니버스를 1차 quote screen으로 먼저 스캔하고, 상위 종목만 정밀 분포 분석하는 2단계 구조를 사용합니다.
 - FMP KR 스크리너가 막히면 레이더는 운영용 fallback 유니버스로 내려가며, 현재 기준으로 이 기본 종목군은 `201개`입니다.
 - 큰 KR fallback 유니버스에서는 응답 안정성을 우선해 `1차 전수 스캔 결과`를 먼저 반환하고, 정밀 분석은 상위 후보나 후속 상세 화면에서 이어집니다.
+- Render free에서 서버가 막 깨어난 직후에는 KR 레이더 warmup이 먼저 돌고, timeout이 나더라도 백그라운드 계산은 계속 진행해 다음 재시도에서 캐시된 결과를 바로 돌려주는 흐름을 기본값으로 사용합니다.
 - 레이더 응답 캐시는 이제 `시장 컨텍스트 계산 + 유니버스 해석 + 1차 quote screen`까지 함께 감싸므로, 같은 조건의 재조회가 들어올 때 매번 무거운 전처리를 다시 수행하지 않습니다.
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
@@ -779,9 +782,10 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - 공개 대시보드에서 특정 패널이 오래 멈추면 `SP-5018` timeout 응답뿐 아니라 `partial`, `fallback_reason` 필드가 먼저 내려오는지 확인합니다.
 - `heatmap`과 `screener`는 대표 종목군 기준으로 먼저 계산하므로, 화면이 바로 뜨는 안정성을 우선하고 전체 전수 스캔은 후순위로 둡니다.
-- `market opportunities`는 현재 KR 레이더 유니버스를 먼저 quote screen으로 전수 스캔하고, 상위 종목만 정밀 분포 분석합니다. 정밀 분석이 늦거나 일부 종목이 실패해도 전수 1차 스캔 결과를 후보 카드로 먼저 내려 빈 화면이나 `후보 0개` 상태가 오래 고정되지 않게 합니다.
-- `총 8개 스캔`은 예전 하드캡 기준 문구였고 현재 구조에서는 더 이상 기준선이 아닙니다. 지금은 응답에 `전체 유니버스 / 1차 스캔 / 정밀 분석 / 표시 후보`가 함께 내려갑니다.
-- KR 운영 유니버스는 현재 `201개 fallback 종목군` 기준으로 안정성을 먼저 확보한 상태입니다. 전체 상장 종목 전수 스캔은 현재 연결된 데이터 소스와 Render free 런타임 기준으로 아직 운영 기본값이 아닙니다.
+- `market opportunities`는 현재 KRX 상장사 전종목을 먼저 1차 스캔하고, 실제 시세를 확보한 종목군 안에서 상위 후보만 정밀 분포 분석합니다. 정밀 분석이 늦거나 일부 종목이 실패해도 전수 1차 스캔 결과를 후보 카드로 먼저 내려 빈 화면이나 `후보 0개` 상태가 오래 고정되지 않게 합니다.
+- `총 8개 스캔`은 예전 하드캡/레이트리밋 영향이 남아 있던 오래된 응답 기준 문구였고 현재 구조에서는 더 이상 기준선이 아닙니다. 지금은 응답에 `전체 유니버스 / 1차 스캔 / 실제 시세 확보 / 표시 후보`가 함께 내려갑니다.
+- KR Opportunity Radar는 현재 KRX KIND 상장사 목록 기준으로 전종목을 1차 스캔합니다. 다만 데이터 원본 제한이나 거래 상태에 따라 일부 종목은 시세 확보 단계에서 빠질 수 있고, Render free 환경에서는 정밀 분포 계산을 상위 후보에만 적용해 첫 응답을 안정화합니다.
+- KR 레이더 첫 요청이 `SP-5018`로 끊기더라도, 현재는 서버가 계산을 백그라운드에서 계속 마무리하도록 바뀌어 같은 조건의 다음 재시도에서 회복될 가능성이 높습니다.
 - 인증 관련 문제가 나면 `/api/account/me`와 `/api/account/username-availability` 계약부터 확인하는 것이 가장 빠릅니다.
 
 ## 버전 정책
