@@ -265,6 +265,14 @@
 
 `--live-api-smoke`는 공개 라우트의 정상 응답과 함께, 로그인 없이 호출되는 저장성 API가 `401 / SP-6014` 계약을 유지하는지도 같이 확인해야 합니다.
 
+운영 배포 상태를 직접 점검하려면 아래 옵션을 사용합니다.
+
+```powershell
+& .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
+```
+
+`--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다.
+
 PowerShell 실행 정책이나 `cmd` 자동 실행 훅이 있는 Windows 환경에서는 `start.py`, `verify.py`를 가상환경 Python으로 직접 실행하는 경로를 기본 진입점으로 사용합니다.
 프론트 의존성 설치는 저장소 루트에서 `npm install`을 기본 진입점으로 사용해도 되며, 이 경우 `frontend` 설치까지 자동 위임되고 PowerShell provider path 환경에서도 같은 흐름이 유지되도록 관리합니다.
 

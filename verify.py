@@ -23,6 +23,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stock Predict 검증 런처")
     parser.add_argument("--skip-frontend", action="store_true", help="프론트 검증을 건너뜁니다.")
     parser.add_argument("--live-api-smoke", action="store_true", help="주요 API를 실호출 기준으로 점검합니다.")
+    parser.add_argument("--deployed-site-smoke", action="store_true", help="운영 Vercel/Render URL을 직접 호출해 배포 상태를 점검합니다.")
     return parser.parse_args(argv)
 
 
@@ -41,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.live_api_smoke:
         run_step("Backend live API smoke", [python_path, "scripts/live_api_smoke.py"], ROOT / "backend")
+
+    if args.deployed_site_smoke:
+        run_step("Deployed site smoke", [python_path, str(ROOT / "scripts" / "deployed_site_smoke.py")], ROOT)
 
     if not args.skip_frontend:
         if not build_command:

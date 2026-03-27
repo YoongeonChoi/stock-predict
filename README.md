@@ -713,6 +713,14 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 `--live-api-smoke`는 공개 대시보드 응답뿐 아니라 인증이 필요한 저장성 API가 로그인 없이 `401 / SP-6014`를 올바르게 반환하는지도 함께 확인합니다.
 
+운영 배포 스모크:
+
+```powershell
+& .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
+```
+
+`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다.
+
 ## 주요 파일
 
 - 에이전트 규칙: `AGENTS.md`
