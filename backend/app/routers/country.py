@@ -11,7 +11,7 @@ from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
-PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 12
+PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:

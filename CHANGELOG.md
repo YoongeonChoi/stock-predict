@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.33.0 - 2026-03-27
+
+- `backend/scripts/live_api_smoke.py`를 현재 인증 계약에 맞게 갱신해, 로그인 없이 호출하는 `watchlist`·`portfolio` 저장 API는 `401 / SP-6014`를 정상 결과로 검증하도록 정리했습니다.
+- 국가 리포트 공개 timeout을 18초로 완화해, 워밍업 직후에도 `/api/country/KR/report`가 불필요하게 `SP-5018`로 끊기는 빈도를 낮췄습니다.
+- README와 AGENTS의 검증 명령 설명을 현재 라이브 스모크 기준에 맞춰 다시 동기화했습니다.
+
 ## v2.32.0 - 2026-03-27
 
 - `/settings` 계정 관리 패널에 저장 전 경고 배너와 브라우저 이탈 보호를 추가해, 프로필·이메일·비밀번호·회원 탈퇴 입력 중 작업하던 내용이 실수로 사라지지 않도록 정리했습니다.
