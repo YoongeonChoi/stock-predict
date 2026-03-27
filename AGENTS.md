@@ -211,6 +211,7 @@
 - 아이디 중복 확인은 `GET /api/account/username-availability`를 사용하며, 로그인 전에도 호출 가능해야 합니다.
 - 로그인 전 공개 계정 API는 UX를 해치지 않는 짧은 rate limit을 유지합니다.
 - 인증 메일 재전송과 비밀번호 재설정 메일은 `/auth`, `/settings` 모두에서 같은 60초 cooldown UX를 유지합니다.
+- 이메일 변경 요청도 인증 메일 발송 흐름이므로 같은 60초 cooldown UX를 유지합니다.
 
 규칙:
 
