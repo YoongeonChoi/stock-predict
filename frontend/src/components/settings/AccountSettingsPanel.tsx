@@ -21,6 +21,7 @@ import {
   normalizeFullName,
   normalizePhoneNumber,
   normalizeUsername,
+  requiresPasswordReauthentication,
 } from "@/lib/account";
 import { api, getApiRetryAfterSeconds, isApiErrorCode, type AccountProfile } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -43,6 +44,7 @@ interface UsernameState {
 interface PasswordDraft {
   nextPassword: string;
   confirmPassword: string;
+  reauthNonce: string;
 }
 
 interface EmailDraft {
@@ -98,16 +100,19 @@ export default function AccountSettingsPanel() {
   const [sendingReset, setSendingReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
-  const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({ nextPassword: "", confirmPassword: "" });
+  const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({ nextPassword: "", confirmPassword: "", reauthNonce: "" });
   const [emailDraft, setEmailDraft] = useState<EmailDraft>({ nextEmail: "", confirmEmail: "" });
   const [updatingEmail, setUpdatingEmail] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [sendingPasswordNonce, setSendingPasswordNonce] = useState(false);
+  const [passwordNonceRequired, setPasswordNonceRequired] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const usernameCooldown = useCooldownTimer();
   const emailChangeCooldown = useCooldownTimer();
   const verificationCooldown = useCooldownTimer();
   const resetCooldown = useCooldownTimer();
+  const passwordNonceCooldown = useCooldownTimer();
 
   useEffect(() => {
     setDraft(buildDraft(profile));
@@ -128,6 +133,8 @@ export default function AccountSettingsPanel() {
     passwordStrength.checks.symbol &&
     passwordStrength.checks.match,
   );
+  const passwordNonceValue = passwordDraft.reauthNonce.trim();
+  const passwordNonceReady = !passwordNonceRequired || Boolean(passwordNonceValue);
   const deleteTargetLabel = profile?.username ? "현재 아이디" : "현재 이메일";
   const deleteTargetValue = profile?.username ? normalizedCurrentUsername : (profile?.email ?? "").trim().toLowerCase();
   const deleteReady = Boolean(deleteTargetValue) && (
@@ -173,7 +180,7 @@ export default function AccountSettingsPanel() {
     );
   }, [draft, profile]);
   const emailDirty = Boolean(emailDraft.nextEmail.trim() || emailDraft.confirmEmail.trim());
-  const passwordDirty = Boolean(passwordDraft.nextPassword || passwordDraft.confirmPassword);
+  const passwordDirty = Boolean(passwordDraft.nextPassword || passwordDraft.confirmPassword || passwordDraft.reauthNonce.trim());
   const deleteDirty = Boolean(deleteConfirmation.trim());
   const hasPendingChanges = isDirty || emailDirty || passwordDirty || deleteDirty;
   const pendingSectionSummary = useMemo(() => {
@@ -236,7 +243,8 @@ export default function AccountSettingsPanel() {
   };
 
   const resetPasswordDraft = () => {
-    setPasswordDraft({ nextPassword: "", confirmPassword: "" });
+    setPasswordDraft({ nextPassword: "", confirmPassword: "", reauthNonce: "" });
+    setPasswordNonceRequired(false);
   };
 
   const resetDeleteDraft = () => {
@@ -468,20 +476,60 @@ export default function AccountSettingsPanel() {
       toast("새 비밀번호 보안 조건과 재확인을 모두 만족해 주세요.", "error");
       return;
     }
+    if (!passwordNonceReady) {
+      toast("메일로 받은 보안 확인 코드를 입력한 뒤 비밀번호를 저장해 주세요.", "error");
+      return;
+    }
 
     setUpdatingPassword(true);
     try {
-      const { error } = await client.auth.updateUser({ password: passwordDraft.nextPassword });
+      const { error } = await client.auth.updateUser(
+        passwordNonceValue
+          ? { password: passwordDraft.nextPassword, nonce: passwordNonceValue }
+          : { password: passwordDraft.nextPassword },
+      );
       if (error) {
         throw error;
       }
-      setPasswordDraft({ nextPassword: "", confirmPassword: "" });
+      setPasswordDraft({ nextPassword: "", confirmPassword: "", reauthNonce: "" });
+      setPasswordNonceRequired(false);
       toast("새 비밀번호가 저장되었습니다.", "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "비밀번호 변경 중 문제가 발생했습니다.";
+      if (requiresPasswordReauthentication(error)) {
+        setPasswordNonceRequired(true);
+      }
+      const message = describeAuthErrorMessage(error, "비밀번호 변경 중 문제가 발생했습니다.");
       toast(message, "error");
     } finally {
       setUpdatingPassword(false);
+    }
+  };
+
+  const handleSendPasswordNonce = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      toast("Supabase 설정이 비어 있어 보안 확인 코드를 보낼 수 없습니다.", "error");
+      return;
+    }
+    if (passwordNonceCooldown.active) {
+      toast(`보안 확인 코드는 ${passwordNonceCooldown.seconds}초 후 다시 요청할 수 있습니다.`, "error");
+      return;
+    }
+
+    setSendingPasswordNonce(true);
+    try {
+      const { error } = await client.auth.reauthenticate();
+      if (error) {
+        throw error;
+      }
+      passwordNonceCooldown.start(60);
+      setPasswordNonceRequired(true);
+      toast("보안 확인 코드를 메일로 보냈습니다. 받은 코드를 입력한 뒤 비밀번호를 저장해 주세요.", "success");
+    } catch (error) {
+      const message = describeAuthErrorMessage(error, "보안 확인 코드 전송 중 문제가 발생했습니다.");
+      toast(message, "error");
+    } finally {
+      setSendingPasswordNonce(false);
     }
   };
 
@@ -938,7 +986,7 @@ export default function AccountSettingsPanel() {
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-text">비밀번호 바로 변경</div>
                 <p className="mt-1 text-xs leading-6 text-text-secondary">
-                  로그인된 상태라면 새 비밀번호를 바로 적용할 수 있습니다. 회원가입과 같은 강도 규칙을 만족해야 저장됩니다.
+                  로그인된 상태라면 새 비밀번호를 바로 적용할 수 있습니다. 세션이 오래된 경우에는 보안 확인 코드를 한 번 더 입력해 변경을 마무리합니다.
                 </p>
               </div>
             </div>
@@ -966,10 +1014,51 @@ export default function AccountSettingsPanel() {
                 />
               </Field>
               <PasswordStrengthChecklist result={passwordStrength} />
+              <div className="rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4">
+                <div className="flex flex-col gap-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-text">보안 확인 코드</div>
+                    <p className="text-xs leading-6 text-text-secondary">
+                      Supabase는 세션이 오래됐을 때 비밀번호 변경 전에 추가 확인을 요구할 수 있습니다. 미리 코드를 받아 두면 저장이 막히지 않습니다.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendPasswordNonce}
+                    disabled={sendingPasswordNonce || passwordNonceCooldown.active}
+                    className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sendingPasswordNonce
+                      ? "코드 전송 중..."
+                      : passwordNonceCooldown.active
+                        ? `${passwordNonceCooldown.seconds}초 후 다시`
+                        : "보안 확인 코드 보내기"}
+                  </button>
+                  <Field
+                    label={passwordNonceRequired ? "보안 확인 코드(필수)" : "보안 확인 코드(선택)"}
+                    helper={
+                      passwordNonceRequired
+                        ? "비밀번호 변경을 마무리하려면 메일로 받은 보안 확인 코드를 입력해 주세요."
+                        : "세션이 오래된 경우에만 필요합니다. 받은 편지함의 최근 보안 확인 메일 코드를 그대로 입력하면 됩니다."
+                    }
+                  >
+                    <input
+                      value={passwordDraft.reauthNonce}
+                      onChange={(event) => setPasswordDraft((prev) => ({ ...prev, reauthNonce: event.target.value }))}
+                      autoCapitalize="none"
+                      autoComplete="one-time-code"
+                      spellCheck={false}
+                      maxLength={64}
+                      className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                      placeholder="메일로 받은 보안 확인 코드 입력"
+                    />
+                  </Field>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={handleUpdatePassword}
-                disabled={updatingPassword || !passwordReady}
+                disabled={updatingPassword || !passwordReady || !passwordNonceReady}
                 className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {updatingPassword ? "비밀번호 저장 중..." : "새 비밀번호 저장"}

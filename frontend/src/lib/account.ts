@@ -141,10 +141,22 @@ export function getPasswordStrength(password: string, confirmation = ""): Passwo
 }
 
 export function describeAuthErrorMessage(error: unknown, fallback: string): string {
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
   if (error instanceof ApiError && error.errorCode === "SP-6016") {
     return error.detail || "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
   }
   const message = error instanceof Error ? error.message : fallback;
+  const lowered = `${errorCode} ${message}`.toLowerCase();
+  if (
+    lowered.includes("reauthentication_needed") ||
+    lowered.includes("reauthentication_not_valid") ||
+    lowered.includes("reauth_nonce_missing")
+  ) {
+    return "비밀번호 변경 전에 보안 확인 코드를 먼저 요청하고, 메일로 받은 코드를 입력해 주세요.";
+  }
   if (message.toLowerCase().includes("email not confirmed")) {
     return "이메일 인증이 아직 완료되지 않았습니다. 받은 편지함에서 인증 링크를 확인해 주세요.";
   }
@@ -158,6 +170,20 @@ export function describeAuthErrorMessage(error: unknown, fallback: string): stri
     return "비밀번호 보안 조건을 다시 확인해 주세요.";
   }
   return message || fallback;
+}
+
+export function requiresPasswordReauthentication(error: unknown): boolean {
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lowered = `${errorCode} ${message}`.toLowerCase();
+  return (
+    lowered.includes("reauthentication_needed") ||
+    lowered.includes("reauthentication_not_valid") ||
+    lowered.includes("reauth_nonce_missing")
+  );
 }
 
 export function extractAccountProfileFromUser(user: User | null): AccountProfileShape | null {
