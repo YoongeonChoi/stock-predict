@@ -15,6 +15,7 @@ from app.data import cache, ecos_client, kosis_client, yfinance_client
 from app.data.supabase_client import supabase_client
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
+from app.scoring.selection import regime_alignment_score, score_selection_candidate
 from app.services import market_service, ticker_resolver_service
 from app.services.portfolio_optimizer import (
     attach_candidate_return_series,
@@ -534,6 +535,15 @@ def _distributional_view(payload: dict | None) -> dict[str, float | str | None]:
         "flat_probability": float(flat_probability),
         "down_probability": down_probability,
         "confidence": float(data.get("distribution_confidence_20d") or data.get("confidence") or data.get("trade_conviction") or 50.0),
+        "raw_confidence": data.get("raw_confidence_20d") or data.get("raw_confidence"),
+        "calibrated_probability": data.get("calibrated_probability_20d") or data.get("calibrated_probability"),
+        "probability_edge": data.get("probability_edge_20d") or data.get("probability_edge"),
+        "analog_support": data.get("analog_support_20d") or data.get("analog_support"),
+        "regime_support": data.get("regime_support_20d") or data.get("regime_support"),
+        "agreement_support": data.get("agreement_support_20d") or data.get("agreement_support"),
+        "data_quality_support": data.get("data_quality_support_20d") or data.get("data_quality_support"),
+        "volatility_ratio": data.get("volatility_ratio_20d") or data.get("volatility_ratio"),
+        "confidence_calibrator": data.get("confidence_calibrator_20d") or data.get("confidence_calibrator"),
         "bull_case_price": data.get("price_q75_20d") or data.get("bull_case_price"),
         "base_case_price": data.get("price_q50_20d") or data.get("base_case_price"),
         "bear_case_price": data.get("price_q25_20d") or data.get("bear_case_price"),
@@ -543,8 +553,6 @@ def _distributional_view(payload: dict | None) -> dict[str, float | str | None]:
 def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tuple[float, list[str]]:
     merged = {**(radar_match or {}), **holding}
     dist_view = _distributional_view(merged)
-    up_probability = float(dist_view["up_probability"] or 50.0)
-    predicted_return_pct = float(dist_view["expected_return_pct"] or 0.0)
     trade_conviction = float(holding.get("trade_conviction") or 50.0)
     risk_score = float(holding.get("risk_score") or 50.0)
     execution_bias = holding.get("execution_bias") or (radar_match or {}).get("execution_bias") or "stay_selective"
@@ -557,46 +565,35 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
         bull_probability=dist_view["up_probability"],
         base_probability=dist_view["flat_probability"],
         bear_probability=dist_view["down_probability"],
-        predicted_return_pct=predicted_return_pct,
-        up_probability=up_probability,
+        predicted_return_pct=float(dist_view["expected_return_pct"] or 0.0),
+        up_probability=float(dist_view["up_probability"] or 50.0),
         confidence=float(dist_view["confidence"] or trade_conviction),
     )
-
-    score = 44.0
-    score += signal_profile["directional_score"] * 0.34
-    score += signal_profile["expected_return_pct"] * 3.5
-    score += signal_profile["probability_edge"] * 0.18
-    score += (trade_conviction - 50.0) * 0.14
-    score += {
-        "press_long": 12.0,
-        "lean_long": 7.0,
-        "stay_selective": 2.0,
-        "reduce_risk": -8.0,
-        "capital_preservation": -14.0,
-    }.get(execution_bias, 0.0)
-    score += {
-        "accumulate": 8.0,
-        "breakout_watch": 5.0,
-        "wait_pullback": 1.5,
-        "reduce_risk": -6.0,
-        "avoid": -8.0,
-    }.get(trade_action, 0.0)
-    score -= max(risk_score - 55.0, 0.0) * 0.55
-    score -= signal_profile["downside_pct"] * 0.9
-    score -= max(signal_profile["range_width_pct"] - 8.0, 0.0) * 0.45
-
-    if holding.get("market_regime_stance") == "risk_on":
-        score += 4.0
-    elif holding.get("market_regime_stance") == "risk_off":
-        score -= 5.5
-
-    if radar_match:
-        score += max(float(radar_match.get("opportunity_score") or 0.0) - 60.0, 0.0) * 0.12
+    selection = score_selection_candidate(
+        expected_excess_return_pct=float(dist_view["expected_excess_return_pct"] or 0.0),
+        calibrated_confidence=float(dist_view["confidence"] or trade_conviction),
+        probability_edge=float(signal_profile["probability_edge"]),
+        tail_ratio=float(signal_profile["tail_ratio"]),
+        regime_alignment=regime_alignment_score(
+            regime_tailwind=(radar_match or {}).get("regime_tailwind"),
+            market_stance=holding.get("market_regime_stance"),
+        ),
+        analog_support=dist_view["analog_support"],
+        data_quality_support=dist_view["data_quality_support"],
+        downside_pct=float(signal_profile["downside_pct"]),
+        forecast_volatility_pct=float(dist_view["forecast_volatility_pct"] or 0.0),
+        action=trade_action,
+        execution_bias=execution_bias,
+        legacy_score=float(radar_match.get("opportunity_score") or trade_conviction) if radar_match else trade_conviction,
+    )
+    score = selection.score
 
     notes = [
-        f"20거래일 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%, 상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt를 반영했습니다.",
-        f"실행 바이어스는 `{execution_bias}`이며 현재 셋업은 `{trade_action}` 기준으로 해석했습니다.",
+        f"20거래일 기대초과수익률 {float(dist_view['expected_excess_return_pct'] or 0.0):+.2f}%, 보정 confidence {float(dist_view['confidence'] or trade_conviction):.1f}점을 함께 반영했습니다.",
+        f"상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt와 실행 바이어스 `{execution_bias}`를 tie-breaker까지 포함해 정렬했습니다.",
     ]
+    if not selection.confidence_floor_passed:
+        notes.append(f"보정 confidence가 {selection.confidence_floor:.0f}점 미만이라 가중치를 낮춰 평가했습니다.")
     risk_flags = holding.get("risk_flags") or []
     thesis = holding.get("thesis") or []
     if risk_flags:
@@ -607,7 +604,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
     return round(_clip(score, 0.0, 100.0), 1), notes[:3]
 
 
-def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[float, list[str], str]:
+def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[float, list[str], str, bool]:
     watchlist_key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     is_watchlist = watchlist_key in watchlist_keys
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
@@ -626,25 +623,34 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
         up_probability=float(dist_view["up_probability"] or 50.0),
         confidence=float(dist_view["confidence"] or 50.0),
     )
-    score = float(opportunity.get("opportunity_score") or 0.0) * 0.7 + signal_profile["directional_score"] * 0.18
-    if is_watchlist:
-        score += 5.0
-    if action in {"accumulate", "breakout_watch"}:
-        score += 3.5
-    if execution_bias in {"reduce_risk", "capital_preservation"}:
-        score -= 6.0
-    if opportunity.get("regime_tailwind") == "tailwind":
-        score += 3.0
-    elif opportunity.get("regime_tailwind") == "headwind":
-        score -= 2.5
-    score -= signal_profile["downside_pct"] * 0.7
+    selection = score_selection_candidate(
+        expected_excess_return_pct=float(dist_view["expected_excess_return_pct"] or 0.0),
+        calibrated_confidence=float(dist_view["confidence"] or 50.0),
+        probability_edge=float(signal_profile["probability_edge"]),
+        tail_ratio=float(signal_profile["tail_ratio"]),
+        regime_alignment=regime_alignment_score(
+            regime_tailwind=opportunity.get("regime_tailwind"),
+            market_stance=None,
+        ),
+        analog_support=dist_view["analog_support"],
+        data_quality_support=dist_view["data_quality_support"],
+        downside_pct=float(signal_profile["downside_pct"]),
+        forecast_volatility_pct=float(dist_view["forecast_volatility_pct"] or 0.0),
+        action=action,
+        execution_bias=execution_bias,
+        legacy_score=float(opportunity.get("opportunity_score") or 0.0),
+    )
+    score = selection.score + (3.0 if is_watchlist else 0.0)
+    score = round(_clip(score, 0.0, 100.0), 1)
 
     notes = [
-        f"Radar Score {float(opportunity.get('opportunity_score') or 0.0):.1f}, 20거래일 분포 기대수익률 {signal_profile['expected_return_pct']:+.2f}%입니다.",
-        f"실행 바이어스 `{execution_bias}`와 액션 `{action}` 기준으로 신규 편입 후보로 평가했습니다.",
+        f"20거래일 기대초과수익률 {float(dist_view['expected_excess_return_pct'] or 0.0):+.2f}%, 보정 confidence {float(dist_view['confidence'] or 50.0):.1f}점을 기준으로 신규 편입 후보를 정렬했습니다.",
+        f"상하방 확률 격차 {signal_profile['probability_edge']:+.1f}pt와 액션 `{action}`을 tie-breaker로만 사용했습니다.",
     ]
     if is_watchlist:
         notes.append("워치리스트에 있던 종목이라 우선순위를 한 단계 높였습니다.")
+    if not selection.confidence_floor_passed:
+        notes.append(f"보정 confidence가 {selection.confidence_floor:.0f}점 미만이라 편입 점수를 제한했습니다.")
     risk_flags = opportunity.get("risk_flags") or []
     thesis = opportunity.get("thesis") or []
     if risk_flags:
@@ -652,7 +658,7 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
     elif thesis:
         notes.append(thesis[0])
 
-    return round(_clip(score, 0.0, 100.0), 1), notes[:3], "watchlist" if is_watchlist else "radar"
+    return score, notes[:3], "watchlist" if is_watchlist else "radar", selection.confidence_floor_passed
 
 
 def _select_model_candidates(candidates: list[dict], target_count: int) -> list[dict]:
@@ -756,6 +762,15 @@ def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[di
                 "flat_probability_20d": round(float(dist_view["flat_probability"] or 0.0), 2),
                 "down_probability_20d": round(float(dist_view["down_probability"] or 0.0), 2),
                 "distribution_confidence_20d": round(float(dist_view["confidence"] or 0.0), 1),
+                "raw_confidence_20d": dist_view["raw_confidence"],
+                "calibrated_probability_20d": dist_view["calibrated_probability"],
+                "probability_edge_20d": dist_view["probability_edge"],
+                "analog_support_20d": dist_view["analog_support"],
+                "regime_support_20d": dist_view["regime_support"],
+                "agreement_support_20d": dist_view["agreement_support"],
+                "data_quality_support_20d": dist_view["data_quality_support"],
+                "volatility_ratio_20d": dist_view["volatility_ratio"],
+                "confidence_calibrator_20d": dist_view["confidence_calibrator"],
                 "price_q25_20d": dist_view["bear_case_price"],
                 "price_q50_20d": dist_view["base_case_price"],
                 "price_q75_20d": dist_view["bull_case_price"],
@@ -861,6 +876,15 @@ async def _build_model_portfolio(
                 "flat_probability_20d": holding.get("flat_probability_20d"),
                 "down_probability_20d": holding.get("down_probability_20d"),
                 "distribution_confidence_20d": holding.get("distribution_confidence_20d"),
+                "raw_confidence_20d": holding.get("raw_confidence_20d"),
+                "calibrated_probability_20d": holding.get("calibrated_probability_20d"),
+                "probability_edge_20d": holding.get("probability_edge_20d"),
+                "analog_support_20d": holding.get("analog_support_20d"),
+                "regime_support_20d": holding.get("regime_support_20d"),
+                "agreement_support_20d": holding.get("agreement_support_20d"),
+                "data_quality_support_20d": holding.get("data_quality_support_20d"),
+                "volatility_ratio_20d": holding.get("volatility_ratio_20d"),
+                "confidence_calibrator_20d": holding.get("confidence_calibrator_20d"),
                 "price_q25_20d": holding.get("price_q25_20d"),
                 "price_q50_20d": holding.get("price_q50_20d"),
                 "price_q75_20d": holding.get("price_q75_20d"),
@@ -883,7 +907,9 @@ async def _build_model_portfolio(
         key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
         if key in holding_keys:
             continue
-        model_score, notes, source = _radar_model_score(opportunity, watchlist_keys)
+        model_score, notes, source, confidence_floor_passed = _radar_model_score(opportunity, watchlist_keys)
+        if not confidence_floor_passed:
+            continue
         if model_score < 52.0 and source != "watchlist":
             continue
         candidates.append(
@@ -895,6 +921,7 @@ async def _build_model_portfolio(
                 "sector": opportunity.get("sector", "Other"),
                 "source": source,
                 "in_watchlist": source == "watchlist",
+                "confidence_floor_passed": confidence_floor_passed,
                 "current_weight_pct": 0.0,
                 "model_score": model_score,
                 "weight_score": max(model_score - 48.0, 4.0),
@@ -908,6 +935,15 @@ async def _build_model_portfolio(
                 "flat_probability_20d": opportunity.get("flat_probability_20d"),
                 "down_probability_20d": opportunity.get("down_probability_20d"),
                 "distribution_confidence_20d": opportunity.get("distribution_confidence_20d"),
+                "raw_confidence_20d": opportunity.get("raw_confidence_20d"),
+                "calibrated_probability_20d": opportunity.get("calibrated_probability_20d"),
+                "probability_edge_20d": opportunity.get("probability_edge_20d"),
+                "analog_support_20d": opportunity.get("analog_support_20d"),
+                "regime_support_20d": opportunity.get("regime_support_20d"),
+                "agreement_support_20d": opportunity.get("agreement_support_20d"),
+                "data_quality_support_20d": opportunity.get("data_quality_support_20d"),
+                "volatility_ratio_20d": opportunity.get("volatility_ratio_20d"),
+                "confidence_calibrator_20d": opportunity.get("confidence_calibrator_20d"),
                 "price_q25_20d": opportunity.get("price_q25_20d"),
                 "price_q50_20d": opportunity.get("price_q50_20d"),
                 "price_q75_20d": opportunity.get("price_q75_20d"),
@@ -974,6 +1010,15 @@ async def _build_model_portfolio(
                 "flat_probability_20d": holding.get("flat_probability_20d"),
                 "down_probability_20d": holding.get("down_probability_20d"),
                 "distribution_confidence_20d": holding.get("distribution_confidence_20d"),
+                "raw_confidence_20d": holding.get("raw_confidence_20d"),
+                "calibrated_probability_20d": holding.get("calibrated_probability_20d"),
+                "probability_edge_20d": holding.get("probability_edge_20d"),
+                "analog_support_20d": holding.get("analog_support_20d"),
+                "regime_support_20d": holding.get("regime_support_20d"),
+                "agreement_support_20d": holding.get("agreement_support_20d"),
+                "data_quality_support_20d": holding.get("data_quality_support_20d"),
+                "volatility_ratio_20d": holding.get("volatility_ratio_20d"),
+                "confidence_calibrator_20d": holding.get("confidence_calibrator_20d"),
                 "price_q25_20d": holding.get("price_q25_20d"),
                 "price_q50_20d": holding.get("price_q50_20d"),
                 "price_q75_20d": holding.get("price_q75_20d"),
@@ -1330,6 +1375,15 @@ async def get_portfolio(user_id: str):
             "flat_probability_20d": horizon_20.get("flat_probability"),
             "down_probability_20d": horizon_20.get("down_probability"),
             "distribution_confidence_20d": horizon_20.get("confidence"),
+            "raw_confidence_20d": horizon_20.get("raw_confidence"),
+            "calibrated_probability_20d": horizon_20.get("calibrated_probability"),
+            "probability_edge_20d": horizon_20.get("probability_edge"),
+            "analog_support_20d": horizon_20.get("analog_support"),
+            "regime_support_20d": horizon_20.get("regime_support"),
+            "agreement_support_20d": horizon_20.get("agreement_support"),
+            "data_quality_support_20d": horizon_20.get("data_quality_support"),
+            "volatility_ratio_20d": horizon_20.get("volatility_ratio"),
+            "confidence_calibrator_20d": horizon_20.get("confidence_calibrator"),
             "price_q25_20d": horizon_20.get("price_q25"),
             "price_q50_20d": horizon_20.get("price_q50"),
             "price_q75_20d": horizon_20.get("price_q75"),

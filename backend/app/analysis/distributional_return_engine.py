@@ -10,8 +10,9 @@ import pandas as pd
 
 from app.analysis.llm_client import ask_json
 from app.models.forecast import FlowSignal
+from app.scoring.confidence import calibrate_direction_confidence
 
-MODEL_VERSION = "dist-studentt-v3.1"
+MODEL_VERSION = "dist-studentt-v3.2"
 PERIODS = (20, 60, 120, 252)
 DEFAULT_HORIZONS = (1, 5, 20)
 MAX_EVENT_ITEMS = 12
@@ -165,6 +166,15 @@ class DistributionalHorizon:
     p_up: float
     vol_forecast: float
     confidence: float
+    raw_confidence: float | None = None
+    calibrated_probability: float | None = None
+    probability_edge: float | None = None
+    analog_support: float | None = None
+    regime_support: float | None = None
+    agreement_support: float | None = None
+    data_quality_support: float | None = None
+    volatility_ratio: float | None = None
+    confidence_calibrator: str | None = None
 
 
 @dataclass
@@ -392,6 +402,7 @@ def build_distributional_forecast(
             price_block=price_block,
             macro=macro,
             fundamental=fundamental,
+            flow_signal=flow_signal,
             flow_score=flow_score,
             events=events,
             base_confidence=base_confidence,
@@ -765,7 +776,7 @@ def _estimate_base_confidence(
 ) -> float:
     history_bonus = min(len(prices) / 252.0, 1.0) * 18.0
     regime_clarity = max(regime_probs.values()) - sorted(regime_probs.values())[1]
-    source_bonus = (5.0 if macro["available"] else 0.0) + (4.0 if fundamental["available"] else 0.0) + min(events.item_count, 10) * 0.55
+    source_bonus = (5.0 if macro["available"] else 0.0) + (4.0 if fundamental["available"] else 0.0) + min(events.item_count, 6) * 0.22
     source_bonus += 3.0 if flow_signal and flow_signal.available else 0.0
     uncertainty_penalty = events.uncertainty * 10.0
     return _clip(46.0 + history_bonus + regime_clarity * 0.18 + source_bonus - uncertainty_penalty, 36.0, 90.0)
@@ -781,6 +792,7 @@ def _build_horizon_distribution(
     price_block: dict,
     macro: dict,
     fundamental: dict,
+    flow_signal: FlowSignal | None,
     flow_score: float,
     events: EventFeatures,
     base_confidence: float,
@@ -853,7 +865,7 @@ def _build_horizon_distribution(
     total = p_up + p_flat + p_down or 1.0
     p_up, p_flat, p_down = p_up / total * 100.0, p_flat / total * 100.0, p_down / total * 100.0
 
-    confidence = _clip(
+    raw_confidence = _clip(
         base_confidence
         - (5.0 if horizon == 20 else 1.5 if horizon == 5 else 0.0)
         + (max(regime_probs.values()) - 34.0) * 0.08
@@ -861,6 +873,24 @@ def _build_horizon_distribution(
         - events.uncertainty * 5.5,
         34.0,
         90.0,
+    )
+    calibrated = calibrate_direction_confidence(
+        horizon_days=horizon,
+        distribution_confidence=raw_confidence,
+        analog_support=None,
+        regime_probs=regime_probs,
+        p_up=p_up,
+        p_down=p_down,
+        median_return_pct=q50 * 100.0,
+        analog_expected_return_pct=None,
+        history_bars=len(prices),
+        macro_available=macro["available"],
+        fundamental_available=fundamental["available"],
+        flow_available=bool(flow_signal and flow_signal.available),
+        event_count=events.item_count,
+        event_uncertainty=events.uncertainty,
+        forecast_volatility_pct=max(float(np.std(distribution, ddof=1)) * 100.0, 0.0),
+        realized_volatility_reference_pct=max(hist_vol * 100.0, 1e-6),
     )
 
     return DistributionalHorizon(
@@ -876,7 +906,16 @@ def _build_horizon_distribution(
         p_flat=round(p_flat, 2),
         p_up=round(p_up, 2),
         vol_forecast=round(float(np.std(distribution, ddof=1)), 6),
-        confidence=round(confidence, 1),
+        confidence=round(calibrated.display_confidence, 1),
+        raw_confidence=round(raw_confidence, 1),
+        calibrated_probability=round(calibrated.calibrated_probability, 4),
+        probability_edge=round((p_up - p_down) / 100.0, 4),
+        analog_support=None,
+        regime_support=round(calibrated.regime_support, 4),
+        agreement_support=round(calibrated.agreement_support, 4) if calibrated.agreement_support is not None else None,
+        data_quality_support=round(calibrated.data_quality_support, 4),
+        volatility_ratio=round(calibrated.volatility_ratio, 4),
+        confidence_calibrator=calibrated.calibrator_method,
     )
 
 
@@ -930,7 +969,7 @@ def _build_confidence_note(
     dominant_regime = max(regime_probs, key=regime_probs.get)
     parts = [
         f"주된 가격 창은 {dominant_period}일 구간이며, 시장 체제는 {dominant_regime} 쪽 확률이 가장 높습니다.",
-        f"기본 신뢰도는 {base_confidence:.1f}점이며, 거시 게이트 {gates['macro']:.2f}, 이벤트 게이트 {gates['event']:.2f}를 반영했습니다.",
+        f"기본 raw 신뢰도는 {base_confidence:.1f}점이며, 표시 신뢰도는 이 값을 horizon별 sigmoid calibrator로 보정해 실제 적중률과 맞추도록 설계했습니다.",
     ]
     if events.item_count:
         parts.append(f"이벤트 {events.item_count}건을 구조화해 sentiment {events.sentiment:.2f}, uncertainty {events.uncertainty:.2f}로 반영했습니다.")

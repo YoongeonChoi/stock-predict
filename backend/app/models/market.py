@@ -62,6 +62,15 @@ class OpportunityItem(BaseModel):
     flat_probability_20d: float | None = None
     down_probability_20d: float | None = None
     distribution_confidence_20d: float | None = None
+    raw_confidence_20d: float | None = None
+    calibrated_probability_20d: float | None = None
+    probability_edge_20d: float | None = None
+    analog_support_20d: float | None = None
+    regime_support_20d: float | None = None
+    agreement_support_20d: float | None = None
+    data_quality_support_20d: float | None = None
+    volatility_ratio_20d: float | None = None
+    confidence_calibrator_20d: str | None = None
     price_q25_20d: float | None = None
     price_q50_20d: float | None = None
     price_q75_20d: float | None = None

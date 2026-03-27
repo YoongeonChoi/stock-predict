@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.database import db
 from app.data import cache, yfinance_client
+from app.scoring.selection import regime_alignment_score, score_selection_candidate
 from app.services import market_service, portfolio_service
 from app.services.portfolio_optimizer import attach_candidate_return_series
 from app.utils.async_tools import gather_limited
@@ -71,7 +72,7 @@ def _risk_budget(market_views: list[dict], aggregate_up_probability: float) -> d
     }
 
 
-def _candidate_score(opportunity: dict, market_view: dict) -> float:
+def _candidate_score(opportunity: dict, market_view: dict) -> tuple[float, bool]:
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     action = opportunity.get("action") or "wait_pullback"
     expected_return_pct = float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0)
@@ -93,36 +94,24 @@ def _candidate_score(opportunity: dict, market_view: dict) -> float:
         up_probability=up_probability,
         confidence=distribution_confidence,
     )
-    score = float(opportunity.get("opportunity_score") or 0.0) * 0.48
-    score += signal_profile["directional_score"] * 0.22
-    score += signal_profile["expected_return_pct"] * 2.8
-    score += expected_excess_return_pct * 3.6
-    score += signal_profile["probability_edge"] * 0.16
-    score += signal_profile["tail_ratio"] * 2.0
-    score += max(distribution_confidence - 55.0, 0.0) * 0.14
-    score += {
-        "press_long": 7.0,
-        "lean_long": 4.0,
-        "stay_selective": 1.0,
-        "reduce_risk": -6.0,
-        "capital_preservation": -10.0,
-    }.get(execution_bias, 0.0)
-    score += {
-        "accumulate": 6.0,
-        "breakout_watch": 4.0,
-        "wait_pullback": 1.0,
-        "reduce_risk": -5.0,
-        "avoid": -8.0,
-    }.get(action, 0.0)
-    score += {
-        "risk_on": 4.0,
-        "neutral": 1.0,
-        "risk_off": -4.0,
-    }.get(market_view.get("stance", "neutral"), 0.0)
-    score -= signal_profile["downside_pct"] * 0.8
-    score -= forecast_volatility_pct * 0.22
-    score -= len(opportunity.get("risk_flags") or []) * 1.4
-    return round(_clip(score, 0.0, 100.0), 2)
+    selection = score_selection_candidate(
+        expected_excess_return_pct=expected_excess_return_pct,
+        calibrated_confidence=distribution_confidence,
+        probability_edge=float(signal_profile["probability_edge"]),
+        tail_ratio=float(signal_profile["tail_ratio"]),
+        regime_alignment=regime_alignment_score(
+            regime_tailwind=opportunity.get("regime_tailwind"),
+            market_stance=market_view.get("stance"),
+        ),
+        analog_support=opportunity.get("analog_support_20d"),
+        data_quality_support=opportunity.get("data_quality_support_20d"),
+        downside_pct=float(signal_profile["downside_pct"]),
+        forecast_volatility_pct=forecast_volatility_pct,
+        action=action,
+        execution_bias=execution_bias,
+        legacy_score=float(opportunity.get("opportunity_score") or 0.0),
+    )
+    return round(selection.score, 2), selection.confidence_floor_passed
 
 
 def _market_view(response: dict) -> dict:
@@ -149,6 +138,8 @@ def _select_positions(candidates: list[dict], budget: dict) -> list[dict]:
     for candidate in sorted(candidates, key=lambda item: item["selection_score"], reverse=True):
         if len(selected) >= target_count:
             break
+        if not candidate.get("confidence_floor_passed", True):
+            continue
         if candidate["selection_score"] < 58.0:
             continue
         if candidate["execution_bias"] in {"reduce_risk", "capital_preservation"}:
@@ -166,7 +157,7 @@ def _select_positions(candidates: list[dict], budget: dict) -> list[dict]:
         for candidate in sorted(candidates, key=lambda item: item["selection_score"], reverse=True):
             if len(selected) >= min(4, target_count):
                 break
-            if candidate in selected or candidate["selection_score"] < 54.0:
+            if candidate in selected or not candidate.get("confidence_floor_passed", True) or candidate["selection_score"] < 54.0:
                 continue
             selected.append(candidate)
 
@@ -382,7 +373,7 @@ async def _build_snapshot(reference_date: str) -> dict:
         country_code = response.get("country_code", "KR")
         market_view = view_lookup.get(country_code, {})
         for opportunity in response.get("opportunities", [])[:6]:
-            selection_score = _candidate_score(opportunity, market_view)
+            selection_score, confidence_floor_passed = _candidate_score(opportunity, market_view)
             candidates.append(
                 {
                     "key": f"{country_code}:{opportunity.get('ticker')}",
@@ -395,12 +386,22 @@ async def _build_snapshot(reference_date: str) -> dict:
                     "target_horizon_days": int(opportunity.get("target_horizon_days") or 20),
                     "target_date_20d": opportunity.get("target_date_20d") or opportunity.get("forecast_date"),
                     "selection_score": selection_score,
+                    "confidence_floor_passed": confidence_floor_passed,
                     "opportunity_score": round(float(opportunity.get("opportunity_score") or 0.0), 1),
                     "up_probability_20d": round(float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0), 1),
                     "flat_probability_20d": round(float(opportunity.get("flat_probability_20d") or opportunity.get("base_probability") or 0.0), 1),
                     "down_probability_20d": round(float(opportunity.get("down_probability_20d") or opportunity.get("bear_probability") or 0.0), 1),
                     "confidence": round(float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 0.0), 1),
                     "distribution_confidence_20d": round(float(opportunity.get("distribution_confidence_20d") or opportunity.get("confidence") or 0.0), 1),
+                    "raw_confidence_20d": opportunity.get("raw_confidence_20d"),
+                    "calibrated_probability_20d": opportunity.get("calibrated_probability_20d"),
+                    "probability_edge_20d": opportunity.get("probability_edge_20d"),
+                    "analog_support_20d": opportunity.get("analog_support_20d"),
+                    "regime_support_20d": opportunity.get("regime_support_20d"),
+                    "agreement_support_20d": opportunity.get("agreement_support_20d"),
+                    "data_quality_support_20d": opportunity.get("data_quality_support_20d"),
+                    "volatility_ratio_20d": opportunity.get("volatility_ratio_20d"),
+                    "confidence_calibrator_20d": opportunity.get("confidence_calibrator_20d"),
                     "expected_return_pct_20d": round(float(opportunity.get("expected_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0), 2),
                     "expected_excess_return_pct_20d": round(float(opportunity.get("expected_excess_return_pct_20d") or 0.0), 2),
                     "median_return_pct_20d": round(float(opportunity.get("median_return_pct_20d") or opportunity.get("predicted_return_pct") or 0.0), 2),

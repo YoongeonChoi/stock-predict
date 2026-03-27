@@ -78,6 +78,15 @@ export interface NextDayForecast {
   predicted_low: number;
   predicted_return_pct: number;
   confidence: number;
+  raw_confidence?: number | null;
+  calibrated_probability?: number | null;
+  probability_edge?: number | null;
+  analog_support?: number | null;
+  regime_support?: number | null;
+  agreement_support?: number | null;
+  data_quality_support?: number | null;
+  volatility_ratio?: number | null;
+  confidence_calibrator?: string | null;
   confidence_note: string;
   news_sentiment: number;
   raw_signal: number;
@@ -131,6 +140,15 @@ export interface FreeKrForecastHorizon {
   p_up: number;
   vol_forecast: number;
   confidence: number;
+  raw_confidence?: number | null;
+  calibrated_probability?: number | null;
+  probability_edge?: number | null;
+  analog_support?: number | null;
+  regime_support?: number | null;
+  agreement_support?: number | null;
+  data_quality_support?: number | null;
+  volatility_ratio?: number | null;
+  confidence_calibrator?: string | null;
 }
 
 export interface FreeKrForecast {
@@ -158,6 +176,9 @@ export interface HistoricalForecastHorizon {
   realized_volatility_pct: number;
   avg_max_drawdown_pct: number;
   confidence: number;
+  analog_support?: number | null;
+  effective_sample_size?: number | null;
+  profit_factor?: number | null;
 }
 
 export interface HistoricalAnalogCase {
@@ -263,6 +284,15 @@ export interface OpportunityItem {
   flat_probability_20d?: number | null;
   down_probability_20d?: number | null;
   distribution_confidence_20d?: number | null;
+  raw_confidence_20d?: number | null;
+  calibrated_probability_20d?: number | null;
+  probability_edge_20d?: number | null;
+  analog_support_20d?: number | null;
+  regime_support_20d?: number | null;
+  agreement_support_20d?: number | null;
+  data_quality_support_20d?: number | null;
+  volatility_ratio_20d?: number | null;
+  confidence_calibrator_20d?: string | null;
   price_q25_20d?: number | null;
   price_q50_20d?: number | null;
   price_q75_20d?: number | null;

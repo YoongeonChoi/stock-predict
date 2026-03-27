@@ -226,7 +226,9 @@ def _build_candidate(
 ) -> dict | None:
     key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     current_holding = holding_lookup.get(key)
-    score, notes, source = portfolio_service._radar_model_score(opportunity, watchlist_keys)
+    score, notes, source, confidence_floor_passed = portfolio_service._radar_model_score(opportunity, watchlist_keys)
+    if not confidence_floor_passed:
+        return None
     current_weight_pct = round(float((current_holding or {}).get("weight_pct") or 0.0), 2)
     current_country_exposure = float(country_exposure.get(opportunity.get("country_code", "KR"), 0.0))
     current_sector_exposure = float(sector_exposure.get(opportunity.get("sector", "Other"), 0.0))
@@ -258,6 +260,7 @@ def _build_candidate(
         "sector": opportunity.get("sector", "Other"),
         "source": source,
         "in_watchlist": source == "watchlist",
+        "confidence_floor_passed": confidence_floor_passed,
         "current_weight_pct": current_weight_pct,
         "current_country_exposure_pct": round(current_country_exposure, 2),
         "current_sector_exposure_pct": round(current_sector_exposure, 2),
