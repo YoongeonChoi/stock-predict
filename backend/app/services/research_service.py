@@ -138,6 +138,8 @@ def _normalize_empirical_calibration(rows: list[dict]) -> list[dict]:
                 "positive_rate": round(float(row.get("positive_rate") or 0.0) * 100.0, 1),
                 "brier_score": round(float(row.get("brier_score") or 0.0), 4),
                 "prior_brier_score": round(float(row.get("prior_brier_score") or 0.0), 4),
+                "max_reliability_gap": round(float(row.get("max_reliability_gap") or 0.0) * 100.0, 1),
+                "reliability_bins": row.get("reliability_bins") or [],
                 "fitted_at": row.get("fitted_at"),
             }
         )
@@ -190,7 +192,7 @@ def _build_insights(
     if empirical_calibration:
         strongest_profile = max(empirical_calibration, key=lambda item: item.get("sample_count", 0))
         insights.append(
-            f"{strongest_profile['label']} empirical calibrator는 {strongest_profile['sample_count']}건의 실측 로그를 사용 중이며 Brier score {strongest_profile['brier_score']:.4f}로 관리됩니다."
+            f"{strongest_profile['label']} empirical calibrator는 {strongest_profile['sample_count']}건의 실측 로그를 사용 중이며 Brier score {strongest_profile['brier_score']:.4f}, 최대 reliability gap {strongest_profile['max_reliability_gap']:.1f}%로 관리됩니다."
         )
 
     misses = [record for record in recent_records if record.get("direction_hit") is False and record.get("abs_error_pct") is not None]
@@ -204,7 +206,7 @@ def _build_insights(
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v2:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v3:{limit_recent}:{int(refresh)}"
     cached = await cache.get(cache_key)
     if cached:
         return cached

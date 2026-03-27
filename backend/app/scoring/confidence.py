@@ -204,6 +204,10 @@ class EmpiricalCalibrationProfile:
     prior_brier_score: float
     fitted_at: str
     method: str = "empirical_sigmoid"
+    isotonic_thresholds: list[float] | None = None
+    isotonic_values: list[float] | None = None
+    reliability_bins: list[dict[str, float | int]] | None = None
+    max_reliability_gap: float | None = None
 
 
 def set_empirical_calibration_profiles(
@@ -347,7 +351,13 @@ def _apply_empirical_profile(
     vector = calibration_feature_vector(snapshot)
     for feature_name, feature_value in zip(CALIBRATION_FEATURE_NAMES, vector):
         score += float(profile.feature_weights.get(feature_name, 0.0)) * feature_value
-    return _clip(_sigmoid(score), 0.0, EMPIRICAL_CONFIDENCE_MAX)
+    calibrated_probability = _clip(_sigmoid(score), 0.0, EMPIRICAL_CONFIDENCE_MAX)
+    if profile.isotonic_thresholds and profile.isotonic_values:
+        for threshold, mapped_probability in zip(profile.isotonic_thresholds, profile.isotonic_values):
+            if calibrated_probability <= float(threshold):
+                return _clip(float(mapped_probability), 0.0, EMPIRICAL_CONFIDENCE_MAX)
+        return _clip(float(profile.isotonic_values[-1]), 0.0, EMPIRICAL_CONFIDENCE_MAX)
+    return calibrated_probability
 
 
 def calibrate_direction_confidence(
