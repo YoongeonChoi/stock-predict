@@ -1,6 +1,7 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+export const AUTH_REQUIRED_EVENT = "stockpredict:auth-required";
 
 export function apiPath(path: string): string {
   return API ? `${API}${path}` : path;
@@ -74,6 +75,15 @@ export interface UsernameAvailabilityResponse {
   message: string;
 }
 
+export interface AuthRequiredEventDetail {
+  path: string;
+  status: number;
+  errorCode: string;
+  message: string;
+  detail: string;
+  occurredAt: number;
+}
+
 export class ApiError extends Error {
   status: number;
   errorCode: string;
@@ -124,6 +134,13 @@ export function getApiRetryAfterSeconds(error: unknown): number | null {
 
 export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP-6014");
+}
+
+function emitAuthRequired(detail: AuthRequiredEventDetail) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent<AuthRequiredEventDetail>(AUTH_REQUIRED_EVENT, { detail }));
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -200,7 +217,18 @@ async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
     } catch {
       info = { error_code: `HTTP-${res.status}`, message: res.statusText };
     }
-    throw new ApiError(res.status, info, res.headers);
+    const error = new ApiError(res.status, info, res.headers);
+    if (isAuthRequiredError(error)) {
+      emitAuthRequired({
+        path,
+        status: error.status,
+        errorCode: error.errorCode,
+        message: error.message,
+        detail: error.detail,
+        occurredAt: Date.now(),
+      });
+    }
+    throw error;
   }
   return res.json();
 }

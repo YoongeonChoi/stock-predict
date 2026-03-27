@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.34.0 - 2026-03-27
+
+- 보호된 API가 `401 / SP-6014`를 반환할 때 프론트가 공통 인증 이벤트를 발생시키고, `AuthProvider`가 현재 Supabase 세션을 한 번 더 재검증하도록 정리했습니다.
+- 복구 가능한 세션이면 토큰을 다시 맞추고, 복구되지 않는 세션이면 인증 상태를 정리해 보호 페이지가 멈춘 데이터 화면 대신 로그인 유도 상태로 자연스럽게 내려가도록 보강했습니다.
+- README와 AGENTS 문서를 현재 세션 복구 흐름 기준에 맞춰 다시 동기화했습니다.
+
 ## v2.33.0 - 2026-03-27
 
 - `backend/scripts/live_api_smoke.py`를 현재 인증 계약에 맞게 갱신해, 로그인 없이 호출하는 `watchlist`·`portfolio` 저장 API는 `401 / SP-6014`를 정상 결과로 검증하도록 정리했습니다.

@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 
-import { api, type AccountProfile } from "@/lib/api";
+import { AUTH_REQUIRED_EVENT, api, isAuthRequiredError, type AccountProfile, type AuthRequiredEventDetail } from "@/lib/api";
 import { extractAccountProfileFromUser } from "@/lib/account";
 import { getSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase-browser";
 
@@ -42,6 +42,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const authRecoveryRef = useRef<Promise<void> | null>(null);
+
+  const clearAuthState = () => {
+    setSession(null);
+    setUser(null);
+    setProfile(null);
+    setProfileLoading(false);
+    setLoading(false);
+  };
 
   const loadProfileForSession = async (currentSession: Session | null) => {
     if (!configured) {
@@ -58,11 +67,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const nextProfile = await api.getMyAccountProfile();
       setProfile(nextProfile);
-    } catch {
+    } catch (error) {
+      if (isAuthRequiredError(error)) {
+        setProfile(null);
+        return;
+      }
       setProfile(extractAccountProfileFromUser(currentSession.user) as AccountProfile | null);
     } finally {
       setProfileLoading(false);
     }
+  };
+
+  const reconcileSession = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      clearAuthState();
+      return;
+    }
+
+    if (authRecoveryRef.current) {
+      await authRecoveryRef.current;
+      return;
+    }
+
+    authRecoveryRef.current = (async () => {
+      try {
+        const {
+          data: { session: currentSession },
+          error: sessionError,
+        } = await client.auth.getSession();
+
+        if (sessionError || !currentSession?.refresh_token) {
+          clearAuthState();
+          return;
+        }
+
+        const {
+          data: refreshedData,
+          error: refreshError,
+        } = await client.auth.refreshSession();
+
+        if (refreshError || !refreshedData.session?.user) {
+          clearAuthState();
+          return;
+        }
+
+        setSession(refreshedData.session);
+        setUser(refreshedData.session.user);
+        setLoading(false);
+        await loadProfileForSession(refreshedData.session);
+      } catch {
+        clearAuthState();
+      } finally {
+        authRecoveryRef.current = null;
+      }
+    })();
+
+    await authRecoveryRef.current;
   };
 
   const refreshProfile = async () => {
@@ -127,13 +188,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleAuthRequired = (event: Event) => {
+      const customEvent = event as CustomEvent<AuthRequiredEventDetail>;
+      if (customEvent.detail?.status === 401 || customEvent.detail?.errorCode === "SP-6014") {
+        void reconcileSession();
+      }
+    };
+
+    window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    return () => {
+      window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    };
+  }, [configured]);
+
   const signOut = async () => {
     const client = getSupabaseBrowserClient();
     if (!client) {
       return;
     }
     await client.auth.signOut({ scope: "local" });
-    setProfile(null);
+    clearAuthState();
   };
 
   const signOutEverywhere = async () => {
@@ -142,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     await client.auth.signOut({ scope: "global" });
-    setProfile(null);
+    clearAuthState();
   };
 
   return (
