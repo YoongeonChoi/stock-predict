@@ -26,6 +26,7 @@ class HttpCheck:
     expect_json: bool = False
     expected_error_code: str | None = None
     contains_text: str | None = None
+    timeout: int = 45
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -110,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
             expected_error_code="SP-6014",
         ),
         HttpCheck("market-indicators", api_url, "/api/market/indicators", expected_status=200, expect_json=True),
+        HttpCheck("market-heatmap", api_url, "/api/country/KR/heatmap", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("market-opportunities", api_url, "/api/market/opportunities/KR?limit=8", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("screener", api_url, "/api/screener?country=KR&limit=20", expected_status=200, expect_json=True, timeout=60),
         HttpCheck("frontend-home", frontend_url, "/", expected_status=200, contains_text="<html"),
         HttpCheck("frontend-auth", frontend_url, "/auth", expected_status=200, contains_text="<html"),
         HttpCheck("frontend-settings", frontend_url, "/settings", expected_status=200, contains_text="<html"),
@@ -125,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     for check in checks:
         url = urljoin(f"{check.base}/", check.path.lstrip("/"))
         try:
-            status, body, _headers = fetch_with_retry(url, attempts=3, timeout=45)
+            status, body, _headers = fetch_with_retry(url, attempts=3, timeout=check.timeout)
         except Exception as exc:
             failures.append(f"{check.name}: {exc}")
             print(f"[FAIL] {check.name:18} {url} -> {exc}")

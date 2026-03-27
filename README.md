@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.38.0`
+현재 릴리즈: `v2.39.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -658,6 +658,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - Render free는 유휴 시 spin-down 될 수 있습니다.
 - Supabase free도 저활동 상태면 pause될 수 있습니다.
+- 공개 대시보드와 스크리너는 Render free 환경에서 전체 유니버스를 전수 조회하지 않고, 대표 표본 + 캐시 + 구조화된 timeout(`SP-5018`) 기준으로 먼저 안정적으로 응답하도록 설계합니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계합니다.
 
@@ -725,7 +726,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
 ```
 
-`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout에는 짧게 재시도합니다.
+`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다. 이 스모크는 `KR heatmap`, `market opportunities`, `screener` 같은 느린 공개 API도 함께 확인하며, Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout에는 짧게 재시도합니다.
 
 `main` 머지 후 실제 운영 배포가 새 버전으로 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
 
@@ -771,6 +772,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 운영 메모:
 
 - 공개 대시보드에서 특정 패널이 오래 멈추면 `SP-5018` timeout 응답과 fallback 문구를 먼저 확인합니다.
+- `heatmap`과 `screener`는 대표 종목군 기준으로 먼저 계산하므로, 화면이 바로 뜨는 안정성을 우선하고 전체 전수 스캔은 후순위로 둡니다.
 - 인증 관련 문제가 나면 `/api/account/me`와 `/api/account/username-availability` 계약부터 확인하는 것이 가장 빠릅니다.
 
 ## 버전 정책

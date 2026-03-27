@@ -1,12 +1,20 @@
+import asyncio
 import logging
 from fastapi import APIRouter, Query
 from fastapi.params import Param
+from fastapi.responses import JSONResponse
 from app.data import yfinance_client, cache
 from app.data.universe_data import get_universe
+from app.errors import SP_5018
 from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["screener"])
+PUBLIC_SCREENER_TIMEOUT_SECONDS = 16
+SCREENER_MAX_CANDIDATES = 88
+SCREENER_MAX_SECTOR_CANDIDATES = 28
+SCREENER_MAX_PER_SECTOR = 8
+SCREENER_CONCURRENCY = 4
 
 ALLOWED_SORT_FIELDS = {
     "market_cap",
@@ -29,6 +37,30 @@ def _normalize_query_param(value):
     if isinstance(value, Param):
         return value.default
     return value
+
+
+def _select_candidate_tickers(universe: dict[str, list[str]], sector: str | None) -> list[str]:
+    seen: set[str] = set()
+    tickers: list[str] = []
+
+    if sector:
+        for ticker in universe.get(sector, [])[:SCREENER_MAX_SECTOR_CANDIDATES]:
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            tickers.append(ticker)
+        return tickers
+
+    for sec_tickers in universe.values():
+        for ticker in sec_tickers[:SCREENER_MAX_PER_SECTOR]:
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            tickers.append(ticker)
+            if len(tickers) >= SCREENER_MAX_CANDIDATES:
+                return tickers
+
+    return tickers
 
 
 @router.get("/screener")
@@ -94,25 +126,8 @@ async def screen_stocks(
     )
     
     cached = await cache.get(cache_key)
-    if cached:
+    if cached is not None:
         return cached
-
-    universe = await get_universe(country)
-    tickers = []
-    seen = set()
-    if sector:
-        for ticker in universe.get(sector, []):
-            if ticker in seen:
-                continue
-            seen.add(ticker)
-            tickers.append(ticker)
-    else:
-        for sec_tickers in universe.values():
-            for ticker in sec_tickers:
-                if ticker in seen:
-                    continue
-                seen.add(ticker)
-                tickers.append(ticker)
 
     async def _screen_ticker(ticker: str):
         try:
@@ -222,16 +237,29 @@ async def screen_stocks(
             logging.warning("screener: failed %s: %s", ticker, e)
             return None
 
-    screened = await gather_limited(tickers[:200], _screen_ticker, limit=6)
-    results = [item for item in screened if not isinstance(item, Exception) and item is not None]
+    async def _build_response():
+        universe = await get_universe(country)
+        tickers = _select_candidate_tickers(universe, sector)
+        screened = await gather_limited(tickers, _screen_ticker, limit=SCREENER_CONCURRENCY)
+        results = [item for item in screened if not isinstance(item, Exception) and item is not None]
 
-    reverse = sort_dir == "desc"
-    sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
-    results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
-    results = results[:limit]
+        reverse = sort_dir == "desc"
+        sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
+        results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
+        results = results[:limit]
 
-    sectors = list(universe.keys())
+        return {
+            "results": results,
+            "total": len(results),
+            "sectors": list(universe.keys()),
+        }
 
-    response = {"results": results, "total": len(results), "sectors": sectors}
+    try:
+        response = await asyncio.wait_for(_build_response(), timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
+        err.log("warning")
+        return JSONResponse(status_code=504, content=err.to_dict())
+
     await cache.set(cache_key, response, 600)
     return response

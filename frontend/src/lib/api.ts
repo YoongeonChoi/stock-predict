@@ -1257,9 +1257,9 @@ export const api = {
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return get<CalendarResponse>(`/api/calendar/${code}${suffix}`);
   },
-  getScreener: (params: Record<string, string>) => {
+  getScreener: (params: Record<string, string>, options?: RequestOptions) => {
     const qs = new URLSearchParams(params).toString();
-    return get<ScreenerResponse>(`/api/screener?${qs}`);
+    return get<ScreenerResponse>(`/api/screener?${qs}`, options);
   },
   getPortfolio: () => get<PortfolioData>("/api/portfolio"),
   getPortfolioProfile: () => get<PortfolioProfile>("/api/portfolio/profile"),

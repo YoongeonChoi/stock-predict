@@ -12,6 +12,10 @@ from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
+HEATMAP_TIMEOUT_SECONDS = 16
+HEATMAP_TICKERS_PER_SECTOR = 5
+HEATMAP_CHILDREN_PER_SECTOR = 5
+HEATMAP_CONCURRENCY = 3
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -23,6 +27,36 @@ async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | N
     if not snapshot or not snapshot.get("valid"):
         return None
     return snapshot
+
+
+async def _build_heatmap_payload(code: str) -> dict:
+    from app.data.universe_data import get_universe
+
+    universe = await get_universe(code)
+
+    sectors = []
+    for sector_name, tickers in universe.items():
+        fetched = await gather_limited(
+            tickers[:HEATMAP_TICKERS_PER_SECTOR],
+            lambda ticker: _load_market_snapshot(ticker, period="6mo"),
+            limit=HEATMAP_CONCURRENCY,
+        )
+        stocks = []
+        for item in fetched:
+            if isinstance(item, Exception) or item is None:
+                continue
+            stocks.append({
+                "name": item["ticker"].split(".")[0],
+                "ticker": item["ticker"],
+                "fullName": item.get("name", item["ticker"]),
+                "size": item.get("market_cap", 0),
+                "change": item.get("change_pct", 0),
+            })
+        if stocks:
+            stocks.sort(key=lambda s: s["size"], reverse=True)
+            sectors.append({"name": sector_name, "children": stocks[:HEATMAP_CHILDREN_PER_SECTOR]})
+
+    return {"children": sectors}
 
 
 @router.get("/countries")
@@ -92,31 +126,16 @@ async def get_heatmap(code: str):
     from app.data import cache as data_cache
     cache_key = f"heatmap:{code}"
     cached = await data_cache.get(cache_key)
-    if cached:
+    if cached is not None:
         return cached
 
-    from app.data.universe_data import get_universe
-    universe = await get_universe(code)
+    try:
+        result = await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        err = SP_5018(f"Heatmap for {code} exceeded {HEATMAP_TIMEOUT_SECONDS} seconds.")
+        err.log("warning")
+        return JSONResponse(status_code=504, content=err.to_dict())
 
-    sectors = []
-    for sector_name, tickers in universe.items():
-        fetched = await gather_limited(tickers[:10], lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=4)
-        stocks = []
-        for item in fetched:
-            if isinstance(item, Exception) or item is None:
-                continue
-            stocks.append({
-                "name": item["ticker"].split(".")[0],
-                "ticker": item["ticker"],
-                "fullName": item.get("name", item["ticker"]),
-                "size": item.get("market_cap", 0),
-                "change": item.get("change_pct", 0),
-            })
-        if stocks:
-            stocks.sort(key=lambda s: s["size"], reverse=True)
-            sectors.append({"name": sector_name, "children": stocks[:8]})
-
-    result = {"children": sectors}
     await data_cache.set(cache_key, result, 900)
     return result
 
