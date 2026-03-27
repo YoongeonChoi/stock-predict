@@ -80,7 +80,7 @@ function Field({
 }
 
 export default function AccountSettingsPanel() {
-  const { configured, loading, session, user, profile, profileLoading, refreshProfile, signOut } = useAuth();
+  const { configured, loading, session, user, profile, profileLoading, refreshProfile, signOut, signOutEverywhere } = useAuth();
   const { toast } = useToast();
   const [draft, setDraft] = useState<ProfileDraft>(buildDraft(profile));
   const [usernameState, setUsernameState] = useState<UsernameState>(buildUsernameState(profile));
@@ -88,6 +88,7 @@ export default function AccountSettingsPanel() {
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState<PasswordDraft>({ nextPassword: "", confirmPassword: "" });
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -119,6 +120,11 @@ export default function AccountSettingsPanel() {
       ? normalizeUsername(deleteConfirmation) === deleteTargetValue
       : deleteConfirmation.trim().toLowerCase() === deleteTargetValue
   );
+  const lastSignInLabel = user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString("ko-KR") : "확인 불가";
+  const sessionExpiryLabel =
+    typeof session?.expires_at === "number"
+      ? new Date(session.expires_at * 1000).toLocaleString("ko-KR")
+      : "확인 불가";
   const usernameReady =
     Boolean(normalizedDraftUsername) &&
     (
@@ -325,6 +331,24 @@ export default function AccountSettingsPanel() {
     }
   };
 
+  const handleGlobalSignOut = async () => {
+    if (!window.confirm("이 기기를 포함해 현재 계정으로 열려 있는 다른 세션도 모두 종료합니다. 계속 진행할까요?")) {
+      return;
+    }
+
+    setSigningOutEverywhere(true);
+    try {
+      await signOutEverywhere();
+      toast("모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.", "success");
+      window.location.assign("/auth");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "전체 로그아웃 중 문제가 발생했습니다.";
+      toast(message, "error");
+    } finally {
+      setSigningOutEverywhere(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!deleteReady) {
       toast(`${deleteTargetLabel}를 정확히 입력한 뒤 회원 탈퇴를 진행해 주세요.`, "error");
@@ -392,7 +416,7 @@ export default function AccountSettingsPanel() {
           </div>
         </div>
         <div className="rounded-[22px] border border-border/70 bg-surface/55 p-4 text-sm text-text-secondary">
-          로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송이나 비밀번호 재설정도 바로 처리할 수 있습니다.
+          로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송, 비밀번호 변경, 세션 종료 같은 보안 작업도 바로 처리할 수 있습니다.
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/auth?next=/settings" className="action-chip-primary">
@@ -527,14 +551,6 @@ export default function AccountSettingsPanel() {
             >
               {saving ? "저장 중..." : "프로필 저장"}
             </button>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              disabled={signingOut}
-              className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {signingOut ? "로그아웃 중..." : "로그아웃"}
-            </button>
           </div>
         </div>
 
@@ -559,6 +575,48 @@ export default function AccountSettingsPanel() {
             >
               {profile.email_verified ? "이메일 인증 완료" : sendingVerification ? "재전송 중..." : "인증 메일 다시 보내기"}
             </button>
+          </div>
+
+          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <ShieldAlert size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text">세션 보안</div>
+                <p className="mt-1 text-xs leading-6 text-text-secondary">
+                  마지막 로그인과 현재 세션 만료 시각을 확인하고, 필요하면 다른 기기 세션까지 한 번에 종료할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <dl className="mt-4 space-y-3 rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm">
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-text-secondary">마지막 로그인</dt>
+                <dd className="text-right font-medium text-text">{lastSignInLabel}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-text-secondary">현재 세션 만료</dt>
+                <dd className="text-right font-medium text-text">{sessionExpiryLabel}</dd>
+              </div>
+            </dl>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {signingOut ? "로그아웃 중..." : "이 기기에서 로그아웃"}
+              </button>
+              <button
+                type="button"
+                onClick={handleGlobalSignOut}
+                disabled={signingOutEverywhere}
+                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {signingOutEverywhere ? "전체 로그아웃 중..." : "모든 기기에서 로그아웃"}
+              </button>
+            </div>
           </div>
 
           <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
