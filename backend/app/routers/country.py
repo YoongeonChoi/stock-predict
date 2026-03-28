@@ -105,6 +105,16 @@ def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
         logging.warning("%s background task failed: %s", label, exc, exc_info=True)
 
 
+def _with_opportunity_partial(payload: dict, *, fallback_reason: str, note: str | None = None) -> dict:
+    response = dict(payload)
+    response["partial"] = True
+    response["fallback_reason"] = fallback_reason
+    if note:
+        existing_note = str(response.get("universe_note") or "").strip()
+        response["universe_note"] = " ".join(part for part in [existing_note, note.strip()] if part).strip()
+    return response
+
+
 def _empty_institutional_analysis() -> dict:
     return {
         "policy_institutions": [],
@@ -630,22 +640,45 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 asyncio.shield(quick_task),
                 timeout=max(2.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 4.0)),
             )
-            return quick_response
+            return _with_opportunity_partial(
+                quick_response,
+                fallback_reason="opportunity_quick_response",
+            )
         except asyncio.TimeoutError:
             logging.warning("opportunity quick fallback timed out for %s", code)
-            err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
-            err.detail = (
-                f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
-                "대표 1차 스캔도 아직 끝나지 않아 잠시 후 다시 시도해 주세요."
+            cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
+            if cached_quick:
+                return _with_opportunity_partial(
+                    cached_quick,
+                    fallback_reason="opportunity_cached_quick_response",
+                    note="이번 응답에서는 이전 quick 결과를 먼저 표시합니다.",
+                )
+            return _with_opportunity_partial(
+                market_service.build_market_opportunities_placeholder(
+                    code,
+                    note=(
+                        f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
+                        "대표 1차 스캔도 아직 끝나지 않아 시장 국면과 빈 후보 보드를 먼저 표시합니다."
+                    ),
+                ),
+                fallback_reason="opportunity_placeholder_response",
             )
-            err.log("warning")
-            return JSONResponse(status_code=504, content=err.to_dict())
         except Exception as quick_exc:
             logging.warning("opportunity quick fallback failed for %s: %s", code, quick_exc, exc_info=True)
-            err = SP_5018(f"Opportunity radar for {code} exceeded {OPPORTUNITY_TIMEOUT_SECONDS} seconds.")
-            err.detail = (
-                f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
-                "백그라운드 계산은 계속 진행되니 잠시 후 다시 시도해 주세요."
+            cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
+            if cached_quick:
+                return _with_opportunity_partial(
+                    cached_quick,
+                    fallback_reason="opportunity_cached_quick_response",
+                    note="이번 응답에서는 이전 quick 결과를 먼저 표시합니다.",
+                )
+            return _with_opportunity_partial(
+                market_service.build_market_opportunities_placeholder(
+                    code,
+                    note=(
+                        f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
+                        "백그라운드 계산은 계속 진행되니 잠시 후 다시 열면 후보가 채워질 수 있습니다."
+                    ),
+                ),
+                fallback_reason="opportunity_placeholder_response",
             )
-            err.log("warning")
-            return JSONResponse(status_code=504, content=err.to_dict())

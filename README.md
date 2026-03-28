@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.50.0`
+현재 릴리즈: `v2.50.1`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -837,10 +837,62 @@ BACKEND_PROXY_URL=http://localhost:8000
 - FMP KR 스크리너가 막히더라도 레이더는 가능한 한 `krx_listing` 또는 운영 fallback 유니버스로 내려가 1차 후보를 먼저 보여주며, 현재 기본 fallback 종목군은 `201개`입니다.
 - 큰 KR fallback 유니버스에서는 응답 안정성을 우선해 `1차 전수 스캔 결과`를 먼저 반환하고, 정밀 분석은 상위 후보나 후속 상세 화면에서 이어집니다.
 - Render free에서 서버가 막 깨어난 직후에는 KR 레이더 warmup이 먼저 돌고, 정밀 계산이 길어지면 `504` 대신 빠른 1차 후보 응답을 먼저 돌려주도록 구성합니다. 백그라운드 계산은 계속 진행해 다음 재시도에서 캐시된 정밀 결과로 회복되게 합니다.
+- `/api/market/opportunities/{code}`는 정밀 응답이 `12초` 안에 끝나지 않으면 quick fallback을 기다리고, quick fallback도 `4초` 안에 끝나지 않으면 이제 `cached quick` 또는 placeholder `200 + partial`로 먼저 내려갑니다. 그래서 `/radar` first screen이 통째로 비어 버리는 구간을 줄였습니다.
 - 레이더 응답 캐시는 이제 `시장 컨텍스트 계산 + 유니버스 해석 + 1차 quote screen`까지 함께 감싸므로, 같은 조건의 재조회가 들어올 때 매번 무거운 전처리를 다시 수행하지 않습니다.
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계하며, 가능한 경우 `504` 대신 `200 + partial` 응답으로 먼저 살아남는 것을 우선합니다.
+
+### 운영 latency / warm-up 메모
+
+아래는 “이론상 가능성”이 아니라, 현재 배포 구조와 실제 관찰값을 함께 적은 메모입니다.
+
+공식 provider 기준:
+
+- Render Free web service는 `15분` 동안 inbound traffic이 없으면 spin down 되고, 다음 요청 시 다시 깨어나는 데 `약 1분`이 걸릴 수 있습니다. 공식 문서: [Render Free instances](https://render.com/docs/free), [Render FAQ](https://render.com/docs/faq)
+- Supabase는 프로젝트가 inactivity 때문에 pause될 수 있고, pause된 project는 `540 project paused`를 반환합니다. 공식 문서: [Supabase HTTP status codes](https://supabase.com/docs/guides/troubleshooting/http-status-codes)
+
+이 프로젝트에서 실제로 중요한 시간 예산:
+
+- `/api/market/opportunities/{code}`
+  - route-level 정밀 응답 대기: `12초`
+  - route-level quick fallback 대기: `최대 4초`
+  - service-level 1차 스캔 timeout: `4초`
+  - service-level 후보 정밀 계산 timeout: `4초`
+  - quick quote screen 내부 빠른 quote timeout: `1.2초`
+- `/radar` 클라이언트 재호출 timeout: `22초`
+- startup opportunity prewarm timeout: `180초`
+
+사진 두 장이 다르게 보인 이유:
+
+- 첫 사진은 `/radar`가 아니라 대시보드의 `강한 셋업 + 주요 뉴스 + 상위 종목` 구간입니다.
+- 대시보드는 여러 공개 API를 `Promise.allSettled`로 불러와 일부 패널만 살아남아도 화면을 유지합니다.
+- 둘째 사진의 `/radar`는 전용 레이더 first screen이라, 같은 시점에 `market opportunities` warm-up gap을 만나면 그 페이지만 빈 경고 카드처럼 보일 수 있었습니다.
+- 즉 원인은 “무료 서버라 느림” 한 줄로 끝나지 않고, `Render Free warm-up + KR 레이더 첫 quick build 비용 + 대시보드와 /radar의 실패 흡수 방식 차이`가 함께 겹친 것입니다.
+- 현재 패치 기준으로는 quick fallback이 늦어도 `cached quick` 또는 placeholder `partial`을 먼저 내려 `/radar`가 통째로 비는 상황을 줄였습니다.
+
+2026-03-29 관찰값 예시:
+
+- 측정 환경: 한국(서울) 데스크톱 네트워크에서 운영 도메인 직접 호출
+- `GET https://yoongeon.xyz/radar`
+  - `469.2ms`
+  - `107.3ms`
+  - `99.4ms`
+- `GET https://api.yoongeon.xyz/api/health`
+  - `933.0ms`
+  - `2291.7ms`
+  - `2023.0ms`
+- `GET https://api.yoongeon.xyz/api/market/opportunities/KR?limit=8`
+  - cold/warm gap 시 `27377.6ms` 뒤 `504 / SP-5018`
+- 같은 endpoint family를 연속 호출한 직후
+  - `limit=12`: `15923.5ms`, `200`
+  - `limit=20`: `8378.4ms`, `200`
+
+주의:
+
+- 위 ms 값은 운영 샘플이며 SLA가 아닙니다.
+- 특히 `market opportunities`는 첫 요청이 warm-up과 cache fill을 떠안으면 뒤 요청보다 훨씬 느릴 수 있습니다.
+- Supabase pause는 private/account 경로에 더 직접적인 영향이 있고, 위 두 장의 public radar/대시보드 차이는 주로 Render backend warm-up과 radar aggregation 경로 영향입니다.
 
 ## 배포 순서
 
@@ -906,7 +958,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
 ```
 
-`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다. 이 스모크는 `KR heatmap`, `market opportunities`, `screener` 같은 느린 공개 API도 함께 확인하며, Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout에는 짧게 재시도합니다. 최신 기준으로 `heatmap`과 `screener`는 느릴 때도 `partial` 응답으로, `market opportunities`는 느릴 때도 `1차 시세 스캔 후보` 응답으로 먼저 살아남는지 함께 봅니다.
+`--deployed-site-smoke`는 현재 운영 중인 `https://www.yoongeon.xyz`, `https://api.yoongeon.xyz`를 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 점검합니다. 이 스모크는 `KR heatmap`, `market opportunities`, `screener` 같은 느린 공개 API도 함께 확인하며, Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout에는 짧게 재시도합니다. 최신 기준으로 `heatmap`과 `screener`는 느릴 때도 `partial` 응답으로, `market opportunities`는 느릴 때도 `1차 시세 스캔 후보`, `cached quick`, placeholder partial 중 하나로 먼저 살아남는지 함께 봅니다.
 
 `main` 머지 후 실제 운영 배포가 새 버전으로 반영됐는지 기다릴 때는 아래 명령을 사용합니다.
 

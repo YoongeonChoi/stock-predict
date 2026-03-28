@@ -18,6 +18,8 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   radar_timeout: "레이더 계산 지연",
   opportunity_quick_fallback: "대표 후보 기준 빠른 응답",
   opportunity_quick_response: "대표 후보 기준 빠른 응답",
+  opportunity_cached_quick_response: "이전 quick 결과 기준",
+  opportunity_placeholder_response: "워밍업 placeholder 기준",
   screener_timeout: "스크리너 계산 지연",
   screener_seeded_cache: "전일 종가 기준 기본 캐시",
   kr_representative_snapshot_warming: "대표 종목 스냅샷 기준",
