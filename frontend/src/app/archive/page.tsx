@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import ErrorBanner from "@/components/ErrorBanner";
 import PageHeader from "@/components/PageHeader";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import type {
@@ -160,7 +161,16 @@ export default function ArchivePage() {
           </div>
         </div>
 
-        {researchError ? <ErrorBanner error={researchError} onRetry={() => void loadResearch(false)} /> : null}
+        {researchError ? (
+          <WorkspaceStateCard
+            eyebrow="기관 리포트 지연"
+            title="기관 리포트 목록을 다시 불러오지 못했습니다"
+            message={researchError.message}
+            tone="warning"
+            actionLabel="목록 다시 불러오기"
+            onAction={() => void loadResearch(false)}
+          />
+        ) : null}
 
         {researchStatus ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -210,16 +220,24 @@ export default function ArchivePage() {
         ) : null}
 
         {researchLoading ? (
-          <div className="animate-pulse space-y-3">
-            {[1, 2, 3].map((i) => <div key={i} className="h-28 rounded-[22px] bg-border/25" />)}
+          <div className="space-y-3">
+            <WorkspaceLoadingCard
+              title={`${REGION_LABELS[researchRegion]} 기관 리포트를 정리하고 있습니다`}
+              message="출처, 발행일, PDF 여부를 먼저 읽은 뒤 지역별 목록으로 다시 배치합니다."
+              className="min-h-[160px]"
+            />
+            <WorkspaceLoadingCard
+              title="최신 원문을 확인하고 있습니다"
+              message="같은 기관의 중복 항목을 정리하고 바로 열 수 있는 링크를 우선 붙입니다."
+              className="min-h-[140px]"
+            />
           </div>
         ) : researchReports.length === 0 ? (
-          <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-5 text-sm text-text-secondary">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">리포트 대기</div>
-            <div className="mt-2 leading-6">
-              {REGION_LABELS[researchRegion]} 공개 리포트가 아직 반영되지 않았습니다. 잠시 후 새로고침하거나 다른 지역을 먼저 확인해 주세요.
-            </div>
-          </div>
+          <WorkspaceStateCard
+            eyebrow="리포트 대기"
+            title={`${REGION_LABELS[researchRegion]} 공개 리포트가 아직 없습니다`}
+            message="잠시 후 새로고침하거나 다른 지역을 먼저 확인해 주세요. 원문이 반영되면 이 목록에 바로 추가됩니다."
+          />
         ) : (
           <div className="space-y-3">
             {researchReports.map((report) => (
@@ -315,14 +333,19 @@ export default function ArchivePage() {
         </div>
 
         {loading ? (
-          <div className="animate-pulse space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-[22px] bg-border/25" />)}</div>
-        ) : archives.length === 0 ? (
-          <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-5 text-sm text-text-secondary">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">리포트 대기</div>
-            <div className="mt-2 leading-6">
-              아직 저장된 리포트가 없습니다. 국가, 섹터, 종목 분석을 실행하면 아카이브에 자동으로 쌓입니다.
-            </div>
+          <div className="space-y-3">
+            <WorkspaceLoadingCard
+              title="저장된 내부 리포트를 불러오고 있습니다"
+              message="국가, 섹터, 종목 리포트를 날짜순으로 다시 정리하는 중입니다."
+              className="min-h-[140px]"
+            />
           </div>
+        ) : archives.length === 0 ? (
+          <WorkspaceStateCard
+            eyebrow="리포트 대기"
+            title="아직 저장된 내부 분석 리포트가 없습니다"
+            message="국가, 섹터, 종목 분석을 실행하면 이 아카이브에 자동으로 쌓입니다."
+          />
         ) : (
           <div className="space-y-3">
             {archives.map((archive) => (

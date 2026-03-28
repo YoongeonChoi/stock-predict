@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { Treemap, ResponsiveContainer } from "recharts";
+
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import type { HeatmapData } from "@/lib/api";
 
 function changeToColor(change: number): string {
@@ -75,11 +77,24 @@ export default function StockHeatmap({ data, loading }: Props) {
   const router = useRouter();
 
   if (loading) {
-    return <div className="h-[400px] bg-border/30 rounded-lg animate-pulse" />;
+    return (
+      <WorkspaceLoadingCard
+        title="시장 히트맵을 정리하고 있습니다"
+        message="시가총액 가중 분포와 종목별 등락률을 먼저 묶은 뒤 보드에 배치합니다."
+        className="min-h-[260px]"
+      />
+    );
   }
 
   if (!data || !data.children?.length) {
-    return <p className="text-sm text-text-secondary text-center py-8">??? ???? ???? ????...</p>;
+    return (
+      <WorkspaceStateCard
+        eyebrow="히트맵 대기"
+        title="표시할 시장 분포가 아직 없습니다"
+        message="대표 종목의 시가총액과 등락률이 정리되면 히트맵이 이 영역에 바로 채워집니다."
+        className="min-h-[220px]"
+      />
+    );
   }
 
   const flat = data.children.flatMap((sector) =>

@@ -3,21 +3,22 @@
 import { useEffect, useState } from "react";
 
 import AccountSettingsPanel from "@/components/settings/AccountSettingsPanel";
-import ErrorBanner from "@/components/ErrorBanner";
 import MarketSessionPanel from "@/components/MarketSessionPanel";
 import SystemStatusCard from "@/components/SystemStatusCard";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api, apiPath } from "@/lib/api";
 import { FRONTEND_APP_VERSION } from "@/lib/app-meta";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type { MarketSessionsResponse, ResearchArchiveStatus, SystemDiagnostics } from "@/lib/api";
-
-function toError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  return new Error(typeof error === "string" ? error : "설정 정보를 불러오는 중 오류가 발생했습니다.");
-}
 
 const REGION_LABELS: Record<string, string> = {
   KR: "한국",
+  US: "미국",
+  EU: "유로존",
+  JP: "일본",
 };
+
+const SETTINGS_TIMEOUT_MS = 15_000;
 
 export default function SettingsPage() {
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
@@ -25,26 +26,50 @@ export default function SettingsPage() {
   const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [marketSessionsError, setMarketSessionsError] = useState<string | null>(null);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const [diag, sessions, research] = await Promise.all([
-        api.getDiagnostics(),
-        api.getMarketSessions(),
-        api.getResearchArchiveStatus(true),
-      ]);
-      setDiagnostics(diag);
-      setMarketSessions(sessions);
-      setResearchStatus(research);
-    } catch (err) {
-      console.error(err);
-      setError(toError(err));
-    } finally {
-      setLoading(false);
+    setDiagnosticsError(null);
+    setMarketSessionsError(null);
+    setResearchError(null);
+
+    const [diagResult, sessionsResult, researchResult] = await Promise.allSettled([
+      api.getDiagnostics({ timeoutMs: SETTINGS_TIMEOUT_MS }),
+      api.getMarketSessions({ timeoutMs: SETTINGS_TIMEOUT_MS }),
+      api.getResearchArchiveStatus(true, { timeoutMs: SETTINGS_TIMEOUT_MS }),
+    ]);
+
+    if (diagResult.status === "fulfilled") {
+      setDiagnostics(diagResult.value);
+    } else {
+      console.error(diagResult.reason);
+      setDiagnosticsError(
+        getUserFacingErrorMessage(diagResult.reason, "시스템 진단 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+      );
     }
+
+    if (sessionsResult.status === "fulfilled") {
+      setMarketSessions(sessionsResult.value);
+    } else {
+      console.error(sessionsResult.reason);
+      setMarketSessionsError(
+        getUserFacingErrorMessage(sessionsResult.reason, "시장 세션 요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+      );
+    }
+
+    if (researchResult.status === "fulfilled") {
+      setResearchStatus(researchResult.value);
+    } else {
+      console.error(researchResult.reason);
+      setResearchError(
+        getUserFacingErrorMessage(researchResult.reason, "기관 리서치 동기화 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+      );
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -53,45 +78,94 @@ export default function SettingsPage() {
 
   const refreshResearchArchive = async () => {
     setRefreshing(true);
+    setResearchError(null);
     try {
       await api.refreshResearchArchive();
-      const [diag, sessions, research] = await Promise.all([
-        api.getDiagnostics(),
-        api.getMarketSessions(),
-        api.getResearchArchiveStatus(true),
-      ]);
-      setDiagnostics(diag);
-      setMarketSessions(sessions);
+      const research = await api.getResearchArchiveStatus(true, { timeoutMs: SETTINGS_TIMEOUT_MS });
       setResearchStatus(research);
     } catch (err) {
       console.error(err);
-      setError(toError(err));
+      setResearchError(
+        getUserFacingErrorMessage(err, "기관 리서치 상태를 새로고침하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+      );
     } finally {
       setRefreshing(false);
     }
   };
 
+  const delayedSections = [
+    diagnosticsError ? "시스템 진단" : null,
+    marketSessionsError ? "시장 세션" : null,
+    researchError ? "기관 리서치 상태" : null,
+  ].filter(Boolean) as string[];
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">설정 및 시스템</h1>
-        <p className="mt-1 text-text-secondary">시장 세션, 시스템 상태, 공식 기관 리서치 동기화를 한 곳에서 확인합니다.</p>
-      </div>
+    <div className="page-shell">
+      <section className="card !p-5 space-y-4">
+        <div className="section-heading gap-4">
+          <div>
+            <h1 className="section-title text-2xl">설정 및 시스템</h1>
+            <p className="section-copy">계정 보안, 시장 세션, 시스템 상태, 공식 기관 리서치 동기화를 한 곳에서 확인합니다.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+            <span className="info-chip">프론트 v{FRONTEND_APP_VERSION}</span>
+            {diagnostics?.version ? <span className="info-chip">백엔드 v{diagnostics.version}</span> : null}
+            {refreshing ? <span className="info-chip">리서치 상태 갱신 중</span> : null}
+          </div>
+        </div>
+        {delayedSections.length > 0 ? (
+          <WorkspaceStateCard
+            eyebrow="부분 업데이트"
+            title="일부 운영 패널이 잠시 지연되고 있습니다"
+            message={`${delayedSections.join(", ")} 패널은 늦어지고 있지만, 확인 가능한 정보부터 먼저 보여주고 있습니다.`}
+            tone="warning"
+            actionLabel="시스템 패널 다시 불러오기"
+            onAction={load}
+          />
+        ) : null}
+      </section>
 
       <AccountSettingsPanel />
 
-      {error ? <ErrorBanner error={error} onRetry={load} /> : null}
-
       {loading ? (
-        <div className="space-y-4 animate-pulse">
-          <div className="card h-56" />
-          <div className="card h-80" />
-          <div className="card h-44" />
+        <div className="space-y-4">
+          <WorkspaceLoadingCard
+            title="시장 세션과 시스템 상태를 불러오고 있습니다"
+            message="현재 운영 상태와 버전 비교 정보를 먼저 정리하는 중입니다."
+            className="min-h-[180px]"
+          />
+          <WorkspaceLoadingCard
+            title="기관 리서치 동기화 상태를 확인하고 있습니다"
+            message="지역별 누적 수와 소스별 반영 상태를 다시 집계하는 중입니다."
+            className="min-h-[220px]"
+          />
         </div>
       ) : (
         <>
-          {marketSessions ? <MarketSessionPanel sessions={marketSessions.sessions} /> : null}
-          {diagnostics ? <SystemStatusCard diagnostics={diagnostics} frontendVersion={FRONTEND_APP_VERSION} /> : null}
+          {marketSessions ? (
+            <MarketSessionPanel sessions={marketSessions.sessions} />
+          ) : (
+            <WorkspaceStateCard
+              eyebrow="시장 세션 지연"
+              title="시장 세션 요약을 아직 불러오지 못했습니다"
+              message={marketSessionsError || "시장 세션 요약을 아직 불러오지 못했습니다."}
+              tone="warning"
+              actionLabel="세션 다시 불러오기"
+              onAction={load}
+            />
+          )}
+          {diagnostics ? (
+            <SystemStatusCard diagnostics={diagnostics} frontendVersion={FRONTEND_APP_VERSION} />
+          ) : (
+            <WorkspaceStateCard
+              eyebrow="시스템 진단 지연"
+              title="시스템 상태 카드를 아직 불러오지 못했습니다"
+              message={diagnosticsError || "시스템 진단 정보를 아직 불러오지 못했습니다."}
+              tone="warning"
+              actionLabel="진단 다시 불러오기"
+              onAction={load}
+            />
+          )}
 
           <div className="card !p-4 space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -169,7 +243,16 @@ export default function SettingsPage() {
                   </div>
                 ) : null}
               </>
-            ) : null}
+            ) : (
+              <WorkspaceStateCard
+                eyebrow="리서치 상태 지연"
+                title="기관 리서치 동기화 상태를 아직 불러오지 못했습니다"
+                message={researchError || "기관 리서치 상태를 아직 불러오지 못했습니다."}
+                tone="warning"
+                actionLabel="리서치 상태 다시 불러오기"
+                onAction={load}
+              />
+            )}
           </div>
 
           <div className="card !p-4 space-y-3">

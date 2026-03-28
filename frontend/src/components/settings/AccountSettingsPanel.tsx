@@ -690,7 +690,7 @@ export default function AccountSettingsPanel() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.16fr)_340px]">
+      <div className="space-y-5">
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2">
             <Field
@@ -801,7 +801,7 @@ export default function AccountSettingsPanel() {
           </div>
         </div>
 
-        <aside className="space-y-4">
+        <aside className="grid gap-5 xl:grid-cols-2 xl:items-start">
           <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import PageHeader from "@/components/PageHeader";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type { CalendarEvent, CalendarResponse } from "@/lib/api";
 
 const COUNTRIES = [
@@ -96,17 +98,38 @@ export default function CalendarPage() {
   const [country, setCountry] = useState("KR");
   const [data, setData] = useState<CalendarResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
   useEffect(() => {
-    setLoading(true);
-    api.getCalendar(country, viewYear, viewMonth + 1)
+    const hasExistingData = Boolean(data);
+    if (hasExistingData) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    api.getCalendar(country, viewYear, viewMonth + 1, { timeoutMs: 18_000 })
       .then(setData)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [country, viewYear, viewMonth]);
+      .catch((caught) => {
+        console.error(caught);
+        setError(
+          getUserFacingErrorMessage(
+            caught,
+            "시장 일정 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          ),
+        );
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }, [country, reloadToken, viewMonth, viewYear]);
 
   useEffect(() => {
     if (!data) return;
@@ -178,6 +201,7 @@ export default function CalendarPage() {
             <span className="info-chip">{formatMonthLabel(currentMonthDate)}</span>
             {data ? <span className="info-chip">총 일정 {data.summary.total_events}건</span> : null}
             {data ? <span className="info-chip">고중요도 {data.summary.high_impact_count}건</span> : null}
+            {refreshing ? <span className="info-chip">월간 보드 갱신 중</span> : null}
           </>
         }
         actions={
@@ -196,19 +220,47 @@ export default function CalendarPage() {
       />
 
       {loading ? (
-        <div className="space-y-4 animate-pulse">
-          <div className="card h-32" />
+        <div className="space-y-4">
+          <WorkspaceLoadingCard
+            title="월간 일정 요약을 준비하고 있습니다"
+            message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 먼저 묶는 중입니다."
+            className="min-h-[160px]"
+          />
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-            <div className="card h-[840px]" />
+            <WorkspaceLoadingCard
+              title="월간 일정 보드를 그리고 있습니다"
+              message="날짜별 이벤트 수와 중요도를 월간 캘린더 격자에 다시 배치하고 있습니다."
+              className="min-h-[620px]"
+            />
             <div className="space-y-4">
-              <div className="card h-64" />
-              <div className="card h-56" />
-              <div className="card h-56" />
+              <WorkspaceLoadingCard
+                title="선택한 날짜 패널을 준비하고 있습니다"
+                message="날짜별 상세 설명과 태그를 먼저 정리하는 중입니다."
+                className="min-h-[190px]"
+              />
+              <WorkspaceLoadingCard
+                title="다가오는 일정 목록을 준비하고 있습니다"
+                message="가까운 일정 순서대로 재정렬해 오른쪽 패널에 채웁니다."
+                className="min-h-[180px]"
+              />
+              <WorkspaceLoadingCard
+                title="정기 체크포인트를 준비하고 있습니다"
+                message="매달 반복 확인할 대표 일정만 따로 다시 묶습니다."
+                className="min-h-[180px]"
+              />
             </div>
           </div>
         </div>
       ) : data ? (
         <>
+          {error ? (
+            <WorkspaceStateCard
+              eyebrow="부분 업데이트"
+              title="새 일정 동기화가 잠시 늦어지고 있습니다"
+              message={`${error} 기존에 확인하던 일정은 먼저 유지해 두었습니다.`}
+              tone="warning"
+            />
+          ) : null}
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {summaryCards.map((item) => (
               <div key={item.label} className="metric-card">
@@ -416,7 +468,19 @@ export default function CalendarPage() {
           </section>
         </>
       ) : (
-        <div className="card text-text-secondary">일정 데이터를 불러오지 못했습니다.</div>
+        <WorkspaceStateCard
+          eyebrow="일정 지연"
+          title="시장 일정 캘린더를 아직 불러오지 못했습니다"
+          message={error || "시장 일정 데이터를 불러오지 못했습니다."}
+          tone="warning"
+          actionLabel="다시 시도"
+          onAction={() => {
+            setLoading(true);
+            setError(null);
+            setData(null);
+            setReloadToken((value) => value + 1);
+          }}
+        />
       )}
     </div>
   );

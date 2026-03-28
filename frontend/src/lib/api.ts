@@ -1290,22 +1290,22 @@ export const api = {
     qs.set("auto_refresh", String(autoRefresh));
     return get<ResearchArchiveEntry[]>(`/api/archive/research?${qs.toString()}`);
   },
-  getResearchArchiveStatus: (refreshIfMissing = false) =>
-    get<ResearchArchiveStatus>(`/api/archive/research/status?refresh_if_missing=${refreshIfMissing}`),
+  getResearchArchiveStatus: (refreshIfMissing = false, options?: RequestOptions) =>
+    get<ResearchArchiveStatus>(`/api/archive/research/status?refresh_if_missing=${refreshIfMissing}`, options),
   refreshResearchArchive: () => post("/api/archive/research/refresh"),
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
-  getDiagnostics: () => get<SystemDiagnostics>("/api/system/diagnostics"),
+  getDiagnostics: (options?: RequestOptions) => get<SystemDiagnostics>("/api/system/diagnostics", options),
   getDailyBriefing: (options?: RequestOptions) => get<DailyBriefingResponse>("/api/briefing/daily", options),
-  getMarketSessions: () => get<MarketSessionsResponse>("/api/market/sessions"),
+  getMarketSessions: (options?: RequestOptions) => get<MarketSessionsResponse>("/api/market/sessions", options),
   getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
     get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`, options),
-  getCalendar: (code: string, year?: number, month?: number) => {
+  getCalendar: (code: string, year?: number, month?: number, options?: RequestOptions) => {
     const qs = new URLSearchParams();
     if (year) qs.set("year", String(year));
     if (month) qs.set("month", String(month));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return get<CalendarResponse>(`/api/calendar/${code}${suffix}`);
+    return get<CalendarResponse>(`/api/calendar/${code}${suffix}`, options);
   },
   getScreener: (params: Record<string, string>, options?: RequestOptions) => {
     const qs = new URLSearchParams(params).toString();

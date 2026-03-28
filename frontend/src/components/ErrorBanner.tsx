@@ -1,6 +1,7 @@
 "use client";
 
 import { ApiError } from "@/lib/api";
+import { getConnectionErrorMessage, isConnectionError } from "@/lib/request-state";
 
 const ERROR_GUIDE: Record<string, string> = {
   "SP-1001": "backend/.env 파일에 OPENAI_API_KEY를 설정해 주세요.",
@@ -79,17 +80,19 @@ export default function ErrorBanner({ error, onRetry }: ErrorBannerProps) {
   const message = isApiError ? error.message : error instanceof Error ? error.message : String(error);
   const detail = isApiError ? error.detail : "";
   const guide = code ? getGuide(code) : "";
-  const primaryMessage = guide || message;
-  const secondaryMessage = guide && guide !== message ? message : "";
+  const networkError = !isApiError && isConnectionError(error);
+  const primaryMessage = networkError ? getConnectionErrorMessage() : guide || message;
+  const secondaryMessage = networkError ? "" : guide && guide !== message ? message : "";
+  const title = networkError ? "연결이 지연되고 있습니다" : "오류가 발생했습니다";
 
   return (
-    <div className="card border-negative/30 bg-negative/5">
+    <div className={`rounded-[22px] border px-4 py-4 ${networkError ? "border-amber-500/20 bg-amber-500/6" : "border-negative/30 bg-negative/5"}`}>
       <div className="flex items-start gap-3">
-        <div className="text-negative text-lg shrink-0 mt-0.5">!</div>
+        <div className={`text-lg shrink-0 mt-0.5 ${networkError ? "text-warning" : "text-negative"}`}>!</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-negative text-sm">오류가 발생했습니다</h3>
-            {code ? <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-negative/10 text-negative">{code}</span> : null}
+            <h3 className={`font-semibold text-sm ${networkError ? "text-warning" : "text-negative"}`}>{title}</h3>
+            {code ? <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${networkError ? "bg-warning/10 text-warning" : "bg-negative/10 text-negative"}`}>{code}</span> : null}
           </div>
           <p className="text-sm text-text">{primaryMessage}</p>
           {secondaryMessage ? <p className="text-xs text-text-secondary mt-1">원본 메시지: {secondaryMessage}</p> : null}
