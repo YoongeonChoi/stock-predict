@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.48.3 - 2026-03-28
+
+- 공개 `KR screener` 기본 경로는 이제 bulk quote 후보 수를 `max(limit, 10)`으로 먼저 줄입니다. 그래서 `limit=1` 같은 작은 요청도 내부적으로 36개 후보 batch를 잡지 않고, 요청 규모에 맞는 작은 묶음으로 응답을 준비합니다.
+- 이 변경은 `skip_full_market_fallback=True`와 함께 적용돼, Render 운영 환경에서 기본 `screener` 요청이 과도한 batch workload로 timeout 나는 가능성을 한 번 더 줄였습니다.
+- 회귀 테스트는 `limit=1` 요청이 실제로 첫 10개 후보까지만 bulk quote를 호출하는지 확인하도록 추가했습니다.
+
 ## v2.48.2 - 2026-03-28
 
 - 공개 `KR screener`의 기본/timeout fallback 경로는 이제 소규모 종목 묶음에서 `skip_full_market_fallback=True`를 명시해, yfinance batch coverage가 약간 부족하더라도 전체 Naver 시총 페이지 scrape로 즉시 내려가지 않게 맞췄습니다.
