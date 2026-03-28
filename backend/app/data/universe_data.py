@@ -157,8 +157,10 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
     return None
 
 
-async def get_universe(country_code: str) -> dict[str, list[str]]:
-    """Get stock universe: dynamic first, curated fallback."""
+async def get_universe(country_code: str, *, prefer_fallback: bool = False) -> dict[str, list[str]]:
+    """Get stock universe: dynamic first unless a fast fallback is preferred."""
+    if prefer_fallback:
+        return _fallback_universe(country_code)
     return (await resolve_universe(country_code)).sectors
 
 

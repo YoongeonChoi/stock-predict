@@ -1,31 +1,8 @@
 import unittest
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
-from app.auth import AuthenticatedUser, get_current_user
-from app.main import app
 from app.services.public_rate_limit_service import reset_public_rate_limit_state
-
-
-@contextmanager
-def patched_client(*, authenticated: bool = False):
-    async def _fake_current_user():
-        return AuthenticatedUser(id="user-123", email="tester@example.com")
-
-    if authenticated:
-        app.dependency_overrides[get_current_user] = _fake_current_user
-    with (
-        patch("app.main.db.initialize", new=AsyncMock()),
-        patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-        patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-    ):
-        try:
-            with TestClient(app) as client:
-                yield client
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
+from client_helpers import patched_client
 
 
 class ApiErrorContractTests(unittest.TestCase):
@@ -62,15 +39,12 @@ class ApiErrorContractTests(unittest.TestCase):
 
     def test_research_predictions_route_exists(self):
         with (
-            patch("app.main.db.initialize", new=AsyncMock()),
-            patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-            patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
             patch(
                 "app.routers.research.research_service.get_prediction_lab",
                 new=AsyncMock(return_value={"generated_at": "2026-03-24T00:00:00", "accuracy": {}, "breakdown": {}, "calibration": [], "recent_trend": [], "recent_records": [], "insights": []}),
             ),
         ):
-            with TestClient(app) as client:
+            with patched_client() as client:
                 response = client.get("/api/research/predictions?limit_recent=20&refresh=false")
 
         self.assertEqual(response.status_code, 200)

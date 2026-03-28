@@ -5,6 +5,13 @@ from app.data import universe_data
 
 
 class UniverseDataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_universe_can_prefer_fast_fallback_for_kr(self):
+        with patch("app.data.universe_data.fetch_dynamic_universe", new=AsyncMock(side_effect=AssertionError("should not fetch dynamic universe"))):
+            universe = await universe_data.get_universe("KR", prefer_fallback=True)
+
+        self.assertIn("Information Technology", universe)
+        self.assertTrue(universe["Information Technology"])
+
     async def test_fetch_krx_listing_universe_returns_full_selection(self):
         rows = []
         for index in range(1200):

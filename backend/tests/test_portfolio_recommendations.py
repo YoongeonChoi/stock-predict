@@ -1,12 +1,8 @@
 import asyncio
 import unittest
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
-from app.auth import AuthenticatedUser, get_current_user
-from app.main import app
+from client_helpers import patched_client
 from app.services import portfolio_recommendation_service
 
 
@@ -184,22 +180,8 @@ class PortfolioRecommendationTests(unittest.TestCase):
         self.assertEqual(len(result_empty["recommendations"]), 1)
         self.assertEqual(result_invested["recommendations"], [])
 
-    @contextmanager
     def _authenticated_client(self):
-        async def _fake_current_user():
-            return AuthenticatedUser(id="user-123", email="tester@example.com")
-
-        app.dependency_overrides[get_current_user] = _fake_current_user
-        try:
-            with (
-                patch("app.main.db.initialize", new=AsyncMock()),
-                patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-                patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-            ):
-                with TestClient(app) as client:
-                    yield client
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
+        return patched_client(authenticated=True)
 
     def test_portfolio_recommendation_routes_exist(self):
         conditional_payload = {

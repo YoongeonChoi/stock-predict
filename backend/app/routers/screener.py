@@ -179,7 +179,7 @@ async def _build_snapshot_fallback(
     sector: str | None,
     limit: int,
 ) -> dict:
-    universe = await get_universe(country)
+    universe = await get_universe(country, prefer_fallback=(country == "KR"))
     selected = _select_candidate_tickers(universe, sector)[: max(limit, 10)]
 
     if country == "KR":
@@ -442,7 +442,7 @@ async def screen_stocks(
 
     async def _build_response():
         nonlocal universe
-        universe = await get_universe(country)
+        universe = await get_universe(country, prefer_fallback=(country == "KR"))
         tickers = _select_candidate_tickers(universe, sector)
         if not needs_enrichment and country == "KR":
             bulk_results = await _build_kr_bulk_snapshot_results(
@@ -498,10 +498,13 @@ async def screen_stocks(
 
     universe: dict[str, list[str]] = {}
     try:
-        response = await cache.get_or_fetch(
-            cache_key,
-            lambda: asyncio.wait_for(_build_response(), timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS),
-            ttl=600,
+        response = await asyncio.wait_for(
+            cache.get_or_fetch(
+                cache_key,
+                _build_response,
+                ttl=600,
+            ),
+            timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")

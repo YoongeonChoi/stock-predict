@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.48.1 - 2026-03-28
+
+- 공개 `KR screener`는 이제 느린 동적 유니버스 조회를 기본 진입점으로 삼지 않고, 검증된 기본 종목군과 bulk quote 경로를 먼저 사용합니다. 그 결과 운영 배포에서 `/api/screener?country=KR&limit=20`가 오래 멈추거나 read timeout으로 끊기던 흐름을 줄였습니다.
+- `screener` timeout 범위도 `_build_response` 내부 fetcher만이 아니라 `cache.get_or_fetch` 전체를 감싸도록 넓혔습니다. 캐시 조회/저장이나 유니버스 해석이 느려져도 `snapshot fallback`이 더 빨리 내려오도록 맞췄습니다.
+- FastAPI `TestClient` 기반 회귀 테스트는 startup background task 패치를 공통 헬퍼로 통합했습니다. 테스트 종료 시 `aiosqlite` 워커 스레드가 닫힌 이벤트 루프에 응답을 밀어넣으며 noisy exception을 남기던 구간을 정리했습니다.
+
 ## v2.48.0 - 2026-03-28
 
 - horizon별 empirical confidence calibrator를 `bootstrap prior -> empirical sigmoid -> isotonic 승격` 구조로 확장했습니다. 표본 수와 클래스 균형이 충분할 때만 isotonic을 적용해 과적합을 피하면서 reliability gap을 더 줄이도록 했습니다.

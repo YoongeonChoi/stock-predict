@@ -1,23 +1,9 @@
 import unittest
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
-from app.auth import AuthenticatedUser, get_current_user
-from app.main import app
+from app.auth import AuthenticatedUser
 from app.services.public_rate_limit_service import reset_public_rate_limit_state
-
-
-@contextmanager
-def patched_client():
-    with (
-        patch("app.main.db.initialize", new=AsyncMock()),
-        patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-        patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-    ):
-        with TestClient(app) as client:
-            yield client
+from client_helpers import patched_client
 
 
 class AccountRouterTests(unittest.TestCase):
@@ -144,48 +130,43 @@ class AccountRouterTests(unittest.TestCase):
         self.assertIn("회원가입 검증", body["detail"])
 
     def test_account_profile_update_route_returns_updated_profile(self):
-        async def override_user():
-            return AuthenticatedUser(
-                id="user-123",
-                email="tester@example.com",
-                email_verified=True,
-                email_confirmed_at="2026-03-27T10:00:00Z",
-                username="alpha_01",
-                full_name="홍 길동",
-                phone_number="01012345678",
-                birth_date="1998-03-14",
-            )
+        current_user = AuthenticatedUser(
+            id="user-123",
+            email="tester@example.com",
+            email_verified=True,
+            email_confirmed_at="2026-03-27T10:00:00Z",
+            username="alpha_01",
+            full_name="홍 길동",
+            phone_number="01012345678",
+            birth_date="1998-03-14",
+        )
 
-        app.dependency_overrides[get_current_user] = override_user
-        try:
-            with patch(
-                "app.routers.account.account_service.update_current_profile",
-                new=AsyncMock(
-                    return_value={
-                        "user_id": "user-123",
-                        "email": "tester@example.com",
-                        "email_verified": True,
-                        "email_confirmed_at": "2026-03-27T10:00:00Z",
+        with patch(
+            "app.routers.account.account_service.update_current_profile",
+            new=AsyncMock(
+                return_value={
+                    "user_id": "user-123",
+                    "email": "tester@example.com",
+                    "email_verified": True,
+                    "email_confirmed_at": "2026-03-27T10:00:00Z",
+                    "username": "beta_02",
+                    "full_name": "김 가은",
+                    "phone_number": "010-7777-8888",
+                    "phone_masked": "010-****-8888",
+                    "birth_date": "1997-08-11",
+                }
+            ),
+        ):
+            with patched_client(user=current_user) as client:
+                response = client.patch(
+                    "/api/account/me",
+                    json={
                         "username": "beta_02",
                         "full_name": "김 가은",
                         "phone_number": "010-7777-8888",
-                        "phone_masked": "010-****-8888",
                         "birth_date": "1997-08-11",
-                    }
-                ),
-            ):
-                with patched_client() as client:
-                    response = client.patch(
-                        "/api/account/me",
-                        json={
-                            "username": "beta_02",
-                            "full_name": "김 가은",
-                            "phone_number": "010-7777-8888",
-                            "birth_date": "1997-08-11",
-                        },
-                    )
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
+                    },
+                )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -193,32 +174,27 @@ class AccountRouterTests(unittest.TestCase):
         self.assertTrue(body["email_verified"])
 
     def test_account_delete_route_requires_confirmation(self):
-        async def override_user():
-            return AuthenticatedUser(
-                id="user-123",
-                email="tester@example.com",
-                username="alpha_01",
-            )
+        current_user = AuthenticatedUser(
+            id="user-123",
+            email="tester@example.com",
+            username="alpha_01",
+        )
 
-        app.dependency_overrides[get_current_user] = override_user
-        try:
-            with patch(
-                "app.routers.account.account_service.delete_current_account",
-                new=AsyncMock(
-                    return_value={
-                        "status": "deleted",
-                        "message": "계정이 삭제되었습니다. 관심종목과 포트폴리오 데이터도 함께 정리되었습니다.",
-                    }
-                ),
-            ):
-                with patched_client() as client:
-                    response = client.request(
-                        "DELETE",
-                        "/api/account/me",
-                        json={"confirmation_text": "alpha_01"},
-                    )
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
+        with patch(
+            "app.routers.account.account_service.delete_current_account",
+            new=AsyncMock(
+                return_value={
+                    "status": "deleted",
+                    "message": "계정이 삭제되었습니다. 관심종목과 포트폴리오 데이터도 함께 정리되었습니다.",
+                }
+            ),
+        ):
+            with patched_client(user=current_user) as client:
+                response = client.request(
+                    "DELETE",
+                    "/api/account/me",
+                    json={"confirmation_text": "alpha_01"},
+                )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
