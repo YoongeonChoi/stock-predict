@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.49.2 - 2026-03-28
+
+- 공개 `KR screener`의 cold cache 기본 요청은 이제 대표 10개 snapshot partial을 먼저 반환하고, 전체 quick 결과는 뒤에서 cache warming으로 이어집니다. 그 결과 배포 직후 첫 `/api/screener?country=KR&limit=20` 요청이 proxy read timeout으로 끊기기보다 `200 + partial`로 먼저 살아남도록 맞췄습니다.
+- 이 warming 경로는 이미 cache가 채워진 뒤에는 건너뛰고, 작은 요청(`limit <= 10`)은 기존처럼 바로 full quick path를 사용합니다. 그래서 `limit=1` 같은 소규모 조회 계약은 유지하면서, 큰 공개 요청만 cold start 방어를 추가했습니다.
+- 회귀 테스트는 `KR screener`의 cold cache large-limit 요청이 실제로 partial warming 응답을 반환하고 background cache warmup을 시작하는지까지 함께 확인하도록 보강했습니다.
+
 ## v2.49.1 - 2026-03-28
 
 - KR `Opportunity Radar`의 마지막 복구 경로를 한 번 더 보강했습니다. 전종목 경로와 기본 fallback 종목군 모두에서 시세 확보 수가 `0`이면, 이제 앞쪽 종목만 자르는 대신 섹터를 섞은 대표 120개 샘플로 즉시 줄여 1차 후보를 다시 시도합니다.
