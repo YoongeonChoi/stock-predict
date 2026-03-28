@@ -65,36 +65,68 @@ def build_trade_plan(
     if market_regime:
         regime_tailwind = 0.18 if market_regime.stance == "risk_on" else -0.18 if market_regime.stance == "risk_off" else 0.0
 
-    bullish_forecast = bool(next_day_forecast and next_day_forecast.up_probability >= 58 and next_day_forecast.direction != "down")
-    bearish_forecast = bool(next_day_forecast and (next_day_forecast.up_probability <= 42 or next_day_forecast.direction == "down"))
+    up_probability = float(next_day_forecast.up_probability) if next_day_forecast else 50.0
+    forecast_direction = str(next_day_forecast.direction) if next_day_forecast else "flat"
+    forecast_return_pct = float(next_day_forecast.predicted_return_pct) if next_day_forecast else 0.0
+    risk_off_tape = bool(market_regime and market_regime.stance == "risk_off")
+    bullish_forecast = bool(next_day_forecast and up_probability >= 58 and forecast_direction != "down")
+    bearish_forecast = bool(next_day_forecast and (up_probability <= 42 or forecast_direction == "down"))
     near_buy_zone = current_price <= buy_sell_guide.buy_zone_high * 1.02
     premium_to_fair = current_price >= buy_sell_guide.fair_value * 1.05
     trend_confirmed = bool(ma20 and current_price > ma20 and (ma60 is None or current_price >= ma60))
+    risk_buffer_pct = max(atr_pct * 1.25, 4.0)
 
-    if bullish_forecast and near_buy_zone and not premium_to_fair:
-        setup_label = "Pullback Accumulation"
-        action = "accumulate"
-        entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.985)
-        entry_high = min(buy_sell_guide.buy_zone_high, current_price * 1.01)
-        hold_days = 8
-    elif bullish_forecast and trend_confirmed and macd_hist >= 0:
-        setup_label = "Momentum Continuation"
-        action = "breakout_watch"
-        entry_low = current_price * 0.995
-        entry_high = current_price * 1.02
-        hold_days = 5
-    elif rsi < 38 and next_day_forecast and next_day_forecast.up_probability >= 55:
-        setup_label = "Mean-Reversion Swing"
-        action = "accumulate"
-        entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.98)
-        entry_high = min(current_price * 1.005, buy_sell_guide.buy_zone_high * 1.02)
-        hold_days = 6
-    elif bearish_forecast or (market_regime and market_regime.stance == "risk_off" and premium_to_fair):
+    projected_entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.985)
+    projected_entry_high = min(buy_sell_guide.buy_zone_high, current_price * 1.01)
+    projected_entry_reference = (
+        (projected_entry_low + projected_entry_high) / 2.0
+        if projected_entry_low <= projected_entry_high
+        else current_price
+    )
+    projected_stop = projected_entry_reference * (1.0 - risk_buffer_pct / 100.0)
+    projected_take_profit = max(
+        buy_sell_guide.fair_value,
+        current_price * (1.0 + max(forecast_return_pct, 1.8) / 100.0),
+    )
+    projected_risk_reward = 0.0
+    if projected_entry_reference > projected_stop:
+        projected_risk_reward = max(
+            (projected_take_profit - projected_entry_reference) / (projected_entry_reference - projected_stop),
+            0.0,
+        )
+    long_ready = (not risk_off_tape) and (not premium_to_fair) and (trend_confirmed or projected_risk_reward >= 1.25)
+    should_reduce_risk = bool(
+        bearish_forecast
+        or up_probability <= 45.0
+        or forecast_direction == "down"
+        or (risk_off_tape and premium_to_fair)
+        or ((not trend_confirmed or macd_hist < 0) and projected_risk_reward < 1.1)
+    )
+
+    if should_reduce_risk:
         setup_label = "Risk Reduction"
         action = "reduce_risk"
         entry_low = None
         entry_high = None
         hold_days = 3
+    elif bullish_forecast and near_buy_zone and long_ready:
+        setup_label = "Pullback Accumulation"
+        action = "accumulate"
+        entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.985)
+        entry_high = min(buy_sell_guide.buy_zone_high, current_price * 1.01)
+        hold_days = 8
+    elif bullish_forecast and trend_confirmed and macd_hist >= 0 and long_ready:
+        setup_label = "Momentum Continuation"
+        action = "breakout_watch"
+        entry_low = current_price * 0.995
+        entry_high = current_price * 1.02
+        hold_days = 5
+    elif rsi < 38 and next_day_forecast and up_probability >= 55 and long_ready:
+        setup_label = "Mean-Reversion Swing"
+        action = "accumulate"
+        entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.98)
+        entry_high = min(current_price * 1.005, buy_sell_guide.buy_zone_high * 1.02)
+        hold_days = 6
     else:
         setup_label = "Wait For Confirmation"
         action = "wait_pullback"
@@ -106,8 +138,7 @@ def build_trade_plan(
     take_profit_1 = None
     take_profit_2 = None
     if entry_low is not None:
-        risk_buffer = max(atr_pct * 1.25, 4.0)
-        stop_loss = entry_low * (1.0 - risk_buffer / 100.0)
+        stop_loss = entry_low * (1.0 - risk_buffer_pct / 100.0)
         take_profit_1 = max(
             buy_sell_guide.fair_value,
             current_price * (1.0 + max((next_day_forecast.predicted_return_pct if next_day_forecast else 0.0), 1.8) / 100.0),

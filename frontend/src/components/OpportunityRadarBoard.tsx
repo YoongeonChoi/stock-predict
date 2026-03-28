@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import PublicAuditStrip from "@/components/PublicAuditStrip";
 import type { OpportunityRadarResponse } from "@/lib/types";
 import { cn, changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -112,6 +113,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
               </div>
             </div>
           </div>
+          <PublicAuditStrip meta={data} />
           {quoteCoverageNote ? (
             <p className="text-xs text-text-secondary">{quoteCoverageNote}</p>
           ) : null}
@@ -172,6 +174,29 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                     <div className="text-[11px] text-text-secondary">진입 구간</div>
                     <div className="mt-1 font-semibold">{priceRange(item.entry_low, item.entry_high, item.country_code)}</div>
                   </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-text-secondary">
+                  {item.calibrated_probability_20d != null ? (
+                    <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                      보정 확률 {item.calibrated_probability_20d.toFixed(1)}%
+                    </span>
+                  ) : null}
+                  {item.probability_edge_20d != null ? (
+                    <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                      확률 격차 {item.probability_edge_20d.toFixed(1)}pt
+                    </span>
+                  ) : null}
+                  {item.analog_support_20d != null ? (
+                    <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                      유사 셋업 {item.analog_support_20d.toFixed(0)}
+                    </span>
+                  ) : null}
+                  {item.data_quality_support_20d != null ? (
+                    <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                      데이터 품질 {item.data_quality_support_20d.toFixed(0)}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="mt-3 text-sm leading-6 text-text-secondary line-clamp-2">
@@ -238,6 +263,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           </div>
         </div>
       </div>
+      <PublicAuditStrip meta={data} className="mb-4" />
 
       {hasItems ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -293,6 +319,29 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <div className="font-semibold">{item.risk_reward_estimate.toFixed(2)}</div>
                   <div className={`text-[11px] ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
                 </div>
+              </div>
+
+              <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-text-secondary">
+                {item.calibrated_probability_20d != null ? (
+                  <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                    보정 확률 {item.calibrated_probability_20d.toFixed(1)}%
+                  </span>
+                ) : null}
+                {item.probability_edge_20d != null ? (
+                  <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                    확률 격차 {item.probability_edge_20d.toFixed(1)}pt
+                  </span>
+                ) : null}
+                {item.analog_support_20d != null ? (
+                  <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                    유사 셋업 {item.analog_support_20d.toFixed(0)}
+                  </span>
+                ) : null}
+                {item.data_quality_support_20d != null ? (
+                  <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-1">
+                    데이터 품질 {item.data_quality_support_20d.toFixed(0)}
+                  </span>
+                ) : null}
               </div>
 
               {(item.bull_case_price != null || item.bear_case_price != null) ? (

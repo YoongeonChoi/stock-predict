@@ -537,4 +537,11 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["risk"]["action_queue"][0]["execution_bias"], "capital_preservation")
         self.assertTrue(result["model_portfolio"]["recommended_holdings"])
         self.assertIn("000660.KS", [item["ticker"] for item in result["model_portfolio"]["recommended_holdings"]])
+        defensive_holding = next(
+            (item for item in result["model_portfolio"]["recommended_holdings"] if item["ticker"] == "005930.KS"),
+            None,
+        )
+        self.assertIsNotNone(defensive_holding)
+        self.assertEqual(defensive_holding["execution_bias"], "capital_preservation")
+        self.assertLessEqual(defensive_holding["target_weight_pct"], defensive_holding["current_weight_pct"])
         self.assertTrue(result["model_portfolio"]["rebalance_actions"])

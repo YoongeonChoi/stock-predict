@@ -53,6 +53,22 @@
 
 리뷰 시 raw `Failed to fetch` 노출이나, 부분 응답이 가능한 경로를 바로 `504`로 바꾸는 수정은 회귀 후보로 봅니다.
 
+### 공개 audit 필드
+
+공개 SSR과 부분 응답 UI는 아래 공통 메타데이터를 우선 사용합니다.
+
+- `generated_at`
+- `partial`
+- `fallback_reason`
+
+프론트 표시 규칙:
+
+- 정상: `마지막 갱신 시각`
+- partial: `일부 데이터 지연` + `fallback_reason` 한국어 매핑
+- stale but usable: `전일 기준`, `기관 동기화 중` 같은 보조 문구
+
+가능한 경우 public page는 raw 브라우저 fetch 에러보다 `200 + partial + fallback_reason`을 먼저 사용자에게 보여 줍니다.
+
 ## 인증 관련 계약
 
 ### 공개 계정 API
@@ -218,6 +234,8 @@
 
 - 집계형 API는 timeout과 partial fallback을 함께 설계
 - Render free 환경에서 cold start를 고려
+- 공개 읽기 경로는 server-first fetch와 `revalidate` 캐시를 우선 사용
+- 브라우저 인증 호출, 저장성 호출, 계정 설정 호출은 계속 `no-store`를 유지
 
 ### 4. 리서치 아카이브 범위
 

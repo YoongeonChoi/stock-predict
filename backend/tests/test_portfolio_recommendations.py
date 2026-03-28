@@ -15,6 +15,7 @@ def _sample_opportunity(
     predicted_return_pct: float,
     opportunity_score: float,
     action: str = "accumulate",
+    execution_bias: str = "lean_long",
 ) -> dict:
     return {
         "ticker": ticker,
@@ -25,7 +26,7 @@ def _sample_opportunity(
         "predicted_return_pct": predicted_return_pct,
         "opportunity_score": opportunity_score,
         "confidence": 67.0,
-        "execution_bias": "lean_long",
+        "execution_bias": execution_bias,
         "setup_label": "추세 재개",
         "action": action,
         "entry_low": 100.0,
@@ -179,6 +180,61 @@ class PortfolioRecommendationTests(unittest.TestCase):
         self.assertNotEqual(key_empty, key_invested)
         self.assertEqual(len(result_empty["recommendations"]), 1)
         self.assertEqual(result_invested["recommendations"], [])
+
+    def test_conditional_recommendation_keeps_defensive_candidates_visible(self):
+        portfolio_snapshot = {
+            "holdings": [],
+            "risk": {"overall_label": "elevated"},
+        }
+        kr_response = {
+            "country_code": "KR",
+            "market_regime": {"label": "리스크오프 경계", "stance": "risk_off"},
+            "actionable_count": 2,
+            "universe_note": "",
+            "opportunities": [
+                _sample_opportunity(
+                    ticker="005930.KS",
+                    country_code="KR",
+                    sector="Information Technology",
+                    up_probability=56.0,
+                    predicted_return_pct=1.8,
+                    opportunity_score=78.0,
+                    action="reduce_risk",
+                    execution_bias="capital_preservation",
+                ),
+                _sample_opportunity(
+                    ticker="035420.KS",
+                    country_code="KR",
+                    sector="Communication Services",
+                    up_probability=61.0,
+                    predicted_return_pct=2.2,
+                    opportunity_score=74.0,
+                ),
+            ],
+        }
+
+        with (
+            patch("app.services.portfolio_recommendation_service.portfolio_service.get_portfolio", new=AsyncMock(return_value=portfolio_snapshot)),
+            patch("app.services.portfolio_recommendation_service.supabase_client.watchlist_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_recommendation_service.supabase_client.portfolio_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_recommendation_service.market_service.get_market_opportunities", new=AsyncMock(return_value=kr_response)),
+        ):
+            result = asyncio.run(
+                portfolio_recommendation_service.get_conditional_recommendations(
+                    user_id="user-123",
+                    country_code="KR",
+                    sector="ALL",
+                    style="defensive",
+                    max_items=4,
+                    min_up_probability=50.0,
+                    exclude_holdings=False,
+                    watchlist_only=False,
+                )
+            )
+
+        defensive = next((item for item in result["recommendations"] if item["ticker"] == "005930.KS"), None)
+        self.assertIsNotNone(defensive)
+        self.assertEqual(defensive["execution_bias"], "capital_preservation")
 
     def _authenticated_client(self):
         return patched_client(authenticated=True)

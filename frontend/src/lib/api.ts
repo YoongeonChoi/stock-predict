@@ -347,6 +347,9 @@ export interface ScreenerResponse {
   results: ScreenerResult[];
   total: number;
   sectors: string[];
+  generated_at?: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
 }
 
 export interface PortfolioHolding {
@@ -813,6 +816,9 @@ export interface WatchlistAddResponse {
 export interface MarketMovers {
   gainers: { ticker: string; name: string; price: number; change_pct: number }[];
   losers: { ticker: string; name: string; price: number; change_pct: number }[];
+  generated_at?: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
 }
 
 export interface PredictionAccuracyStats {
@@ -860,6 +866,8 @@ export interface ResearchArchiveRegionCount {
 export interface ResearchArchiveStatus {
   refreshed_on?: string | null;
   refreshed_at?: string | null;
+  partial?: boolean;
+  fallback_reason?: string | null;
   processed_total: number;
   error_count: number;
   total_reports: number;
@@ -1084,6 +1092,8 @@ export interface CalendarResponse {
   range_start: string;
   range_end: string;
   generated_at: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   summary: CalendarSummary;
   major_events: CalendarMajorEvent[];
   events: CalendarEvent[];
@@ -1173,6 +1183,8 @@ export interface DailyBriefingEvent {
 
 export interface DailyBriefingResponse {
   generated_at: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   sessions: MarketSessionItem[];
   market_view: DailyBriefingMarketView[];
   focus_cards: DailyBriefingFocusCard[];

@@ -494,7 +494,10 @@ def _candidate_action(
     *,
     current_weight_pct: float,
     target_weight_pct: float,
+    execution_bias: str | None = None,
 ) -> str:
+    if current_weight_pct <= 0.1 and target_weight_pct < 1.0 and execution_bias in {"reduce_risk", "capital_preservation"}:
+        return "hold"
     delta = target_weight_pct - current_weight_pct
     if current_weight_pct > 0.0 and target_weight_pct < 1.0:
         return "exit"
@@ -683,9 +686,13 @@ def _select_model_candidates(candidates: list[dict], target_count: int) -> list[
         key = candidate["key"]
         if key in seen_keys:
             continue
-        if candidate.get("source") != "holding" and candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"}:
-            continue
-        minimum_score = 48.0 if candidate.get("source") == "holding" else 56.0
+        is_defensive = candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"}
+        if candidate.get("source") == "holding" and is_defensive:
+            minimum_score = 40.0
+        elif candidate.get("source") == "holding":
+            minimum_score = 48.0
+        else:
+            minimum_score = 52.0 if is_defensive else 56.0
         if float(candidate.get("model_score") or 0.0) < minimum_score:
             continue
         if country_counts[candidate["country_code"]] >= 3:
@@ -712,6 +719,18 @@ def _select_model_candidates(candidates: list[dict], target_count: int) -> list[
             seen_keys.add(key)
             country_counts[candidate["country_code"]] += 1
 
+    defensive_holding_candidates = [
+        candidate
+        for candidate in ordered
+        if candidate.get("source") == "holding"
+        and candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"}
+        and float(candidate.get("current_weight_pct") or 0.0) > 0.1
+        and candidate["key"] not in seen_keys
+    ]
+    for candidate in defensive_holding_candidates[:2]:
+        selected.append(candidate)
+        seen_keys.add(candidate["key"])
+
     return selected
 
 
@@ -719,18 +738,28 @@ def _allocate_model_weights(selected: list[dict], budget: dict) -> tuple[list[di
     if not selected:
         return [], optimize_portfolio_weights([], budget)
 
-    optimization = optimize_portfolio_weights(selected, budget)
+    optimized_candidates = [
+        item for item in selected
+        if item.get("execution_bias") not in {"reduce_risk", "capital_preservation"}
+    ]
+    optimization = optimize_portfolio_weights(optimized_candidates, budget)
     targets = optimization.target_weights
 
     rounded_selected: list[dict] = []
     for item in selected:
         dist_view = _distributional_view(item)
-        target_weight_pct = round(float(targets.get(item["key"], 0.0)), 2)
         current_weight_pct = round(float(item.get("current_weight_pct") or 0.0), 2)
+        execution_bias = item.get("execution_bias")
+        proposed_target_weight_pct = round(float(targets.get(item["key"], 0.0)), 2)
+        if execution_bias in {"reduce_risk", "capital_preservation"}:
+            target_weight_pct = round(min(proposed_target_weight_pct, current_weight_pct), 2) if current_weight_pct > 0.1 else 0.0
+        else:
+            target_weight_pct = proposed_target_weight_pct
         delta_weight_pct = round(target_weight_pct - current_weight_pct, 2)
         action = _candidate_action(
             current_weight_pct=current_weight_pct,
             target_weight_pct=target_weight_pct,
+            execution_bias=execution_bias,
         )
         priority_score = (
             abs(delta_weight_pct) * 2.0
@@ -979,6 +1008,7 @@ async def _build_model_portfolio(
         action = _candidate_action(
             current_weight_pct=current_weight_pct,
             target_weight_pct=target_weight_pct,
+            execution_bias=holding.get("execution_bias"),
         )
         priority_score = abs(delta_weight_pct) * 2.4 + max(float(holding.get("risk_score") or 0.0) - 60.0, 0.0) * 0.15
         if action in {"exit", "trim"}:
@@ -1097,6 +1127,12 @@ async def _build_model_portfolio(
         notes.append(f"현재 보유 종목 중 {trim_count}개는 방어 신호 또는 과대 비중 때문에 먼저 줄이는 편이 좋습니다.")
     if new_position_count > 0:
         notes.append(f"신규 편입 후보 {new_position_count}개를 레이더와 워치리스트에서 추려 모델 포트폴리오에 반영했습니다.")
+    defensive_hold_count = sum(
+        1 for item in recommended_holdings
+        if item.get("execution_bias") in {"reduce_risk", "capital_preservation"} and float(item.get("target_weight_pct") or 0.0) <= 0.1
+    )
+    if defensive_hold_count > 0:
+        notes.append(f"방어 신호가 강한 후보 {defensive_hold_count}개는 목록에 남기되 목표 비중은 0%로 유지해 신규 확대를 막았습니다.")
     if top_country:
         notes.append(f"국가 비중은 {top_country[0]['name']} {top_country[0]['value']:.1f}% 수준에서 관리하도록 설계했습니다.")
     elif not recommended_holdings:

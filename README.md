@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.49.4`
+현재 릴리즈: `v2.50.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -75,23 +75,35 @@
 ## 현재 사용자 기능
 
 - 대시보드
+- 대시보드 공개 첫 화면
+  - `/`는 선택 시장 현황, 핵심 수치, 오늘의 포커스, 마지막 갱신 시각을 서버에서 먼저 채운 뒤 세부 패널을 이어받습니다.
 - Opportunity Radar
   - 현재 KR 레이더는 KRX 상장사 전종목을 1차 스캔하고, 실제 시세 확보 수를 분리해 보여준 뒤 상위 종목만 정밀 분석
+  - 첫 decision block에는 시장 국면, 전체 스캔 수, 실제 시세 확보 수, 표시 후보 수, 마지막 갱신 시각을 먼저 보여주고, 후보 카드에는 보정 confidence와 probability edge, analog support를 함께 노출합니다.
 - 국가 리포트 / PDF / CSV 내보내기
   - 서버 워밍업이나 외부 데이터 지연이 길어질 때는 raw timeout 대신 1차 시장 스냅샷 기반 부분 보고서를 먼저 반환
 - 스크리너
+  - `/screener`는 최초 진입 시 latest close 기준 seeded 결과를 먼저 보여주고, 사용자 실행 결과와 실제 결과 없음 상태를 구분합니다.
 - 종목 검색 / 비교
 - 이메일 회원가입 / 로그인
 - 계정 프로필 수정 / 이메일 변경 / 이메일 인증 재전송 / 비밀번호 변경 / 비밀번호 재설정 / 세션 종료 / 회원 탈퇴
 - 사용자별 관심종목
 - 사용자별 포트폴리오 / 자산 프로필
 - 포트폴리오 조건 추천 / 최적 추천
+  - 신규 확대 후보와 함께 줄이거나 보류할 defensive 후보도 같은 추천 인터페이스 안에서 확인할 수 있습니다.
 - 일일 이상적 포트폴리오
 - 월간 캘린더
+  - `/calendar`는 다음 3개 일정과 official / estimated 상태를 first screen에 먼저 보여주고, 월간 보드는 그 아래에서 이어집니다.
 - 리서치 아카이브
   - 한국, 미국, 유로존, 일본 공식 기관 리포트를 지역별로 다시 볼 수 있습니다.
+- 아카이브 공개 첫 화면
+  - `/archive`는 최신 기관 리포트 2개를 기관, 발행일, 한 줄 요약, 원문/PDF 액션과 함께 서버에서 먼저 보여줍니다.
 - 대시보드 / 레이더 / 캘린더 / 포트폴리오 / 설정의 로딩·지연 상태
   - 큰 빈 카드 대신 무엇을 불러오는 중인지 설명하는 상태 카드와 재시도 경로를 먼저 보여 줍니다.
+- 공개 페이지 SSR + 감사 표시
+  - `/`, `/radar`, `/calendar`, `/archive`, `/screener`는 first screen 핵심 값과 `generated_at / partial / fallback_reason` 기반 audit strip을 서버 우선으로 렌더합니다.
+- 로그아웃 미리보기
+  - `/portfolio`, `/watchlist`는 빈 인증 벽 대신 public data 기반 demo cards와 로그인 CTA를 first screen에 배치합니다.
 - 다음 거래일 예측
 - 무료 KR 확률 엔진
 - 과거 유사 국면 예측
@@ -101,6 +113,9 @@
 
 공개 API의 운영 원칙도 현재 구조에 맞춰 정리되어 있습니다.
 
+- 공개 읽기 페이지는 first screen을 `빈 카드 + skeleton-only + raw 브라우저 에러`로 두지 않고, 서버에서 최소 결과 또는 `200 + partial` 상태를 먼저 렌더합니다.
+- 공개 카드 헤더는 가능한 한 `generated_at`, `partial`, `fallback_reason`을 같은 audit strip 규칙으로 노출해 freshness와 fallback 상태를 즉시 읽을 수 있게 유지합니다.
+- 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
 - KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.
@@ -679,12 +694,14 @@ selection
   + 0.08 regime_alignment
   + 0.07 analog_support
   + 0.05 data_quality
-  - 0.10 downside
-  - 0.05 forecast_volatility
+  - 0.20 downside
+  - 0.12 forecast_volatility
 )
 ```
 
-이전처럼 `directional_score` 안에 이미 들어 있는 기대수익, confidence, edge를 다시 바깥 점수에서 중복 합산하지 않고, action과 execution bias는 tie-breaker 수준의 작은 보정으로만 남겼습니다.
+이전처럼 `directional_score` 안에 이미 들어 있는 기대수익, confidence, edge를 다시 바깥 점수에서 중복 합산하지 않고, action과 execution bias는 tie-breaker 수준의 작은 보정으로만 남겼습니다. 또한 `press_long`, `lean_long`, `accumulate`, `breakout_watch` 가점은 절반 이하로 줄이고, `stay_selective`, `reduce_risk`, `capital_preservation`은 suppress 대상이 아니라 중립~약한 양수의 결정 중요도로 다시 올려 방어 판단이 상단 후보에서 사라지지 않게 맞췄습니다.
+
+포트폴리오 추천과 이상적 포트폴리오도 같은 방향을 따릅니다. defensive bias 후보를 초기 필터에서 바로 버리지 않고, 기존 보유 종목이면 감축/보류 판단을 유지하며, 신규 비중은 `target_weight_pct = 0`으로 고정해 확장을 막습니다. 그래서 현재 인터페이스 안에서 “늘릴 종목”과 “줄이거나 보류할 종목”을 함께 읽을 수 있습니다.
 
 또한 신규 레이더 후보와 일일 이상적 포트폴리오 편입 후보에는 `confidence floor`를 둡니다. 현재 기본값은 `62점`이며, 이 기준을 넘지 못하면 기대수익이 높아도 신규 편입 후보에서 제외합니다. 이 방식은 기대수익만 높고 신뢰도가 낮은 후보가 상단으로 튀는 현상을 줄이고, 사용자가 보는 confidence와 실제 성과를 더 가깝게 맞추는 데 목적이 있습니다.
 

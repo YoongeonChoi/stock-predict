@@ -138,6 +138,61 @@ class IdealPortfolioServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("KR", [item["country_code"] for item in snapshot["positions"]])
         self.assertTrue(snapshot["playbook"])
 
+    async def test_build_snapshot_keeps_defensive_positions_with_zero_weight(self):
+        kr = _radar_response(
+            "KR",
+            "risk_off",
+            [
+                _opportunity(
+                    ticker="005930.KS",
+                    country_code="KR",
+                    sector="Information Technology",
+                    score=84.0,
+                    up_probability=57.0,
+                    predicted_return_pct=1.9,
+                    execution_bias="capital_preservation",
+                    action="reduce_risk",
+                ),
+                _opportunity(
+                    ticker="035420.KS",
+                    country_code="KR",
+                    sector="Communication Services",
+                    score=79.0,
+                    up_probability=62.0,
+                    predicted_return_pct=2.7,
+                    execution_bias="lean_long",
+                    action="accumulate",
+                ),
+            ],
+        )
+
+        with patch(
+            "app.services.ideal_portfolio_service.market_service.get_market_opportunities",
+            new=AsyncMock(return_value=kr),
+        ), patch(
+            "app.services.ideal_portfolio_service.trading_days_forward",
+            side_effect=lambda country_code, reference_date, count: [date(2026, 4, 21)],
+        ), patch(
+            "app.services.ideal_portfolio_service.yfinance_client.get_price_history",
+            new=AsyncMock(
+                return_value=[
+                    {"date": "2026-03-17", "close": 96.0},
+                    {"date": "2026-03-18", "close": 97.0},
+                    {"date": "2026-03-19", "close": 98.5},
+                    {"date": "2026-03-20", "close": 99.5},
+                    {"date": "2026-03-21", "close": 100.2},
+                    {"date": "2026-03-22", "close": 101.0},
+                    {"date": "2026-03-23", "close": 102.0},
+                ]
+            ),
+        ):
+            snapshot = await ideal_portfolio_service._build_snapshot("2026-03-23")
+
+        defensive = next((item for item in snapshot["positions"] if item["ticker"] == "005930.KS"), None)
+        self.assertIsNotNone(defensive)
+        self.assertEqual(defensive["execution_bias"], "capital_preservation")
+        self.assertEqual(defensive["target_weight_pct"], 0.0)
+
     async def test_evaluate_pending_snapshots_records_realized_performance(self):
         pending_rows = [
             {

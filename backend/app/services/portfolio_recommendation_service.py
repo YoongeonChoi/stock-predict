@@ -249,9 +249,11 @@ def _build_candidate(
 
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
     if execution_bias in {"reduce_risk", "capital_preservation"}:
-        return None
+        score -= 5.5
+        notes.append("이 후보는 신규 확대보다 보류·축소 관점에서 먼저 확인하는 편이 좋습니다.")
 
     model_score = round(_clip(score, 0.0, 100.0), 1)
+    weight_score = max(model_score - 58.0, 1.0) if execution_bias in {"reduce_risk", "capital_preservation"} else max(model_score - 48.0, 4.0)
     return {
         "key": key,
         "ticker": opportunity.get("ticker"),
@@ -265,7 +267,7 @@ def _build_candidate(
         "current_country_exposure_pct": round(current_country_exposure, 2),
         "current_sector_exposure_pct": round(current_sector_exposure, 2),
         "model_score": model_score,
-        "weight_score": max(model_score - 48.0, 4.0),
+        "weight_score": weight_score,
         "opportunity_score": round(float(opportunity.get("opportunity_score") or 0.0), 1),
         "target_horizon_days": int(opportunity.get("target_horizon_days") or 20),
         "target_date_20d": opportunity.get("target_date_20d"),
@@ -331,7 +333,8 @@ def _select_recommendations(
             break
         if candidate["key"] in seen:
             continue
-        if float(candidate.get("model_score") or 0.0) < 56.0:
+        minimum_score = 52.0 if candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"} else 56.0
+        if float(candidate.get("model_score") or 0.0) < minimum_score:
             continue
         if country_counts[candidate["country_code"]] >= country_cap:
             continue

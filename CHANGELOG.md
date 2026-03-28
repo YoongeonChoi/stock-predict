@@ -2,6 +2,18 @@
 
 All notable changes to this project are tracked here.
 
+## v2.50.0 - 2026-03-28
+
+- 공개 핵심 페이지 `/`, `/radar`, `/calendar`, `/archive`, `/screener`를 server-first 첫 화면으로 다시 정리했습니다. 이제 first screen은 최소한의 실제 수치, decision thread, 마지막 갱신/partial 상태를 서버 HTML에 먼저 담아 보내고, 클라이언트는 이어서 세부 패널만 보강합니다.
+- 공통 `PublicAuditStrip`과 공개 서버 fetch 레이어를 추가했습니다. `generated_at`, `partial`, `fallback_reason`을 같은 audit strip 규칙으로 드러내고, raw `Failed to fetch`나 큰 빈 카드보다 `사용 가능한 최소 결과`를 먼저 보여주는 방향으로 맞췄습니다.
+- 대시보드는 `선택 시장 현황 -> 핵심 수치 -> 오늘의 포커스 -> 히트맵/상승·하락 상위 -> 강한 셋업/뉴스` 흐름으로 다시 고정했습니다. 기회 레이더는 시장 국면, 전체 스캔 수, 실제 시세 확보 수, 표시 후보 수, 마지막 갱신 시각을 first decision block에서 바로 보여주고 후보 카드에 보정 confidence, probability edge, analog support를 함께 노출합니다.
+- 캘린더는 다음 3개 일정과 `official / estimated` 상태를 먼저 보여주고, 아카이브는 최신 기관 리포트 2개를 기관, 발행일, 요약, 원문/PDF 액션과 함께 first screen에 고정했습니다. 스크리너는 검색 전 0개 상태 대신 latest close seeded 결과를 먼저 보여주고, seeded / searched / 실제 결과 없음 상태를 분리했습니다.
+- `/portfolio`, `/watchlist`는 로그아웃 상태에서 빈 auth wall 대신 public data 기반 demo cards + 로그인 CTA를 first screen에 배치했습니다. 데모는 가짜 수익률이나 허구의 자산이 아니라 실제 공개 레이더/시장 데이터 기반 설명형 미리보기만 사용합니다.
+- selection score는 downside penalty를 `0.20`, forecast volatility penalty를 `0.12`로 강화하고, `press_long`, `lean_long`, `accumulate`, `breakout_watch` 가점을 절반 이하로 줄였습니다. 반대로 `stay_selective`, `reduce_risk`, `capital_preservation`은 중립~약한 양수 중요도로 끌어올려 방어 판단이 랭킹에서 사라지지 않게 조정했습니다.
+- trade planner는 long 진입 조건을 더 좁히고, `risk_off + premium_to_fair`, `up_probability <= 45`, `direction == down`, `약한 trend + 낮은 risk/reward` 같은 경우를 `reduce_risk`로 더 적극적으로 분기합니다.
+- 포트폴리오 조건 추천, 최적 추천, 일일 이상적 포트폴리오는 defensive bias 후보를 더 이상 초기에 버리지 않습니다. 기존 보유 defensive 후보는 감축/보류 판단과 함께 유지하고, 신규 확대가 아닌 경우 `target_weight_pct = 0`으로 남겨 같은 인터페이스 안에서 늘릴 종목과 줄이거나 보류할 종목을 함께 읽을 수 있게 했습니다.
+- 회귀 테스트를 추가해 selection penalty 강화, risk-off `reduce_risk` routing, defensive 후보 유지, ideal portfolio zero-weight 계약을 고정했고, 프론트 빌드까지 새 SSR/public audit 흐름 기준으로 다시 통과시켰습니다.
+
 ## v2.49.4 - 2026-03-28
 
 - `대시보드`, `기회 레이더`, `시장 일정 캘린더`, `리포트 아카이브`, `포트폴리오`, `설정 및 시스템`의 로딩 상태를 설명형 상태 카드로 다시 정리했습니다. 그래서 큰 빈 카드만 남아 실제보다 느리거나 고장난 것처럼 보이던 구간을 줄였습니다.

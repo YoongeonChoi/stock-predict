@@ -140,9 +140,8 @@ def _select_positions(candidates: list[dict], budget: dict) -> list[dict]:
             break
         if not candidate.get("confidence_floor_passed", True):
             continue
-        if candidate["selection_score"] < 58.0:
-            continue
-        if candidate["execution_bias"] in {"reduce_risk", "capital_preservation"}:
+        minimum_score = 54.0 if candidate.get("execution_bias") in {"reduce_risk", "capital_preservation"} else 58.0
+        if candidate["selection_score"] < minimum_score:
             continue
         if country_counts[candidate["country_code"]] >= max_country_names:
             continue
@@ -231,8 +230,9 @@ def _allocate_weights(selected: list[dict], budget: dict) -> list[dict]:
 
     allocated = []
     for rank, item in enumerate(ordered, start=1):
-        target_weight_pct = round(targets[item["key"]], 2)
-        if target_weight_pct <= 0.1:
+        is_defensive = item.get("execution_bias") in {"reduce_risk", "capital_preservation"}
+        target_weight_pct = 0.0 if is_defensive else round(targets[item["key"]], 2)
+        if target_weight_pct <= 0.1 and not is_defensive:
             continue
         allocated.append(
             {
