@@ -38,18 +38,18 @@ def regime_alignment_score(
 
 def action_tiebreak_points(action: str | None, execution_bias: str | None, *, legacy_score: float = 0.0) -> float:
     action_points = {
-        "accumulate": 1.6,
-        "breakout_watch": 1.1,
-        "wait_pullback": 0.2,
-        "reduce_risk": -1.2,
+        "accumulate": 0.8,
+        "breakout_watch": 0.5,
+        "wait_pullback": 0.15,
+        "reduce_risk": 0.4,
         "avoid": -2.0,
     }.get(str(action or "").strip(), 0.0)
     bias_points = {
-        "press_long": 2.0,
-        "lean_long": 1.0,
-        "stay_selective": 0.1,
-        "reduce_risk": -1.4,
-        "capital_preservation": -2.0,
+        "press_long": 0.9,
+        "lean_long": 0.45,
+        "stay_selective": 0.25,
+        "reduce_risk": 0.35,
+        "capital_preservation": 0.45,
     }.get(str(execution_bias or "").strip(), 0.0)
     legacy_points = _clip((float(legacy_score) - 70.0) * 0.03, -0.8, 1.2)
     return round(action_points + bias_points + legacy_points, 2)
@@ -103,7 +103,7 @@ def score_selection_candidate(
 
     downside_penalty = _clip(float(downside_pct) / 12.0, 0.0, 1.0)
     volatility_penalty = _clip(float(forecast_volatility_pct) / 28.0, 0.0, 1.0)
-    raw_normalized = _clip(positive_score - 0.10 * downside_penalty - 0.05 * volatility_penalty, 0.0, 1.0)
+    raw_normalized = _clip(positive_score - 0.20 * downside_penalty - 0.12 * volatility_penalty, 0.0, 1.0)
 
     tiebreak_points = action_tiebreak_points(action, execution_bias, legacy_score=legacy_score)
     confidence_floor_passed = float(calibrated_confidence) >= float(confidence_floor)

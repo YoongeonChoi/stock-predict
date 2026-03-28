@@ -213,6 +213,9 @@
 - 대시보드는 항상 `선택 시장 현황 -> 히트맵/모멘텀 -> 뉴스/셋업` 순서를 따른다
 - 각 페이지의 가장 중요한 카드/패널은 상단 첫 screen에 와야 한다
 - “읽고 판단하는 정보”가 “탐색용 부가 정보”보다 먼저 온다
+- 공개 first screen은 가능하면 server-first로 `decision thread + audit thread`를 함께 채운다
+- `/`, `/radar`, `/calendar`, `/archive`, `/screener`는 첫 screen에서 최소 한 개의 실제 수치 카드와 한 개의 freshness/audit 정보가 동시에 보여야 한다
+- 공개 first screen에 `blank card`, `skeleton-only`, raw `Failed to fetch`를 그대로 두지 않는다
 
 ### 4.3 Evidence thread
 
@@ -248,6 +251,8 @@
 - action thread는 독립된 덩어리처럼 보여야 한다
 - 입력 폼과 분석 결과는 시각적으로 분리한다
 - 액션 버튼은 한 곳에서만 확실하게 강조한다
+- 로그아웃 상태의 private page는 빈 인증 벽보다 `demo cards + CTA`를 먼저 보여 준다
+- 데모는 public data 기반 설명형 미리보기만 사용하고, 가짜 수익률이나 허구의 보유 자산을 만들지 않는다
 
 ### 4.5 Audit thread
 
@@ -265,6 +270,8 @@
 
 - 투자 판단에 영향을 주는 신뢰성 정보는 숨기지 않는다
 - audit 정보는 중요하지만, decision thread보다 먼저 오면 안 된다
+- audit strip은 가능한 한 `generated_at`, `partial`, `fallback_reason`의 같은 규칙으로 읽히게 한다
+- 정상 상태는 `마지막 갱신 시각`, partial 상태는 `일부 데이터 지연`, stale-but-usable 상태는 `전일 기준`, `기관 동기화 중` 같은 보조 문구로 통일한다
 
 ---
 
@@ -489,6 +496,7 @@ aside에 부적합한 내용:
 - `Failed to fetch` 같은 raw 브라우저 에러 문구를 그대로 노출하지 않습니다.
 - 사용자에게 재시도 경로가 있으면 버튼이나 링크로 바로 제공합니다.
 - `불러오는 중` 상태가 길어질 수 있는 패널은 timeout 뒤 fallback 또는 구조화된 에러 상태로 전환합니다.
+- 공개 읽기 페이지는 클라이언트 재호출 전에 서버에서 최소 결과를 먼저 보여 주는 구성을 우선합니다.
 
 ---
 

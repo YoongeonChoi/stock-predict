@@ -321,6 +321,8 @@ export interface OpportunityItem {
 export interface OpportunityRadarResponse {
   country_code: string;
   generated_at: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   market_regime: MarketRegime;
   universe_size: number;
   total_scanned: number;
@@ -408,6 +410,8 @@ export interface CountryReport {
   primary_index_history?: PricePoint[];
   market_data: Record<string, { price: number; change_pct: number }>;
   generated_at: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   llm_available?: boolean;
   errors?: string[];
 }

@@ -221,3 +221,36 @@ class ConfidenceScoringTests(unittest.TestCase):
             legacy_score=60.0,
         )
         self.assertGreater(high.score, low.score)
+
+    def test_selection_score_penalizes_risky_long_candidates_more_aggressively(self):
+        risky_long = score_selection_candidate(
+            expected_excess_return_pct=2.6,
+            calibrated_confidence=72.0,
+            probability_edge=12.0,
+            tail_ratio=1.2,
+            regime_alignment=0.55,
+            analog_support=0.6,
+            data_quality_support=0.7,
+            downside_pct=12.0,
+            forecast_volatility_pct=28.0,
+            action="accumulate",
+            execution_bias="press_long",
+            legacy_score=70.0,
+        )
+        defensive = score_selection_candidate(
+            expected_excess_return_pct=2.6,
+            calibrated_confidence=72.0,
+            probability_edge=12.0,
+            tail_ratio=1.2,
+            regime_alignment=0.55,
+            analog_support=0.6,
+            data_quality_support=0.7,
+            downside_pct=2.0,
+            forecast_volatility_pct=6.0,
+            action="reduce_risk",
+            execution_bias="reduce_risk",
+            legacy_score=70.0,
+        )
+
+        self.assertGreater(defensive.score, risky_long.score)
+        self.assertTrue(defensive.confidence_floor_passed)

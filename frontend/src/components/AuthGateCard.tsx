@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 import PageHeader from "@/components/PageHeader";
@@ -6,9 +7,17 @@ interface AuthGateCardProps {
   title: string;
   description: string;
   nextPath: string;
+  preview?: ReactNode;
+  previewTitle?: string;
 }
 
-export default function AuthGateCard({ title, description, nextPath }: AuthGateCardProps) {
+export default function AuthGateCard({
+  title,
+  description,
+  nextPath,
+  preview = null,
+  previewTitle = "로그인 전 미리보기",
+}: AuthGateCardProps) {
   const authHref = `/auth?next=${encodeURIComponent(nextPath)}`;
 
   return (
@@ -36,6 +45,17 @@ export default function AuthGateCard({ title, description, nextPath }: AuthGateC
           Supabase 계정 기준으로 저장됩니다.
         </div>
       </section>
+      {preview ? (
+        <section className="card !p-5 space-y-4">
+          <div>
+            <div className="text-sm font-semibold text-text">{previewTitle}</div>
+            <div className="mt-1 text-sm leading-6 text-text-secondary">
+              공개 데이터 기준으로 먼저 읽어 볼 수 있는 흐름만 보여줍니다. 로그인하면 저장, 추적, 추천 반영이 바로 연결됩니다.
+            </div>
+          </div>
+          {preview}
+        </section>
+      ) : null}
     </div>
   );
 }
