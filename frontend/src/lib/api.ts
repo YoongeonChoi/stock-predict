@@ -837,10 +837,12 @@ export interface ArchiveEntry {
   preview: string;
 }
 
+export type ResearchRegionCode = "KR" | "US" | "EU" | "JP";
+
 export interface ResearchArchiveSourceResult {
   source_id: string;
   source_name: string;
-  region_code: "KR";
+  region_code: ResearchRegionCode;
   count: number;
 }
 
@@ -851,7 +853,7 @@ export interface ResearchArchiveSourceCount {
 }
 
 export interface ResearchArchiveRegionCount {
-  region_code: "KR";
+  region_code: ResearchRegionCode;
   total: number;
 }
 
@@ -874,7 +876,7 @@ export interface ResearchArchiveEntry {
   id: number;
   source_id: string;
   source_name: string;
-  region_code: "KR";
+  region_code: ResearchRegionCode;
   organization_type: string;
   language: string;
   category?: string | null;
@@ -1281,7 +1283,7 @@ export const api = {
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
   getPredictionAccuracy: () => get<PredictionAccuracyStats>("/api/archive/accuracy/stats"),
-  getResearchArchive: (regionCode?: "KR", limit = 40, autoRefresh = true) => {
+  getResearchArchive: (regionCode?: ResearchRegionCode, limit = 40, autoRefresh = true) => {
     const qs = new URLSearchParams();
     if (regionCode) qs.set("region_code", regionCode);
     qs.set("limit", String(limit));

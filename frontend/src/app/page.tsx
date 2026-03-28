@@ -55,10 +55,31 @@ function describeLoadError(error: unknown, fallback: string) {
   return fallback;
 }
 
-function SectionFallback({ message, onRetry }: { message: string; onRetry?: () => void }) {
+function SectionFallback({
+  title = "상태 안내",
+  message,
+  onRetry,
+  compact = false,
+  tone = "neutral",
+}: {
+  title?: string;
+  message: string;
+  onRetry?: () => void;
+  compact?: boolean;
+  tone?: "neutral" | "warning";
+}) {
+  const toneClass =
+    tone === "warning"
+      ? "border-amber-500/20 bg-amber-500/6"
+      : "border-border/70 bg-surface/45";
   return (
-    <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-5 text-sm text-text-secondary">
-      <div>{message}</div>
+    <div
+      className={`rounded-[22px] border px-4 text-sm text-text-secondary ${toneClass} ${
+        compact ? "py-4" : "py-5"
+      }`}
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">{title}</div>
+      <div className="mt-2 leading-6">{message}</div>
       {onRetry ? (
         <button
           onClick={onRetry}
@@ -265,9 +286,19 @@ export default function HomePage() {
 
   const topNews = countryReport?.key_news.slice(0, 4) ?? [];
   const topStocks = countryReport?.top_stocks.slice(0, 5) ?? [];
+  const radarHasItems = (radarData?.opportunities.length ?? 0) > 0;
   const retryCurrentWorkspace = () => {
     void loadCountryWorkspace(selectedCountry);
   };
+  const workspaceDelays = useMemo(() => {
+    const pending: string[] = [];
+    if (briefingError) pending.push("오늘의 포커스");
+    if (reportError) pending.push("시장 요약");
+    if (heatmapError) pending.push("히트맵");
+    if (moversError) pending.push("상승·하락 상위");
+    if (radarError || (!radarLoading && !radarHasItems)) pending.push("강한 셋업");
+    return pending;
+  }, [briefingError, heatmapError, moversError, radarError, radarHasItems, radarLoading, reportError]);
   const marketSummaryText =
     countryReport?.market_summary ||
     marketView?.summary ||
@@ -288,6 +319,25 @@ export default function HomePage() {
             {countryReport?.generated_at ? <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span> : null}
           </div>
         </div>
+
+        {workspaceDelays.length > 0 ? (
+          <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/6 px-4 py-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">부분 업데이트</div>
+                <div className="mt-2 text-sm text-text-secondary">
+                  {workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.
+                </div>
+              </div>
+              <button
+                onClick={retryCurrentWorkspace}
+                className="inline-flex rounded-full border border-accent/25 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent/45 hover:bg-accent/10"
+              >
+                현재 시장 다시 불러오기
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {countries.length > 1 ? (
           <div className="flex flex-wrap gap-2">
@@ -400,8 +450,11 @@ export default function HomePage() {
                 </div>
               ) : (
                 <SectionFallback
+                  title="포커스 지연"
                   message={briefingError || "오늘의 포커스 데이터가 아직 없습니다."}
                   onRetry={() => void loadBriefing()}
+                  compact
+                  tone="warning"
                 />
               )}
             </div>
@@ -425,8 +478,10 @@ export default function HomePage() {
               <StockHeatmap data={heatmapData} loading={false} />
             ) : (
               <SectionFallback
+                title="히트맵 지연"
                 message={heatmapError || "히트맵 데이터가 아직 없습니다."}
                 onRetry={retryCurrentWorkspace}
+                tone="warning"
               />
             )}
           </div>
@@ -470,14 +525,16 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="mt-5">
-              <SectionFallback
-                message={moversError || "상승·하락 상위 데이터가 아직 없습니다."}
-                onRetry={retryCurrentWorkspace}
-              />
-            </div>
-          )}
+            ) : (
+              <div className="mt-5">
+                <SectionFallback
+                  title="상위 집계 지연"
+                  message={moversError || "상승·하락 상위 데이터가 아직 없습니다."}
+                  onRetry={retryCurrentWorkspace}
+                  tone="warning"
+                />
+              </div>
+            )}
         </div>
       </section>
 
@@ -494,8 +551,10 @@ export default function HomePage() {
               <OpportunityRadarBoard data={radarData} compact embedded />
             ) : (
               <SectionFallback
+                title="레이더 지연"
                 message={radarError || "강한 셋업 데이터가 아직 없습니다."}
                 onRetry={retryCurrentWorkspace}
+                tone="warning"
               />
             )}
           </div>
@@ -519,8 +578,14 @@ export default function HomePage() {
               ))}
               {!reportLoading && topNews.length === 0 ? (
                 <SectionFallback
-                  message={reportError || "표시할 뉴스가 아직 없습니다."}
-                  onRetry={retryCurrentWorkspace}
+                  title={reportError ? "뉴스 지연" : "기사 연결 대기"}
+                  message={
+                    reportError ||
+                    "시장 요약은 준비됐지만 연결된 핵심 기사 목록은 아직 비어 있습니다. 잠시 뒤 다시 열면 기사 연결이 채워질 수 있습니다."
+                  }
+                  onRetry={reportError ? retryCurrentWorkspace : undefined}
+                  compact
+                  tone={reportError ? "warning" : "neutral"}
                 />
               ) : null}
             </div>
@@ -549,8 +614,14 @@ export default function HomePage() {
               ))}
               {!reportLoading && topStocks.length === 0 ? (
                 <SectionFallback
-                  message={reportError || "상위 종목 데이터가 아직 없습니다."}
-                  onRetry={retryCurrentWorkspace}
+                  title={reportError ? "상위 종목 지연" : "후보 정리 대기"}
+                  message={
+                    reportError ||
+                    "시장 리포트는 준비됐지만 상위 종목 점수 정리가 아직 비어 있습니다. 잠시 뒤 다시 열면 후보가 채워질 수 있습니다."
+                  }
+                  onRetry={reportError ? retryCurrentWorkspace : undefined}
+                  compact
+                  tone={reportError ? "warning" : "neutral"}
                 />
               ) : null}
             </div>
