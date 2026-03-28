@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.49.3 - 2026-03-28
+
+- 공개 `KR screener`의 cold cache partial 경로를 `yfinance` 10종목 묶음에서 `Naver 시총 대표 페이지 snapshot` 기반으로 다시 바꿨습니다. 운영에서는 첫 묶음도 50초 이상 늘어지는 경우가 있어, 대표 시총 페이지 1차 응답을 먼저 보여주는 쪽이 실제 배포 안정성에 더 맞았습니다.
+- 이 변경으로 큰 기본 요청(`/api/screener?country=KR&limit=20`)의 cold start partial이 로컬 기준 약 3.5초 수준으로 내려왔고, background cache warming은 그대로 유지돼 다음 요청부터는 full quick 결과를 이어서 받을 수 있습니다.
+- 회귀 테스트는 representative snapshot 경로와 `kr_market_quote_client.get_kr_representative_quotes()` 제한 동작까지 함께 확인하도록 보강했습니다.
+
 ## v2.49.2 - 2026-03-28
 
 - 공개 `KR screener`의 cold cache 기본 요청은 이제 대표 10개 snapshot partial을 먼저 반환하고, 전체 quick 결과는 뒤에서 cache warming으로 이어집니다. 그 결과 배포 직후 첫 `/api/screener?country=KR&limit=20` 요청이 proxy read timeout으로 끊기기보다 `200 + partial`로 먼저 살아남도록 맞췄습니다.

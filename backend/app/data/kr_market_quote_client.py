@@ -32,6 +32,7 @@ NAVER_PAGE_CONCURRENCY = 6
 KR_BULK_QUOTE_TTL = 900
 KR_REMAINDER_FALLBACK_LIMIT = 180
 KR_SMALL_REQUEST_FAST_PATH_LIMIT = 120
+KR_REPRESENTATIVE_MARKET_PAGES = 1
 TICKER_CODE_PATTERN = re.compile(r"\d{6}")
 
 
@@ -175,6 +176,41 @@ async def _fetch_full_kr_market_quotes() -> dict[str, dict]:
         _fetch,
         min(max(settings.cache_ttl_price, 300), KR_BULK_QUOTE_TTL),
     )
+
+
+async def _fetch_representative_kr_market_quotes(*, pages_per_market: int = KR_REPRESENTATIVE_MARKET_PAGES) -> dict[str, dict]:
+    session_token = market_session_cache_token(country_code="KR")
+    settings = get_settings()
+    page_count = max(1, int(pages_per_market))
+
+    async def _fetch():
+        merged: dict[str, dict] = {}
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            for sosok, suffix in ((NAVER_KOSPI, ".KS"), (NAVER_KOSDAQ, ".KQ")):
+                for page in range(1, page_count + 1):
+                    _, quotes = await _fetch_market_page(client, sosok=sosok, page=page, suffix=suffix)
+                    merged.update(quotes)
+        return merged
+
+    return await cache.get_or_fetch(
+        f"kr_market_quotes:representative:{page_count}:{session_token}",
+        _fetch,
+        min(max(settings.cache_ttl_price, 300), KR_BULK_QUOTE_TTL),
+    )
+
+
+async def get_kr_representative_quotes(
+    *,
+    limit: int = KR_SMALL_REQUEST_FAST_PATH_LIMIT,
+    pages_per_market: int = KR_REPRESENTATIVE_MARKET_PAGES,
+) -> dict[str, dict]:
+    representative = await _fetch_representative_kr_market_quotes(pages_per_market=pages_per_market)
+    limited_quotes: dict[str, dict] = {}
+    for ticker, quote in representative.items():
+        limited_quotes[ticker] = quote
+        if len(limited_quotes) >= max(1, limit):
+            break
+    return limited_quotes
 
 
 def _normalize_yfinance_quote(ticker: str, quote: dict) -> dict | None:

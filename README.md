@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.49.2`
+현재 릴리즈: `v2.49.3`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -82,7 +82,7 @@
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
 - KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.
 - KR `screener` 기본 조회는 후보 종목 수도 `limit` 기준으로 바로 줄여, `limit=1` 같은 작은 요청이 내부적으로 30개 이상 종목 batch를 불필요하게 들고 가지 않게 유지합니다.
-- KR `screener` 기본 공개 경로는 cold cache에서 먼저 대표 10개 snapshot partial을 돌려주고, 뒤에서 전체 cache를 채우는 2단계 구조를 사용합니다. Render 배포 직후 첫 호출도 read timeout 대신 `200 + partial`로 살아남게 유지하는 쪽에 초점을 둡니다.
+- KR `screener` 기본 공개 경로는 cold cache에서 먼저 `Naver 시총 대표 페이지` snapshot partial을 돌려주고, 뒤에서 전체 cache를 채우는 2단계 구조를 사용합니다. Render 배포 직후 첫 호출도 read timeout 대신 `200 + partial`로 살아남게 유지하는 쪽에 초점을 둡니다.
 - KR 기회 레이더의 빠른 경로는 `KRX 상장사 목록 캐시 -> 운영용 기본 종목군 fallback` 순서로 내려가므로, cold start 직후에도 `총 8개 스캔`처럼 과도하게 작은 숫자로 고정되지 않게 관리합니다.
 - KR 기회 레이더의 quick fallback은 전체 유니버스를 포기하는 것이 아니라, 초기 응답에서는 `대표 1차 스캔`만 먼저 계산하고 전체 스캔은 정밀 경로와 후속 재조회에서 이어받도록 설계합니다.
 - KR 기회 레이더의 quick fallback은 더 이상 `소량 yfinance -> 커버리지 부족 시 시장 전체 scrape`로 되돌아가지 않고, 빠른 부분 시세만으로 먼저 응답합니다. 그래서 초기 `다시 시도`에서도 quick fallback 자체가 같이 timeout 나는 경우를 더 줄였습니다.
@@ -791,7 +791,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 - Supabase free도 저활동 상태면 pause될 수 있습니다.
 - 공개 대시보드와 스크리너는 Render free 환경에서 대표 표본 + 캐시 + 부분 응답 fallback을 우선합니다.
 - `market opportunities`는 현재 KR 레이더 유니버스를 1차 quote screen으로 먼저 스캔하고, 상위 종목만 정밀 분포 분석하는 2단계 구조를 사용합니다.
-- KR 기본 스크리너는 개별 종목별 시세 호출보다 `kr_market_quote_client` bulk quote 경로를 먼저 사용하고, cold cache면 대표 10개 partial을 먼저 보여준 뒤 full cache를 채우는 방향으로 설계합니다.
+- KR 기본 스크리너는 개별 종목별 시세 호출보다 `kr_market_quote_client` bulk quote 경로를 먼저 사용하고, cold cache면 `Naver 시총 대표 페이지` snapshot partial을 먼저 보여준 뒤 full cache를 채우는 방향으로 설계합니다.
 - FMP KR 스크리너가 막히더라도 레이더는 가능한 한 `krx_listing` 또는 운영 fallback 유니버스로 내려가 1차 후보를 먼저 보여주며, 현재 기본 fallback 종목군은 `201개`입니다.
 - 큰 KR fallback 유니버스에서는 응답 안정성을 우선해 `1차 전수 스캔 결과`를 먼저 반환하고, 정밀 분석은 상위 후보나 후속 상세 화면에서 이어집니다.
 - Render free에서 서버가 막 깨어난 직후에는 KR 레이더 warmup이 먼저 돌고, 정밀 계산이 길어지면 `504` 대신 빠른 1차 후보 응답을 먼저 돌려주도록 구성합니다. 백그라운드 계산은 계속 진행해 다음 재시도에서 캐시된 정밀 결과로 회복되게 합니다.
