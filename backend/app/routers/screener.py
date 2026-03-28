@@ -147,8 +147,12 @@ async def _build_kr_bulk_snapshot_results(
     universe: dict[str, list[str]],
     sector: str | None,
     country: str,
+    skip_full_market_fallback: bool = False,
 ) -> list[dict]:
-    quotes = await kr_market_quote_client.get_kr_bulk_quotes(tickers)
+    quotes = await kr_market_quote_client.get_kr_bulk_quotes(
+        tickers,
+        skip_full_market_fallback=skip_full_market_fallback,
+    )
     results: list[dict] = []
     for ticker in tickers:
         quote = quotes.get(ticker)
@@ -188,6 +192,7 @@ async def _build_snapshot_fallback(
             universe=universe,
             sector=sector,
             country=country,
+            skip_full_market_fallback=True,
         ))[:limit]
         return {
             "results": results,
@@ -450,6 +455,7 @@ async def screen_stocks(
                 universe=universe,
                 sector=sector,
                 country=country,
+                skip_full_market_fallback=True,
             )
             filtered_results = []
             for item in bulk_results:

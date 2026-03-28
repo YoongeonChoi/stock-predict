@@ -112,6 +112,18 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             await asyncio.sleep(0.05)
             return []
 
+        bulk_quotes = AsyncMock(
+            return_value={
+                "005930.KS": {
+                    "ticker": "005930.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70000.0,
+                    "prev_close": 68900.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.6,
+                }
+            }
+        )
         with (
             patch("app.routers.screener.PUBLIC_SCREENER_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
@@ -119,18 +131,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             patch("app.routers.screener.gather_limited", new=AsyncMock(side_effect=_slow_gather)),
             patch(
                 "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
-                new=AsyncMock(
-                    return_value={
-                        "005930.KS": {
-                            "ticker": "005930.KS",
-                            "name": "Samsung Electronics",
-                            "current_price": 70000.0,
-                            "prev_close": 68900.0,
-                            "market_cap": 420000000000.0,
-                            "change_pct": 1.6,
-                        }
-                    }
-                ),
+                new=bulk_quotes,
             ),
             patched_client() as client,
         ):
@@ -138,25 +139,27 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
+        bulk_quotes.assert_awaited_once_with(["005930.KS"], skip_full_market_fallback=True)
 
     def test_screener_default_kr_path_uses_bulk_quotes(self):
+        bulk_quotes = AsyncMock(
+            return_value={
+                "005930.KS": {
+                    "ticker": "005930.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
         with (
             patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value={"Information Technology": ["005930.KS"]})),
             patch(
                 "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
-                new=AsyncMock(
-                    return_value={
-                        "005930.KS": {
-                            "ticker": "005930.KS",
-                            "name": "Samsung Electronics",
-                            "current_price": 70100.0,
-                            "prev_close": 69300.0,
-                            "market_cap": 420000000000.0,
-                            "change_pct": 1.15,
-                        }
-                    }
-                ),
+                new=bulk_quotes,
             ),
             patch(
                 "app.routers.screener.yfinance_client.get_market_snapshot",
@@ -169,6 +172,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["total"], 1)
         self.assertEqual(response.json()["results"][0]["ticker"], "005930.KS")
+        bulk_quotes.assert_awaited_once_with(["005930.KS"], skip_full_market_fallback=True)
 
 
 if __name__ == "__main__":
