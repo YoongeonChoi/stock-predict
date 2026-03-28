@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.48.1`
+현재 릴리즈: `v2.48.2`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -79,6 +79,7 @@
 
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
+- KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.
 - KR 기회 레이더의 빠른 경로는 `KRX 상장사 목록 캐시 -> 운영용 기본 종목군 fallback` 순서로 내려가므로, cold start 직후에도 `총 8개 스캔`처럼 과도하게 작은 숫자로 고정되지 않게 관리합니다.
 - KR 기회 레이더의 quick fallback은 전체 유니버스를 포기하는 것이 아니라, 초기 응답에서는 `대표 1차 스캔`만 먼저 계산하고 전체 스캔은 정밀 경로와 후속 재조회에서 이어받도록 설계합니다.
 - KR 기회 레이더의 quick fallback은 더 이상 `소량 yfinance -> 커버리지 부족 시 시장 전체 scrape`로 되돌아가지 않고, 빠른 부분 시세만으로 먼저 응답합니다. 그래서 초기 `다시 시도`에서도 quick fallback 자체가 같이 timeout 나는 경우를 더 줄였습니다.

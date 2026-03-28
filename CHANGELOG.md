@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.48.2 - 2026-03-28
+
+- 공개 `KR screener`의 기본/timeout fallback 경로는 이제 소규모 종목 묶음에서 `skip_full_market_fallback=True`를 명시해, yfinance batch coverage가 약간 부족하더라도 전체 Naver 시총 페이지 scrape로 즉시 내려가지 않게 맞췄습니다.
+- 그 결과 운영 배포에서 `/api/screener?country=KR&limit=20`가 작은 요청인데도 full-market fetch 때문에 길게 멈추는 가능성을 더 줄였습니다.
+- 회귀 테스트는 공개 `KR screener`가 bulk quote 호출 시 full-market fallback 차단 플래그를 함께 전달하는지 확인하도록 보강했습니다.
+
 ## v2.48.1 - 2026-03-28
 
 - 공개 `KR screener`는 이제 느린 동적 유니버스 조회를 기본 진입점으로 삼지 않고, 검증된 기본 종목군과 bulk quote 경로를 먼저 사용합니다. 그 결과 운영 배포에서 `/api/screener?country=KR&limit=20`가 오래 멈추거나 read timeout으로 끊기던 흐름을 줄였습니다.
