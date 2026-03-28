@@ -155,7 +155,10 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             }
         )
         with (
-            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.routers.screener.cache.get_or_fetch",
+                new=AsyncMock(side_effect=AssertionError("default KR screener should bypass shared cache")),
+            ),
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value={"Information Technology": ["005930.KS"]})),
             patch(
                 "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
@@ -193,7 +196,10 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             }
         )
         with (
-            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.routers.screener.cache.get_or_fetch",
+                new=AsyncMock(side_effect=AssertionError("default KR screener should bypass shared cache")),
+            ),
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
                 "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
