@@ -1,23 +1,9 @@
 import asyncio
 import unittest
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
-from app.main import app
 from app.routers import country as country_router
-
-
-@contextmanager
-def patched_client():
-    with (
-        patch("app.main.db.initialize", new=AsyncMock()),
-        patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-        patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-    ):
-        with TestClient(app) as client:
-            yield client
+from client_helpers import patched_client
 
 
 async def _slow_response(*args, **kwargs):

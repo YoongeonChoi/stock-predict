@@ -1,32 +1,9 @@
-﻿import asyncio
+import asyncio
 import unittest
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
-
-from app.auth import AuthenticatedUser, get_current_user
-from app.main import app
+from client_helpers import patched_client
 from app.services import ticker_resolver_service, forecast_monitor_service
-
-
-@contextmanager
-def patched_client(*, authenticated: bool = False):
-    async def _fake_current_user():
-        return AuthenticatedUser(id="user-123", email="tester@example.com")
-
-    if authenticated:
-        app.dependency_overrides[get_current_user] = _fake_current_user
-    with (
-        patch("app.main.db.initialize", new=AsyncMock()),
-        patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-        patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-    ):
-        try:
-            with TestClient(app) as client:
-                yield client
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
 
 
 class TickerResolutionAndFeatureTests(unittest.TestCase):
@@ -40,13 +17,8 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
         self.assertEqual(kr_prefixed["country_code"], "KR")
 
     def test_ticker_resolve_route_returns_structured_resolution(self):
-        with (
-            patch("app.main.db.initialize", new=AsyncMock()),
-            patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-            patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
-            patch("app.routers.stock.yfinance_client.get_stock_info", new=AsyncMock(return_value={"name": "Samsung Electronics"})),
-        ):
-            with TestClient(app) as client:
+        with patch("app.routers.stock.yfinance_client.get_stock_info", new=AsyncMock(return_value={"name": "Samsung Electronics"})):
+            with patched_client() as client:
                 response = client.get("/api/ticker/resolve?query=005930&country_code=KR")
 
         self.assertEqual(response.status_code, 200)
@@ -57,9 +29,6 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
 
     def test_daily_briefing_and_portfolio_event_routes_exist(self):
         with (
-            patch("app.main.db.initialize", new=AsyncMock()),
-            patch("app.main.archive_service.refresh_prediction_accuracy", new=AsyncMock(return_value=None)),
-            patch("app.main.research_archive_service.sync_public_research_reports", new=AsyncMock(return_value={"processed_total": 0})),
             patch(
                 "app.routers.briefing.briefing_service.get_daily_briefing",
                 new=AsyncMock(return_value={"generated_at": "2026-03-24T00:00:00", "sessions": [], "market_view": [], "focus_cards": [], "upcoming_events": [], "research_archive": {}, "priorities": []}),
@@ -120,4 +89,3 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
