@@ -13,7 +13,9 @@ import PortfolioOptimalRecommendationPanel from "@/components/PortfolioOptimalRe
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { ApiError, api } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type {
   PortfolioConditionalRecommendationFilters,
   PortfolioConditionalRecommendationResponse,
@@ -147,6 +149,7 @@ function buildProfileForm(profile?: PortfolioProfile | null): ProfileFormState {
 export default function PortfolioPage() {
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [portfolioLoadError, setPortfolioLoadError] = useState<string | null>(null);
   const [submittingHolding, setSubmittingHolding] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [formError, setFormError] = useState("");
@@ -179,8 +182,10 @@ export default function PortfolioPage() {
       const next = await api.getPortfolio();
       setData(next);
       setProfileForm(buildProfileForm(next.profile));
+      setPortfolioLoadError(null);
     } catch (error) {
       console.error(error);
+      setPortfolioLoadError(getUserFacingErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다."));
       if (showFailureToast) {
         toast(getApiErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다."), "error");
       }
@@ -239,8 +244,15 @@ export default function PortfolioPage() {
       if (portfolioResult.status === "fulfilled") {
         setData(portfolioResult.value);
         setProfileForm(buildProfileForm(portfolioResult.value.profile));
+        setPortfolioLoadError(null);
       } else {
         console.error(portfolioResult.reason);
+        setPortfolioLoadError(
+          getUserFacingErrorMessage(
+            portfolioResult.reason,
+            "포트폴리오를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          ),
+        );
       }
       if (eventResult.status === "fulfilled") {
         setEventRadar(eventResult.value);
@@ -408,10 +420,29 @@ export default function PortfolioPage() {
 
   if (loading) {
     return (
-      <div className="page-shell animate-pulse space-y-5">
-        <div className="card h-48" />
-        <div className="card h-52" />
-        <div className="card h-80" />
+      <div className="page-shell space-y-5">
+        <section className="card !p-5 space-y-3">
+          <div className="section-heading">
+            <div>
+              <h1 className="section-title text-2xl">포트폴리오</h1>
+              <p className="section-copy">총자산, 보유 종목, 추천 패널을 계정 기준으로 순서대로 준비합니다.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="info-chip">계정별 자산</span>
+              <span className="info-chip">불러오는 중</span>
+            </div>
+          </div>
+        </section>
+        <WorkspaceLoadingCard
+          title="자산 요약과 보유 비중을 계산하고 있습니다"
+          message="총자산, 예수금, 보유 평가액을 먼저 읽어 운영 요약으로 다시 묶는 중입니다."
+          className="min-h-[180px]"
+        />
+        <WorkspaceLoadingCard
+          title="보유 종목과 추천 패널을 준비하고 있습니다"
+          message="보유 종목, 이벤트 레이더, 조건 추천을 같은 작업 흐름으로 채우는 중입니다."
+          className="min-h-[260px]"
+        />
       </div>
     );
   }
@@ -423,6 +454,33 @@ export default function PortfolioPage() {
         description="총자산, 보유 종목, 추천 결과를 계정별로 분리 저장하려면 먼저 로그인해 주세요."
         nextPath="/portfolio"
       />
+    );
+  }
+
+  if (!data && portfolioLoadError) {
+    return (
+      <div className="page-shell space-y-5">
+        <section className="card !p-5 space-y-3">
+          <div className="section-heading">
+            <div>
+              <h1 className="section-title text-2xl">포트폴리오</h1>
+              <p className="section-copy">총자산과 보유 종목을 먼저 정리하고, 추천은 마지막에 확인합니다.</p>
+            </div>
+          </div>
+        </section>
+        <WorkspaceStateCard
+          eyebrow="포트폴리오 지연"
+          title="계정 자산 워크스페이스를 아직 불러오지 못했습니다"
+          message={portfolioLoadError}
+          tone="warning"
+          actionLabel="포트폴리오 다시 불러오기"
+          onAction={() => {
+            setLoading(true);
+            setPortfolioLoadError(null);
+            void loadPortfolio(true).finally(() => setLoading(false));
+          }}
+        />
+      </div>
     );
   }
 

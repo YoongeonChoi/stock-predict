@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type { DailyBriefingResponse, HeatmapData, MarketMovers } from "@/lib/api";
 import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
@@ -40,56 +42,13 @@ function indicatorLabel(indicator: MarketIndicator) {
 }
 
 function describeLoadError(error: unknown, fallback: string) {
-  if (error instanceof ApiError) {
-    if (error.errorCode === "SP-5018") {
-      return "요청이 길어져 이번 섹션은 잠시 비워 두었습니다. 잠시 후 다시 시도해 주세요.";
-    }
-    return `${error.errorCode} · ${error.message}`;
+  if (error instanceof ApiError && error.errorCode === "SP-5018") {
+    return "요청이 길어져 이번 섹션은 잠시 비워 두었습니다. 잠시 후 다시 시도해 주세요.";
   }
   if (error instanceof ApiTimeoutError) {
     return fallback;
   }
-  if (error instanceof Error && error.message) {
-    return `${fallback} (${error.message})`;
-  }
-  return fallback;
-}
-
-function SectionFallback({
-  title = "상태 안내",
-  message,
-  onRetry,
-  compact = false,
-  tone = "neutral",
-}: {
-  title?: string;
-  message: string;
-  onRetry?: () => void;
-  compact?: boolean;
-  tone?: "neutral" | "warning";
-}) {
-  const toneClass =
-    tone === "warning"
-      ? "border-amber-500/20 bg-amber-500/6"
-      : "border-border/70 bg-surface/45";
-  return (
-    <div
-      className={`rounded-[22px] border px-4 text-sm text-text-secondary ${toneClass} ${
-        compact ? "py-4" : "py-5"
-      }`}
-    >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">{title}</div>
-      <div className="mt-2 leading-6">{message}</div>
-      {onRetry ? (
-        <button
-          onClick={onRetry}
-          className="mt-3 inline-flex rounded-full border border-accent/25 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent/45 hover:bg-accent/10"
-        >
-          다시 시도
-        </button>
-      ) : null}
-    </div>
-  );
+  return getUserFacingErrorMessage(error, fallback, { timeoutMessage: fallback });
 }
 
 export default function HomePage() {
@@ -321,22 +280,14 @@ export default function HomePage() {
         </div>
 
         {workspaceDelays.length > 0 ? (
-          <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/6 px-4 py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">부분 업데이트</div>
-                <div className="mt-2 text-sm text-text-secondary">
-                  {workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.
-                </div>
-              </div>
-              <button
-                onClick={retryCurrentWorkspace}
-                className="inline-flex rounded-full border border-accent/25 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent/45 hover:bg-accent/10"
-              >
-                현재 시장 다시 불러오기
-              </button>
-            </div>
-          </div>
+          <WorkspaceStateCard
+            eyebrow="부분 업데이트"
+            title="일부 계산이 더 필요합니다"
+            message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
+            tone="warning"
+            actionLabel="현재 시장 다시 불러오기"
+            onAction={retryCurrentWorkspace}
+          />
         ) : null}
 
         {countries.length > 1 ? (
@@ -421,7 +372,11 @@ export default function HomePage() {
             </div>
             <div className="mt-4">
               {briefingLoading ? (
-                <div className="h-64 rounded-[22px] bg-border/20 animate-pulse" />
+                <WorkspaceLoadingCard
+                  title="오늘의 포커스를 추리고 있습니다"
+                  message="브리핑, 핵심 종목, 가까운 일정 중 먼저 확인할 항목만 다시 묶는 중입니다."
+                  className="min-h-[230px]"
+                />
               ) : focusCards.length > 0 || events.length > 0 ? (
                 <div className="space-y-3">
                   {focusCards.map((item) => (
@@ -449,11 +404,11 @@ export default function HomePage() {
                   ))}
                 </div>
               ) : (
-                <SectionFallback
-                  title="포커스 지연"
+                <WorkspaceStateCard
+                  eyebrow="포커스 지연"
+                  title="오늘 바로 볼 항목을 아직 정리하지 못했습니다"
                   message={briefingError || "오늘의 포커스 데이터가 아직 없습니다."}
-                  onRetry={() => void loadBriefing()}
-                  compact
+                  onAction={() => void loadBriefing()}
                   tone="warning"
                 />
               )}
@@ -477,10 +432,11 @@ export default function HomePage() {
             ) : heatmapData ? (
               <StockHeatmap data={heatmapData} loading={false} />
             ) : (
-              <SectionFallback
-                title="히트맵 지연"
+              <WorkspaceStateCard
+                eyebrow="히트맵 지연"
+                title="시장 분포 계산이 조금 더 필요합니다"
                 message={heatmapError || "히트맵 데이터가 아직 없습니다."}
-                onRetry={retryCurrentWorkspace}
+                onAction={retryCurrentWorkspace}
                 tone="warning"
               />
             )}
@@ -493,7 +449,13 @@ export default function HomePage() {
             <p className="section-copy">선택 시장에서 강도가 강한 종목과 약한 종목을 같이 봅니다.</p>
           </div>
           {moversLoading ? (
-            <div className="mt-5 h-64 rounded-[22px] bg-border/20 animate-pulse" />
+            <div className="mt-5">
+              <WorkspaceLoadingCard
+                title="상승·하락 상위를 정리하고 있습니다"
+                message="강도가 큰 종목과 약한 종목을 분리해 순위 보드로 묶는 중입니다."
+                className="min-h-[240px]"
+              />
+            </div>
           ) : movers ? (
             <div className="mt-5 grid gap-5 sm:grid-cols-2 2xl:grid-cols-1">
               <div>
@@ -527,10 +489,11 @@ export default function HomePage() {
             </div>
             ) : (
               <div className="mt-5">
-                <SectionFallback
-                  title="상위 집계 지연"
+                <WorkspaceStateCard
+                  eyebrow="상위 집계 지연"
+                  title="등락 상위 집계가 아직 준비되지 않았습니다"
                   message={moversError || "상승·하락 상위 데이터가 아직 없습니다."}
-                  onRetry={retryCurrentWorkspace}
+                  onAction={retryCurrentWorkspace}
                   tone="warning"
                 />
               </div>
@@ -546,14 +509,19 @@ export default function HomePage() {
           </div>
           <div className="px-5 py-5">
             {radarLoading ? (
-              <div className="h-80 rounded-[22px] bg-border/20 animate-pulse" />
+              <WorkspaceLoadingCard
+                title="강한 셋업을 다시 계산하고 있습니다"
+                message="1차 시세 스캔과 실행 메모를 순서대로 정리해 레이더 후보를 채우는 중입니다."
+                className="min-h-[300px]"
+              />
             ) : radarData ? (
               <OpportunityRadarBoard data={radarData} compact embedded />
             ) : (
-              <SectionFallback
-                title="레이더 지연"
+              <WorkspaceStateCard
+                eyebrow="레이더 지연"
+                title="강한 셋업 후보를 아직 정리하지 못했습니다"
                 message={radarError || "강한 셋업 데이터가 아직 없습니다."}
-                onRetry={retryCurrentWorkspace}
+                onAction={retryCurrentWorkspace}
                 tone="warning"
               />
             )}
@@ -577,14 +545,14 @@ export default function HomePage() {
                 </a>
               ))}
               {!reportLoading && topNews.length === 0 ? (
-                <SectionFallback
-                  title={reportError ? "뉴스 지연" : "기사 연결 대기"}
+                <WorkspaceStateCard
+                  eyebrow={reportError ? "뉴스 지연" : "기사 연결 대기"}
+                  title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "연결된 기사 목록이 아직 비어 있습니다"}
                   message={
                     reportError ||
                     "시장 요약은 준비됐지만 연결된 핵심 기사 목록은 아직 비어 있습니다. 잠시 뒤 다시 열면 기사 연결이 채워질 수 있습니다."
                   }
-                  onRetry={reportError ? retryCurrentWorkspace : undefined}
-                  compact
+                  onAction={reportError ? retryCurrentWorkspace : undefined}
                   tone={reportError ? "warning" : "neutral"}
                 />
               ) : null}
@@ -613,14 +581,14 @@ export default function HomePage() {
                 </Link>
               ))}
               {!reportLoading && topStocks.length === 0 ? (
-                <SectionFallback
-                  title={reportError ? "상위 종목 지연" : "후보 정리 대기"}
+                <WorkspaceStateCard
+                  eyebrow={reportError ? "상위 종목 지연" : "후보 정리 대기"}
+                  title={reportError ? "상위 종목 점수 정리가 늦어지고 있습니다" : "상위 후보 정리가 아직 비어 있습니다"}
                   message={
                     reportError ||
                     "시장 리포트는 준비됐지만 상위 종목 점수 정리가 아직 비어 있습니다. 잠시 뒤 다시 열면 후보가 채워질 수 있습니다."
                   }
-                  onRetry={reportError ? retryCurrentWorkspace : undefined}
-                  compact
+                  onAction={reportError ? retryCurrentWorkspace : undefined}
                   tone={reportError ? "warning" : "neutral"}
                 />
               ) : null}
@@ -629,7 +597,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {loading ? <div className="card h-24 animate-pulse" /> : null}
+      {loading ? (
+        <WorkspaceLoadingCard
+          title="시장 워크스페이스를 준비하고 있습니다"
+          message="국가 목록과 대표 지표를 먼저 정리한 뒤 대시보드 패널을 순서대로 채웁니다."
+          className="min-h-[120px]"
+        />
+      ) : null}
     </div>
   );
 }
