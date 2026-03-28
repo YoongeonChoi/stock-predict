@@ -39,6 +39,8 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["country_code"], "KR")
         self.assertEqual(response["detailed_scanned_count"], 0)
         self.assertEqual(response["universe_note"], "기본 종목군 quick fallback")
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "opportunity_quick_response")
         await asyncio.wait_for(completion_gate.wait(), timeout=0.2)
 
 

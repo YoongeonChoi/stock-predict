@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.50.1 - 2026-03-29
+
+- `/api/market/opportunities/{code}`는 정밀 응답과 quick fallback이 모두 늦어질 때 더 이상 바로 `504 / SP-5018`로 끝나지 않고, 가능한 경우 `cached quick`를 다시 사용하거나 placeholder `200 + partial` 응답을 먼저 반환합니다. 그래서 전용 `/radar` first screen이 통째로 비는 구간을 줄였습니다.
+- quick fallback이 성공한 경우에도 이제 `partial: true`와 `fallback_reason=opportunity_quick_response`를 명시합니다. `PublicAuditStrip`은 `이전 quick 결과 기준`, `워밍업 placeholder 기준` 같은 새 fallback reason도 한국어로 읽히게 맞췄습니다.
+- README와 API 계약 문서에 Render Free / Supabase Free의 공식 idle·pause 정책 링크, 현재 KR 레이더 timeout 예산, 2026-03-29 실측 warm/cold 응답 시간을 따로 정리했습니다. 그래서 “free tier라 느리다”와 “실제 어떤 경로가 몇 초 안에 timeout 되는지”를 분리해서 확인할 수 있습니다.
+- 회귀 테스트를 추가해 `market opportunities`가 quick timeout 뒤 cached quick를 재사용하는 경우와, cached quick도 없을 때 placeholder partial로 내려오는 경우를 함께 고정했습니다.
+
 ## v2.50.0 - 2026-03-28
 
 - 공개 핵심 페이지 `/`, `/radar`, `/calendar`, `/archive`, `/screener`를 server-first 첫 화면으로 다시 정리했습니다. 이제 first screen은 최소한의 실제 수치, decision thread, 마지막 갱신/partial 상태를 서버 HTML에 먼저 담아 보내고, 클라이언트는 이어서 세부 패널만 보강합니다.

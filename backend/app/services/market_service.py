@@ -369,6 +369,10 @@ def _build_quote_only_opportunities(
     return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
 
 
+def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
+    return f"opportunity_radar_quick:v2:{country_code.upper()}:{int(limit)}"
+
+
 async def _build_quote_screen(
     *,
     country_code: str,
@@ -975,7 +979,7 @@ async def get_market_opportunities(
 
 async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar_quick:v2:{country_code}:{limit}"
+    cache_key = _quick_opportunity_cache_key(country_code, limit)
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -1052,3 +1056,34 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
         ).model_dump()
 
     return await cache.get_or_fetch(cache_key, _build_response, ttl=QUICK_OPPORTUNITY_CACHE_TTL_SECONDS)
+
+
+async def get_cached_market_opportunities_quick(country_code: str, limit: int = 12) -> dict | None:
+    return await cache.get(_quick_opportunity_cache_key(country_code, limit))
+
+
+def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:
+    country_code = country_code.upper()
+    country = COUNTRY_REGISTRY.get(country_code)
+    index_name = country.indices[0].name if country and country.indices else country_code
+    fallback_universe = UNIVERSE.get(country_code, {})
+    fallback_universe_size = len(_flatten_universe(fallback_universe))
+    placeholder_note = note.strip() or "대표 1차 스캔 준비가 길어져 현재는 시장 국면만 먼저 표시합니다."
+    return OpportunityRadarResponse(
+        country_code=country_code,
+        generated_at=datetime.now().isoformat(),
+        market_regime=_build_placeholder_market_regime(
+            country_code=country_code,
+            index_name=index_name,
+            note=placeholder_note,
+        ),
+        universe_size=fallback_universe_size,
+        total_scanned=0,
+        quote_available_count=0,
+        detailed_scanned_count=0,
+        actionable_count=0,
+        bullish_count=0,
+        universe_source="fallback",
+        universe_note=placeholder_note,
+        opportunities=[],
+    ).model_dump()

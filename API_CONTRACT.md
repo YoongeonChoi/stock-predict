@@ -69,6 +69,15 @@
 
 가능한 경우 public page는 raw 브라우저 fetch 에러보다 `200 + partial + fallback_reason`을 먼저 사용자에게 보여 줍니다.
 
+`/api/market/opportunities/{code}`의 현재 우선순위:
+
+1. full radar response
+2. quick radar response + `partial: true` + `fallback_reason=opportunity_quick_response`
+3. cached quick response reuse + `fallback_reason=opportunity_cached_quick_response`
+4. placeholder partial response + `fallback_reason=opportunity_placeholder_response`
+
+즉 이 경로는 가능한 한 hard `504`보다 `200 + partial`을 먼저 선택합니다.
+
 ## 인증 관련 계약
 
 ### 공개 계정 API

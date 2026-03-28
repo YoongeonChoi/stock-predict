@@ -73,6 +73,91 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["country_code"], "KR")
         self.assertEqual(response.json()["detailed_scanned_count"], 0)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_quick_response")
+
+    def test_market_opportunities_timeout_reuses_cached_quick_payload(self):
+        cached_quick_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "정밀 시장 국면 계산이 길어져 1차 시세 스캔 후보를 먼저 제공합니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 2729,
+            "total_scanned": 120,
+            "quote_available_count": 96,
+            "detailed_scanned_count": 0,
+            "actionable_count": 8,
+            "bullish_count": 5,
+            "universe_source": "krx_listing",
+            "universe_note": "이전 quick 응답입니다.",
+            "opportunities": [],
+        }
+        with (
+            patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=RuntimeError("quick failed"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=cached_quick_payload)),
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
+        self.assertIn("이전 quick 결과", response.json()["universe_note"])
+
+    def test_market_opportunities_timeout_returns_placeholder_partial_when_no_quick_exists(self):
+        placeholder_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "정밀 시장 국면 계산이 길어져 현재는 시장 국면만 먼저 표시합니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 243,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "시장 국면만 먼저 표시합니다.",
+            "opportunities": [],
+        }
+        with (
+            patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=RuntimeError("quick failed"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_placeholder_response")
+        self.assertEqual(response.json()["total_scanned"], 0)
 
     def test_heatmap_timeout_returns_partial_fallback(self):
         with (
