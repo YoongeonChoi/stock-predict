@@ -112,6 +112,37 @@ def _flatten_universe(universe: dict[str, list[str]]) -> list[tuple[str, str]]:
     return flattened
 
 
+def _sample_universe_pairs(universe: dict[str, list[str]], limit: int) -> list[tuple[str, str]]:
+    if limit <= 0:
+        return []
+    sector_names = list(universe.keys())
+    offsets = {sector: 0 for sector in sector_names}
+    sampled: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    while len(sampled) < limit:
+        advanced = False
+        for sector in sector_names:
+            tickers = universe.get(sector) or []
+            index = offsets[sector]
+            while index < len(tickers) and tickers[index] in seen:
+                index += 1
+            offsets[sector] = index
+            if index >= len(tickers):
+                continue
+            ticker = tickers[index]
+            offsets[sector] = index + 1
+            seen.add(ticker)
+            sampled.append((sector, ticker))
+            advanced = True
+            if len(sampled) >= limit:
+                break
+        if not advanced:
+            break
+
+    return sampled
+
+
 def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidates: int | None) -> int:
     if available <= 0:
         return 0
@@ -347,7 +378,7 @@ async def _build_quote_screen(
 ) -> dict:
     full_universe_pairs = _flatten_universe(universe_selection.sectors)
     if max_pairs is not None and max_pairs > 0:
-        universe_pairs = full_universe_pairs[:max_pairs]
+        universe_pairs = _sample_universe_pairs(universe_selection.sectors, max_pairs)
         scope_token = f"cap{max_pairs}"
     else:
         universe_pairs = full_universe_pairs
@@ -481,6 +512,18 @@ def _with_quote_recovery_note(selection: UniverseSelection) -> UniverseSelection
     )
 
 
+def _with_sampled_quote_recovery_note(selection: UniverseSelection, sample_size: int) -> UniverseSelection:
+    recovery_note = (
+        f"전종목 시세 확보가 계속 비어 대표 종목 {sample_size}개를 분산 샘플링한 1차 후보 화면으로 즉시 축소했습니다."
+    )
+    note = f"{selection.note} {recovery_note}".strip() if selection.note else recovery_note
+    return UniverseSelection(
+        sectors=selection.sectors,
+        source=selection.source,
+        note=note,
+    )
+
+
 async def _resolve_resilient_quote_screen(
     *,
     country_code: str,
@@ -508,6 +551,23 @@ async def _resolve_resilient_quote_screen(
         market_regime=market_regime,
         max_pairs=max_pairs,
     )
+    if (
+        country_code == "KR"
+        and max_pairs is None
+        and int(fallback_quote_screen.get("quote_available_count") or 0) <= 0
+    ):
+        sampled_selection = _with_sampled_quote_recovery_note(
+            fallback_selection,
+            QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
+        )
+        sampled_quote_screen = await _build_quote_screen(
+            country_code=country_code,
+            universe_selection=sampled_selection,
+            market_regime=market_regime,
+            max_pairs=QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
+        )
+        if int(sampled_quote_screen.get("quote_available_count") or 0) > 0:
+            return sampled_selection, sampled_quote_screen
     return fallback_selection, fallback_quote_screen
 
 
@@ -636,7 +696,10 @@ async def get_market_opportunities(
             (item["sector"], item["ticker"])
             for item in ranked_quotes[:detail_budget]
         ]
-        lightweight_candidates: list[tuple[str, str]] = candidates or _flatten_universe(universe_selection.sectors)
+        lightweight_candidates: list[tuple[str, str]] = (
+            candidates
+            or _sample_universe_pairs(universe_selection.sectors, LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES)
+        )
 
         async def _scan(candidate: tuple[str, str]) -> OpportunityItem | None:
             sector, ticker = candidate
@@ -954,7 +1017,10 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
         )
         if not ranked:
             ranked = await _build_lightweight_opportunities(
-                candidates=_flatten_universe(universe_selection.sectors)[: max(scanned_count, limit)],
+                candidates=_sample_universe_pairs(
+                    universe_selection.sectors,
+                    max(limit, LIGHTWEIGHT_OPPORTUNITY_MAX_CANDIDATES),
+                ),
                 country_code=country_code,
                 market_regime=market_regime,
                 limit=limit,
