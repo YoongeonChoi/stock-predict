@@ -13,7 +13,12 @@ from app.analysis.trade_planner import build_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell
 from app.analysis.stock_analyzer import _calc_technicals
 from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, yfinance_client
-from app.data.universe_data import UNIVERSE, resolve_opportunity_universe, resolve_universe
+from app.data.universe_data import (
+    UNIVERSE,
+    UniverseSelection,
+    resolve_opportunity_universe,
+    resolve_universe,
+)
 from app.models.country import COUNTRY_REGISTRY
 from app.models.market import MarketRegime, OpportunityItem, OpportunityRadarResponse
 from app.models.stock import PricePoint, TechnicalIndicators
@@ -464,6 +469,48 @@ async def _resolve_quick_opportunity_universe(country_code: str):
     return await resolve_universe(country_code)
 
 
+def _with_quote_recovery_note(selection: UniverseSelection) -> UniverseSelection:
+    recovery_note = (
+        "KRX 전종목 1차 시세 확보가 비어 응답 안정성이 검증된 대체 종목군으로 즉시 전환했습니다."
+    )
+    note = f"{selection.note} {recovery_note}".strip() if selection.note else recovery_note
+    return UniverseSelection(
+        sectors=selection.sectors,
+        source=selection.source,
+        note=note,
+    )
+
+
+async def _resolve_resilient_quote_screen(
+    *,
+    country_code: str,
+    universe_selection,
+    market_regime,
+    max_pairs: int | None = None,
+) -> tuple[UniverseSelection | SimpleNamespace, dict]:
+    quote_screen = await _build_quote_screen(
+        country_code=country_code,
+        universe_selection=universe_selection,
+        market_regime=market_regime,
+        max_pairs=max_pairs,
+    )
+    if (
+        country_code != "KR"
+        or universe_selection.source != "krx_listing"
+        or int(quote_screen.get("quote_available_count") or 0) > 0
+    ):
+        return universe_selection, quote_screen
+
+    fallback_selection = _with_quote_recovery_note(await resolve_universe(country_code))
+    fallback_quote_screen = await _build_quote_screen(
+        country_code=country_code,
+        universe_selection=fallback_selection,
+        market_regime=market_regime,
+        max_pairs=max_pairs,
+    )
+    return fallback_selection, fallback_quote_screen
+
+
 def build_distributional_signal_profile(
     *,
     current_price: float,
@@ -574,7 +621,7 @@ async def get_market_opportunities(
         )
 
         universe_selection = await resolve_opportunity_universe(country_code)
-        quote_screen = await _build_quote_screen(
+        universe_selection, quote_screen = await _resolve_resilient_quote_screen(
             country_code=country_code,
             universe_selection=universe_selection,
             market_regime=market_regime,
@@ -891,7 +938,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             note="정밀 시장 국면 계산이 길어져 1차 시세 스캔 후보를 먼저 제공합니다.",
         )
         universe_selection = await _resolve_quick_opportunity_universe(country_code)
-        quote_screen = await _build_quote_screen(
+        universe_selection, quote_screen = await _resolve_resilient_quote_screen(
             country_code=country_code,
             universe_selection=universe_selection,
             market_regime=market_regime,

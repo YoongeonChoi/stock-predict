@@ -19,8 +19,8 @@ from app.database import db
 
 log = logging.getLogger("stock_predict.research_archive")
 
-SYNC_STATUS_CACHE_KEY = "research_archive:sync_status"
-SUPPORTED_REGIONS = {"KR"}
+SYNC_STATUS_CACHE_KEY = "research_archive:sync_status:v2"
+SUPPORTED_REGIONS = {"KR", "US", "EU", "JP"}
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -86,23 +86,76 @@ SOURCES: tuple[ResearchSource, ...] = (
         home_url="https://www.bok.or.kr/imer/bbs/P0002455/list.do?menuNo=500788",
         feed_url="https://www.bok.or.kr/imer/bbs/P0002455/news.rss?menuNo=500788",
     ),
+    ResearchSource(
+        id="fed_press_monetary",
+        name="Federal Reserve Monetary Policy",
+        region_code="US",
+        organization_type="중앙은행",
+        language="en",
+        category="FOMC·통화정책",
+        home_url="https://www.federalreserve.gov/newsevents/pressreleases.htm",
+        feed_url="https://www.federalreserve.gov/feeds/press_monetary.xml",
+        entry_limit=8,
+    ),
+    ResearchSource(
+        id="ecb_research_bulletin",
+        name="ECB Research Bulletin",
+        region_code="EU",
+        organization_type="중앙은행 연구",
+        language="en",
+        category="유로존 연구 브리프",
+        home_url="https://www.ecb.europa.eu/press/research-publications/resbull/html/index.en.html",
+        feed_url="https://www.ecb.europa.eu/rss/rbu.rss",
+        entry_limit=8,
+    ),
+    ResearchSource(
+        id="boj_policy_research_en",
+        name="Bank of Japan Policy & Research",
+        region_code="JP",
+        organization_type="중앙은행",
+        language="en",
+        category="통화정책·리서치",
+        home_url="https://www.boj.or.jp/en/",
+        feed_url="https://www.boj.or.jp/en/rss/whatsnew.xml",
+        entry_limit=8,
+        title_keywords=(
+            "outlook",
+            "economic activity",
+            "prices",
+            "boj review",
+            "monthly report",
+            "monetary policy",
+            "summary of opinions",
+            "statement on monetary policy",
+        ),
+    ),
 )
 
 
+def _allowed_source_ids() -> set[str]:
+    return {source.id for source in SOURCES}
+
+
 def _filter_status_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    allowed_sources = {source.id for source in SOURCES}
+    allowed_sources = _allowed_source_ids()
     filtered = dict(snapshot)
-    filtered["by_region"] = [
-        item for item in snapshot.get("by_region", []) if item.get("region_code") in SUPPORTED_REGIONS
+    regions = snapshot.get("regions") or snapshot.get("by_region") or []
+    sources = snapshot.get("sources") or snapshot.get("by_source") or []
+    filtered_regions = [
+        item for item in regions if item.get("region_code") in SUPPORTED_REGIONS
     ]
-    filtered["by_source"] = [
-        item for item in snapshot.get("by_source", []) if item.get("source_id") in allowed_sources
+    filtered_sources = [
+        item for item in sources if item.get("source_id") in allowed_sources
     ]
-    if filtered["by_region"]:
-        filtered["total_reports"] = int(sum(int(item.get("total") or 0) for item in filtered["by_region"]))
+    filtered["regions"] = filtered_regions
+    filtered["sources"] = filtered_sources
+    filtered["by_region"] = filtered_regions
+    filtered["by_source"] = filtered_sources
+    if filtered_regions:
+        filtered["total_reports"] = int(sum(int(item.get("total") or 0) for item in filtered_regions))
     else:
         filtered["total_reports"] = int(snapshot.get("total_reports") or 0)
-    filtered["source_count"] = len(filtered["by_source"])
+    filtered["source_count"] = len(filtered_sources)
     return filtered
 
 
@@ -390,7 +443,19 @@ async def list_public_research_reports(
     if auto_refresh:
         await sync_public_research_reports(force=False)
     normalized_region = region_code if region_code in SUPPORTED_REGIONS else "KR"
-    rows = await db.research_report_list(region_code=normalized_region, source_id=source_id, limit=limit)
+    allowed_sources = _allowed_source_ids()
+    if source_id and source_id not in allowed_sources:
+        return []
+
+    candidate_limit = limit if source_id else min(max(limit * 4, limit + 20), 800)
+    rows = await db.research_report_list(
+        region_code=normalized_region,
+        source_id=source_id,
+        limit=candidate_limit,
+    )
+    if not source_id:
+        rows = [row for row in rows if row.get("source_id") in allowed_sources]
+    rows = rows[:limit]
     today_iso = datetime.now(timezone.utc).date().isoformat()
     for row in rows:
         row["is_new_today"] = str(row.get("published_at", "")).startswith(today_iso)

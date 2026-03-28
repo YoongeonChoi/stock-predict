@@ -17,6 +17,26 @@ class ResearchArchiveHelpersTests(unittest.TestCase):
             "https://example.com/paper.pdf",
         )
 
+    def test_filter_status_snapshot_normalizes_regions_and_sources(self):
+        snapshot = {
+            "total_reports": 10,
+            "source_count": 2,
+            "regions": [{"region_code": "KR", "total": 6}, {"region_code": "US", "total": 4}],
+            "sources": [
+                {"source_id": "bok_monetary_policy", "source_name": "한국은행 통화정책", "total": 6},
+                {"source_id": "fed_press_monetary", "source_name": "Federal Reserve Monetary Policy", "total": 4},
+            ],
+        }
+
+        filtered = service._filter_status_snapshot(snapshot)
+
+        self.assertEqual(filtered["total_reports"], 10)
+        self.assertEqual(filtered["source_count"], 2)
+        self.assertEqual(len(filtered["regions"]), 2)
+        self.assertEqual(len(filtered["sources"]), 2)
+        self.assertEqual(filtered["regions"], filtered["by_region"])
+        self.assertEqual(filtered["sources"], filtered["by_source"])
+
 
 class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_sync_public_research_reports_aggregates_sources(self):
@@ -66,12 +86,14 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
         rows = [
             {
                 "id": 1,
+                "source_id": "bok_monetary_policy",
                 "title": "테스트",
                 "published_at": today_iso,
                 "pdf_url": "https://example.com/file.pdf",
             },
             {
                 "id": 2,
+                "source_id": "bok_monetary_policy",
                 "title": "이전 자료",
                 "published_at": "2026-03-20",
                 "pdf_url": None,
@@ -88,6 +110,33 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result[0]["has_pdf"])
         self.assertFalse(result[1]["is_new_today"])
         self.assertFalse(result[1]["has_pdf"])
+
+    async def test_list_public_research_reports_filters_out_inactive_sources(self):
+        rows = [
+            {
+                "id": 1,
+                "source_id": "fed_feds",
+                "title": "이전 실험 소스",
+                "published_at": "2026-03-28",
+                "pdf_url": None,
+            },
+            {
+                "id": 2,
+                "source_id": "fed_press_monetary",
+                "title": "활성 소스",
+                "published_at": "2026-03-27",
+                "pdf_url": None,
+            },
+        ]
+
+        with (
+            patch.object(service, "sync_public_research_reports", new=AsyncMock()),
+            patch.object(service.db, "research_report_list", new=AsyncMock(return_value=rows)),
+        ):
+            result = await service.list_public_research_reports(region_code="US", limit=10, auto_refresh=True)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["source_id"], "fed_press_monetary")
 
 
 if __name__ == "__main__":

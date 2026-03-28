@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import ErrorBanner from "@/components/ErrorBanner";
+import PageHeader from "@/components/PageHeader";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import type {
@@ -12,6 +13,7 @@ import type {
   PredictionAccuracyStats,
   ResearchArchiveEntry,
   ResearchArchiveStatus,
+  ResearchRegionCode,
 } from "@/lib/api";
 import { downloadApiFile } from "@/lib/download";
 
@@ -26,16 +28,21 @@ function reportTypeLabel(type: string) {
   return "종목";
 }
 
-const REGION_LABELS: Record<string, string> = {
+const REGION_LABELS: Record<ResearchRegionCode, string> = {
   KR: "한국",
+  US: "미국",
+  EU: "유로존",
+  JP: "일본",
 };
+
+const RESEARCH_REGIONS: ResearchRegionCode[] = ["KR", "US", "EU", "JP"];
 
 export default function ArchivePage() {
   const [archives, setArchives] = useState<ArchiveEntry[]>([]);
   const [accuracy, setAccuracy] = useState<PredictionAccuracyStats | null>(null);
   const [researchReports, setResearchReports] = useState<ResearchArchiveEntry[]>([]);
   const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(null);
-  const [researchRegion, setResearchRegion] = useState<"KR">("KR");
+  const [researchRegion, setResearchRegion] = useState<ResearchRegionCode>("KR");
   const [loading, setLoading] = useState(true);
   const [researchLoading, setResearchLoading] = useState(true);
   const [refreshingResearch, setRefreshingResearch] = useState(false);
@@ -57,7 +64,7 @@ export default function ArchivePage() {
   }, []);
 
   useEffect(() => {
-    loadResearch(false);
+    void loadResearch(false);
   }, [researchRegion]);
 
   async function loadResearch(forceRefresh: boolean) {
@@ -98,32 +105,46 @@ export default function ArchivePage() {
     setRefreshingResearch(false);
   }
 
+  const activeRegionTotal = useMemo(
+    () => researchStatus?.regions.find((item) => item.region_code === researchRegion)?.total ?? researchReports.length,
+    [researchReports.length, researchRegion, researchStatus],
+  );
+  const visibleSources = useMemo(() => researchStatus?.sources.slice(0, 8) ?? [], [researchStatus]);
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight">리포트 아카이브</h1>
-        <p className="text-sm text-text-secondary">
-          내부 분석 리포트와 공식 기관 원문 리서치를 한곳에서 다시 열어보고, 필요한 자료는 바로 내려받거나 원문으로 이동할 수 있습니다.
-        </p>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Archive"
+        title="리포트 아카이브"
+        description="내부 분석 리포트와 공식 기관 원문 리서치를 한곳에서 다시 열어보고, 필요한 자료는 바로 내려받거나 원문으로 이동할 수 있습니다."
+        meta={
+          <>
+            <span className="info-chip">공식 기관 우선</span>
+            <span className="info-chip">{REGION_LABELS[researchRegion]} 보기</span>
+            {researchStatus ? <span className="info-chip">활성 소스 {researchStatus.source_count}개</span> : null}
+          </>
+        }
+      />
 
       {error ? <ErrorBanner error={error} onRetry={() => window.location.reload()} /> : null}
 
-      <div className="space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <section className="card !p-5 space-y-5">
+        <div className="section-heading gap-4">
           <div>
-            <h2 className="font-semibold text-lg">기관 리서치 아카이브</h2>
-            <p className="text-sm text-text-secondary mt-1">
-              KDI와 한국은행 공식 리포트를 하루 한 번 동기화합니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
+            <h2 className="section-title">기관 리서치 아카이브</h2>
+            <p className="section-copy">
+              한국은행, KDI, Federal Reserve, ECB, BOJ 공식 리포트를 모아 둡니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(["KR"] as const).map((region) => (
+            {RESEARCH_REGIONS.map((region) => (
               <button
                 key={region}
                 onClick={() => setResearchRegion(region)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  researchRegion === region ? "bg-accent text-white" : "border border-border hover:border-accent/50"
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  researchRegion === region
+                    ? "bg-accent text-white"
+                    : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
                 }`}
               >
                 {REGION_LABELS[region]}
@@ -132,189 +153,223 @@ export default function ArchivePage() {
             <button
               onClick={handleResearchRefresh}
               disabled={refreshingResearch}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-accent/50 disabled:opacity-50"
+              className="rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text disabled:opacity-50"
             >
               {refreshingResearch ? "새로고침 중..." : "기관 리포트 새로고침"}
             </button>
           </div>
         </div>
 
-        {researchError ? <ErrorBanner error={researchError} onRetry={() => loadResearch(false)} /> : null}
+        {researchError ? <ErrorBanner error={researchError} onRetry={() => void loadResearch(false)} /> : null}
 
         {researchStatus ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="card">
-              <div className="text-xs text-text-secondary">누적 기관 리포트</div>
-              <div className="text-xl font-bold mt-1">{researchStatus.total_reports}</div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="metric-card">
+              <div className="text-xs text-text-secondary">현재 지역 리포트</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{activeRegionTotal}</div>
+              <div className="mt-1 text-xs text-text-secondary">{REGION_LABELS[researchRegion]} 기준</div>
             </div>
-            <div className="card">
+            <div className="metric-card">
+              <div className="text-xs text-text-secondary">전체 소스</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{researchStatus.source_count}</div>
+              <div className="mt-1 text-xs text-text-secondary">활성 공식 기관</div>
+            </div>
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">오늘 반영</div>
-              <div className="text-xl font-bold mt-1">{researchStatus.todays_reports}</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{researchStatus.todays_reports}</div>
+              <div className="mt-1 text-xs text-text-secondary">전체 지역 합산</div>
             </div>
-            <div className="card">
-              <div className="text-xs text-text-secondary">활성 소스</div>
-              <div className="text-xl font-bold mt-1">{researchStatus.source_count}</div>
-            </div>
-            <div className="card">
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">최근 동기화</div>
-              <div className="text-sm font-bold mt-1">
+              <div className="mt-2 text-sm font-semibold text-text">
                 {researchStatus.refreshed_at ? new Date(researchStatus.refreshed_at).toLocaleString("ko-KR") : "아직 없음"}
               </div>
+              <div className="mt-1 text-xs text-text-secondary">하루 1회 기본 동기화</div>
             </div>
+          </div>
+        ) : null}
+
+        {researchStatus?.regions?.length ? (
+          <div className="flex flex-wrap gap-2">
+            {researchStatus.regions.map((item) => (
+              <span key={item.region_code} className="info-chip">
+                {REGION_LABELS[item.region_code]} {item.total}건
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {visibleSources.length ? (
+          <div className="flex flex-wrap gap-2">
+            {visibleSources.map((source) => (
+              <span key={source.source_id} className="rounded-full border border-border/70 bg-surface/55 px-3 py-1.5 text-xs text-text-secondary">
+                {source.source_name} {source.total}건
+              </span>
+            ))}
           </div>
         ) : null}
 
         {researchLoading ? (
           <div className="animate-pulse space-y-3">
-            {[1, 2, 3].map((i) => <div key={i} className="h-28 bg-border rounded" />)}
+            {[1, 2, 3].map((i) => <div key={i} className="h-28 rounded-[22px] bg-border/25" />)}
           </div>
         ) : researchReports.length === 0 ? (
-          <div className="card text-text-secondary">
-            아직 반영된 기관 리포트가 없습니다. 잠시 후 새로고침하거나 설정 페이지에서 동기화 상태를 확인해 주세요.
+          <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-5 text-sm text-text-secondary">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">리포트 대기</div>
+            <div className="mt-2 leading-6">
+              {REGION_LABELS[researchRegion]} 공개 리포트가 아직 반영되지 않았습니다. 잠시 후 새로고침하거나 다른 지역을 먼저 확인해 주세요.
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
             {researchReports.map((report) => (
-              <div key={report.id} className="card flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs px-2 py-0.5 rounded bg-accent/10 text-accent">{report.source_name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-border text-text-secondary">
-                      {REGION_LABELS[report.region_code] || report.region_code}
-                    </span>
-                    <span className="text-xs text-text-secondary">{report.organization_type}</span>
-                    {report.is_new_today ? <span className="text-xs px-2 py-0.5 rounded bg-positive/10 text-positive">오늘 반영</span> : null}
-                    <span className="text-xs text-text-secondary lg:ml-auto">
-                      {new Date(report.published_at).toLocaleDateString("ko-KR")}
-                    </span>
+              <div key={report.id} className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">{report.source_name}</span>
+                      <span className="rounded-full bg-border/40 px-2 py-0.5 text-xs text-text-secondary">
+                        {REGION_LABELS[report.region_code]}
+                      </span>
+                      <span className="text-xs text-text-secondary">{report.organization_type}</span>
+                      {report.is_new_today ? <span className="rounded-full bg-positive/10 px-2 py-0.5 text-xs text-positive">오늘 반영</span> : null}
+                      <span className="text-xs text-text-secondary lg:ml-auto">
+                        {new Date(report.published_at).toLocaleDateString("ko-KR")}
+                      </span>
+                    </div>
+                    <div className="mt-3 font-medium text-text">{report.title}</div>
+                    <p className="mt-2 text-sm leading-6 text-text-secondary">
+                      {report.summary || "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다."}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-text-secondary">
+                      {report.category ? <span>{report.category}</span> : null}
+                      <span>{report.language === "ko" ? "한국어" : "영어"}</span>
+                    </div>
                   </div>
-                  <div className="mt-2 font-medium">{report.title}</div>
-                  <p className="text-sm text-text-secondary mt-2 line-clamp-3">
-                    {report.summary || "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다."}
-                  </p>
-                  <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-secondary">
-                    {report.category ? <span>{report.category}</span> : null}
-                    <span>{report.language === "ko" ? "한국어" : "영어"}</span>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  {report.has_pdf && report.pdf_url ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {report.has_pdf && report.pdf_url ? (
+                      <a
+                        href={report.pdf_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                      >
+                        PDF 열기
+                      </a>
+                    ) : null}
                     <a
-                      href={report.pdf_url}
+                      href={report.report_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-3 py-1.5 rounded text-xs font-medium bg-accent text-white hover:opacity-90 transition-opacity"
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
                     >
-                      PDF 열기
+                      원문 보기
                     </a>
-                  ) : null}
-                  <a
-                    href={report.report_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded text-xs font-medium border border-border hover:border-accent/50 transition-colors"
-                  >
-                    원문 보기
-                  </a>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
       {accuracy && accuracy.stored_predictions > 0 ? (
-        <div className="space-y-3">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-2xl border border-border bg-surface/70 px-4 py-4">
+        <section className="space-y-3">
+          <div className="flex flex-col gap-3 rounded-[22px] border border-border bg-surface/70 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="font-medium">예측 검증을 더 깊게 보고 싶다면</div>
-              <div className="text-sm text-text-secondary mt-1">
+              <div className="mt-1 text-sm text-text-secondary">
                 예측 연구실에서 보정 상태, 최근 오차, 모델 버전별 신뢰도를 함께 확인할 수 있습니다.
               </div>
             </div>
-            <Link href="/lab" className="px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90">
+            <Link href="/lab" className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">
               예측 연구실 열기
             </Link>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="card">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">저장된 예측</div>
-              <div className="text-xl font-bold mt-1">{accuracy.stored_predictions}</div>
-              <div className="text-[11px] text-text-secondary mt-1">평가 대기 {accuracy.pending_predictions}</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{accuracy.stored_predictions}</div>
+              <div className="mt-1 text-xs text-text-secondary">평가 대기 {accuracy.pending_predictions}</div>
             </div>
-            <div className="card">
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">방향 적중률</div>
-              <div className="text-xl font-bold mt-1">{(accuracy.direction_accuracy * 100).toFixed(1)}%</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{(accuracy.direction_accuracy * 100).toFixed(1)}%</div>
             </div>
-            <div className="card">
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">예상 밴드 적중률</div>
-              <div className="text-xl font-bold mt-1">{(accuracy.within_range_rate * 100).toFixed(1)}%</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{(accuracy.within_range_rate * 100).toFixed(1)}%</div>
             </div>
-            <div className="card">
+            <div className="metric-card">
               <div className="text-xs text-text-secondary">평균 오차</div>
-              <div className="text-xl font-bold mt-1">{accuracy.avg_error_pct.toFixed(2)}%</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{accuracy.avg_error_pct.toFixed(2)}%</div>
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
 
-      <div className="pt-2">
-        <h2 className="font-semibold text-lg">내부 분석 리포트</h2>
-        <p className="text-sm text-text-secondary mt-1">
-          국가, 섹터, 종목 분석을 실행하면 자동으로 저장되는 내부 리포트입니다.
-        </p>
-      </div>
+      <section className="space-y-3">
+        <div>
+          <h2 className="section-title">내부 분석 리포트</h2>
+          <p className="section-copy">국가, 섹터, 종목 분석을 실행하면 자동으로 저장되는 내부 리포트입니다.</p>
+        </div>
 
-      {loading ? (
-        <div className="animate-pulse space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-24 bg-border rounded" />)}</div>
-      ) : archives.length === 0 ? (
-        <div className="card text-text-secondary">
-          아직 저장된 리포트가 없습니다. 국가, 섹터, 종목 분석을 실행하면 아카이브에 자동으로 쌓입니다.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {archives.map((archive) => (
-            <div key={archive.id} className="card flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${
-                    archive.report_type === "country" ? "bg-blue-500/20 text-blue-500" :
-                    archive.report_type === "sector" ? "bg-amber-500/20 text-amber-500" : "bg-emerald-500/20 text-emerald-500"
-                  }`}>{reportTypeLabel(archive.report_type)}</span>
-                  {archive.country_code ? <span className="text-xs text-text-secondary">{archive.country_code}</span> : null}
-                  {archive.ticker ? <span className="text-xs font-mono">{archive.ticker}</span> : null}
-                  <span className="text-xs text-text-secondary lg:ml-auto">
-                    {new Date(archive.created_at * 1000).toLocaleDateString("ko-KR")}
-                  </span>
-                </div>
-                <p className="text-sm text-text-secondary mt-2 line-clamp-2">
-                  {archive.preview || "저장된 요약이 없어 원본 리포트 메타데이터만 제공합니다."}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 shrink-0">
-                <button
-                  onClick={() => handleDownload(archive.id, "pdf")}
-                  className="px-3 py-1.5 rounded text-xs font-medium bg-accent text-white hover:opacity-90 transition-opacity"
-                >
-                  PDF 바로받기
-                </button>
-                <button
-                  onClick={() => handleDownload(archive.id, "csv")}
-                  className="px-3 py-1.5 rounded text-xs font-medium border border-border hover:border-accent/50 transition-colors"
-                >
-                  CSV 바로받기
-                </button>
-                <Link
-                  href={`/archive/export/${archive.id}`}
-                  className="px-3 py-1.5 rounded text-xs font-medium border border-border hover:border-accent/50 transition-colors"
-                >
-                  내보내기 허브
-                </Link>
-              </div>
+        {loading ? (
+          <div className="animate-pulse space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-[22px] bg-border/25" />)}</div>
+        ) : archives.length === 0 ? (
+          <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-5 text-sm text-text-secondary">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">리포트 대기</div>
+            <div className="mt-2 leading-6">
+              아직 저장된 리포트가 없습니다. 국가, 섹터, 종목 분석을 실행하면 아카이브에 자동으로 쌓입니다.
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {archives.map((archive) => (
+              <div key={archive.id} className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${
+                        archive.report_type === "country" ? "bg-blue-500/20 text-blue-500" :
+                        archive.report_type === "sector" ? "bg-amber-500/20 text-amber-500" : "bg-emerald-500/20 text-emerald-500"
+                      }`}>{reportTypeLabel(archive.report_type)}</span>
+                      {archive.country_code ? <span className="text-xs text-text-secondary">{archive.country_code}</span> : null}
+                      {archive.ticker ? <span className="text-xs font-mono">{archive.ticker}</span> : null}
+                      <span className="text-xs text-text-secondary lg:ml-auto">
+                        {new Date(archive.created_at * 1000).toLocaleDateString("ko-KR")}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-text-secondary">
+                      {archive.preview || "저장된 요약이 없어 원본 리포트 메타데이터만 제공합니다."}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      onClick={() => handleDownload(archive.id, "pdf")}
+                      className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    >
+                      PDF 바로받기
+                    </button>
+                    <button
+                      onClick={() => handleDownload(archive.id, "csv")}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                    >
+                      CSV 바로받기
+                    </button>
+                    <Link
+                      href={`/archive/export/${archive.id}`}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                    >
+                      내보내기 허브
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

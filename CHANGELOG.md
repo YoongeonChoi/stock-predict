@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.49.0 - 2026-03-28
+
+- 대시보드와 기회 레이더의 빈 카드·지연 상태를 더 명확한 부분 업데이트 안내와 준비 중 메시지로 정리했습니다. 그래서 일부 공개 패널이 늦어져도 화면이 고장난 것처럼 보이기보다, 어떤 데이터가 늦는지 바로 읽을 수 있습니다.
+- KR `Opportunity Radar`는 이제 `KRX 상장사 전종목 1차 시세 확보 수 = 0`이 나오면 운영용 기본 종목군으로 즉시 재시도합니다. 운영 배포에서 `실제 시세 확보 0 / 표시 후보 0`이 길게 고정되던 흐름을 줄이고, 후보와 실행 메모를 먼저 보여주도록 맞췄습니다.
+- 기관 리서치 아카이브를 `KR / US / EU / JP`까지 확장했습니다. `KDI`, `한국은행`, `Federal Reserve`, `ECB`, `BOJ` 공식 리포트를 지역 탭으로 나눠 다시 볼 수 있고, 상태 카드와 실제 목록이 현재 활성 소스 기준으로 같은 숫자를 보이도록 정리했습니다.
+- 회귀 테스트는 `KR 레이더 quote fallback`, `리서치 status normalization`, `inactive source filter` 계약까지 함께 고정했습니다.
+
 ## v2.48.4 - 2026-03-28
 
 - 공개 `KR screener` 기본 quick path는 이제 SQLite shared cache를 우회하고 바로 계산합니다. Render free 환경에서 캐시 DB 경합이나 느린 I/O 때문에 공개 응답이 같이 막히는 위험을 줄이기 위한 조정입니다.
