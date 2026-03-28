@@ -10,11 +10,13 @@ from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["screener"])
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
+SCREENER_RESPONSE_CACHE_TTL = 600
 SCREENER_MAX_CANDIDATES = 36
 SCREENER_MAX_SECTOR_CANDIDATES = 16
 SCREENER_MAX_PER_SECTOR = 4
 SCREENER_CONCURRENCY = 4
 SCREENER_ENRICHMENT_BUDGET = 12
+SCREENER_COLD_START_KR_CANDIDATES = 10
 
 ALLOWED_SORT_FIELDS = {
     "market_cap",
@@ -37,6 +39,41 @@ def _normalize_query_param(value):
     if isinstance(value, Param):
         return value.default
     return value
+
+
+def _build_screener_cache_key(
+    *,
+    country: str,
+    sector: str | None,
+    market_cap_min: float | None,
+    market_cap_max: float | None,
+    price_min: float | None,
+    price_max: float | None,
+    pe_min: float | None,
+    pe_max: float | None,
+    pb_max: float | None,
+    dividend_yield_min: float | None,
+    beta_max: float | None,
+    change_pct_min: float | None,
+    change_pct_max: float | None,
+    pct_from_52w_high_min: float | None,
+    pct_from_52w_high_max: float | None,
+    revenue_growth_min: float | None,
+    roe_min: float | None,
+    debt_to_equity_max: float | None,
+    avg_volume_min: float | None,
+    profitable_only: bool,
+    score_min: float | None,
+    sort_by: str,
+    sort_dir: str,
+    limit: int,
+) -> str:
+    return (
+        f"screener:v7:{country}:{sector}:{market_cap_min}:{market_cap_max}:{price_min}:{price_max}:"
+        f"{pe_min}:{pe_max}:{pb_max}:{dividend_yield_min}:{beta_max}:{change_pct_min}:{change_pct_max}:"
+        f"{pct_from_52w_high_min}:{pct_from_52w_high_max}:{revenue_growth_min}:{roe_min}:{debt_to_equity_max}:"
+        f"{avg_volume_min}:{profitable_only}:{score_min}:{sort_by}:{sort_dir}:{limit}"
+    )
 
 
 def _select_candidate_tickers(universe: dict[str, list[str]], sector: str | None) -> list[str]:
@@ -139,6 +176,55 @@ def _find_owning_sector(universe: dict[str, list[str]], ticker: str, sector: str
         (sector_name for sector_name, sector_tickers in universe.items() if ticker in sector_tickers),
         "N/A",
     )
+
+
+def _filter_snapshot_results(
+    results: list[dict],
+    *,
+    market_cap_min: float | None,
+    market_cap_max: float | None,
+    price_min: float | None,
+    price_max: float | None,
+    change_pct_min: float | None,
+    change_pct_max: float | None,
+) -> list[dict]:
+    filtered_results: list[dict] = []
+    for item in results:
+        market_cap = float(item.get("market_cap") or 0.0)
+        current_price = float(item.get("current_price") or 0.0)
+        change_pct = float(item.get("change_pct") or 0.0)
+
+        if market_cap_min and market_cap < market_cap_min:
+            continue
+        if market_cap_max and market_cap > market_cap_max:
+            continue
+        if price_min and current_price < price_min:
+            continue
+        if price_max and current_price > price_max:
+            continue
+        if change_pct_min is not None and change_pct < change_pct_min:
+            continue
+        if change_pct_max is not None and change_pct > change_pct_max:
+            continue
+        filtered_results.append(item)
+    return filtered_results
+
+
+def _sort_screened_results(results: list[dict], *, sort_by: str, sort_dir: str, limit: int) -> list[dict]:
+    reverse = sort_dir == "desc"
+    sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
+    results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
+    return results[:limit]
+
+
+def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
+    async def _warm() -> None:
+        try:
+            await cache.get_or_fetch(cache_key, fetcher, ttl=SCREENER_RESPONSE_CACHE_TTL)
+        except Exception as exc:
+            logging.warning("screener cache warmup failed for %s: %s", cache_key, exc)
+
+    asyncio.create_task(_warm())
 
 
 async def _build_kr_bulk_snapshot_results(
@@ -285,11 +371,31 @@ async def screen_stocks(
     country = country.upper()
     if country != "KR":
         country = "KR"
-    cache_key = (
-        f"screener:v6:{country}:{sector}:{market_cap_min}:{market_cap_max}:{price_min}:{price_max}:"
-        f"{pe_min}:{pe_max}:{pb_max}:{dividend_yield_min}:{beta_max}:{change_pct_min}:{change_pct_max}:"
-        f"{pct_from_52w_high_min}:{pct_from_52w_high_max}:{revenue_growth_min}:{roe_min}:{debt_to_equity_max}:"
-        f"{avg_volume_min}:{profitable_only}:{score_min}:{sort_by}:{sort_dir}:{limit}"
+    cache_key = _build_screener_cache_key(
+        country=country,
+        sector=sector,
+        market_cap_min=market_cap_min,
+        market_cap_max=market_cap_max,
+        price_min=price_min,
+        price_max=price_max,
+        pe_min=pe_min,
+        pe_max=pe_max,
+        pb_max=pb_max,
+        dividend_yield_min=dividend_yield_min,
+        beta_max=beta_max,
+        change_pct_min=change_pct_min,
+        change_pct_max=change_pct_max,
+        pct_from_52w_high_min=pct_from_52w_high_min,
+        pct_from_52w_high_max=pct_from_52w_high_max,
+        revenue_growth_min=revenue_growth_min,
+        roe_min=roe_min,
+        debt_to_equity_max=debt_to_equity_max,
+        avg_volume_min=avg_volume_min,
+        profitable_only=profitable_only,
+        score_min=score_min,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
     )
     needs_enrichment = _needs_enrichment(
         pe_min=pe_min,
@@ -445,78 +551,95 @@ async def screen_stocks(
             logging.warning("screener: failed %s: %s", ticker, e)
             return None
 
-    async def _build_response():
+    async def _load_universe() -> dict[str, list[str]]:
         nonlocal universe
-        universe = await get_universe(country, prefer_fallback=(country == "KR"))
-        tickers = _select_candidate_tickers(universe, sector)
+        if not universe:
+            universe = await get_universe(country, prefer_fallback=(country == "KR"))
+        return universe
+
+    async def _build_response(
+        *,
+        candidate_limit: int | None = None,
+        partial: bool = False,
+        fallback_reason: str | None = None,
+    ):
+        current_universe = await _load_universe()
+        tickers = _select_candidate_tickers(current_universe, sector)
         if not needs_enrichment and country == "KR":
-            tickers = tickers[: max(limit, 10)]
+            if candidate_limit is None:
+                tickers = tickers[: max(limit, 10)]
+            else:
+                tickers = tickers[:candidate_limit]
             bulk_results = await _build_kr_bulk_snapshot_results(
                 tickers=tickers,
-                universe=universe,
+                universe=current_universe,
                 sector=sector,
                 country=country,
                 skip_full_market_fallback=True,
             )
-            filtered_results = []
-            for item in bulk_results:
-                market_cap = float(item.get("market_cap") or 0.0)
-                current_price = float(item.get("current_price") or 0.0)
-                change_pct = float(item.get("change_pct") or 0.0)
-
-                if market_cap_min and market_cap < market_cap_min:
-                    continue
-                if market_cap_max and market_cap > market_cap_max:
-                    continue
-                if price_min and current_price < price_min:
-                    continue
-                if price_max and current_price > price_max:
-                    continue
-                if change_pct_min is not None and change_pct < change_pct_min:
-                    continue
-                if change_pct_max is not None and change_pct > change_pct_max:
-                    continue
-                filtered_results.append(item)
-
-            reverse = sort_dir == "desc"
-            sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
-            filtered_results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
-            return {
-                "results": filtered_results[:limit],
+            filtered_results = _filter_snapshot_results(
+                bulk_results,
+                market_cap_min=market_cap_min,
+                market_cap_max=market_cap_max,
+                price_min=price_min,
+                price_max=price_max,
+                change_pct_min=change_pct_min,
+                change_pct_max=change_pct_max,
+            )
+            response = {
+                "results": _sort_screened_results(filtered_results, sort_by=sort_by, sort_dir=sort_dir, limit=limit),
                 "total": len(filtered_results[:limit]),
-                "sectors": list(universe.keys()),
+                "sectors": list(current_universe.keys()),
             }
+            if partial:
+                response["partial"] = True
+                response["fallback_reason"] = fallback_reason or "kr_bulk_snapshot_warming"
+            return response
 
         if needs_enrichment:
             tickers = tickers[: max(limit * 2, SCREENER_ENRICHMENT_BUDGET)]
         screened = await gather_limited(tickers, _screen_ticker, limit=SCREENER_CONCURRENCY)
         results = [item for item in screened if not isinstance(item, Exception) and item is not None]
 
-        reverse = sort_dir == "desc"
-        sort_key = sort_by if sort_by in ALLOWED_SORT_FIELDS else "market_cap"
-        results.sort(key=lambda x: x.get(sort_key) or 0, reverse=reverse)
-        results = results[:limit]
+        results = _sort_screened_results(results, sort_by=sort_by, sort_dir=sort_dir, limit=limit)
 
         return {
             "results": results,
             "total": len(results),
-            "sectors": list(universe.keys()),
+            "sectors": list(current_universe.keys()),
         }
 
     universe: dict[str, list[str]] = {}
     use_direct_kr_quick_path = country == "KR" and not needs_enrichment
     try:
         if use_direct_kr_quick_path:
-            response = await asyncio.wait_for(
-                _build_response(),
-                timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
-            )
+            current_universe = await _load_universe()
+            selected_tickers = _select_candidate_tickers(current_universe, sector)
+            should_use_cold_start_partial = limit > SCREENER_COLD_START_KR_CANDIDATES and len(selected_tickers) > SCREENER_COLD_START_KR_CANDIDATES
+            if should_use_cold_start_partial:
+                cached_response = await cache.get(cache_key)
+                if cached_response is not None:
+                    return cached_response
+                response = await asyncio.wait_for(
+                    _build_response(
+                        candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
+                        partial=True,
+                        fallback_reason="kr_bulk_snapshot_warming",
+                    ),
+                    timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+                )
+                _spawn_screener_cache_warmup(cache_key, _build_response)
+            else:
+                response = await asyncio.wait_for(
+                    _build_response(),
+                    timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+                )
         else:
             response = await asyncio.wait_for(
                 cache.get_or_fetch(
                     cache_key,
                     _build_response,
-                    ttl=600,
+                    ttl=SCREENER_RESPONSE_CACHE_TTL,
                 ),
                 timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
             )
