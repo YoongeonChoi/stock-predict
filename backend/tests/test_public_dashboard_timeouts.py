@@ -174,6 +174,38 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["results"][0]["ticker"], "005930.KS")
         bulk_quotes.assert_awaited_once_with(["005930.KS"], skip_full_market_fallback=True)
 
+    def test_screener_default_kr_path_caps_candidates_to_limit_floor(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        expected_tickers = [f"{index:06d}.KS" for index in range(1, 11)]
+        bulk_quotes = AsyncMock(
+            return_value={
+                expected_tickers[0]: {
+                    "ticker": expected_tickers[0],
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
+        with (
+            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=bulk_quotes,
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=1")
+
+        self.assertEqual(response.status_code, 200)
+        bulk_quotes.assert_awaited_once_with(expected_tickers, skip_full_market_fallback=True)
+
 
 if __name__ == "__main__":
     unittest.main()

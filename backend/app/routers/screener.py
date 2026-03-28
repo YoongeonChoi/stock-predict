@@ -450,6 +450,7 @@ async def screen_stocks(
         universe = await get_universe(country, prefer_fallback=(country == "KR"))
         tickers = _select_candidate_tickers(universe, sector)
         if not needs_enrichment and country == "KR":
+            tickers = tickers[: max(limit, 10)]
             bulk_results = await _build_kr_bulk_snapshot_results(
                 tickers=tickers,
                 universe=universe,
