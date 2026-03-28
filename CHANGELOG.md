@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.48.4 - 2026-03-28
+
+- 공개 `KR screener` 기본 quick path는 이제 SQLite shared cache를 우회하고 바로 계산합니다. Render free 환경에서 캐시 DB 경합이나 느린 I/O 때문에 공개 응답이 같이 막히는 위험을 줄이기 위한 조정입니다.
+- 이 quick path는 `skip_full_market_fallback=True`와 `max(limit, 10)` 후보 제한을 그대로 유지하므로, 전체 시장 scrape 없이 작은 bulk quote 묶음만으로 먼저 응답합니다.
+- 회귀 테스트는 공개 `KR screener` 기본 경로가 shared cache를 타지 않는다는 계약까지 함께 확인하도록 확장했습니다.
+
 ## v2.48.3 - 2026-03-28
 
 - 공개 `KR screener` 기본 경로는 이제 bulk quote 후보 수를 `max(limit, 10)`으로 먼저 줄입니다. 그래서 `limit=1` 같은 작은 요청도 내부적으로 36개 후보 batch를 잡지 않고, 요청 규모에 맞는 작은 묶음으로 응답을 준비합니다.

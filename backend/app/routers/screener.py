@@ -504,15 +504,22 @@ async def screen_stocks(
         }
 
     universe: dict[str, list[str]] = {}
+    use_direct_kr_quick_path = country == "KR" and not needs_enrichment
     try:
-        response = await asyncio.wait_for(
-            cache.get_or_fetch(
-                cache_key,
-                _build_response,
-                ttl=600,
-            ),
-            timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
-        )
+        if use_direct_kr_quick_path:
+            response = await asyncio.wait_for(
+                _build_response(),
+                timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+            )
+        else:
+            response = await asyncio.wait_for(
+                cache.get_or_fetch(
+                    cache_key,
+                    _build_response,
+                    ttl=600,
+                ),
+                timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+            )
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
