@@ -263,6 +263,37 @@ async def _build_kr_bulk_snapshot_results(
     return results
 
 
+async def _build_kr_representative_snapshot_results(
+    *,
+    limit: int,
+    universe: dict[str, list[str]],
+    sector: str | None,
+    country: str,
+) -> list[dict]:
+    quotes = await kr_market_quote_client.get_kr_representative_quotes(limit=max(limit, SCREENER_COLD_START_KR_CANDIDATES))
+    results: list[dict] = []
+    for ticker, quote in quotes.items():
+        owning_sector = _find_owning_sector(universe, ticker, sector)
+        if sector and owning_sector != sector:
+            continue
+        result = _build_snapshot_result(
+            {
+                "current_price": quote.get("current_price"),
+                "price": quote.get("current_price"),
+                "prev_close": quote.get("prev_close"),
+                "change_pct": quote.get("change_pct"),
+                "market_cap": quote.get("market_cap"),
+                "name": quote.get("name") or ticker,
+            },
+            ticker=ticker,
+            sector=owning_sector,
+            country=country,
+        )
+        if result is not None:
+            results.append(result)
+    return results
+
+
 async def _build_snapshot_fallback(
     *,
     country: str,
@@ -620,6 +651,36 @@ async def screen_stocks(
                 cached_response = await cache.get(cache_key)
                 if cached_response is not None:
                     return cached_response
+                representative_results = await _build_kr_representative_snapshot_results(
+                    limit=limit,
+                    universe=current_universe,
+                    sector=sector,
+                    country=country,
+                )
+                filtered_representative_results = _filter_snapshot_results(
+                    representative_results,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max,
+                    price_min=price_min,
+                    price_max=price_max,
+                    change_pct_min=change_pct_min,
+                    change_pct_max=change_pct_max,
+                )
+                if filtered_representative_results:
+                    response = {
+                        "results": _sort_screened_results(
+                            filtered_representative_results,
+                            sort_by=sort_by,
+                            sort_dir=sort_dir,
+                            limit=limit,
+                        ),
+                        "total": len(filtered_representative_results[:limit]),
+                        "sectors": list(current_universe.keys()),
+                        "partial": True,
+                        "fallback_reason": "kr_representative_snapshot_warming",
+                    }
+                    _spawn_screener_cache_warmup(cache_key, _build_response)
+                    return response
                 response = await asyncio.wait_for(
                     _build_response(
                         candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,

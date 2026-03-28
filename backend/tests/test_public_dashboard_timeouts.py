@@ -217,11 +217,10 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
-        expected_tickers = [f"{index:06d}.KS" for index in range(1, 11)]
-        bulk_quotes = AsyncMock(
+        representative_quotes = AsyncMock(
             return_value={
-                expected_tickers[0]: {
-                    "ticker": expected_tickers[0],
+                "000001.KS": {
+                    "ticker": "000001.KS",
                     "name": "Samsung Electronics",
                     "current_price": 70100.0,
                     "prev_close": 69300.0,
@@ -235,8 +234,8 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             patch("app.routers.screener._spawn_screener_cache_warmup") as warmup,
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
-                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
-                new=bulk_quotes,
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=representative_quotes,
             ),
             patched_client() as client,
         ):
@@ -244,8 +243,8 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
-        self.assertEqual(response.json()["fallback_reason"], "kr_bulk_snapshot_warming")
-        bulk_quotes.assert_awaited_once_with(expected_tickers, skip_full_market_fallback=True)
+        self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
+        representative_quotes.assert_awaited_once_with(limit=20)
         warmup.assert_called_once()
 
 

@@ -154,6 +154,21 @@ class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
         batch_quotes.assert_awaited_once()
         full_fetch.assert_not_awaited()
 
+    async def test_get_kr_representative_quotes_limits_cached_market_pages(self):
+        representative_quotes = {
+            "005930.KS": {"ticker": "005930.KS", "current_price": 179700.0},
+            "000660.KS": {"ticker": "000660.KS", "current_price": 922000.0},
+            "005380.KS": {"ticker": "005380.KS", "current_price": 248000.0},
+        }
+
+        with patch(
+            "app.data.kr_market_quote_client._fetch_representative_kr_market_quotes",
+            new=AsyncMock(return_value=representative_quotes),
+        ):
+            quotes = await kr_market_quote_client.get_kr_representative_quotes(limit=2)
+
+        self.assertEqual(list(quotes.keys()), ["005930.KS", "000660.KS"])
+
 
 if __name__ == "__main__":
     unittest.main()
