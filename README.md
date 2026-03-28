@@ -8,6 +8,27 @@
 
 현재 서비스는 한국 시장 중심으로 운영되지만, 제품 설명의 중심은 `제약`보다 `지금 실제로 할 수 있는 일`에 둡니다. 로그인 후 계정별 포트폴리오와 관심종목을 분리 관리할 수 있고, 가격·변동성·거시·공시·뉴스 구조화 신호를 결합한 분포형 예측을 기반으로 종목과 비중 추천을 받을 수 있습니다.
 
+## AI / Reviewer Quick Start
+
+이 저장소를 `GitHub 링크만` 받고 읽는 사람이나 AI는 아래 순서로 보면 가장 빠릅니다.
+
+1. `README.md`
+2. `AGENTS.md`
+3. `DESIGN_BIBLE.md`
+4. `AI_CONTEXT.md`
+5. `ARCHITECTURE.md`
+6. `API_CONTRACT.md`
+7. `backend/app/main.py`
+8. `frontend/src/lib/api.ts`
+9. `verify.py`
+
+추가로 실행 전제를 바로 확인할 수 있도록 예시 환경 변수를 함께 둡니다.
+
+- 백엔드 예시: `backend/.env.example`
+- 프론트 예시: `frontend/.env.example`
+
+이 구성이 있으면 AI는 링크만으로도 `구조 평가`, `API 계약 검토`, `회귀 위험 판단`, `문서-구현 일치성 확인`을 꽤 정확하게 할 수 있습니다. 다만 `실제 배포 환경 변수`, `외부 API quota`, `실운영 체감 속도`, `브라우저 렌더링 품질`까지 완전히 확인하려면 preview 또는 배포 URL이 있으면 더 좋습니다.
+
 ## 핵심 가치
 
 - `판단 지원형 워크스페이스`
