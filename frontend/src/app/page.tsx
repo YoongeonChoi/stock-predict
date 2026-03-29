@@ -24,7 +24,7 @@ export default async function HomePage() {
     getPublicDailyBriefing(),
     getPublicHeatmap("KR"),
     getPublicMarketMovers("KR"),
-    getPublicOpportunities("KR", 8),
+    getPublicOpportunities("KR", 12),
     getPublicCountryReport("KR"),
   ]);
 

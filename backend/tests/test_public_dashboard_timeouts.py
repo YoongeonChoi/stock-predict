@@ -115,7 +115,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
-        self.assertIn("이전 quick 결과", response.json()["universe_note"])
+        self.assertIn("최근 usable 후보", response.json()["universe_note"])
 
     def test_market_opportunities_timeout_returns_placeholder_partial_when_no_quick_exists(self):
         placeholder_payload = {

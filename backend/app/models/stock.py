@@ -75,6 +75,16 @@ class BuySellGuide(BaseModel):
     summary: str = ""
 
 
+class PublicStockSummary(BaseModel):
+    summary: str
+    evidence_for: list[str]
+    evidence_against: list[str]
+    why_not_buy_now: list[str]
+    thesis_breakers: list[str]
+    data_quality: str
+    confidence_note: str
+
+
 class DividendInfo(BaseModel):
     dividend_yield: float | None = None
     payout_ratio: float | None = None
@@ -125,3 +135,4 @@ class StockDetail(BaseModel):
     setup_backtest: SetupBacktest | None = None
     market_regime: MarketRegime | None = None
     trade_plan: TradePlan | None = None
+    public_summary: PublicStockSummary | None = None

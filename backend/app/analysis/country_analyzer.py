@@ -1,6 +1,7 @@
 """Country-level analysis: aggregates data, calls LLM, builds report."""
 
 import asyncio
+import re
 from datetime import datetime
 
 from app.analysis.distributional_return_engine import build_structured_event_context
@@ -23,6 +24,7 @@ from app.models.country import (
     COUNTRY_REGISTRY,
     InstitutionalAnalysis,
     InstitutionView,
+    MacroClaim,
     NewsItem,
     StockSummaryRef,
 )
@@ -49,6 +51,144 @@ TICKER_FALLBACK = {
 
 TOP_STOCKS_PER_SECTOR = 2
 TOP_STOCKS_MAX_CANDIDATES = 18
+NUMERIC_NARRATIVE_RE = re.compile(r"\d")
+WHITESPACE_RE = re.compile(r"[ \t]+")
+PUBLIC_MACRO_METRICS: tuple[tuple[str, str, str, str, float], ...] = (
+    ("base_rate", "기준금리", "%", "한국은행 ECOS", 0.96),
+    ("cpi_yoy", "소비자물가", "%", "한국은행 ECOS", 0.95),
+    ("export_growth", "수출 증가율", "%", "한국은행 ECOS", 0.93),
+    ("industrial_production", "산업생산", "%", "한국은행 ECOS", 0.92),
+)
+
+
+def _normalize_public_summary_text(text: str) -> str:
+    raw = str(text or "").replace("\r\n", "\n").strip()
+    if not raw:
+        return ""
+    paragraphs = []
+    for paragraph in raw.split("\n"):
+        cleaned = WHITESPACE_RE.sub(" ", paragraph).strip()
+        if cleaned:
+            paragraphs.append(cleaned)
+    return "\n\n".join(paragraphs)
+
+
+def _contains_numeric_narrative(text: str) -> bool:
+    return bool(NUMERIC_NARRATIVE_RE.search(text or ""))
+
+
+def _macro_direction_from_change(value: float) -> str:
+    if value > 0.15:
+        return "up"
+    if value < -0.15:
+        return "down"
+    return "flat"
+
+
+def _build_macro_claims(country_code: str, economic_data: dict, market_data: dict) -> list[MacroClaim]:
+    published_at = datetime.now().date().isoformat()
+    claims: list[MacroClaim] = []
+
+    if country_code == "KR":
+        for index_name in ("KOSPI", "KOSDAQ"):
+            snapshot = market_data.get(index_name) or {}
+            change_pct = snapshot.get("change_pct")
+            if isinstance(change_pct, (int, float)):
+                claims.append(
+                    MacroClaim(
+                        source="시장 스냅샷",
+                        published_at=published_at,
+                        metric=f"{index_name} 등락률",
+                        value=round(float(change_pct), 2),
+                        unit="%",
+                        direction=_macro_direction_from_change(float(change_pct)),
+                        confidence=0.97,
+                    )
+                )
+
+    for key, metric, unit, source, confidence in PUBLIC_MACRO_METRICS:
+        value = economic_data.get(key)
+        if not isinstance(value, (int, float)):
+            continue
+        claims.append(
+            MacroClaim(
+                source=source,
+                published_at=published_at,
+                metric=metric,
+                value=round(float(value), 4),
+                unit=unit,
+                direction="flat",
+                confidence=confidence,
+            )
+        )
+
+    return claims[:4]
+
+
+def _score_stance(score_total: float) -> str:
+    if score_total >= 70:
+        return "정책과 실적 흐름이 대체로 우호적인 구간입니다."
+    if score_total >= 55:
+        return "상방 여지는 있지만 선별 대응이 필요한 구간입니다."
+    if score_total >= 45:
+        return "방향성이 강하지 않아 확인 우선 구간입니다."
+    return "방어와 리스크 관리가 더 중요한 구간입니다."
+
+
+def _consensus_stance(institutional_analysis: InstitutionalAnalysis) -> str:
+    if institutional_analysis.policy_sellside_aligned and institutional_analysis.consensus_count >= 3:
+        return "정책 기관과 증권사 해석도 대체로 같은 방향을 가리키고 있습니다."
+    if institutional_analysis.consensus_count >= 2:
+        return "기관 해석은 일부 공통분모가 있지만 업종별 선별이 더 중요합니다."
+    return "기관 해석은 아직 엇갈려 대표 후보를 나눠서 보는 편이 안전합니다."
+
+
+def _risk_stance(risk_score: float) -> str:
+    if risk_score >= 7:
+        return "리스크 지표는 아직 관리 가능한 범위로 보입니다."
+    if risk_score >= 4:
+        return "이벤트 확인 전에는 무리한 확대보다 선별 대응이 적절합니다."
+    return "변동성 신호가 남아 있어 보수적인 대응이 더 안전합니다."
+
+
+def _build_qualitative_market_summary(
+    *,
+    country_name_local: str,
+    country_score,
+    institutional_analysis: InstitutionalAnalysis,
+    macro_claims: list[MacroClaim],
+) -> str:
+    evidence_line = (
+        "상단 근거 지표를 먼저 읽고, 세부 판단은 레이더 후보와 기관 해석에서 이어서 확인하면 됩니다."
+        if macro_claims
+        else "대표 지수 흐름과 점수 체계를 기준으로 먼저 읽고, 세부 판단은 레이더 후보에서 이어서 확인하면 됩니다."
+    )
+    return "\n\n".join(
+        [
+            f"{country_name_local} 시장은 {_score_stance(float(country_score.total or 0.0))}",
+            f"{_consensus_stance(institutional_analysis)} {_risk_stance(float(country_score.risk_assessment.score or 0.0))} {evidence_line}",
+        ]
+    )
+
+
+def _finalize_public_market_summary(
+    *,
+    raw_summary: str,
+    llm_failed: bool,
+    country_name_local: str,
+    country_score,
+    institutional_analysis: InstitutionalAnalysis,
+    macro_claims: list[MacroClaim],
+) -> str:
+    cleaned = _normalize_public_summary_text(raw_summary)
+    if llm_failed or not cleaned or _contains_numeric_narrative(cleaned):
+        return _build_qualitative_market_summary(
+            country_name_local=country_name_local,
+            country_score=country_score,
+            institutional_analysis=institutional_analysis,
+            macro_claims=macro_claims,
+        )
+    return cleaned
 
 
 async def analyze_country(country_code: str) -> dict:
@@ -99,6 +239,7 @@ async def analyze_country(country_code: str) -> dict:
 
     scores = llm_result.get("scores", {})
     country_score = build_country_score(scores)
+    macro_claims = _build_macro_claims(country_code, economic_data, market_data)
 
     if llm_failed:
         institutional_analysis = InstitutionalAnalysis(
@@ -213,11 +354,14 @@ async def analyze_country(country_code: str) -> dict:
         SP_3004(str(exc)[:150]).log("warning")
         forecast_data = {"scenarios": [], "current_price": 0, "index_name": primary_index.name}
 
-    market_summary = llm_result.get("market_summary", "")
-    if llm_failed:
-        market_summary = llm_result.get(
-            "message", llm_result.get("error", "Analysis temporarily unavailable.")
-        )
+    market_summary = _finalize_public_market_summary(
+        raw_summary=llm_result.get("market_summary", ""),
+        llm_failed=llm_failed,
+        country_name_local=country.name_local,
+        country_score=country_score,
+        institutional_analysis=institutional_analysis,
+        macro_claims=macro_claims,
+    )
 
     errors = []
     if llm_failed:
@@ -227,6 +371,7 @@ async def analyze_country(country_code: str) -> dict:
         "country": country.model_dump(),
         "score": country_score.model_dump(),
         "market_summary": market_summary,
+        "macro_claims": [claim.model_dump() for claim in macro_claims],
         "key_news": [item.model_dump() for item in key_news],
         "institutional_analysis": institutional_analysis.model_dump(),
         "top_stocks": [stock.model_dump() for stock in top_stocks],

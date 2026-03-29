@@ -33,6 +33,19 @@ function toError(error: unknown): Error {
   return new Error(typeof error === "string" ? error : "종목 상세를 불러오지 못했습니다.");
 }
 
+function SummaryBulletList({ items }: { items: string[] }) {
+  return (
+    <div className="space-y-2 text-sm text-text-secondary">
+      {items.map((item) => (
+        <div key={item} className="flex gap-2">
+          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-accent/80 shrink-0" />
+          <span>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function StockPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const router = useRouter();
@@ -165,6 +178,12 @@ export default function StockPage() {
     { label: "배당성향", value: stock.dividend.payout_ratio != null ? `${(stock.dividend.payout_ratio * 100).toFixed(2)}%` : "없음" },
     { label: "최근 분기 수", value: String(stock.financials.length) },
   ];
+  const publicSummaryCards = stock.public_summary ? [
+    { title: "근거", items: stock.public_summary.evidence_for },
+    { title: "반대 근거", items: stock.public_summary.evidence_against },
+    { title: "지금 바로 사지 않는 이유", items: stock.public_summary.why_not_buy_now },
+    { title: "무효화 조건", items: stock.public_summary.thesis_breakers },
+  ].filter((section) => section.items.length > 0) : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -196,9 +215,44 @@ export default function StockPage() {
         ))}
       </div>
 
+      {stock.public_summary ? (
+        <div className="card space-y-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="space-y-1">
+              <h2 className="font-semibold">판단 요약</h2>
+              <p className="text-sm text-text-secondary">
+                공개 요약은 상승 근거보다 반대 조건과 실패 시그널을 먼저 읽도록 정리했습니다.
+              </p>
+            </div>
+            <div className="min-w-[260px] max-w-[360px] rounded-xl border border-border bg-accent/5 px-4 py-3">
+              <div className="text-xs text-text-secondary">신뢰 메모</div>
+              <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.confidence_note}</p>
+            </div>
+          </div>
+
+          <p className="text-sm leading-relaxed whitespace-pre-line">{stock.public_summary.summary}</p>
+
+          {publicSummaryCards.length > 0 ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {publicSummaryCards.map((section) => (
+                <div key={section.title} className="rounded-xl border border-border px-4 py-4">
+                  <h3 className="text-sm font-semibold mb-3">{section.title}</h3>
+                  <SummaryBulletList items={section.items} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-border bg-border/20 px-4 py-4">
+            <div className="text-xs text-text-secondary">데이터 품질</div>
+            <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.data_quality}</p>
+          </div>
+        </div>
+      ) : null}
+
       {stock.analysis_summary ? (
         <div className="card">
-          <h2 className="font-semibold mb-3">분석 요약</h2>
+          <h2 className="font-semibold mb-3">상세 분석</h2>
           <p className="text-sm leading-relaxed whitespace-pre-line">{stock.analysis_summary}</p>
         </div>
       ) : null}

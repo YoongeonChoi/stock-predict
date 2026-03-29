@@ -98,7 +98,9 @@ class OpportunityItem(BaseModel):
 
 class OpportunityRadarResponse(BaseModel):
     country_code: str
+    snapshot_id: str
     generated_at: str
+    fallback_tier: Literal["full", "quick", "cached_quick", "placeholder"] = "full"
     market_regime: MarketRegime
     universe_size: int
     total_scanned: int

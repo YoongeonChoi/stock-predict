@@ -10,13 +10,25 @@ import StockHeatmap from "@/components/charts/StockHeatmap";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
-import type { DailyBriefingResponse, HeatmapData, MarketMovers } from "@/lib/api";
-import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
+import type {
+  DailyBriefingEvent,
+  DailyBriefingFocusCard,
+  DailyBriefingResponse,
+  HeatmapData,
+  MarketMovers,
+} from "@/lib/api";
+import type { CountryListItem, CountryReport, MacroClaim, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
 
 const COUNTRY_FLAGS: Record<string, string> = { KR: "🇰🇷" };
 const BRIEFING_TIMEOUT_MS = 9_000;
 const WORKSPACE_TIMEOUT_MS = 22_000;
+const HOME_RADAR_LIMIT = 12;
+
+type FocusSlot =
+  | { kind: "focus"; key: string; item: DailyBriefingFocusCard }
+  | { kind: "event"; key: string; item: DailyBriefingEvent }
+  | { kind: "reason"; key: string; title: string; summary: string };
 
 interface MarketIndicator {
   name: string;
@@ -41,6 +53,31 @@ function indicatorLabel(indicator: MarketIndicator) {
   if (indicator.name === "USD/KRW") return `₩${value}`;
   if (["Gold", "Oil (WTI)", "Bitcoin"].includes(indicator.name)) return `$${value}`;
   return value;
+}
+
+function macroClaimTone(direction: MacroClaim["direction"]) {
+  if (direction === "up") return "text-emerald-500";
+  if (direction === "down") return "text-rose-500";
+  return "text-text";
+}
+
+function formatMacroClaimValue(claim: MacroClaim) {
+  const showSigned =
+    claim.metric.includes("등락률")
+    || claim.metric.includes("증가율")
+    || claim.metric.includes("성장률");
+  const prefix = showSigned && claim.value > 0 ? "+" : "";
+  const decimals = Math.abs(claim.value) >= 100 ? 0 : 2;
+  return `${prefix}${claim.value.toLocaleString("ko-KR", { maximumFractionDigits: decimals })}${claim.unit}`;
+}
+
+function formatMacroClaimDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString("ko-KR");
 }
 
 function describeLoadError(error: unknown, fallback: string) {
@@ -187,7 +224,7 @@ export default function HomeDashboardClient({
 
     const radarTask = (async () => {
       try {
-        const result = await api.getMarketOpportunities(code, 8, { timeoutMs: WORKSPACE_TIMEOUT_MS });
+        const result = await api.getMarketOpportunities(code, HOME_RADAR_LIMIT, { timeoutMs: WORKSPACE_TIMEOUT_MS });
         syncIfCurrent(() => {
           setRadarData(result);
           setRadarError(null);
@@ -297,6 +334,83 @@ export default function HomeDashboardClient({
     return briefing?.upcoming_events.slice(0, 4) ?? [];
   }, [briefing, selectedCountry]);
 
+  const focusSlots = useMemo<FocusSlot[]>(() => {
+    const slots: FocusSlot[] = focusCards.map((item) => ({
+      kind: "focus",
+      key: `focus-${item.country_code}-${item.ticker}`,
+      item,
+    }));
+
+    for (const event of events) {
+      if (slots.length >= 3) {
+        break;
+      }
+      slots.push({
+        kind: "event",
+        key: `event-${event.country_code}-${event.date}-${event.title}`,
+        item: event,
+      });
+    }
+
+    const reasonQueue = [
+      briefingError || reportError
+        ? {
+            key: "reason-report-sync",
+            title: "리포트 동기화 중",
+            summary: "브리핑과 시장 요약 계산이 길어져 현재 확보된 신호와 일정부터 먼저 보여주고 있습니다.",
+          }
+        : null,
+      (radarData as PublicAuditFields | null)?.partial
+        ? {
+            key: "reason-radar-partial",
+            title: "후보 부족: 보수 모드 유지",
+            summary: "레이더 정밀 계산이 지연돼도 지금은 무리하게 늘리지 않고, 먼저 확보된 후보 기준으로 선별 대응합니다.",
+          }
+        : null,
+      events.length > 0
+        ? {
+            key: "reason-event-priority",
+            title: "오늘은 이벤트 우선",
+            summary: "가까운 일정이 있어 종목 후보가 부족한 슬롯은 이벤트 기준 판단 카드로 채웠습니다.",
+          }
+        : null,
+      {
+        key: "reason-selective",
+        title: "보수 모드 유지",
+        summary: "당장 늘릴 이유가 뚜렷하지 않으면 관찰과 일정 확인을 먼저 두고, 다시 열었을 때 후보를 이어받습니다.",
+      },
+    ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    const usedReasonKeys = new Set<string>();
+    for (const reason of reasonQueue) {
+      if (slots.length >= 3) {
+        break;
+      }
+      if (usedReasonKeys.has(reason.key)) {
+        continue;
+      }
+      usedReasonKeys.add(reason.key);
+      slots.push({
+        kind: "reason",
+        key: reason.key,
+        title: reason.title,
+        summary: reason.summary,
+      });
+    }
+
+    while (slots.length < 3) {
+      const order = slots.length + 1;
+      slots.push({
+        kind: "reason",
+        key: `reason-default-${order}`,
+        title: "관찰 우선",
+        summary: "오늘 바로 늘릴 신호가 적더라도 공개 대시보드는 빈 슬롯 대신 다음 확인 포인트를 이유 카드로 유지합니다.",
+      });
+    }
+
+    return slots.slice(0, 3);
+  }, [briefingError, events, focusCards, radarData, reportError]);
+
   const topNews = countryReport?.key_news.slice(0, 4) ?? [];
   const topStocks = countryReport?.top_stocks.slice(0, 5) ?? [];
   const radarHasItems = (radarData?.opportunities.length ?? 0) > 0;
@@ -318,7 +432,9 @@ export default function HomeDashboardClient({
     (reportLoading
       ? "선택한 시장의 상태를 불러오는 중입니다."
       : reportError || (briefingLoading ? "브리핑을 불러오는 중입니다." : briefingError || "선택한 시장 요약이 아직 없습니다."));
+  const macroClaims = countryReport?.macro_claims?.slice(0, 4) ?? [];
   const dashboardAuditMeta = useMemo<PublicAuditFields | null>(() => ({
+    snapshot_id: radarData?.snapshot_id || null,
     generated_at: countryReport?.generated_at || radarData?.generated_at || briefing?.generated_at || null,
     partial:
       Boolean((countryReport as PublicAuditFields | null)?.partial)
@@ -331,11 +447,12 @@ export default function HomeDashboardClient({
       || (heatmapData as PublicAuditFields | null)?.fallback_reason
       || (movers as PublicAuditFields | null)?.fallback_reason
       || null,
+    fallback_tier: (radarData as PublicAuditFields | null)?.fallback_tier || null,
   }), [briefing?.generated_at, countryReport, heatmapData, movers, radarData]);
   const dashboardSummary = buildPublicAuditSummary(dashboardAuditMeta, {
     defaultSummary:
       radarData && countryReport
-        ? `시장 국면 ${countryReport.market_regime?.label || radarData.market_regime.label} / 오늘의 포커스 ${focusCards.length}개 / 레이더 상위 ${Math.min(radarData.opportunities.length, 3)}개를 먼저 보여줍니다.`
+        ? `시장 국면 ${countryReport.market_regime?.label || radarData.market_regime.label} / 오늘의 포커스 ${focusSlots.length}개 / 레이더 상위 ${Math.min(radarData.opportunities.length, 3)}개를 먼저 보여줍니다.`
         : "선택 시장 현황과 핵심 수치를 먼저 보여주고, 아래 카드에서 히트맵과 레이더를 이어서 읽습니다.",
   });
 
@@ -347,7 +464,7 @@ export default function HomeDashboardClient({
             <h1 className="section-title text-2xl">대시보드</h1>
             <p className="section-copy">
               {countryReport && radarData
-                ? `선택 시장 현황 / 핵심 수치 / 오늘의 포커스 ${focusCards.length}개 / 마지막 갱신 ${lastUpdated || "방금"}`
+                ? `선택 시장 현황 / 핵심 수치 / 오늘의 포커스 ${focusSlots.length}개 / 마지막 갱신 ${lastUpdated || "방금"}`
                 : "선택한 시장의 지수, 뉴스, 히트맵, 강한 셋업을 한 흐름으로 봅니다."}
             </p>
           </div>
@@ -408,6 +525,24 @@ export default function HomeDashboardClient({
               ) : null}
             </div>
 
+            {macroClaims.length > 0 ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                {macroClaims.map((claim) => (
+                  <div key={`${claim.source}-${claim.metric}`} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+                    <div className="text-[11px] text-text-secondary">{claim.metric}</div>
+                    <div className={`mt-2 text-base font-semibold ${macroClaimTone(claim.direction)}`}>
+                      {formatMacroClaimValue(claim)}
+                    </div>
+                    <div className="mt-1 text-[11px] leading-5 text-text-secondary">
+                      {claim.source}
+                      {formatMacroClaimDate(claim.published_at) ? ` · ${formatMacroClaimDate(claim.published_at)}` : ""}
+                      {` · 근거 ${Math.round((claim.confidence ?? 0) * 100)}%`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
               {selectedCountryItem?.indices.map((index) => (
                 <div key={index.ticker} className="metric-card">
@@ -459,31 +594,47 @@ export default function HomeDashboardClient({
                   message="브리핑, 핵심 종목, 가까운 일정 중 먼저 확인할 항목만 다시 묶는 중입니다."
                   className="min-h-[230px]"
                 />
-              ) : focusCards.length > 0 || events.length > 0 ? (
+              ) : focusSlots.length > 0 ? (
                 <div className="space-y-3">
-                  {focusCards.map((item) => (
-                    <Link key={`${item.country_code}-${item.ticker}`} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-medium text-text">{item.name}</div>
-                          <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.sector}</div>
+                  {focusSlots.map((slot) => {
+                    if (slot.kind === "focus") {
+                      const item = slot.item;
+                      return (
+                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-text">{item.name}</div>
+                              <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.sector}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className={`text-sm font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
+                              <div className="mt-1 text-[11px] text-text-secondary">상방 {item.up_probability.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    }
+
+                    if (slot.kind === "event") {
+                      const event = slot.item;
+                      return (
+                        <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium text-text">{event.title}</div>
+                            <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${impactTone(event.impact)}`}>{event.date}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
                         </div>
-                        <div className="text-right">
-                          <div className={`text-sm font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
-                          <div className="mt-1 text-[11px] text-text-secondary">상방 {item.up_probability.toFixed(1)}%</div>
-                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                        <div className="font-medium text-text">{slot.title}</div>
+                        <div className="mt-1 text-xs leading-6 text-text-secondary">{slot.summary}</div>
                       </div>
-                    </Link>
-                  ))}
-                  {events.map((event) => (
-                    <div key={`${event.country_code}-${event.date}-${event.title}`} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium text-text">{event.title}</div>
-                        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${impactTone(event.impact)}`}>{event.date}</span>
-                      </div>
-                      <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <WorkspaceStateCard

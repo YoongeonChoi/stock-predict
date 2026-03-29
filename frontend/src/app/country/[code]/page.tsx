@@ -14,7 +14,7 @@ import PriceChart from "@/components/charts/PriceChart";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import { api } from "@/lib/api";
-import type { CountryReport, OpportunityRadarResponse, ScoreItem, SectorListItem } from "@/lib/types";
+import type { CountryReport, MacroClaim, OpportunityRadarResponse, ScoreItem, SectorListItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 function toError(error: unknown): Error {
@@ -33,6 +33,30 @@ function stanceTone(value: string) {
   if (value === "bullish") return "bg-positive/20 text-positive";
   if (value === "bearish") return "bg-negative/20 text-negative";
   return "bg-border text-text-secondary";
+}
+
+function macroClaimTone(direction: MacroClaim["direction"]) {
+  if (direction === "up") return "text-positive";
+  if (direction === "down") return "text-negative";
+  return "text-text";
+}
+
+function formatMacroClaimValue(claim: MacroClaim) {
+  const showSigned =
+    claim.metric.includes("등락률")
+    || claim.metric.includes("증가율")
+    || claim.metric.includes("성장률");
+  const prefix = showSigned && claim.value > 0 ? "+" : "";
+  return `${prefix}${claim.value.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}${claim.unit}`;
+}
+
+function formatMacroClaimDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString("ko-KR");
 }
 
 export default function CountryPage() {
@@ -130,6 +154,23 @@ export default function CountryPage() {
       <div className="card">
         <h2 className="font-semibold mb-3">시장 요약</h2>
         <div className="text-sm leading-relaxed whitespace-pre-line">{report.market_summary || "시장 요약이 아직 준비되지 않았습니다."}</div>
+        {report.macro_claims && report.macro_claims.length > 0 ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {report.macro_claims.slice(0, 4).map((claim) => (
+              <div key={`${claim.source}-${claim.metric}`} className="rounded-xl border border-border px-3 py-3">
+                <div className="text-[11px] text-text-secondary">{claim.metric}</div>
+                <div className={`mt-2 text-base font-semibold ${macroClaimTone(claim.direction)}`}>
+                  {formatMacroClaimValue(claim)}
+                </div>
+                <div className="mt-1 text-[11px] leading-5 text-text-secondary">
+                  {claim.source}
+                  {formatMacroClaimDate(claim.published_at) ? ` · ${formatMacroClaimDate(claim.published_at)}` : ""}
+                  {` · 근거 ${Math.round((claim.confidence ?? 0) * 100)}%`}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

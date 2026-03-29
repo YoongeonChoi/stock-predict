@@ -105,10 +105,18 @@ def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
         logging.warning("%s background task failed: %s", label, exc, exc_info=True)
 
 
-def _with_opportunity_partial(payload: dict, *, fallback_reason: str, note: str | None = None) -> dict:
+def _with_opportunity_partial(
+    payload: dict,
+    *,
+    fallback_reason: str,
+    note: str | None = None,
+    fallback_tier: str | None = None,
+) -> dict:
     response = dict(payload)
     response["partial"] = True
     response["fallback_reason"] = fallback_reason
+    if fallback_tier:
+        response["fallback_tier"] = fallback_tier
     if note:
         existing_note = str(response.get("universe_note") or "").strip()
         response["universe_note"] = " ".join(part for part in [existing_note, note.strip()] if part).strip()
@@ -211,6 +219,7 @@ async def _build_country_report_fallback(
         "country": country.model_dump(),
         "score": build_country_score({}).model_dump(),
         "market_summary": market_summary,
+        "macro_claims": [],
         "key_news": [],
         "institutional_analysis": _empty_institutional_analysis(),
         "top_stocks": _build_top_stock_refs(quick_opportunities),
@@ -651,7 +660,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 return _with_opportunity_partial(
                     cached_quick,
                     fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 이전 quick 결과를 먼저 표시합니다.",
+                    note="이번 응답에서는 최근 usable 후보를 먼저 표시합니다.",
+                    fallback_tier="cached_quick",
                 )
             return _with_opportunity_partial(
                 market_service.build_market_opportunities_placeholder(
@@ -670,7 +680,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 return _with_opportunity_partial(
                     cached_quick,
                     fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 이전 quick 결과를 먼저 표시합니다.",
+                    note="이번 응답에서는 최근 usable 후보를 먼저 표시합니다.",
+                    fallback_tier="cached_quick",
                 )
             return _with_opportunity_partial(
                 market_service.build_market_opportunities_placeholder(

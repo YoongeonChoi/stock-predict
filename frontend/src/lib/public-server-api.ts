@@ -6,6 +6,7 @@ import type {
   DailyBriefingResponse,
   HeatmapData,
   MarketMovers,
+  PredictionLabResponse,
   PredictionAccuracyStats,
   ResearchArchiveEntry,
   ResearchArchiveStatus,
@@ -67,6 +68,13 @@ export function getPublicOpportunities(code = "KR", limit = 12) {
   );
 }
 
+export function getPublicPredictionLab(limitRecent = 40, refresh = false) {
+  return getPublicJson<PredictionLabResponse>(
+    `/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`,
+    180,
+  );
+}
+
 export function getPublicCalendar(code = "KR", year?: number, month?: number) {
   const today = new Date();
   const resolvedYear = year ?? today.getFullYear();
@@ -86,7 +94,7 @@ export function getPublicPredictionAccuracy() {
 }
 
 export function getPublicResearchArchive(region: "KR" | "US" | "EU" | "JP" = "KR", limit = 24) {
-  return getPublicJson<ResearchArchiveEntry[]>(`/api/archive/research?region=${region}&limit=${limit}`, 300);
+  return getPublicJson<ResearchArchiveEntry[]>(`/api/archive/research?region_code=${region}&limit=${limit}`, 300);
 }
 
 export function getPublicResearchStatus() {

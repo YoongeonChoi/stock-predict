@@ -102,7 +102,7 @@
   - `/api/archive/research/status`
   - `/api/archive/research/refresh`
   - `/api/archive/{report_id}`
-  - `/api/predictions`
+  - `/api/research/predictions`
   - `/api/compare`
   - `/api/screener`
   - `/api/export/{fmt}/{report_id}`

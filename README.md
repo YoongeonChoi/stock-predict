@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.50.1`
+현재 릴리즈: `v2.51.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -80,8 +80,10 @@
 - Opportunity Radar
   - 현재 KR 레이더는 KRX 상장사 전종목을 1차 스캔하고, 실제 시세 확보 수를 분리해 보여준 뒤 상위 종목만 정밀 분석
   - 첫 decision block에는 시장 국면, 전체 스캔 수, 실제 시세 확보 수, 표시 후보 수, 마지막 갱신 시각을 먼저 보여주고, 후보 카드에는 보정 confidence와 probability edge, analog support를 함께 노출합니다.
+  - 홈과 `/radar`의 KR first screen은 같은 opportunities snapshot 기준으로 맞추고, usable하지 않은 placeholder partial은 초기 결과로 그대로 고정하지 않습니다.
 - 국가 리포트 / PDF / CSV 내보내기
   - 서버 워밍업이나 외부 데이터 지연이 길어질 때는 raw timeout 대신 1차 시장 스냅샷 기반 부분 보고서를 먼저 반환
+  - 공개 숫자 근거는 `macro_claims` 구조체로 분리해 보여주고, `market_summary`는 숫자·퍼센트·목표가 없는 정성 서술만 유지합니다.
 - 스크리너
   - `/screener`는 최초 진입 시 latest close 기준 seeded 결과를 먼저 보여주고, 사용자 실행 결과와 실제 결과 없음 상태를 구분합니다.
 - 종목 검색 / 비교
@@ -98,23 +100,28 @@
   - 한국, 미국, 유로존, 일본 공식 기관 리포트를 지역별로 다시 볼 수 있습니다.
 - 아카이브 공개 첫 화면
   - `/archive`는 최신 기관 리포트 2개를 기관, 발행일, 한 줄 요약, 원문/PDF 액션과 함께 서버에서 먼저 보여줍니다.
+  - 공개 리포트 카드는 HTML 원문이 아니라 정리된 `summary_plain`만 렌더해 first screen에 raw 마크업이 섞이지 않게 유지합니다.
 - 대시보드 / 레이더 / 캘린더 / 포트폴리오 / 설정의 로딩·지연 상태
   - 큰 빈 카드 대신 무엇을 불러오는 중인지 설명하는 상태 카드와 재시도 경로를 먼저 보여 줍니다.
 - 공개 페이지 SSR + 감사 표시
   - `/`, `/radar`, `/calendar`, `/archive`, `/screener`는 first screen 핵심 값과 `generated_at / partial / fallback_reason` 기반 audit strip을 서버 우선으로 렌더합니다.
+  - `opportunity radar` 응답은 내부 진단용 `snapshot_id`, `fallback_tier`를 함께 포함해 홈과 레이더의 snapshot 일치 여부를 추적합니다.
 - 로그아웃 미리보기
   - `/portfolio`, `/watchlist`는 빈 인증 벽 대신 public data 기반 demo cards와 로그인 CTA를 first screen에 배치합니다.
+  - 익명 first paint에서는 auth loading보다 preview가 먼저 렌더되고, user-specific API 호출은 세션이 확인된 뒤에만 시작합니다.
 - 다음 거래일 예측
 - 무료 KR 확률 엔진
 - 과거 유사 국면 예측
 - 예측 연구실
   - `1D / 5D / 20D` 실측 성과
   - empirical calibrator 샘플 수, Brier score, reliability gap 확인
+  - `/lab` first screen은 공개 검증 스냅샷과 최근 실패 사례를 서버에서 먼저 채워 추천과 검증 흐름이 같은 제품 안에서 이어지게 합니다.
 
 공개 API의 운영 원칙도 현재 구조에 맞춰 정리되어 있습니다.
 
 - 공개 읽기 페이지는 first screen을 `빈 카드 + skeleton-only + raw 브라우저 에러`로 두지 않고, 서버에서 최소 결과 또는 `200 + partial` 상태를 먼저 렌더합니다.
 - 공개 카드 헤더는 가능한 한 `generated_at`, `partial`, `fallback_reason`을 같은 audit strip 규칙으로 노출해 freshness와 fallback 상태를 즉시 읽을 수 있게 유지합니다.
+- 공개 숫자 문장은 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 정성 문장으로만 유지합니다. 숫자가 섞인 자유 서술은 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
 - 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
@@ -130,6 +137,7 @@
 - `설정 및 시스템`은 `시장 세션 / 시스템 진단 / 기관 리서치 상태`를 독립적으로 불러오므로, 한 패널이 늦어도 전체 페이지가 같이 빈 상태로 멈추지 않게 유지합니다.
 - KR 소량 시세 조회는 더 이상 항상 시장 전체 시가총액 페이지를 끝까지 긁지 않고, 먼저 가벼운 batch quote 경로를 사용합니다. 그래서 `섹터 퍼포먼스`, 요약 카드 같은 첫 진입이 Render free 환경에서도 덜 무겁게 시작됩니다.
 - 종목 상세 분석은 요약 생성과 이벤트 구조화를 병렬로 처리하고, 느린 AI 보조 단계는 timeout fallback으로 전환해 정량 시계열 분석 결과가 먼저 보이도록 유지합니다.
+- 종목 상세 상단의 공개 판단 요약은 `public_summary` 구조를 사용합니다. 여기에는 `근거`, `반대 근거`, `지금 바로 사지 않는 이유`, `무효화 조건`, `데이터 품질`, `신뢰 메모`를 먼저 보여주고, `fair value`, `매수 구간`, `매도 구간`, `애널리스트 목표가` 같은 sell-side 문구는 아래 상세 가이드 영역에만 남깁니다.
 - startup 보강 작업은 정해진 시간 안에 끝나지 않아도 헬스 상태를 즉시 `degraded`로 내리지 않고, 본 서비스 응답을 먼저 살린 뒤 다음 워밍업/재요청에서 다시 보강되도록 유지합니다.
 - 예측 정확도 집계와 관련된 SQLite 경로는 동일한 `WAL + busy_timeout` 설정을 공유해, startup refresh나 집계 화면이 `database is locked`로 불안정해지는 구간을 줄였습니다.
 - 운영 스모크 검증은 현재 제품 기준선에 맞춰 KR 대표 종목(`005930.KS`, `000660.KS`) 중심으로 확인합니다.
@@ -741,6 +749,9 @@ selection
 - `GET /api/market/movers/{code}`
 - `GET /api/market/opportunities/{code}`
 - `GET /api/stock/{ticker}/detail`
+  - `public_summary`는 공개 판단 요약 전용 블록입니다.
+  - 필드: `summary`, `evidence_for`, `evidence_against`, `why_not_buy_now`, `thesis_breakers`, `data_quality`, `confidence_note`
+  - 공개 요약은 가격대/목표가 중심 문구보다 근거와 실패 조건을 먼저 보여줍니다.
 - `GET /api/stock/{ticker}/chart`
 - `GET /api/stock/{ticker}/technical-summary`
 - `GET /api/stock/{ticker}/pivot-points`
@@ -838,6 +849,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 - 큰 KR fallback 유니버스에서는 응답 안정성을 우선해 `1차 전수 스캔 결과`를 먼저 반환하고, 정밀 분석은 상위 후보나 후속 상세 화면에서 이어집니다.
 - Render free에서 서버가 막 깨어난 직후에는 KR 레이더 warmup이 먼저 돌고, 정밀 계산이 길어지면 `504` 대신 빠른 1차 후보 응답을 먼저 돌려주도록 구성합니다. 백그라운드 계산은 계속 진행해 다음 재시도에서 캐시된 정밀 결과로 회복되게 합니다.
 - `/api/market/opportunities/{code}`는 정밀 응답이 `12초` 안에 끝나지 않으면 quick fallback을 기다리고, quick fallback도 `4초` 안에 끝나지 않으면 이제 `cached quick` 또는 placeholder `200 + partial`로 먼저 내려갑니다. 그래서 `/radar` first screen이 통째로 비어 버리는 구간을 줄였습니다.
+- cached quick 재사용은 이제 요청 limit와 정확히 같은 캐시 키만 보지 않고, 최근에 확보된 다른 quick limit 결과도 usable하면 잘라서 다시 사용합니다. 그래서 `/radar?limit=12`가 막혀도 직전 `limit=8` quick 결과를 먼저 보여 줄 수 있습니다.
 - 레이더 응답 캐시는 이제 `시장 컨텍스트 계산 + 유니버스 해석 + 1차 quote screen`까지 함께 감싸므로, 같은 조건의 재조회가 들어올 때 매번 무거운 전처리를 다시 수행하지 않습니다.
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
@@ -870,6 +882,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 - 둘째 사진의 `/radar`는 전용 레이더 first screen이라, 같은 시점에 `market opportunities` warm-up gap을 만나면 그 페이지만 빈 경고 카드처럼 보일 수 있었습니다.
 - 즉 원인은 “무료 서버라 느림” 한 줄로 끝나지 않고, `Render Free warm-up + KR 레이더 첫 quick build 비용 + 대시보드와 /radar의 실패 흡수 방식 차이`가 함께 겹친 것입니다.
 - 현재 패치 기준으로는 quick fallback이 늦어도 `cached quick` 또는 placeholder `partial`을 먼저 내려 `/radar`가 통째로 비는 상황을 줄였습니다.
+- placeholder partial이 unavoidable한 경우에도 `/radar` first screen은 더 이상 `실제 시세 확보 0 / 표시 후보 0` 같은 숫자 보드를 그대로 크게 보여주지 않고, 어떤 단계에서 준비 중인지와 다음 갱신 동작을 먼저 안내합니다.
 
 2026-03-29 관찰값 예시:
 

@@ -87,10 +87,6 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     }
   };
 
-  if (authLoading) {
-    return <div className="page-shell animate-pulse space-y-4"><div className="card h-48" /><div className="card h-64" /></div>;
-  }
-
   if (!session) {
     return (
       <AuthGateCard
