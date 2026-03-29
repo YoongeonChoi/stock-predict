@@ -81,6 +81,14 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback, {"value": 3})
         self.assertEqual(cached, {"value": 19})
 
+    async def test_memory_cache_serves_recent_value_without_database_roundtrip(self):
+        await cache.set("unit_test:memory_hot", {"value": 23}, ttl=60)
+
+        with patch("app.data.cache.db.cache_get", new=AsyncMock(side_effect=AssertionError("db cache_get should not run"))):
+            cached = await cache.get("unit_test:memory_hot")
+
+        self.assertEqual(cached, {"value": 23})
+
     async def test_get_universe_filters_known_invalid_tickers(self):
         with patch(
             "app.data.fmp_client.probe_stock_screener",

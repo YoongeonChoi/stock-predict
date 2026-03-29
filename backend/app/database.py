@@ -1,5 +1,6 @@
 import aiosqlite
 import json
+import logging
 import sqlite3
 import time
 from contextlib import asynccontextmanager
@@ -142,6 +143,12 @@ ON ideal_portfolio_snapshots(reference_date DESC);
 
 SQLITE_CONNECT_TIMEOUT_SECONDS = 30
 SQLITE_BUSY_TIMEOUT_MS = 5000
+SQLITE_CACHE_CONNECT_TIMEOUT_SECONDS = 0.35
+SQLITE_CACHE_BUSY_TIMEOUT_MS = 250
+SQLITE_PUBLIC_READ_CONNECT_TIMEOUT_SECONDS = 0.75
+SQLITE_PUBLIC_READ_BUSY_TIMEOUT_MS = 500
+
+log = logging.getLogger("stock_predict.database")
 
 
 def _is_sqlite_lock_error(exc: Exception) -> bool:
@@ -155,16 +162,37 @@ class Database:
         self.db_path = get_settings().db_path
 
     @asynccontextmanager
-    async def _connect(self):
-        conn = await aiosqlite.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT_SECONDS)
+    async def _connect(
+        self,
+        *,
+        timeout_seconds: float = SQLITE_CONNECT_TIMEOUT_SECONDS,
+        busy_timeout_ms: int = SQLITE_BUSY_TIMEOUT_MS,
+    ):
+        conn = await aiosqlite.connect(self.db_path, timeout=timeout_seconds)
         try:
             await conn.execute("PRAGMA journal_mode=WAL")
             await conn.execute("PRAGMA synchronous=NORMAL")
-            await conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+            await conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
             await conn.execute("PRAGMA foreign_keys=ON")
             yield conn
         finally:
             await conn.close()
+
+    @asynccontextmanager
+    async def _connect_cache(self):
+        async with self._connect(
+            timeout_seconds=SQLITE_CACHE_CONNECT_TIMEOUT_SECONDS,
+            busy_timeout_ms=SQLITE_CACHE_BUSY_TIMEOUT_MS,
+        ) as conn:
+            yield conn
+
+    @asynccontextmanager
+    async def _connect_public_read(self):
+        async with self._connect(
+            timeout_seconds=SQLITE_PUBLIC_READ_CONNECT_TIMEOUT_SECONDS,
+            busy_timeout_ms=SQLITE_PUBLIC_READ_BUSY_TIMEOUT_MS,
+        ) as conn:
+            yield conn
 
     async def initialize(self):
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +220,7 @@ class Database:
 
     async def cache_get(self, key: str):
         try:
-            async with self._connect() as conn:
+            async with self._connect_cache() as conn:
                 cur = await conn.execute(
                     "SELECT value, created_at, ttl_seconds FROM cache WHERE key = ?",
                     (key,),
@@ -212,12 +240,13 @@ class Database:
                 return json.loads(value)
         except Exception as exc:
             if _is_sqlite_lock_error(exc):
+                log.warning("cache_get lock fallback for key=%s", key)
                 return None
             raise
 
     async def cache_set(self, key: str, value, ttl_seconds: int):
         try:
-            async with self._connect() as conn:
+            async with self._connect_cache() as conn:
                 await conn.execute(
                     "INSERT OR REPLACE INTO cache (key, value, created_at, ttl_seconds) "
                     "VALUES (?, ?, ?, ?)",
@@ -225,17 +254,21 @@ class Database:
                 )
                 await conn.commit()
         except Exception as exc:
-            if not _is_sqlite_lock_error(exc):
-                raise
+            if _is_sqlite_lock_error(exc):
+                log.warning("cache_set lock fallback for key=%s", key)
+                return
+            raise
 
     async def cache_invalidate(self, pattern: str):
         try:
-            async with self._connect() as conn:
+            async with self._connect_cache() as conn:
                 await conn.execute("DELETE FROM cache WHERE key LIKE ?", (pattern,))
                 await conn.commit()
         except Exception as exc:
-            if not _is_sqlite_lock_error(exc):
-                raise
+            if _is_sqlite_lock_error(exc):
+                log.warning("cache_invalidate lock fallback for pattern=%s", pattern)
+                return
+            raise
 
     # ── watchlist ──────────────────────────────────────────
 
@@ -419,62 +452,75 @@ class Database:
             return rows
 
     async def research_report_status(self, today_iso: str) -> dict:
-        async with aiosqlite.connect(self.db_path) as conn:
-            total_cur = await conn.execute(
-                """
-                SELECT
-                    COUNT(*) AS total_reports,
-                    COUNT(DISTINCT source_id) AS source_count,
-                    MAX(updated_at) AS last_synced_at
-                FROM research_reports
-                """
-            )
-            total_row = await total_cur.fetchone()
+        try:
+            async with self._connect_public_read() as conn:
+                total_cur = await conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS total_reports,
+                        COUNT(DISTINCT source_id) AS source_count,
+                        MAX(updated_at) AS last_synced_at
+                    FROM research_reports
+                    """
+                )
+                total_row = await total_cur.fetchone()
 
-            today_cur = await conn.execute(
-                """
-                SELECT COUNT(*) AS todays_reports
-                FROM research_reports
-                WHERE substr(published_at, 1, 10) = ?
-                """,
-                (today_iso,),
-            )
-            today_row = await today_cur.fetchone()
+                today_cur = await conn.execute(
+                    """
+                    SELECT COUNT(*) AS todays_reports
+                    FROM research_reports
+                    WHERE substr(published_at, 1, 10) = ?
+                    """,
+                    (today_iso,),
+                )
+                today_row = await today_cur.fetchone()
 
-            region_cur = await conn.execute(
-                """
-                SELECT region_code, COUNT(*) AS total
-                FROM research_reports
-                GROUP BY region_code
-                ORDER BY total DESC
-                """
-            )
-            region_rows = await region_cur.fetchall()
+                region_cur = await conn.execute(
+                    """
+                    SELECT region_code, COUNT(*) AS total
+                    FROM research_reports
+                    GROUP BY region_code
+                    ORDER BY total DESC
+                    """
+                )
+                region_rows = await region_cur.fetchall()
 
-            source_cur = await conn.execute(
-                """
-                SELECT source_id, source_name, COUNT(*) AS total
-                FROM research_reports
-                GROUP BY source_id, source_name
-                ORDER BY total DESC, source_name ASC
-                """
-            )
-            source_rows = await source_cur.fetchall()
+                source_cur = await conn.execute(
+                    """
+                    SELECT source_id, source_name, COUNT(*) AS total
+                    FROM research_reports
+                    GROUP BY source_id, source_name
+                    ORDER BY total DESC, source_name ASC
+                    """
+                )
+                source_rows = await source_cur.fetchall()
 
-            return {
-                "total_reports": total_row[0] or 0,
-                "source_count": total_row[1] or 0,
-                "last_synced_at": total_row[2],
-                "todays_reports": today_row[0] or 0,
-                "regions": [
-                    {"region_code": row[0], "total": row[1]}
-                    for row in region_rows
-                ],
-                "sources": [
-                    {"source_id": row[0], "source_name": row[1], "total": row[2]}
-                    for row in source_rows
-                ],
-            }
+                return {
+                    "total_reports": total_row[0] or 0,
+                    "source_count": total_row[1] or 0,
+                    "last_synced_at": total_row[2],
+                    "todays_reports": today_row[0] or 0,
+                    "regions": [
+                        {"region_code": row[0], "total": row[1]}
+                        for row in region_rows
+                    ],
+                    "sources": [
+                        {"source_id": row[0], "source_name": row[1], "total": row[2]}
+                        for row in source_rows
+                    ],
+                }
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("research_report_status lock fallback for %s", today_iso)
+                return {
+                    "total_reports": 0,
+                    "source_count": 0,
+                    "last_synced_at": None,
+                    "todays_reports": 0,
+                    "regions": [],
+                    "sources": [],
+                }
+            raise
 
     # ── forecast accuracy ──────────────────────────────────
 
@@ -500,22 +546,33 @@ class Database:
             await conn.commit()
 
     async def accuracy_stats(self) -> dict:
-        async with aiosqlite.connect(self.db_path) as conn:
-            cur = await conn.execute(
-                "SELECT COUNT(*) as total, "
-                "SUM(CASE WHEN ABS(actual_price - predicted_price) / predicted_price < 0.05 "
-                "THEN 1 ELSE 0 END) as within_5pct, "
-                "AVG(ABS(actual_price - predicted_price) / predicted_price) as avg_error "
-                "FROM forecast_accuracy WHERE actual_price IS NOT NULL"
-            )
-            row = await cur.fetchone()
-            total = row[0] or 0
-            return {
-                "total_predictions": total,
-                "within_5pct": row[1] or 0,
-                "accuracy_rate": (row[1] or 0) / total if total > 0 else 0,
-                "avg_error_pct": round((row[2] or 0) * 100, 2),
-            }
+        try:
+            async with self._connect_public_read() as conn:
+                cur = await conn.execute(
+                    "SELECT COUNT(*) as total, "
+                    "SUM(CASE WHEN ABS(actual_price - predicted_price) / predicted_price < 0.05 "
+                    "THEN 1 ELSE 0 END) as within_5pct, "
+                    "AVG(ABS(actual_price - predicted_price) / predicted_price) as avg_error "
+                    "FROM forecast_accuracy WHERE actual_price IS NOT NULL"
+                )
+                row = await cur.fetchone()
+                total = row[0] or 0
+                return {
+                    "total_predictions": total,
+                    "within_5pct": row[1] or 0,
+                    "accuracy_rate": (row[1] or 0) / total if total > 0 else 0,
+                    "avg_error_pct": round((row[2] or 0) * 100, 2),
+                }
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("accuracy_stats lock fallback")
+                return {
+                    "total_predictions": 0,
+                    "within_5pct": 0,
+                    "accuracy_rate": 0,
+                    "avg_error_pct": 0.0,
+                }
+            raise
 
     async def prediction_upsert(
         self,
@@ -618,68 +675,90 @@ class Database:
             await conn.commit()
 
     async def prediction_stats(self, prediction_type: str = "next_day") -> dict:
-        async with self._connect() as conn:
-            total_cur = await conn.execute(
-                """
-                SELECT COUNT(*) AS stored_total,
-                       SUM(CASE WHEN actual_close IS NULL THEN 1 ELSE 0 END) AS pending_total
-                FROM prediction_records
-                WHERE prediction_type = ?
-                """,
-                (prediction_type,),
-            )
-            total_row = await total_cur.fetchone()
+        try:
+            async with self._connect_public_read() as conn:
+                total_cur = await conn.execute(
+                    """
+                    SELECT COUNT(*) AS stored_total,
+                           SUM(CASE WHEN actual_close IS NULL THEN 1 ELSE 0 END) AS pending_total
+                    FROM prediction_records
+                    WHERE prediction_type = ?
+                    """,
+                    (prediction_type,),
+                )
+                total_row = await total_cur.fetchone()
 
-            cur = await conn.execute(
-                """
-                SELECT
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN actual_close BETWEEN predicted_low AND predicted_high THEN 1 ELSE 0 END) AS within_range,
-                    SUM(
-                        CASE
-                            WHEN direction = 'up' AND actual_close > reference_price THEN 1
-                            WHEN direction = 'down' AND actual_close < reference_price THEN 1
-                            WHEN direction = 'flat' AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
-                            ELSE 0
-                        END
-                    ) AS direction_hits,
-                    AVG(ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)) AS avg_abs_error,
-                    AVG(confidence) AS avg_confidence
-                FROM prediction_records
-                WHERE actual_close IS NOT NULL AND prediction_type = ?
-                """,
-                (prediction_type,),
-            )
-            row = await cur.fetchone()
-            total = row[0] or 0
-            within_range = row[1] or 0
-            direction_hits = row[2] or 0
-            return {
-                "stored_predictions": total_row[0] or 0,
-                "pending_predictions": total_row[1] or 0,
-                "total_predictions": total,
-                "within_range": within_range,
-                "within_range_rate": round(within_range / total, 4) if total else 0,
-                "direction_hits": direction_hits,
-                "direction_accuracy": round(direction_hits / total, 4) if total else 0,
-                "avg_error_pct": round((row[3] or 0) * 100, 2),
-                "avg_confidence": round(row[4] or 0, 2),
-            }
+                cur = await conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN actual_close BETWEEN predicted_low AND predicted_high THEN 1 ELSE 0 END) AS within_range,
+                        SUM(
+                            CASE
+                                WHEN direction = 'up' AND actual_close > reference_price THEN 1
+                                WHEN direction = 'down' AND actual_close < reference_price THEN 1
+                                WHEN direction = 'flat' AND ABS(actual_close - reference_price) / NULLIF(reference_price, 0) <= 0.001 THEN 1
+                                ELSE 0
+                            END
+                        ) AS direction_hits,
+                        AVG(ABS(actual_close - predicted_close) / NULLIF(reference_price, 0)) AS avg_abs_error,
+                        AVG(confidence) AS avg_confidence
+                    FROM prediction_records
+                    WHERE actual_close IS NOT NULL AND prediction_type = ?
+                    """,
+                    (prediction_type,),
+                )
+                row = await cur.fetchone()
+                total = row[0] or 0
+                within_range = row[1] or 0
+                direction_hits = row[2] or 0
+                return {
+                    "stored_predictions": total_row[0] or 0,
+                    "pending_predictions": total_row[1] or 0,
+                    "total_predictions": total,
+                    "within_range": within_range,
+                    "within_range_rate": round(within_range / total, 4) if total else 0,
+                    "direction_hits": direction_hits,
+                    "direction_accuracy": round(direction_hits / total, 4) if total else 0,
+                    "avg_error_pct": round((row[3] or 0) * 100, 2),
+                    "avg_confidence": round(row[4] or 0, 2),
+                }
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_stats lock fallback for %s", prediction_type)
+                return {
+                    "stored_predictions": 0,
+                    "pending_predictions": 0,
+                    "total_predictions": 0,
+                    "within_range": 0,
+                    "within_range_rate": 0,
+                    "direction_hits": 0,
+                    "direction_accuracy": 0,
+                    "avg_error_pct": 0.0,
+                    "avg_confidence": 0.0,
+                }
+            raise
 
     async def prediction_recent(self, prediction_type: str = "next_day", limit: int = 40) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
-                """
-                SELECT *
-                FROM prediction_records
-                WHERE prediction_type = ?
-                ORDER BY COALESCE(evaluated_at, created_at) DESC, created_at DESC
-                LIMIT ?
-                """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT *
+                    FROM prediction_records
+                    WHERE prediction_type = ?
+                    ORDER BY COALESCE(evaluated_at, created_at) DESC, created_at DESC
+                    LIMIT ?
+                    """,
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_recent lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_evaluated_samples(
         self,
@@ -687,21 +766,27 @@ class Database:
         prediction_type: str,
         limit: int = 2000,
     ) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
-                """
-                SELECT *
-                FROM prediction_records
-                WHERE prediction_type = ?
-                  AND actual_close IS NOT NULL
-                  AND calibration_json IS NOT NULL
-                ORDER BY target_date DESC, created_at DESC
-                LIMIT ?
-                """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT *
+                    FROM prediction_records
+                    WHERE prediction_type = ?
+                      AND actual_close IS NOT NULL
+                      AND calibration_json IS NOT NULL
+                    ORDER BY target_date DESC, created_at DESC
+                    LIMIT ?
+                    """,
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_evaluated_samples lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_symbol_history(
         self,
@@ -726,9 +811,10 @@ class Database:
             return [dict(r) for r in await cur.fetchall()]
 
     async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
                 """
                 SELECT
                     target_date,
@@ -760,14 +846,20 @@ class Database:
                 ORDER BY target_date DESC
                 LIMIT ?
                 """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_daily_trend lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_country_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
                 """
                 SELECT
                     COALESCE(country_code, 'N/A') AS label,
@@ -799,14 +891,20 @@ class Database:
                 ORDER BY total DESC
                 LIMIT ?
                 """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_country_breakdown lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_scope_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
                 """
                 SELECT
                     scope AS label,
@@ -838,14 +936,20 @@ class Database:
                 ORDER BY total DESC
                 LIMIT ?
                 """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_scope_breakdown lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_model_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
                 """
                 SELECT
                     COALESCE(model_version, 'unknown') AS label,
@@ -877,14 +981,20 @@ class Database:
                 ORDER BY total DESC
                 LIMIT ?
                 """,
-                (prediction_type, limit),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_model_breakdown lock fallback for %s", prediction_type)
+                return []
+            raise
 
     async def prediction_confidence_buckets(self, prediction_type: str = "next_day") -> list[dict]:
-        async with self._connect() as conn:
-            conn.row_factory = aiosqlite.Row
-            cur = await conn.execute(
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
                 """
                 SELECT
                     bucket,
@@ -931,9 +1041,14 @@ class Database:
                     ELSE 5
                 END
                 """,
-                (prediction_type,),
-            )
-            return [dict(r) for r in await cur.fetchall()]
+                    (prediction_type,),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_confidence_buckets lock fallback for %s", prediction_type)
+                return []
+            raise
 
 
     # ── portfolio ────────────────────────────────────────────
