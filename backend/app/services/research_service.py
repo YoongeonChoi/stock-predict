@@ -15,6 +15,14 @@ from app.services import (
     learned_fusion_profile_service,
 )
 
+PREDICTION_LAB_CACHE_TTL_SECONDS = 180
+PREDICTION_LAB_WAIT_TIMEOUT_SECONDS = 2.5
+PREDICTION_LAB_BUILD_TIMEOUT_SECONDS = 8.0
+PREDICTION_LAB_STATS_TIMEOUT_SECONDS = 2.0
+PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS = 8.0
+PREDICTION_LAB_SAMPLE_WINDOW_MIN = 96
+PREDICTION_LAB_SAMPLE_WINDOW_MAX = 180
+
 
 def _prediction_label(prediction_type: str) -> str:
     if prediction_type == "next_day":
@@ -393,16 +401,111 @@ def _build_insights(
     return insights[:6]
 
 
-async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v4:{limit_recent}:{int(refresh)}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
+def _zero_prediction_stats() -> dict:
+    return {
+        "stored_predictions": 0,
+        "pending_predictions": 0,
+        "total_predictions": 0,
+        "within_range": 0,
+        "within_range_rate": 0.0,
+        "direction_hits": 0,
+        "direction_accuracy": 0.0,
+        "avg_error_pct": 0.0,
+        "avg_confidence": 0.0,
+    }
 
+
+async def _safe_prediction_stats(prediction_type: str) -> dict:
+    try:
+        return await asyncio.wait_for(
+            db.prediction_stats(prediction_type),
+            timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return _zero_prediction_stats()
+
+
+async def _build_prediction_lab_fallback(
+    *,
+    limit_recent: int,
+    reason: str,
+) -> dict:
+    accuracy = await archive_service.get_accuracy(refresh=False)
+    stats_5d, stats_20d = await asyncio.gather(
+        _safe_prediction_stats("distributional_5d"),
+        _safe_prediction_stats("distributional_20d"),
+    )
+    fusion_profiles = learned_fusion_profile_service.get_profile_summary()
+    fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
+    empirical_calibration = _normalize_empirical_calibration(
+        confidence_calibration_service.get_profile_summary()
+    )
+    per_horizon_fusion = [
+        {"prediction_type": "next_day", "label": "1D", **_summarize_fusion_rows([])},
+        {"prediction_type": "distributional_5d", "label": "5D", **_summarize_fusion_rows([])},
+        {"prediction_type": "distributional_20d", "label": "20D", **_summarize_fusion_rows([])},
+    ]
+    horizon_accuracy = _normalize_horizon_accuracy(
+        [
+            ("next_day", "1D", accuracy, per_horizon_fusion[0], fusion_profile_map.get("next_day")),
+            ("distributional_5d", "5D", stats_5d, per_horizon_fusion[1], fusion_profile_map.get("distributional_5d")),
+            ("distributional_20d", "20D", stats_20d, per_horizon_fusion[2], fusion_profile_map.get("distributional_20d")),
+        ]
+    )
+    graph_context_summary = _build_graph_context_summary(per_horizon_fusion)
+    fusion_status_summary = _build_fusion_status_summary(
+        horizon_accuracy,
+        fusion_profiles,
+        graph_context_summary,
+    )
+    response = {
+        "generated_at": datetime.now().isoformat(),
+        "partial": True,
+        "fallback_reason": reason,
+        "accuracy": accuracy,
+        "horizon_accuracy": horizon_accuracy,
+        "empirical_calibration": empirical_calibration,
+        "fusion_profiles": fusion_profiles,
+        "graph_context_summary": graph_context_summary,
+        "fusion_status_summary": fusion_status_summary,
+        "breakdown": {
+            "by_country": [],
+            "by_scope": [],
+            "by_model": [],
+        },
+        "calibration": [],
+        "recent_trend": [],
+        "recent_records": [],
+        "insights": _build_insights(
+            accuracy,
+            [],
+            [],
+            [],
+            horizon_accuracy,
+            empirical_calibration,
+            fusion_profiles,
+            graph_context_summary,
+            fusion_status_summary,
+        ),
+    }
+    if not response["insights"]:
+        response["insights"] = [
+            f"실측 검증 상세 집계가 지연돼 최근 {min(limit_recent, 40)}건 테이블 대신 핵심 검증 스냅샷을 먼저 제공합니다."
+        ]
+    return response
+
+
+async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dict:
     if refresh:
-        await archive_service.refresh_prediction_accuracy(limit=200)
+        await asyncio.wait_for(
+            archive_service.refresh_prediction_accuracy(limit=200),
+            timeout=PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS,
+        )
 
-    sample_window = max(200, limit_recent * 5)
+    sample_window = max(
+        PREDICTION_LAB_SAMPLE_WINDOW_MIN,
+        min(PREDICTION_LAB_SAMPLE_WINDOW_MAX, limit_recent * 3),
+    )
     (
         accuracy,
         stats_5d,
@@ -504,6 +607,8 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
 
     response = {
         "generated_at": datetime.now().isoformat(),
+        "partial": False,
+        "fallback_reason": None,
         "accuracy": accuracy,
         "horizon_accuracy": horizon_accuracy,
         "empirical_calibration": empirical_calibration,
@@ -530,5 +635,36 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
             fusion_status_summary,
         ),
     }
-    await cache.set(cache_key, response, 180)
     return response
+
+
+async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
+    cache_key = f"prediction_lab:v5:{limit_recent}:{int(refresh)}"
+
+    async def _fetch_prediction_lab():
+        try:
+            return await asyncio.wait_for(
+                _build_prediction_lab_payload(limit_recent, refresh),
+                timeout=PREDICTION_LAB_BUILD_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return await _build_prediction_lab_fallback(
+                limit_recent=limit_recent,
+                reason="prediction_lab_timeout",
+            )
+        except Exception:
+            return await _build_prediction_lab_fallback(
+                limit_recent=limit_recent,
+                reason="prediction_lab_error",
+            )
+
+    return await cache.get_or_fetch(
+        cache_key,
+        _fetch_prediction_lab,
+        ttl=PREDICTION_LAB_CACHE_TTL_SECONDS,
+        wait_timeout=PREDICTION_LAB_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: _build_prediction_lab_fallback(
+            limit_recent=limit_recent,
+            reason="prediction_lab_cache_wait_timeout",
+        ),
+    )

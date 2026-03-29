@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.3 - 2026-03-29
+
+- 공개 화면 전수 점검 기준으로 남아 있던 연결 어긋남을 정리했습니다. `/portfolio`, `/watchlist`의 로그아웃 미리보기는 다시 공개 `Opportunity Radar` snapshot을 기준으로 렌더하고, 더 이상 느린 `screener seed`를 first paint 데이터 원천으로 쓰지 않습니다. 그래서 익명 first paint가 preview보다 늦게 뜨거나, preview 카드가 seed-only 필드에 기대다 빈 상태로 흔들리던 경로를 줄였습니다.
+- `/lab`은 partial/fallback 메타데이터를 audit strip에 그대로 연결하고, `/api/research/predictions` 공개 기본값도 `refresh=false`로 낮췄습니다. 그래서 실측 검증 화면과 raw API 호출이 모두 무거운 refresh를 불필요하게 바로 시작하지 않고, 준비된 스냅샷을 먼저 보여준 뒤 필요한 경우에만 보강 refresh를 타게 맞췄습니다.
+- 공개 server page는 각 route의 fetch timeout 외에 page-level timebox도 함께 사용하도록 정리했습니다. `/calendar`, `/portfolio`, `/watchlist`, `/lab`을 포함한 공개/로그아웃 first screen이 backend 응답을 오래 기다리다 한 번에 늦게 열리는 문제를 줄이고, first paint를 더 짧은 예산 안에서 안정적으로 살리도록 맞췄습니다.
+- 로컬 실측 기준으로 핵심 공개 API `/api/briefing/daily`, `/api/country/KR/report`, `/api/market/indicators`, `/api/market/opportunities/KR`, `/api/screener`, `/api/archive/accuracy/stats`, `/api/research/predictions`는 모두 `200` 응답을 유지했고, page HTML `/`, `/radar`, `/screener`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist`에서도 raw `Failed to fetch`와 `불러오지 못했습니다` 문구가 first paint에 남지 않는 것을 다시 확인했습니다.
+
 ## v2.52.2 - 2026-03-29
 
 - 공개 집계 API 안정화를 위해 `/api/countries`는 더 이상 국가별 지수 quote를 순차 호출하지 않습니다. 이제 병렬 quote + `6초` timeout + `5분` 캐시를 사용하고, 느릴 때도 zeroed index fallback으로 먼저 살아남아 홈 SSR이 국가 selector 때문에 같이 멈추지 않게 맞췄습니다.

@@ -16,6 +16,7 @@ import feedparser
 import httpx
 
 from app.database import db
+from app.runtime import get_or_create_background_job
 
 log = logging.getLogger("stock_predict.research_archive")
 
@@ -164,6 +165,32 @@ def _strip_html(value: str | None) -> str:
         return ""
     cleaned = HTML_TAG_RE.sub(" ", value)
     return " ".join(html.unescape(cleaned).split())
+
+
+def _current_sync_job_name(force: bool) -> str:
+    suffix = datetime.now(timezone.utc).date().isoformat()
+    return f"research_archive_sync:{'force' if force else 'daily'}:{suffix}"
+
+
+def _log_sync_completion(task: asyncio.Task, *, label: str) -> None:
+    if task.cancelled():
+        log.info("%s was cancelled.", label)
+        return
+    try:
+        task.result()
+    except Exception as exc:
+        log.warning("%s failed: %s", label, exc, exc_info=True)
+
+
+def _spawn_public_research_sync(force: bool = False) -> None:
+    label = "Research archive sync"
+    task, created = get_or_create_background_job(
+        _current_sync_job_name(force),
+        lambda: sync_public_research_reports(force=force),
+    )
+    if not created:
+        return
+    task.add_done_callback(lambda done_task, task_label=label: _log_sync_completion(done_task, label=task_label))
 
 
 def _to_absolute(url: str | None, base_url: str) -> str:
@@ -413,15 +440,23 @@ async def sync_public_research_reports(force: bool = False) -> dict[str, Any]:
 
 
 async def get_public_research_status(refresh_if_missing: bool = False) -> dict[str, Any]:
+    today_iso = datetime.now(timezone.utc).date().isoformat()
     cached = await db.cache_get(SYNC_STATUS_CACHE_KEY)
     if cached:
-        return cached
+        filtered = _filter_status_snapshot(cached)
+        if refresh_if_missing and filtered.get("refreshed_on") != today_iso:
+            _spawn_public_research_sync(force=False)
+            filtered = {
+                **filtered,
+                "partial": True,
+                "fallback_reason": "research_sync_pending",
+            }
+        return filtered
 
-    if refresh_if_missing:
-        return await sync_public_research_reports(force=False)
-
-    today_iso = datetime.now(timezone.utc).date().isoformat()
     snapshot = _filter_status_snapshot(await db.research_report_status(today_iso))
+    if refresh_if_missing:
+        _spawn_public_research_sync(force=False)
+
     return {
         "refreshed_on": None,
         "refreshed_at": None,
@@ -429,6 +464,8 @@ async def get_public_research_status(refresh_if_missing: bool = False) -> dict[s
         "error_count": 0,
         "source_results": [],
         "errors": [],
+        "partial": refresh_if_missing,
+        "fallback_reason": "research_sync_pending" if refresh_if_missing else None,
         **snapshot,
     }
 
@@ -440,12 +477,16 @@ async def list_public_research_reports(
     limit: int = 40,
     auto_refresh: bool = True,
 ) -> list[dict[str, Any]]:
-    if auto_refresh:
-        await sync_public_research_reports(force=False)
     normalized_region = region_code if region_code in SUPPORTED_REGIONS else "KR"
     allowed_sources = _allowed_source_ids()
     if source_id and source_id not in allowed_sources:
         return []
+
+    if auto_refresh:
+        cached_status = await db.cache_get(SYNC_STATUS_CACHE_KEY)
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        if not cached_status or cached_status.get("refreshed_on") != today_iso:
+            _spawn_public_research_sync(force=False)
 
     candidate_limit = limit if source_id else min(max(limit * 4, limit + 20), 800)
     rows = await db.research_report_list(
@@ -453,6 +494,16 @@ async def list_public_research_reports(
         source_id=source_id,
         limit=candidate_limit,
     )
+    if not rows and auto_refresh:
+        try:
+            await asyncio.wait_for(sync_public_research_reports(force=False), timeout=4)
+            rows = await db.research_report_list(
+                region_code=normalized_region,
+                source_id=source_id,
+                limit=candidate_limit,
+            )
+        except asyncio.TimeoutError:
+            _spawn_public_research_sync(force=False)
     if not source_id:
         rows = [row for row in rows if row.get("source_id") in allowed_sources]
     rows = rows[:limit]

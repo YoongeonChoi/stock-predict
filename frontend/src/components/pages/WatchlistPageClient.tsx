@@ -14,7 +14,7 @@ import type { OpportunityRadarResponse, WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 interface WatchlistPageClientProps {
-  demoData?: (OpportunityRadarResponse & { partial?: boolean; fallback_reason?: string | null }) | null;
+  demoData?: OpportunityRadarResponse | null;
 }
 
 export default function WatchlistPageClient({ demoData = null }: WatchlistPageClientProps) {
@@ -104,16 +104,16 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                     <div className="min-w-0">
                       <div className="font-medium text-text">{item.name}</div>
                       <div className="mt-1 text-xs text-text-secondary">
-                        {item.ticker} · {item.sector} · {item.execution_bias || "stay_selective"}
+                        {item.ticker} · {item.sector} · 레이더 미리보기
                       </div>
                       <div className="mt-2 text-sm leading-6 text-text-secondary">
-                        {item.thesis?.[0] || "공개 레이더 상위 후보를 먼저 고정해 두고, 로그인 후에는 저장과 추적을 이어갑니다."}
+                        공개 레이더 상위 후보를 먼저 고정해 두고, 로그인 후에는 저장과 추적을 계정별로 이어갑니다.
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-mono text-text">{formatPrice(item.current_price, item.country_code)}</div>
                       <div className={`mt-1 text-sm ${changeColor(item.change_pct ?? 0)}`}>{formatPct(item.change_pct)}</div>
-                      <div className="mt-2 text-xs text-text-secondary">보정 confidence {item.confidence.toFixed(1)}</div>
+                      <div className="mt-2 text-xs text-text-secondary">레이더 점수 {item.opportunity_score?.toFixed(1) ?? "대기"}</div>
                     </div>
                   </div>
                 </div>

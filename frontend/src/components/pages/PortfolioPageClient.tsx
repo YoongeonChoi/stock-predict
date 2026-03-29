@@ -148,7 +148,7 @@ function buildProfileForm(profile?: PortfolioProfile | null): ProfileFormState {
 }
 
 interface PortfolioPageClientProps {
-  demoData?: (OpportunityRadarResponse & { partial?: boolean; fallback_reason?: string | null }) | null;
+  demoData?: OpportunityRadarResponse | null;
 }
 
 export default function PortfolioPageClient({ demoData = null }: PortfolioPageClientProps) {
@@ -429,7 +429,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
         title="포트폴리오는 로그인 후 관리합니다"
         description="총자산, 보유 종목, 추천 결과를 계정별로 분리 저장하려면 먼저 로그인해 주세요."
         nextPath="/portfolio"
-        previewTitle="공개 데이터 기반 포트폴리오 미리보기"
+        previewTitle="공개 레이더 기반 포트폴리오 미리보기"
         preview={
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
@@ -456,28 +456,28 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                     <div className="min-w-0">
                       <div className="font-medium text-text">{item.name}</div>
                       <div className="mt-1 text-xs text-text-secondary">
-                        {item.ticker} · {item.sector} · {item.execution_bias || "stay_selective"}
+                        {item.ticker} · {item.sector} · 레이더 미리보기
                       </div>
                       <div className="mt-2 text-sm leading-6 text-text-secondary">
-                        {item.thesis?.[0] || "공개 레이더 후보를 기반으로 포트폴리오 추천과 비중 조정을 이어갑니다."}
+                        공개 레이더 상위 후보를 먼저 보여주고, 로그인 후에는 실제 보유 종목 기준 추천과 비중 조정을 이어갑니다.
                       </div>
                     </div>
                     <div className="grid shrink-0 grid-cols-2 gap-3 text-sm md:min-w-[220px]">
                       <div>
-                        <div className="text-[11px] text-text-secondary">상승 확률</div>
-                        <div className="font-semibold text-text">{item.up_probability.toFixed(1)}%</div>
+                        <div className="text-[11px] text-text-secondary">현재가</div>
+                        <div className="font-semibold text-text">{formatPrice(item.current_price, item.country_code)}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-text-secondary">예상 수익률</div>
-                        <div className={changeColor(item.predicted_return_pct)}>{formatPct(item.predicted_return_pct)}</div>
+                        <div className="text-[11px] text-text-secondary">등락률</div>
+                        <div className={changeColor(item.change_pct ?? 0)}>{formatPct(item.change_pct)}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-text-secondary">실행 액션</div>
-                        <div className="font-semibold text-text">{tradeActionLabel(item.action)}</div>
+                        <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                        <div className="font-semibold text-text">{item.opportunity_score?.toFixed(1) ?? "대기"}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-text-secondary">손익비</div>
-                        <div className="font-semibold text-text">{item.risk_reward_estimate.toFixed(2)}</div>
+                        <div className="text-[11px] text-text-secondary">국가</div>
+                        <div className="font-semibold text-text">{item.country_code}</div>
                       </div>
                     </div>
                   </div>

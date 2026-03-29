@@ -7,8 +7,6 @@ from app.models.country import COUNTRY_REGISTRY
 from app.data import kr_market_quote_client, yfinance_client
 from app.analysis.country_analyzer import analyze_country
 from app.analysis.forecast_engine import forecast_index
-from app.analysis.market_regime import build_market_regime
-from app.analysis.next_day_forecast import forecast_next_day
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.runtime import get_or_create_background_job
@@ -22,13 +20,19 @@ OPPORTUNITY_TIMEOUT_SECONDS = 12
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 12
 HEATMAP_TIMEOUT_SECONDS = 10
 COUNTRIES_TIMEOUT_SECONDS = 6
+COUNTRIES_WAIT_TIMEOUT_SECONDS = 2.5
 COUNTRIES_CACHE_TTL_SECONDS = 300
 COUNTRIES_CONCURRENCY = 4
 MARKET_MOVERS_TIMEOUT_SECONDS = 6
+MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_CACHE_TTL_SECONDS = 300
+MARKET_INDICATORS_TIMEOUT_SECONDS = 5
+MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 2.0
+MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
+HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
 
 
@@ -317,6 +321,42 @@ def _build_market_movers_fallback(*, reason: str) -> dict:
     }
 
 
+async def _build_market_indicators_payload() -> list[dict]:
+    tickers = {
+        "USD/KRW": "USDKRW=X",
+        "Gold": "GC=F",
+        "Oil (WTI)": "CL=F",
+        "Bitcoin": "BTC-USD",
+    }
+
+    async def _load_indicator(item: tuple[str, str]) -> dict:
+        name, ticker = item
+        try:
+            quote = await yfinance_client.get_index_quote(ticker)
+        except Exception:
+            quote = {"price": 0, "change_pct": 0}
+        return {
+            "name": name,
+            "price": quote.get("price", 0),
+            "change_pct": quote.get("change_pct", 0),
+        }
+
+    return await gather_limited(
+        list(tickers.items()),
+        _load_indicator,
+        limit=len(tickers),
+    )
+
+
+def _build_market_indicators_fallback() -> list[dict]:
+    return [
+        {"name": "USD/KRW", "price": 0, "change_pct": 0},
+        {"name": "Gold", "price": 0, "change_pct": 0},
+        {"name": "Oil (WTI)", "price": 0, "change_pct": 0},
+        {"name": "Bitcoin", "price": 0, "change_pct": 0},
+    ]
+
+
 async def _build_country_report_fallback(
     code: str,
     *,
@@ -326,51 +366,65 @@ async def _build_country_report_fallback(
 ) -> dict:
     country = COUNTRY_REGISTRY[code]
     primary_index = country.indices[0]
-    primary_index_history = await yfinance_client.get_price_history(primary_index.ticker, period="6mo")
+    from app.data import cache as data_cache
 
-    market_quotes = await asyncio.gather(
-        *(yfinance_client.get_index_quote(idx.ticker) for idx in country.indices),
-        return_exceptions=True,
-    )
+    countries_snapshot = await data_cache.get("countries:v2")
     market_data = {}
-    for idx, quote in zip(country.indices, market_quotes):
-        if isinstance(quote, Exception):
-            SP_2005(idx.ticker).log("warning")
-            market_data[idx.name] = {"price": 0, "change_pct": 0}
-        else:
-            market_data[idx.name] = quote
+    if isinstance(countries_snapshot, list):
+        current = next((item for item in countries_snapshot if item.get("code") == code), None)
+        if current:
+            for idx, quote in zip(country.indices, current.get("indices", [])):
+                market_data[idx.name] = {
+                    "price": float(quote.get("price") or quote.get("current_price") or 0.0),
+                    "change_pct": float(quote.get("change_pct") or 0.0),
+                }
+    if not market_data:
+        market_data = {
+            idx.name: {"price": 0.0, "change_pct": 0.0}
+            for idx in country.indices
+        }
 
-    fear_greed = calculate_fear_greed(primary_index_history, country_code=code)
-    next_day = forecast_next_day(
-        ticker=primary_index.ticker,
-        name=primary_index.name,
-        country_code=code,
-        price_history=primary_index_history,
-        benchmark_history=primary_index_history,
-        asset_type="index",
+    primary_price = float(
+        market_data.get(primary_index.name, {}).get("price")
+        or market_data.get(primary_index.name, {}).get("current_price")
+        or 0.0
     )
-    market_regime = build_market_regime(
-        country_code=code,
-        name=primary_index.name,
-        price_history=primary_index_history,
-        fear_greed=fear_greed,
-        next_day_forecast=next_day,
-    )
-    forecast = await forecast_index(
-        primary_index.ticker,
-        primary_index.name,
-        {},
-        "",
-        price_history=primary_index_history,
-        benchmark_history=primary_index_history,
-    )
+    fear_greed = calculate_fear_greed([], country_code=code)
+    forecast = {
+        "index_ticker": primary_index.ticker,
+        "index_name": primary_index.name,
+        "current_price": primary_price,
+        "fair_value": primary_price,
+        "scenarios": [],
+        "confidence_note": "정밀 분포 예측이 지연돼 대표 시장 스냅샷 기준 요약만 먼저 제공합니다.",
+        "generated_at": datetime.now().isoformat(),
+    }
+    market_regime = {
+        "label": f"{code} 기본 스냅샷",
+        "stance": "neutral",
+        "trend": "range",
+        "volatility": "normal",
+        "breadth": "mixed",
+        "score": 50.0,
+        "conviction": 38.0,
+        "summary": "정밀 시장 국면 계산이 지연돼 대표 지수와 후보 스냅샷을 먼저 보여줍니다.",
+        "playbook": [
+            "대표 후보를 먼저 확인하고, 정밀 리포트가 회복되면 분포·기관 해석을 다시 확인합니다."
+        ],
+        "warnings": ["정밀 국가 리포트가 아직 준비되지 않았습니다."],
+        "signals": [],
+    }
 
     quick_opportunities: list[dict] = []
     try:
-        quick_response = await asyncio.wait_for(
-            market_service.get_market_opportunities_quick(code, limit=5),
-            timeout=max(3.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 6.0)),
-        )
+        quick_response = await market_service.get_cached_market_opportunities(code, limit=5)
+        if not _is_usable_opportunity_payload(quick_response):
+            quick_response = await market_service.get_cached_market_opportunities_quick(code, limit=5)
+        if not _is_usable_opportunity_payload(quick_response):
+            quick_response = await asyncio.wait_for(
+                market_service.get_market_opportunities_quick(code, limit=5),
+                timeout=1.5,
+            )
         quick_opportunities = list(quick_response.get("opportunities") or [])
     except Exception as exc:
         logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
@@ -391,10 +445,10 @@ async def _build_country_report_fallback(
         "institutional_analysis": _empty_institutional_analysis(),
         "top_stocks": _build_top_stock_refs(quick_opportunities),
         "fear_greed": fear_greed.model_dump(),
-        "forecast": forecast.model_dump(),
-        "next_day_forecast": next_day.model_dump(),
-        "market_regime": market_regime.model_dump(),
-        "primary_index_history": primary_index_history,
+        "forecast": forecast,
+        "next_day_forecast": None,
+        "market_regime": market_regime,
+        "primary_index_history": [],
         "market_data": market_data,
         "llm_available": False,
         "errors": [error_code],
@@ -551,7 +605,13 @@ async def list_countries():
             logging.warning("countries payload failed: %s", exc, exc_info=True)
             return _build_countries_fallback()
 
-    return await data_cache.get_or_fetch(cache_key, _fetch_countries, ttl=COUNTRIES_CACHE_TTL_SECONDS)
+    return await data_cache.get_or_fetch(
+        cache_key,
+        _fetch_countries,
+        ttl=COUNTRIES_CACHE_TTL_SECONDS,
+        wait_timeout=COUNTRIES_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=_build_countries_fallback,
+    )
 
 
 @router.get("/country/{code}/report")
@@ -603,7 +663,13 @@ async def get_heatmap(code: str):
             err.log("warning")
             return await _build_heatmap_fallback(code)
 
-    return await data_cache.get_or_fetch(cache_key, _fetch_heatmap, ttl=900)
+    return await data_cache.get_or_fetch(
+        cache_key,
+        _fetch_heatmap,
+        ttl=900,
+        wait_timeout=HEATMAP_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: _build_heatmap_fallback(code),
+    )
 
 
 @router.get("/country/{code}/report/pdf")
@@ -682,26 +748,28 @@ async def get_country_forecast(code: str):
 async def get_market_indicators():
     """Korean market indicators for the dashboard."""
     from app.data import cache as data_cache
-    cached = await data_cache.get("market_indicators")
-    if cached:
-        return cached
+    cache_key = "market_indicators:v2"
 
-    indicators = []
-    tickers = {
-        "USD/KRW": "USDKRW=X",
-        "Gold": "GC=F",
-        "Oil (WTI)": "CL=F",
-        "Bitcoin": "BTC-USD",
-    }
-    for name, ticker in tickers.items():
+    async def _fetch_indicators():
         try:
-            q = await yfinance_client.get_index_quote(ticker)
-            indicators.append({"name": name, "price": q.get("price", 0), "change_pct": q.get("change_pct", 0)})
-        except Exception:
-            indicators.append({"name": name, "price": 0, "change_pct": 0})
+            return await asyncio.wait_for(
+                _build_market_indicators_payload(),
+                timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
+            return _build_market_indicators_fallback()
+        except Exception as exc:
+            logging.warning("market indicators failed: %s", exc, exc_info=True)
+            return _build_market_indicators_fallback()
 
-    await data_cache.set("market_indicators", indicators, 300)
-    return indicators
+    return await data_cache.get_or_fetch(
+        cache_key,
+        _fetch_indicators,
+        ttl=MARKET_INDICATORS_CACHE_TTL_SECONDS,
+        wait_timeout=MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=_build_market_indicators_fallback,
+    )
 
 
 @router.get("/country/{code}/sector-performance")
@@ -719,7 +787,13 @@ async def get_sector_performance(code: str):
     async def _fetch_sector_performance():
         return await _build_sector_performance_payload(code)
 
-    return await data_cache.get_or_fetch(cache_key, _fetch_sector_performance, ttl=300)
+    return await data_cache.get_or_fetch(
+        cache_key,
+        _fetch_sector_performance,
+        ttl=300,
+        wait_timeout=COUNTRIES_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=list,
+    )
 
 
 @router.get("/country/{code}/sectors")
@@ -771,7 +845,13 @@ async def get_market_movers(code: str):
             logging.warning("market movers failed for %s: %s", code, exc, exc_info=True)
             return _build_market_movers_fallback(reason="market_movers_error")
 
-    return await data_cache.get_or_fetch(cache_key, _fetch_movers, ttl=MARKET_MOVERS_CACHE_TTL_SECONDS)
+    return await data_cache.get_or_fetch(
+        cache_key,
+        _fetch_movers,
+        ttl=MARKET_MOVERS_CACHE_TTL_SECONDS,
+        wait_timeout=MARKET_MOVERS_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: _build_market_movers_fallback(reason="market_movers_wait_timeout"),
+    )
 
 
 @router.get("/market/opportunities/{code}")

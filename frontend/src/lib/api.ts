@@ -822,6 +822,9 @@ export interface MarketMovers {
 }
 
 export interface PredictionAccuracyStats {
+  generated_at?: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   stored_predictions: number;
   pending_predictions: number;
   total_predictions: number;
@@ -953,6 +956,8 @@ export interface PredictionRecentRecord {
 
 export interface PredictionLabResponse {
   generated_at: string;
+  partial?: boolean;
+  fallback_reason?: string | null;
   accuracy: PredictionAccuracyStats;
   horizon_accuracy: {
     prediction_type: string;

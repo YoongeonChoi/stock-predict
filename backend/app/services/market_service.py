@@ -40,6 +40,9 @@ MAX_DETAILED_OPPORTUNITY_CANDIDATES = 24
 LARGE_UNIVERSE_DETAILED_SCAN_CAP = 4
 LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD = 120
 QUICK_OPPORTUNITY_CACHE_TTL_SECONDS = 300
+QUOTE_SCREEN_CACHE_WAIT_TIMEOUT_SECONDS = 1.6
+FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 3.0
+QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 2.5
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -452,6 +455,15 @@ def _cached_quick_limit_candidates(limit: int) -> list[int]:
     return candidates
 
 
+def _empty_quote_screen(universe_size: int, scanned_count: int) -> dict:
+    return {
+        "universe_size": int(universe_size),
+        "scanned_count": int(scanned_count),
+        "quote_available_count": 0,
+        "ranked": [],
+    }
+
+
 def _build_opportunity_snapshot_id(
     *,
     country_code: str,
@@ -571,7 +583,16 @@ async def _build_quote_screen(
             "ranked": ranked,
         }
 
-    return await cache.get_or_fetch(cache_key, _fetch_quotes, ttl=900)
+    return await cache.get_or_fetch(
+        cache_key,
+        _fetch_quotes,
+        ttl=900,
+        wait_timeout=QUOTE_SCREEN_CACHE_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: _empty_quote_screen(
+            universe_size=len(full_universe_pairs),
+            scanned_count=len(universe_pairs),
+        ),
+    )
 
 
 async def _resolve_quick_opportunity_universe(country_code: str):
@@ -1088,7 +1109,22 @@ async def get_market_opportunities(
             opportunities=ranked,
         ).model_dump()
 
-    return await cache.get_or_fetch(cache_key, _build_response, ttl=900)
+    async def _timeout_fallback() -> dict:
+        cached_quick = await get_cached_market_opportunities_quick(country_code, limit)
+        if cached_quick:
+            return cached_quick
+        return build_market_opportunities_placeholder(
+            country_code,
+            note="정밀 후보 계산 캐시를 기다리는 중이라 최근 usable quick 후보 또는 시장 국면만 먼저 표시합니다.",
+        )
+
+    return await cache.get_or_fetch(
+        cache_key,
+        _build_response,
+        ttl=900,
+        wait_timeout=FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=_timeout_fallback,
+    )
 
 
 async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> dict:
@@ -1201,7 +1237,22 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             opportunities=ranked,
         ).model_dump()
 
-    return await cache.get_or_fetch(cache_key, _build_response, ttl=QUICK_OPPORTUNITY_CACHE_TTL_SECONDS)
+    async def _timeout_fallback() -> dict:
+        cached_quick = await get_cached_market_opportunities_quick(country_code, limit)
+        if cached_quick:
+            return cached_quick
+        return build_market_opportunities_placeholder(
+            country_code,
+            note="빠른 후보 캐시를 기다리는 중이라 이번 응답에서는 시장 국면만 먼저 표시합니다.",
+        )
+
+    return await cache.get_or_fetch(
+        cache_key,
+        _build_response,
+        ttl=QUICK_OPPORTUNITY_CACHE_TTL_SECONDS,
+        wait_timeout=QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=_timeout_fallback,
+    )
 
 
 async def get_cached_market_opportunities_quick(country_code: str, limit: int = 12) -> dict | None:

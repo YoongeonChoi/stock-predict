@@ -11,7 +11,7 @@ async def _slow_response(*args, **kwargs):
     return {}
 
 
-async def _return_fetcher(key, fetcher, ttl=None):
+async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
     return await fetcher()
 
 
@@ -183,16 +183,30 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertIn("children", response)
 
-    def test_daily_briefing_timeout_returns_structured_error(self):
+    def test_daily_briefing_timeout_returns_partial_fallback(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "market_summary": "브리핑 계산이 길어져 기본 시장 스냅샷을 먼저 표시합니다.",
+            "focus_cards": [],
+            "upcoming_events": [],
+            "news": [],
+            "sessions": [],
+            "archive_status": {"status": "partial"},
+            "priorities": ["기본 시장 스냅샷 먼저 표시"],
+        }
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.briefing.briefing_service.get_daily_briefing_fallback", new=AsyncMock(return_value=fallback_payload)),
             patched_client() as client,
         ):
             response = client.get("/api/briefing/daily")
 
-        self.assertEqual(response.status_code, 504)
-        self.assertEqual(response.json()["error_code"], "SP-5018")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
 
     def test_screener_timeout_returns_snapshot_fallback(self):
         async def _slow_gather(*args, **kwargs):

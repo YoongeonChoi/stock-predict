@@ -1,8 +1,10 @@
 """Report archiving and prediction accuracy tracking."""
 
+import asyncio
 import json
 from datetime import datetime
 
+from app.data import cache
 from app.data import yfinance_client
 from app.database import db
 
@@ -10,6 +12,9 @@ MULTI_HORIZON_PREDICTION_TYPES = {
     5: "distributional_5d",
     20: "distributional_20d",
 }
+PREDICTION_ACCURACY_CACHE_TTL_SECONDS = 300
+PREDICTION_ACCURACY_WAIT_TIMEOUT_SECONDS = 2.0
+PREDICTION_ACCURACY_REFRESH_TIMEOUT_SECONDS = 8.0
 
 
 def _prediction_symbol(report_type: str, report: dict, ticker: str | None) -> str | None:
@@ -179,7 +184,65 @@ async def refresh_prediction_accuracy(limit: int = 200):
     await confidence_calibration_service.refresh_empirical_profiles()
 
 
-async def get_accuracy(refresh: bool = True) -> dict:
-    if refresh:
-        await refresh_prediction_accuracy()
-    return await db.prediction_stats("next_day")
+def _build_accuracy_payload(
+    stats: dict | None = None,
+    *,
+    partial: bool = False,
+    fallback_reason: str | None = None,
+) -> dict:
+    payload = {
+        "stored_predictions": 0,
+        "pending_predictions": 0,
+        "total_predictions": 0,
+        "within_range": 0,
+        "within_range_rate": 0.0,
+        "direction_hits": 0,
+        "direction_accuracy": 0.0,
+        "avg_error_pct": 0.0,
+        "avg_confidence": 0.0,
+    }
+    if isinstance(stats, dict):
+        payload.update(stats)
+    payload["generated_at"] = datetime.now().isoformat()
+    if partial:
+        payload["partial"] = True
+        payload["fallback_reason"] = fallback_reason
+    return payload
+
+
+async def get_accuracy(refresh: bool = False) -> dict:
+    cache_key = f"prediction_accuracy:v2:{int(refresh)}"
+
+    async def _fetch_accuracy():
+        partial_reason: str | None = None
+        if refresh:
+            try:
+                await asyncio.wait_for(
+                    refresh_prediction_accuracy(),
+                    timeout=PREDICTION_ACCURACY_REFRESH_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                partial_reason = "prediction_accuracy_refresh_timeout"
+            except Exception:
+                partial_reason = "prediction_accuracy_refresh_error"
+        try:
+            stats = await db.prediction_stats("next_day")
+            return _build_accuracy_payload(
+                stats,
+                partial=partial_reason is not None,
+                fallback_reason=partial_reason,
+            )
+        except Exception:
+            reason = partial_reason or "prediction_accuracy_stats_error"
+            return _build_accuracy_payload(partial=True, fallback_reason=reason)
+
+    return await cache.get_or_fetch(
+        cache_key,
+        _fetch_accuracy,
+        ttl=PREDICTION_ACCURACY_CACHE_TTL_SECONDS,
+        wait_timeout=PREDICTION_ACCURACY_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: _build_accuracy_payload(
+            partial=True,
+            fallback_reason="prediction_accuracy_cache_wait_timeout",
+        ),
+    )

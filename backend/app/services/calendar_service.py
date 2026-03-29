@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from calendar import monthrange
 from datetime import datetime, timedelta
 
 from app.config import get_settings
 from app.data import cache, fmp_client
+
+CALENDAR_FETCH_TIMEOUT_SECONDS = 8
+CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 
 KR_MAJOR_EVENTS = (
     {
@@ -70,6 +74,10 @@ def _slug(text: str) -> str:
 
 def _format_month_label(year: int, month: int) -> str:
     return f"{year}년 {month:02d}월"
+
+
+def calendar_cache_key(year: int, month: int) -> str:
+    return f"calendar:KR:{year}:{month:02d}"
 
 
 def _month_window(year: int, month: int) -> tuple[datetime, datetime, datetime, datetime]:
@@ -289,18 +297,63 @@ def _merge_events(recurring: list[dict], actual_events: list[dict]) -> list[dict
     )
 
 
-async def get_calendar(country_code: str, year: int | None = None, month: int | None = None) -> dict:
-    del country_code
-    now = datetime.now()
-    target_year = year or now.year
-    target_month = month or now.month
+def _build_calendar_result(
+    *,
+    target_year: int,
+    target_month: int,
+    month_start: datetime,
+    month_end: datetime,
+    now: datetime,
+    events: list[dict],
+    partial: bool = False,
+    fallback_reason: str | None = None,
+    note: str | None = None,
+) -> dict:
+    upcoming_events = [event for event in events if event["date"] >= now.date().isoformat()][:8]
+    economic_events = [event for event in events if event["type"] in {"economic", "policy"}]
+    earnings_events = [event for event in events if event["type"] == "earnings"]
+
+    result = {
+        "country_code": "KR",
+        "year": target_year,
+        "month": target_month,
+        "month_label": _format_month_label(target_year, target_month),
+        "range_start": month_start.date().isoformat(),
+        "range_end": month_end.date().isoformat(),
+        "generated_at": now.isoformat(),
+        "summary": {
+            "total_events": len(events),
+            "high_impact_count": sum(1 for event in events if event["impact"] == "high"),
+            "policy_count": sum(1 for event in events if event["type"] == "policy"),
+            "earnings_count": len(earnings_events),
+            "economic_count": len(economic_events),
+            "note": note or "한국장 공식 일정과 무료 외부 캘린더를 함께 반영했습니다.",
+        },
+        "major_events": [
+            {
+                "name": item["name"],
+                "name_local": item["name_local"],
+                "frequency": item["frequency"],
+                "description": item["description"],
+                "impact": item["impact"],
+                "color": item["color"],
+            }
+            for item in KR_MAJOR_EVENTS
+        ],
+        "events": events,
+        "upcoming_events": upcoming_events,
+        "economic_events": economic_events,
+        "earnings_events": earnings_events,
+    }
+    if partial:
+        result["partial"] = True
+    if fallback_reason:
+        result["fallback_reason"] = fallback_reason
+    return result
+
+
+async def _build_calendar_payload(target_year: int, target_month: int, now: datetime) -> dict:
     month_start, month_end, grid_start, grid_end = _month_window(target_year, target_month)
-    cache_key = f"calendar:KR:{target_year}:{target_month:02d}"
-
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
-
     economic_rows: list[dict] = []
     earnings_rows: list[dict] = []
     try:
@@ -324,41 +377,70 @@ async def get_calendar(country_code: str, year: int | None = None, month: int | 
         if event is not None
     ]
     events = _merge_events(_build_recurring_major_events(target_year, target_month), actual_events)
+    return _build_calendar_result(
+        target_year=target_year,
+        target_month=target_month,
+        month_start=month_start,
+        month_end=month_end,
+        now=now,
+        events=events,
+    )
 
-    upcoming_events = [event for event in events if event["date"] >= now.date().isoformat()][:8]
-    economic_events = [event for event in events if event["type"] in {"economic", "policy"}]
-    earnings_events = [event for event in events if event["type"] == "earnings"]
 
-    result = {
-        "country_code": "KR",
-        "year": target_year,
-        "month": target_month,
-        "month_label": _format_month_label(target_year, target_month),
-        "range_start": month_start.date().isoformat(),
-        "range_end": month_end.date().isoformat(),
-        "generated_at": now.isoformat(),
-        "summary": {
-            "total_events": len(events),
-            "high_impact_count": sum(1 for event in events if event["impact"] == "high"),
-            "policy_count": sum(1 for event in events if event["type"] == "policy"),
-            "earnings_count": len(earnings_events),
-            "note": "한국장 공식 일정과 무료 외부 캘린더를 함께 반영했습니다.",
-        },
-        "major_events": [
-            {
-                "name": item["name"],
-                "name_local": item["name_local"],
-                "frequency": item["frequency"],
-                "description": item["description"],
-                "impact": item["impact"],
-                "color": item["color"],
-            }
-            for item in KR_MAJOR_EVENTS
-        ],
-        "events": events,
-        "upcoming_events": upcoming_events,
-        "economic_events": economic_events,
-        "earnings_events": earnings_events,
-    }
-    await cache.set(cache_key, result, get_settings().cache_ttl_news)
-    return result
+def build_calendar_fallback(
+    year: int,
+    month: int,
+    *,
+    note: str | None = None,
+    fallback_reason: str = "calendar_live_timeout",
+) -> dict:
+    now = datetime.now()
+    month_start, month_end, _, _ = _month_window(year, month)
+    events = _build_recurring_major_events(year, month)
+    return _build_calendar_result(
+        target_year=year,
+        target_month=month,
+        month_start=month_start,
+        month_end=month_end,
+        now=now,
+        events=events,
+        partial=True,
+        fallback_reason=fallback_reason,
+        note=note or "공식 일정은 먼저 보여주고, 외부 캘린더 세부 항목은 다시 동기화되면 바로 반영합니다.",
+    )
+
+
+async def get_calendar(country_code: str, year: int | None = None, month: int | None = None) -> dict:
+    del country_code
+    now = datetime.now()
+    target_year = year or now.year
+    target_month = month or now.month
+    cache_key = calendar_cache_key(target_year, target_month)
+
+    cached = await cache.get(cache_key)
+    if cached:
+        return cached
+
+    async def _fetch_calendar():
+        try:
+            return await asyncio.wait_for(
+                _build_calendar_payload(target_year, target_month, now),
+                timeout=CALENDAR_FETCH_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return build_calendar_fallback(target_year, target_month)
+        except Exception:
+            return build_calendar_fallback(
+                target_year,
+                target_month,
+                fallback_reason="calendar_live_error",
+                note="외부 캘린더 연결이 지연돼 이번 응답은 월간 핵심 일정만 먼저 제공합니다.",
+            )
+
+    return await cache.get_or_fetch(
+        cache_key,
+        _fetch_calendar,
+        ttl=get_settings().cache_ttl_news,
+        wait_timeout=CALENDAR_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=lambda: build_calendar_fallback(target_year, target_month),
+    )

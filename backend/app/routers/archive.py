@@ -16,8 +16,8 @@ async def list_archives(
 
 
 @router.get("/archive/accuracy/stats")
-async def get_accuracy_stats():
-    return await archive_service.get_accuracy()
+async def get_accuracy_stats(refresh: bool = False):
+    return await archive_service.get_accuracy(refresh=refresh)
 
 
 @router.get("/archive/research")
@@ -25,7 +25,7 @@ async def list_research_reports(
     region_code: str | None = "KR",
     source_id: str | None = None,
     limit: int = Query(40, ge=1, le=200),
-    auto_refresh: bool = True,
+    auto_refresh: bool = False,
 ):
     if region_code and region_code not in research_archive_service.SUPPORTED_REGIONS:
         err = SP_6008("region_code")
