@@ -66,12 +66,18 @@
 ### 예측 엔진
 
 - `backend/app/analysis/distributional_return_engine.py`
+- `backend/app/analysis/learned_fusion.py`
+- `backend/app/analysis/stock_graph_context.py`
 - `backend/app/scoring/confidence.py`
 - `backend/app/services/confidence_calibration_service.py`
+- `backend/app/services/learned_fusion_profile_service.py`
 
 규칙:
 
 - 숫자 예측의 canonical backbone은 `distributional_return_engine.py`
+- 현재 운영 모델 버전은 `dist-studentt-v3.3-lfgraph`
+- learned fusion은 prior backbone을 대체하지 않고, 실측 prediction log가 충분한 horizon만 보강합니다.
+- graph context는 full GNN이 아니라 peer / sector / correlation fallback을 이용한 경량 feature builder입니다.
 - 표시 confidence의 canonical calibration loop는 `confidence.py + confidence_calibration_service.py`
 - `OpenAI / GPT-4o`는 숫자 예측기가 아니라 구조화 이벤트 추출기와 서술 요약기
 
@@ -110,11 +116,12 @@
 
 1. 현재 제품의 Depth 1 화면은 무엇인가
 2. 예측 숫자 backbone은 무엇인가
-3. confidence는 어디서 보정되는가
-4. 포트폴리오 비중 계산은 어디서 하는가
-5. 공개 집계형 API의 timeout / partial fallback 원칙은 무엇인가
-6. 계정 검증 규칙은 프론트와 백엔드에서 어디가 맞물리는가
-7. 버전 동기화는 어떤 파일 묶음을 함께 바꿔야 하는가
+3. learned fusion profile은 어디서 다시 맞춰지는가
+4. confidence는 어디서 보정되는가
+5. 포트폴리오 비중 계산은 어디서 하는가
+6. 공개 집계형 API의 timeout / partial fallback 원칙은 무엇인가
+7. 계정 검증 규칙은 프론트와 백엔드에서 어디가 맞물리는가
+8. 버전 동기화는 어떤 파일 묶음을 함께 바꿔야 하는가
 
 ## 빠른 실행 경로
 

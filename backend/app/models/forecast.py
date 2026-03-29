@@ -60,7 +60,14 @@ class NextDayForecast(BaseModel):
     data_quality_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
-    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
+    calibration_snapshot: dict[str, object] | None = None
+    fusion_method: str | None = None
+    fusion_profile_sample_count: int | None = None
+    fusion_blend_weight: float | None = None
+    graph_context_used: bool | None = None
+    graph_context_score: float | None = None
+    graph_coverage: float | None = None
+    fusion_profile_fitted_at: str | None = None
     confidence_note: str = ""
     news_sentiment: float = 0
     raw_signal: float = 0
@@ -76,7 +83,7 @@ class NextDayForecast(BaseModel):
     execution_note: str = ""
     flow_signal: FlowSignal | None = None
     drivers: list[ForecastDriver] = Field(default_factory=list)
-    model_version: str = "dist-studentt-v3.2"
+    model_version: str = "dist-studentt-v3.3-lfgraph"
 
 
 class FreeKrForecastDataSource(BaseModel):
@@ -124,7 +131,14 @@ class FreeKrForecastHorizon(BaseModel):
     data_quality_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
-    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
+    calibration_snapshot: dict[str, object] | None = None
+    fusion_method: str | None = None
+    fusion_profile_sample_count: int | None = None
+    fusion_blend_weight: float | None = None
+    graph_context_used: bool | None = None
+    graph_context_score: float | None = None
+    graph_coverage: float | None = None
+    fusion_profile_fitted_at: str | None = None
 
 
 class FreeKrForecast(BaseModel):
@@ -137,7 +151,7 @@ class FreeKrForecast(BaseModel):
     data_sources: list[FreeKrForecastDataSource] = Field(default_factory=list)
     confidence_note: str = ""
     summary: str = ""
-    model_version: str = "dist-studentt-v3.2"
+    model_version: str = "dist-studentt-v3.3-lfgraph"
 
 
 class HistoricalForecastHorizon(BaseModel):

@@ -11,6 +11,7 @@ Next.js frontend (Vercel)
      -> SQLite cache / runtime data
      -> Supabase Auth + user data
      -> Public market data / macro data / research sources
+     -> Distributional prior backbone + learned fusion + lightweight graph context
      -> OpenAI for structured extraction and narrative summaries
 ```
 
@@ -127,6 +128,8 @@ Next.js frontend (Vercel)
 중요 파일:
 
 - `backend/app/analysis/distributional_return_engine.py`
+- `backend/app/analysis/learned_fusion.py`
+- `backend/app/analysis/stock_graph_context.py`
 - `backend/app/analysis/next_day_forecast.py`
 - `backend/app/analysis/free_kr_forecast.py`
 - `backend/app/analysis/historical_pattern_forecast.py`
@@ -136,6 +139,8 @@ Next.js frontend (Vercel)
 규칙:
 
 - 숫자 예측 backbone은 `distributional_return_engine.py`
+- learned fusion profile은 `learned_fusion_profile_service.py`가 `prediction_records` 기반으로 다시 맞춥니다.
+- graph context는 `stock_graph_context.py`에서 피어 / 섹터 / 상관관계 fallback 순서로 구성합니다.
 - confidence calibration은 `confidence.py + confidence_calibration_service.py`
 - LLM은 구조화와 서술 보조이며, 숫자 backbone이 아닙니다
 
@@ -161,6 +166,7 @@ Next.js frontend (Vercel)
 
 - 캐시
 - 연구 기록
+- `prediction_records.calibration_json` 내부의 fusion / graph context snapshot 저장
 - startup 보강 작업의 로컬 저장
 - 운영 진단용 데이터
 
@@ -199,6 +205,7 @@ Next.js frontend (Vercel)
 하지 않는 역할:
 
 - 숫자 예측 backbone 대체
+- learned fusion profile 입력 대체
 - 포트폴리오 비중의 ad-hoc 결정기
 
 ## 공개 경로 설계 원칙
@@ -225,6 +232,7 @@ Next.js frontend (Vercel)
 
 `backend/app/main.py`는 서버 시작 시 아래 보강 작업을 백그라운드로 다룹니다.
 
+- learned fusion profile refresh
 - prediction accuracy refresh
 - research archive sync
 - market opportunity prewarm
@@ -232,6 +240,7 @@ Next.js frontend (Vercel)
 중요한 점:
 
 - startup time budget을 넘겨도 서비스 전체를 바로 실패시키지 않습니다
+- learned fusion refresh가 timeout이나 예외를 내도 엔진은 자동으로 `prior_only`로 계속 동작합니다.
 - 헬스와 런타임 상태는 `degraded / partial` 맥락을 포함해 해석해야 합니다
 
 ## 검증 구조

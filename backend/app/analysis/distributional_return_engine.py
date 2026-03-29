@@ -8,11 +8,14 @@ from math import exp, log, sqrt
 import numpy as np
 import pandas as pd
 
+from app.analysis.learned_fusion import apply_learned_fusion, build_fusion_feature_map
 from app.analysis.llm_client import ask_json
+from app.analysis.stock_graph_context import build_stock_graph_context
 from app.models.forecast import FlowSignal
 from app.scoring.confidence import calibrate_direction_confidence
+from app.services import learned_fusion_profile_service
 
-MODEL_VERSION = "dist-studentt-v3.2"
+MODEL_VERSION = "dist-studentt-v3.3-lfgraph"
 PERIODS = (20, 60, 120, 252)
 DEFAULT_HORIZONS = (1, 5, 20)
 MAX_EVENT_ITEMS = 12
@@ -178,7 +181,14 @@ class DistributionalHorizon:
     volatility_support: float | None = None
     volatility_ratio: float | None = None
     confidence_calibrator: str | None = None
-    calibration_snapshot: dict[str, float | int | bool | str | None] | None = None
+    calibration_snapshot: dict[str, object] | None = None
+    fusion_method: str | None = None
+    fusion_profile_sample_count: int | None = None
+    fusion_blend_weight: float | None = None
+    graph_context_used: bool | None = None
+    graph_context_score: float | None = None
+    graph_coverage: float | None = None
+    fusion_profile_fitted_at: str | None = None
 
 
 @dataclass
@@ -347,10 +357,12 @@ def build_distributional_forecast(
 
     benchmark = _to_frame(benchmark_history or [])
     macro = _compress_macro(macro_snapshot or {}, kosis_snapshot or {})
+    news_items = news_items or []
+    filings = filings or []
     events = _coerce_event_features(
         event_context,
-        news_items=news_items or [],
-        filings=filings or [],
+        news_items=news_items,
+        filings=filings,
         reference_date=str(prices["date"].iloc[-1]),
     )
     price_block = _encode_price_block(prices, benchmark, macro, events, asset_type)
@@ -370,7 +382,7 @@ def build_distributional_forecast(
         has_event=events.item_count > 0,
         has_flow=flow_signal is not None and flow_signal.available,
     )
-    fused_score = (
+    prior_fused_score = (
         price_block["fused_score"]
         + gates["fundamental"] * fundamental["score"] * 0.52
         + gates["macro"] * macro["score"] * 0.44
@@ -381,9 +393,27 @@ def build_distributional_forecast(
         prices=prices,
         benchmark=benchmark,
         macro=macro,
-        fused_score=fused_score,
+        fused_score=prior_fused_score,
         events=events,
         breadth_context=breadth_context or {},
+    )
+    graph_context = build_stock_graph_context(
+        price_history=price_history,
+        benchmark_history=benchmark_history or [],
+        analyst_context=analyst_context or {},
+        fundamental_context=fundamental_context or {},
+    ).to_dict()
+    fusion_features = build_fusion_feature_map(
+        prior_fused_score=prior_fused_score,
+        fundamental_score=float(fundamental["score"]),
+        macro_score=float(macro["score"]),
+        event_sentiment=float(events.sentiment),
+        event_surprise=float(events.surprise),
+        event_uncertainty=float(events.uncertainty),
+        flow_score=float(flow_score),
+        coverage_naver=_source_coverage(news_items, "naver"),
+        coverage_opendart=1.0 if filings else 0.0,
+        regime_spread=(regime_probs["risk_on"] - regime_probs["risk_off"]) / 100.0,
     )
     regime = max(regime_probs, key=regime_probs.get)
     base_confidence = _estimate_base_confidence(
@@ -396,13 +426,30 @@ def build_distributional_forecast(
     )
 
     horizons_map: dict[int, DistributionalHorizon] = {}
+    fusion_methods: set[str] = set()
     for horizon in horizons:
+        fusion_profile = learned_fusion_profile_service.get_profile_for_horizon(horizon)
+        fusion_result = apply_learned_fusion(
+            horizon_days=horizon,
+            prior_fused_score=prior_fused_score,
+            feature_map=fusion_features,
+            profile=fusion_profile,
+            graph_context=graph_context,
+            history_bars=len(prices),
+            macro_available=macro["available"],
+            fundamental_available=fundamental["available"],
+            flow_available=bool(flow_signal and flow_signal.available),
+            event_count=events.item_count,
+            event_uncertainty=events.uncertainty,
+        )
+        fusion_methods.add(fusion_result.method)
         horizons_map[horizon] = _build_horizon_distribution(
             prices=prices,
             benchmark=benchmark,
             horizon=horizon,
             regime_probs=regime_probs,
-            fused_score=fused_score,
+            prior_fused_score=prior_fused_score,
+            fused_score=fusion_result.fused_score,
             price_block=price_block,
             macro=macro,
             fundamental=fundamental,
@@ -410,6 +457,9 @@ def build_distributional_forecast(
             flow_score=flow_score,
             events=events,
             base_confidence=base_confidence,
+            fusion_result=fusion_result,
+            fusion_features=fusion_features,
+            graph_context=graph_context,
         )
 
     evidence = _build_evidence(
@@ -421,7 +471,7 @@ def build_distributional_forecast(
         flow_detail=flow_detail,
         gates=gates,
         regime_probs=regime_probs,
-        fused_score=fused_score,
+        fused_score=prior_fused_score,
     )
     confidence_note = _build_confidence_note(
         base_confidence=base_confidence,
@@ -430,10 +480,12 @@ def build_distributional_forecast(
         events=events,
         macro=macro,
         gates=gates,
+        fusion_methods=fusion_methods,
+        graph_context=graph_context,
     )
     summary = (
-        "다중 기간 가격 인코더, 공개시차 안전 거시 압축, 숫자 주도 게이트 결합, "
-        "regime-aware Student-t mixture 분포 헤드를 사용한 확률 예측입니다."
+        "다중 기간 가격 인코더와 공개시차 안전 거시 압축을 prior backbone으로 유지하고, "
+        "실측 prediction log 기반 learned fusion과 경량 graph context를 horizon별 분포 입력에 선택적으로 더한 확률 예측입니다."
     )
 
     return DistributionalForecast(
@@ -444,7 +496,7 @@ def build_distributional_forecast(
         period_weights=price_block["period_weights"],
         horizons=horizons_map,
         evidence=evidence,
-        raw_signal=round(fused_score, 4),
+        raw_signal=round(prior_fused_score, 4),
         event_features=events,
         confidence_note=confidence_note,
         summary=summary,
@@ -786,12 +838,28 @@ def _estimate_base_confidence(
     return _clip(46.0 + history_bonus + regime_clarity * 0.18 + source_bonus - uncertainty_penalty, 36.0, 90.0)
 
 
+def _source_coverage(items: list[dict], keyword: str) -> float:
+    if not items or not keyword:
+        return 0.0
+    lowered_keyword = keyword.lower().strip()
+    matches = 0
+    for item in items:
+        haystack = " ".join(
+            str(item.get(field) or "")
+            for field in ("source", "provider", "publisher", "origin", "title", "link")
+        ).lower()
+        if lowered_keyword in haystack:
+            matches += 1
+    return _clip(matches / max(len(items), 1), 0.0, 1.0)
+
+
 def _build_horizon_distribution(
     *,
     prices: pd.DataFrame,
     benchmark: pd.DataFrame,
     horizon: int,
     regime_probs: dict[str, float],
+    prior_fused_score: float,
     fused_score: float,
     price_block: dict,
     macro: dict,
@@ -800,6 +868,9 @@ def _build_horizon_distribution(
     flow_score: float,
     events: EventFeatures,
     base_confidence: float,
+    fusion_result,
+    fusion_features: dict[str, float],
+    graph_context: dict[str, object],
 ) -> DistributionalHorizon:
     close = prices["close"].astype(float)
     benchmark_close = benchmark["close"].astype(float) if not benchmark.empty else pd.Series(dtype=float)
@@ -897,6 +968,31 @@ def _build_horizon_distribution(
         realized_volatility_reference_pct=max(hist_vol * 100.0, 1e-6),
         prediction_type=f"distributional_{horizon}d" if horizon > 1 else "next_day",
     )
+    calibration_snapshot = dict(calibrated.calibration_snapshot or {})
+    calibration_snapshot["fusion_features"] = fusion_features
+    calibration_snapshot["graph_context"] = {
+        "used": bool(graph_context.get("used")),
+        "coverage": round(float(graph_context.get("coverage") or 0.0), 6),
+        "peer_count": int(graph_context.get("peer_count") or 0),
+        "peer_momentum_5d": round(float(graph_context.get("peer_momentum_5d") or 0.0), 6),
+        "peer_momentum_20d": round(float(graph_context.get("peer_momentum_20d") or 0.0), 6),
+        "peer_dispersion": round(float(graph_context.get("peer_dispersion") or 0.0), 6),
+        "sector_relative_strength": round(float(graph_context.get("sector_relative_strength") or 0.0), 6),
+        "correlation_support": round(float(graph_context.get("correlation_support") or 0.0), 6),
+        "news_relation_support": round(float(graph_context.get("news_relation_support") or 0.0), 6),
+        "graph_context_score": round(float(graph_context.get("graph_context_score") or 0.0), 6),
+    }
+    calibration_snapshot["fusion_metadata"] = {
+        "method": fusion_result.method,
+        "profile_bucket": "default",
+        "profile_sample_count": int(fusion_result.sample_count),
+        "blend_weight": round(float(fusion_result.blend_weight), 6),
+        "profile_fitted_at": fusion_result.profile_fitted_at,
+        "prior_fused_score": round(float(prior_fused_score), 6),
+        "learned_score": round(float(fusion_result.learned_score), 6),
+        "graph_context_score": round(float(fusion_result.graph_context_score), 6),
+        "graph_coverage": round(float(fusion_result.graph_coverage), 6),
+    }
 
     return DistributionalHorizon(
         horizon_days=horizon,
@@ -924,7 +1020,14 @@ def _build_horizon_distribution(
         volatility_support=round(calibrated.volatility_support, 4),
         volatility_ratio=round(calibrated.volatility_ratio, 4),
         confidence_calibrator=calibrated.calibrator_method,
-        calibration_snapshot=calibrated.calibration_snapshot,
+        calibration_snapshot=calibration_snapshot,
+        fusion_method=fusion_result.method,
+        fusion_profile_sample_count=int(fusion_result.sample_count),
+        fusion_blend_weight=round(float(fusion_result.blend_weight), 4),
+        graph_context_used=bool(fusion_result.graph_context_used),
+        graph_context_score=round(float(fusion_result.graph_context_score), 4),
+        graph_coverage=round(float(fusion_result.graph_coverage), 4),
+        fusion_profile_fitted_at=fusion_result.profile_fitted_at,
     )
 
 
@@ -958,7 +1061,7 @@ def _build_evidence(
             DistributionalEvidence("event", "이벤트 게이트", events.sentiment + events.surprise - events.uncertainty * 0.4, gates["event"], round((events.sentiment + events.surprise - events.uncertainty * 0.4) * gates["event"], 4), events.summary or "구조화 이벤트 없음"),
             DistributionalEvidence("flow", "수급 보정", flow_score, gates["flow"], round(flow_score * gates["flow"], 4), flow_detail),
             DistributionalEvidence("regime", "시장 체제", (regime_probs["risk_on"] - regime_probs["risk_off"]) / 100.0, 1.0, round((regime_probs["risk_on"] - regime_probs["risk_off"]) / 100.0, 4), f"risk_on {regime_probs['risk_on']:.1f}%, risk_off {regime_probs['risk_off']:.1f}%"),
-            DistributionalEvidence("fused", "최종 결합 점수", fused_score, 1.0, round(fused_score, 4), "가격 블록 중심으로 거시·펀더멘털·이벤트·수급을 가중 결합했습니다."),
+            DistributionalEvidence("fused", "기본 결합 점수", fused_score, 1.0, round(fused_score, 4), "가격 블록 중심으로 거시·펀더멘털·이벤트·수급을 결합한 prior backbone입니다."),
         ]
     )
     evidence.sort(key=lambda item: abs(item.contribution), reverse=True)
@@ -973,6 +1076,8 @@ def _build_confidence_note(
     events: EventFeatures,
     macro: dict,
     gates: dict[str, float],
+    fusion_methods: set[str],
+    graph_context: dict[str, object],
 ) -> str:
     dominant_period = max(period_weights, key=period_weights.get) if period_weights else 20
     dominant_regime = max(regime_probs, key=regime_probs.get)
@@ -980,6 +1085,14 @@ def _build_confidence_note(
         f"주된 가격 창은 {dominant_period}일 구간이며, 시장 체제는 {dominant_regime} 쪽 확률이 가장 높습니다.",
         f"기본 raw 신뢰도는 {base_confidence:.1f}점이며, 표시 신뢰도는 이 값을 horizon별 sigmoid calibrator로 보정해 실제 적중률과 맞추도록 설계했습니다.",
     ]
+    if fusion_methods and fusion_methods != {"prior_only"}:
+        parts.append("표본이 충분한 horizon은 learned fusion이 prior backbone 위에 얹히고, graph context가 있으면 blend weight가 더 높아집니다.")
+    else:
+        parts.append("아직 표본이 부족한 horizon은 learned fusion 대신 prior backbone을 그대로 사용합니다.")
+    if bool(graph_context.get("used")):
+        parts.append(
+            f"graph context는 peer {int(graph_context.get('peer_count') or 0)}건, coverage {float(graph_context.get('coverage') or 0.0):.2f} 수준으로 반영했습니다."
+        )
     if events.item_count:
         parts.append(f"이벤트 {events.item_count}건을 구조화해 sentiment {events.sentiment:.2f}, uncertainty {events.uncertainty:.2f}로 반영했습니다.")
     elif not macro["available"]:
