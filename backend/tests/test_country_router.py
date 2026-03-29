@@ -73,7 +73,7 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.03)
             return []
 
-        async def _return_fetcher(_key, fetcher, ttl=None):
+        async def _return_fetcher(_key, fetcher, ttl=None, **kwargs):
             return await fetcher()
 
         with (
@@ -103,7 +103,7 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        async def _return_fetcher(_key, fetcher, ttl=None):
+        async def _return_fetcher(_key, fetcher, ttl=None, **kwargs):
             return await fetcher()
 
         with (

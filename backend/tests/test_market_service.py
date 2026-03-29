@@ -30,7 +30,7 @@ async def _gather_sequential(items, worker, limit=6):
     return [await worker(item) for item in items]
 
 
-async def _return_fetcher(key, fetcher, ttl=None):
+async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
     return await fetcher()
 
 
@@ -66,7 +66,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             "opportunities": [],
         }
 
-        async def _cached_only(_key, _fetcher, ttl=None):
+        async def _cached_only(_key, _fetcher, ttl=None, **kwargs):
             return cached_payload
 
         with (

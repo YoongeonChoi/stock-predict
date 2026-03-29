@@ -10,6 +10,8 @@ from app.services import calendar_service, market_service, market_session_servic
 
 log = logging.getLogger("stock_predict.briefing")
 BRIEFING_RADAR_TIMEOUT_SECONDS = 8
+BRIEFING_CACHE_TTL_SECONDS = 300
+BRIEFING_CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 
 
 def _event_score(event: dict) -> tuple:
@@ -36,7 +38,14 @@ async def _upcoming_events() -> list[dict]:
 
     for country_code in ("KR",):
         for year, month in sorted(months):
-            calendar = await calendar_service.get_calendar(country_code, year, month)
+            calendar = await cache.get(calendar_service.calendar_cache_key(year, month))
+            if not calendar:
+                calendar = calendar_service.build_calendar_fallback(
+                    year,
+                    month,
+                    fallback_reason="calendar_snapshot_pending",
+                    note="브리핑에서는 월간 핵심 일정만 먼저 사용하고, 세부 캘린더는 다시 동기화되면 이어서 반영합니다.",
+                )
             for event in calendar.get("events", []):
                 event_date = str(event.get("date") or "")
                 if not event_date or event_date < today.isoformat():
@@ -112,10 +121,18 @@ def _radar_fallback(country_code: str, note: str) -> dict:
 
 
 async def _load_briefing_radar(country_code: str) -> dict:
+    cached_full = await market_service.get_cached_market_opportunities(country_code, 4, max_candidates=8)
+    if cached_full and cached_full.get("opportunities"):
+        return cached_full
+
+    cached_quick = await market_service.get_cached_market_opportunities_quick(country_code, 4)
+    if cached_quick and cached_quick.get("opportunities"):
+        return cached_quick
+
     try:
         return await asyncio.wait_for(
-            market_service.get_market_opportunities(country_code, 4, max_candidates=8),
-            timeout=BRIEFING_RADAR_TIMEOUT_SECONDS,
+            market_service.get_market_opportunities_quick(country_code, 4),
+            timeout=max(4.0, BRIEFING_RADAR_TIMEOUT_SECONDS / 2),
         )
     except asyncio.TimeoutError:
         note = "공개 추천 계산이 길어져 브리핑에는 요약만 표시합니다."
@@ -180,8 +197,12 @@ async def get_daily_briefing() -> dict:
                 }
             )
 
+    partial = any(not item.get("opportunities") for item in radar_results)
+    fallback_reason = "briefing_partial_snapshot" if partial else None
     response = {
         "generated_at": datetime.now().isoformat(),
+        "partial": partial,
+        "fallback_reason": fallback_reason,
         "sessions": sessions_data["sessions"],
         "market_view": country_views,
         "focus_cards": focus_cards,
@@ -194,5 +215,42 @@ async def get_daily_briefing() -> dict:
         },
         "priorities": _build_priority_lines(sessions_data["sessions"], radar_map, archive_status),
     }
-    await cache.set(cache_key, response, 300)
+    await cache.set(cache_key, response, BRIEFING_CACHE_TTL_SECONDS)
     return response
+
+
+async def get_daily_briefing_fallback(note: str) -> dict:
+    now = datetime.now()
+    sessions_data = await market_session_service.get_market_sessions()
+    upcoming_events = await _upcoming_events()
+    today = now.date().isoformat()
+    archive_status = await db.research_report_status(today)
+    return {
+        "generated_at": now.isoformat(),
+        "partial": True,
+        "fallback_reason": "briefing_timeout",
+        "sessions": sessions_data["sessions"],
+        "market_view": [
+            {
+                "country_code": "KR",
+                "label": "브리핑 지연",
+                "stance": "neutral",
+                "conviction": 0.0,
+                "actionable_count": 0,
+                "bullish_count": 0,
+                "summary": note,
+            }
+        ],
+        "focus_cards": [],
+        "upcoming_events": upcoming_events[:3],
+        "research_archive": {
+            "todays_reports": int(archive_status.get("todays_reports") or 0),
+            "total_reports": int(archive_status.get("total_reports") or 0),
+            "source_count": int(archive_status.get("source_count") or 0),
+            "last_synced_at": archive_status.get("last_synced_at"),
+        },
+        "priorities": [
+            "브리핑 전체 계산이 길어져 지금은 핵심 일정과 세션 상태를 먼저 보여줍니다.",
+            "레이더 후보는 같은 화면을 다시 열거나 잠시 뒤 새로고침하면 quick 스냅샷부터 다시 붙습니다.",
+        ],
+    }

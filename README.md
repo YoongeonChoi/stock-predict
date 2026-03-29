@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.2`
+현재 릴리즈: `v2.52.3`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -127,7 +127,7 @@
 - 공개 카드 헤더는 가능한 한 `generated_at`, `partial`, `fallback_reason`을 같은 audit strip 규칙으로 노출해 freshness와 fallback 상태를 즉시 읽을 수 있게 유지합니다.
 - 공개 숫자 문장은 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 정성 문장으로만 유지합니다. 숫자가 섞인 자유 서술은 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
 - 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
-- 프론트의 공개 서버 fetch는 route별 timeout을 함께 사용합니다. 기본값은 `8초`, `opportunity radar`는 `18초`, `screener seed`는 `12초`, `prediction lab / research archive`는 `10초` 예산을 사용하고, timeout 시에는 페이지별 `.catch(() => null)` 또는 `Promise.allSettled` 흐름으로 안전하게 부분 렌더로 내려갑니다.
+- 프론트의 공개 서버 fetch는 route별 timeout과 page-level timebox를 함께 사용합니다. 기본 fetch 예산은 `8초`, `opportunity radar`는 `18초`, `screener seed`는 `12초`, `prediction lab / research archive`는 `10초`를 유지하고, 각 server page는 더 짧은 화면 예산 안에서 `timeboxServerPromise`로 first paint를 보호합니다. 그래서 느린 backend 응답이 있어도 `/`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist`가 서버에서 너무 오래 붙잡히지 않고 부분 렌더로 먼저 내려갑니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
 - KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.
@@ -794,6 +794,7 @@ selection
 - `GET /api/watchlist`
 - `POST /api/watchlist/{ticker}`
 - `DELETE /api/watchlist/{ticker}`
+- 로그아웃 상태 `/portfolio`, `/watchlist`의 first paint는 공개 스크리너가 아니라 공개 레이더 snapshot을 미리보기 데이터로 사용합니다. 그래서 익명 preview가 seed table 결측치에 흔들리지 않고, 같은 시장 snapshot 위에서 포트폴리오/관심종목 CTA를 먼저 보여줍니다.
 - `GET /api/portfolio`
 - `PUT /api/portfolio/profile`
 - `POST /api/portfolio/holdings`
@@ -817,6 +818,7 @@ selection
 - `GET /api/research/predictions`
   - `/lab`의 canonical 검증 API입니다.
   - `fusion_profiles`, `graph_context_summary`, `fusion_status_summary`를 함께 반환합니다.
+  - 공개 경로 기본값은 `refresh=false`로 두고, 상세 보강이 필요할 때만 명시적으로 refresh를 올립니다.
 
 ## 환경 변수
 

@@ -35,7 +35,7 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
 
         get_stock_info = AsyncMock(side_effect=stock_info_side_effect)
 
-        async def _return_fetcher(key, fetcher, ttl=None):
+        async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
             return await fetcher()
 
         with (
@@ -70,7 +70,7 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
         get_stock_info.assert_not_awaited()
 
     async def test_sector_performance_aggregates_live_constituent_snapshots(self):
-        async def _return_fetcher(_key, fetcher, ttl=None):
+        async def _return_fetcher(_key, fetcher, ttl=None, **kwargs):
             return await fetcher()
 
         bulk_quotes = AsyncMock(

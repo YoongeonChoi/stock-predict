@@ -106,15 +106,19 @@ export function getPublicArchive() {
 }
 
 export function getPublicPredictionAccuracy() {
-  return getPublicJson<PredictionAccuracyStats>("/api/archive/accuracy/stats", 300);
+  return getPublicJson<PredictionAccuracyStats>("/api/archive/accuracy/stats?refresh=false", 300);
 }
 
 export function getPublicResearchArchive(region: "KR" | "US" | "EU" | "JP" = "KR", limit = 24) {
-  return getPublicJson<ResearchArchiveEntry[]>(`/api/archive/research?region_code=${region}&limit=${limit}`, 300, 10000);
+  return getPublicJson<ResearchArchiveEntry[]>(
+    `/api/archive/research?region_code=${region}&limit=${limit}&auto_refresh=false`,
+    300,
+    10000,
+  );
 }
 
 export function getPublicResearchStatus() {
-  return getPublicJson<ResearchArchiveStatus>("/api/archive/research/status?cached=true", 300, 10000);
+  return getPublicJson<ResearchArchiveStatus>("/api/archive/research/status?refresh_if_missing=false", 300, 10000);
 }
 
 export function getPublicScreenerSeed(country = "KR", limit = 10) {
