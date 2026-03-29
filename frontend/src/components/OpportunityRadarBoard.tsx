@@ -80,42 +80,44 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              {usingFallbackUniverse ? (
-                <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
-                  {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
-                </div>
-              ) : usingKrxListingUniverse ? (
-                <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-                  {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
-                </div>
-              ) : (
-                <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-                  실시간 유니버스 기반 추천
-                </div>
-              )}
-              <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
-                유사 셋업 검증 보기
-              </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {usingFallbackUniverse ? (
+              <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
+                {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
+              </div>
+            ) : usingKrxListingUniverse ? (
+              <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
+                {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
+              </div>
+            ) : (
+              <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
+                실시간 유니버스 기반 추천
+              </div>
+            )}
+            <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
+              유사 셋업 검증 보기
+            </Link>
+          </div>
+          <div className="workspace-metric-grid">
+            <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-3">
+              <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+              <div className="mt-2 text-xl font-semibold text-text">{data.universe_size}</div>
+              <div className="mt-1 text-[11px] text-text-secondary">오늘 레이더 기준 종목군</div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[420px]">
-              <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">전체 유니버스</div>
-                <div className="mt-1 font-semibold">{data.universe_size}</div>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">1차 스캔</div>
-                <div className="mt-1 font-semibold">{data.total_scanned}</div>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-accent/10 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">시세 확보</div>
-                <div className="mt-1 font-semibold text-accent">{quoteAvailableCount}</div>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-positive/10 px-3 py-2 text-center">
-                <div className="text-[11px] text-text-secondary">표시 후보</div>
-                <div className="mt-1 font-semibold text-positive">{visibleCandidateCount}</div>
-              </div>
+            <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-3">
+              <div className="text-[11px] text-text-secondary">1차 스캔</div>
+              <div className="mt-2 text-xl font-semibold text-text">{data.total_scanned}</div>
+              <div className="mt-1 text-[11px] text-text-secondary">대표 후보 정렬 기준</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-accent/10 px-3 py-3">
+              <div className="text-[11px] text-text-secondary">시세 확보</div>
+              <div className="mt-2 text-xl font-semibold text-accent">{quoteAvailableCount}</div>
+              <div className="mt-1 text-[11px] text-text-secondary">정밀 계산 가능 종목</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-positive/10 px-3 py-3">
+              <div className="text-[11px] text-text-secondary">표시 후보</div>
+              <div className="mt-2 text-xl font-semibold text-positive">{visibleCandidateCount}</div>
+              <div className="mt-1 text-[11px] text-text-secondary">상위 보드 우선 표시</div>
             </div>
           </div>
           <PublicAuditStrip meta={data} />

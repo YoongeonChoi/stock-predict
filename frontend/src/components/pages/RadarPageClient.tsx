@@ -158,7 +158,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             </div>
             <PublicAuditStrip meta={placeholderData} />
           </div>
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+          <div className="workspace-grid-balanced">
             <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/5 px-4 py-4 text-sm leading-6 text-amber-700">
               최신 레이더는 이번 요청에서 바로 쓸 수 있는 후보 스냅샷을 만들지 못했습니다. 자동 장기 스캔이 계속 도는 상태를 기다리는 것이 아니라, 다시 불러오기 때 fresh quick 스냅샷과 캐시 재사용을 새로 시도하는 구조입니다.
             </div>

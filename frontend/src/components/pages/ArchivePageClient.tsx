@@ -180,41 +180,50 @@ export default function ArchivePageClient({
             staleLabel="공식 기관 원문 기준"
           />
         </div>
-        <div className="grid gap-3 xl:grid-cols-2">
-          {researchReports.slice(0, 2).map((report) => (
-            <div key={`latest-${report.id}`} className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">{report.source_name}</span>
-                <span className="rounded-full bg-border/40 px-2 py-0.5 text-xs text-text-secondary">{REGION_LABELS[report.region_code]}</span>
-                <span className="text-xs text-text-secondary">{new Date(report.published_at).toLocaleDateString("ko-KR")}</span>
-              </div>
-              <div className="mt-3 font-medium text-text">{report.title}</div>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">
-                {report.summary_plain || report.summary || summaryFallback}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {report.has_pdf && report.pdf_url ? (
+        {researchReports.slice(0, 2).length > 0 ? (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {researchReports.slice(0, 2).map((report) => (
+              <div key={`latest-${report.id}`} className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">{report.source_name}</span>
+                  <span className="rounded-full bg-border/40 px-2 py-0.5 text-xs text-text-secondary">{REGION_LABELS[report.region_code]}</span>
+                  <span className="text-xs text-text-secondary">{new Date(report.published_at).toLocaleDateString("ko-KR")}</span>
+                </div>
+                <div className="mt-3 font-medium text-text">{report.title}</div>
+                <p className="mt-2 text-sm leading-6 text-text-secondary">
+                  {report.summary_plain || report.summary || summaryFallback}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {report.has_pdf && report.pdf_url ? (
+                    <a
+                      href={report.pdf_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    >
+                      PDF 열기
+                    </a>
+                  ) : null}
                   <a
-                    href={report.pdf_url}
+                    href={report.report_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
                   >
-                    PDF 열기
+                    원문 보기
                   </a>
-                ) : null}
-                <a
-                  href={report.report_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
-                >
-                  원문 보기
-                </a>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <WorkspaceStateCard
+            eyebrow="최신 리포트 대기"
+            title="상단에 먼저 보여줄 최신 기관 리포트가 아직 없습니다"
+            message="지역별 기관 리포트 목록은 아래에서 바로 확인할 수 있고, 새 원문이 잡히면 이 상단 요약 카드부터 채워집니다."
+            tone="neutral"
+          />
+        )}
       </section>
 
       <section className="card !p-5 space-y-5">

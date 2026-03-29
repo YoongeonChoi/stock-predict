@@ -132,6 +132,69 @@ body::before {
   @apply w-full space-y-8;
 }
 
+.workspace-grid,
+.workspace-grid-balanced {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.workspace-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.workspace-panel {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 1.25rem;
+}
+
+.workspace-panel-tight {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 1rem;
+}
+
+.workspace-empty-frame {
+  border: 1px dashed var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.34);
+  padding: 1.25rem;
+}
+
+.workspace-metric-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .workspace-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .workspace-metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 360px);
+    align-items: start;
+  }
+
+  .workspace-grid-balanced {
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 360px);
+    align-items: start;
+  }
+}
+
 .page-header-panel {
   @apply rounded-[28px] border px-6 py-6 sm:px-8 sm:py-8;
   background: linear-gradient(135deg, var(--hero-top), var(--hero-bottom));
@@ -207,6 +270,18 @@ body::before {
 
 .surface-muted {
   background: rgba(255, 255, 255, 0.38);
+}
+
+.dark .workspace-panel {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.dark .workspace-panel-tight {
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.dark .workspace-empty-frame {
+  background: rgba(15, 23, 42, 0.32);
 }
 
 .dark .surface-muted {

@@ -507,8 +507,8 @@ export default function HomeDashboardClient({
           </div>
         ) : null}
 
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-5">
+        <div className="workspace-grid">
+          <div className="workspace-panel h-full">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">
@@ -579,7 +579,7 @@ export default function HomeDashboardClient({
             ) : null}
           </div>
 
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-5 py-5">
+          <div className="workspace-panel h-full">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">오늘의 포커스</div>
@@ -650,8 +650,8 @@ export default function HomeDashboardClient({
         </div>
       </section>
 
-      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.24fr)_minmax(320px,0.76fr)]">
-        <div className="card !p-4">
+      <section className="workspace-grid">
+        <div className="card !p-4 h-full">
           <div className="section-heading gap-4">
             <div>
               <h2 className="section-title">시장 히트맵</h2>
@@ -676,7 +676,7 @@ export default function HomeDashboardClient({
           </div>
         </div>
 
-        <div className="card !p-5">
+        <div className="card !p-5 h-full">
           <div>
             <h2 className="section-title">상승·하락 상위</h2>
             <p className="section-copy">선택 시장에서 강도가 강한 종목과 약한 종목을 같이 봅니다.</p>
@@ -690,7 +690,7 @@ export default function HomeDashboardClient({
               />
             </div>
           ) : movers ? (
-            <div className="mt-5 grid gap-5 sm:grid-cols-2 2xl:grid-cols-1">
+            <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <h3 className="text-sm font-semibold text-positive">상승 상위</h3>
                 <div className="mt-3 space-y-2">
@@ -734,8 +734,8 @@ export default function HomeDashboardClient({
         </div>
       </section>
 
-      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
-        <div className="card !p-0 overflow-hidden">
+      <section className="workspace-grid-balanced">
+        <div className="card !p-0 overflow-hidden h-full">
           <div className="border-b border-border px-5 py-4">
             <h2 className="section-title">강한 셋업</h2>
             <p className="section-copy">선택 시장에서 점수와 실행력이 높은 후보를 먼저 봅니다.</p>
@@ -761,8 +761,8 @@ export default function HomeDashboardClient({
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div className="card !p-5">
+        <div className="workspace-stack">
+          <div className="card !p-5 min-h-[260px]">
             <div className="section-heading gap-3">
               <div>
                 <h2 className="section-title">주요 뉴스</h2>
@@ -792,7 +792,7 @@ export default function HomeDashboardClient({
             </div>
           </div>
 
-          <div className="card !p-5">
+          <div className="card !p-5 min-h-[260px]">
             <div>
               <h2 className="section-title">상위 종목</h2>
               <p className="section-copy">선택 국가 리포트에서 상단에 위치한 종목입니다.</p>
