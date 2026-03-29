@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.51.4`
+현재 릴리즈: `v2.51.5`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -817,6 +817,7 @@ STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
 STARTUP_MARKET_OPPORTUNITY_PREWARM=true
 STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=45
 STARTUP_BACKGROUND_TASK_CONCURRENCY=1
+STARTUP_ALLOW_HEAVY_RENDER_JOBS=false
 ```
 
 프론트 `frontend/.env.example` 예시:
@@ -858,7 +859,8 @@ BACKEND_PROXY_URL=http://localhost:8000
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계하며, 가능한 경우 `504` 대신 `200 + partial` 응답으로 먼저 살아남는 것을 우선합니다.
-- Render 운영 로그에서 `Ran out of memory (used over 512MB)`가 잡힌 뒤부터는 cold start startup profile을 메모리 절약형으로 고정했습니다. 현재 production은 `prediction_accuracy_refresh=false`, `research_archive_sync=false`, `market_opportunity_prewarm=true`, `STARTUP_BACKGROUND_TASK_CONCURRENCY=1`로 동작하고, startup에서 꼭 필요한 KR 레이더 quick prewarm만 먼저 올립니다.
+- Render 운영 로그에서 `Ran out of memory (used over 512MB)`가 잡힌 뒤부터는 cold start startup profile을 메모리 절약형으로 고정했습니다. 현재 production은 `prediction_accuracy_refresh=false`, `research_archive_sync=false`, `market_opportunity_prewarm=true`, `STARTUP_BACKGROUND_TASK_CONCURRENCY=1` 기준으로 동작하고, startup에서 꼭 필요한 KR 레이더 quick prewarm만 먼저 올립니다.
+- Render 서비스에 예전 `STARTUP_*` 값이 남아 있어도 backend code는 이제 자동으로 메모리 세이프 startup profile을 우선 적용합니다. 즉 Render 런타임으로 감지되면 `prediction_accuracy_refresh`, `research_archive_sync`는 강제로 startup에서 건너뛰고, concurrency는 `1`, 레이더 prewarm timeout은 최대 `45초`로 자동 clamp 됩니다. 정말 무거운 startup job까지 함께 돌려야 할 때만 `STARTUP_ALLOW_HEAVY_RENDER_JOBS=true`로 명시적으로 풀어야 합니다.
 - `prediction_accuracy_refresh`와 `research_archive_sync`는 startup에서 빠졌지만 기능이 없어진 것은 아닙니다. 예측 검증은 `/api/research/predictions` 계열에서, 기관 리포트 동기화는 `/api/archive/research`와 `/api/archive/research/refresh`에서 on-demand로 계속 갱신됩니다. 즉 cold start 메모리 피크를 줄이고, 실제로 해당 화면을 열었을 때만 무거운 보강 작업을 시작합니다.
 
 ### 운영 latency / warm-up 메모

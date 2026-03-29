@@ -288,6 +288,47 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         research_sync.assert_not_called()
         radar_prewarm.assert_not_called()
 
+    async def test_render_memory_safe_mode_skips_heavy_startup_jobs(self):
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(return_value=None),
+            ) as accuracy_refresh,
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(return_value={"processed_total": 0}),
+            ) as research_sync,
+            patch(
+                "app.main.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
+            ) as radar_prewarm,
+            patch.object(app_settings, "render_environment", True),
+            patch.object(app_settings, "render_service_name", "stock-predict-api"),
+            patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
+            patch.object(app_settings, "startup_prediction_accuracy_refresh", True),
+            patch.object(app_settings, "startup_research_archive_sync", True),
+            patch.object(app_settings, "startup_market_opportunity_prewarm", True),
+            patch.object(app_settings, "startup_market_opportunity_prewarm_timeout", 180),
+            patch.object(app_settings, "startup_background_task_concurrency", 3),
+        ):
+            async with lifespan(app):
+                state = await self._wait_for_status(
+                    "ok",
+                    {
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
+                    },
+                )
+
+        tasks = {task["name"]: task for task in state["startup_tasks"]}
+        self.assertIn("Render 메모리 세이프 startup 프로필", tasks["prediction_accuracy_refresh"]["detail"])
+        self.assertIn("Render 메모리 세이프 startup 프로필", tasks["research_archive_sync"]["detail"])
+        accuracy_refresh.assert_not_called()
+        research_sync.assert_not_called()
+        radar_prewarm.assert_awaited_once_with("KR", limit=12)
+
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):
             with self.assertRaises(RuntimeError):

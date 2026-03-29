@@ -37,6 +37,8 @@ services:
         value: "45"
       - key: STARTUP_BACKGROUND_TASK_CONCURRENCY
         value: "1"
+      - key: STARTUP_ALLOW_HEAVY_RENDER_JOBS
+        value: "false"
       - key: OPENAI_API_KEY
         sync: false
       - key: ECOS_API_KEY

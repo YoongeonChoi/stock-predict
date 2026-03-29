@@ -53,6 +53,18 @@ class StartupTaskDefinition:
     job: Callable[[], Awaitable[object]]
 
 
+def _startup_skip_detail(*, name: str, configured_detail: str) -> str:
+    if settings.startup_memory_safe_mode and name in {
+        "prediction_accuracy_refresh",
+        "research_archive_sync",
+    }:
+        return (
+            "Render 메모리 세이프 startup 프로필에서 건너뜁니다. "
+            "이 보강 작업은 다음 워밍업 또는 수동 재시도에서 다시 실행할 수 있습니다."
+        )
+    return configured_detail
+
+
 async def _run_startup_task(
     *,
     name: str,
@@ -148,7 +160,7 @@ async def lifespan(app: FastAPI):
 
     startup_tasks: list[StartupTaskDefinition] = []
 
-    if settings.startup_prediction_accuracy_refresh:
+    if settings.effective_startup_prediction_accuracy_refresh:
         startup_tasks.append(
             StartupTaskDefinition(
                 name="prediction_accuracy_refresh",
@@ -163,10 +175,13 @@ async def lifespan(app: FastAPI):
         upsert_startup_task(
             "prediction_accuracy_refresh",
             "ok",
-            "Prediction accuracy refresh skipped by configuration.",
+            _startup_skip_detail(
+                name="prediction_accuracy_refresh",
+                configured_detail="Prediction accuracy refresh skipped by configuration.",
+            ),
         )
 
-    if settings.startup_research_archive_sync:
+    if settings.effective_startup_research_archive_sync:
         startup_tasks.append(
             StartupTaskDefinition(
                 name="research_archive_sync",
@@ -181,7 +196,10 @@ async def lifespan(app: FastAPI):
         upsert_startup_task(
             "research_archive_sync",
             "ok",
-            "Curated research archive sync skipped by configuration.",
+            _startup_skip_detail(
+                name="research_archive_sync",
+                configured_detail="Curated research archive sync skipped by configuration.",
+            ),
         )
 
     if settings.startup_market_opportunity_prewarm:
@@ -191,7 +209,7 @@ async def lifespan(app: FastAPI):
                 running_detail="Prewarming KR opportunity radar cache in background.",
                 success_detail="KR opportunity radar prewarm completed.",
                 failure_prefix="Market opportunity prewarm failed during startup",
-                timeout_seconds=settings.startup_market_opportunity_prewarm_timeout,
+                timeout_seconds=settings.effective_startup_market_opportunity_prewarm_timeout,
                 job=lambda: market_service.get_market_opportunities_quick("KR", limit=12),
             )
         )
@@ -203,7 +221,7 @@ async def lifespan(app: FastAPI):
         )
 
     if startup_tasks:
-        startup_concurrency = max(1, int(settings.startup_background_task_concurrency))
+        startup_concurrency = settings.effective_startup_background_task_concurrency
         for index, task_definition in enumerate(startup_tasks):
             if index < startup_concurrency:
                 upsert_startup_task(
