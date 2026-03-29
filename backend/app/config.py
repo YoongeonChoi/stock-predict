@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     frontend_urls: str = ""
     frontend_origin_regex: str = ""
+    render_environment: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("RENDER", "IS_RENDER"),
+    )
+    render_service_name: str = ""
+    render_instance_id: str = ""
 
     startup_prediction_accuracy_refresh: bool = True
     startup_prediction_accuracy_refresh_timeout: int = 20
@@ -53,6 +59,7 @@ class Settings(BaseSettings):
     startup_market_opportunity_prewarm: bool = True
     startup_market_opportunity_prewarm_timeout: int = 180
     startup_background_task_concurrency: int = 3
+    startup_allow_heavy_render_jobs: bool = False
 
     cache_ttl_price: int = 900
     cache_ttl_chart: int = 3600
@@ -90,6 +97,35 @@ class Settings(BaseSettings):
     def cors_origin_regex(self) -> str | None:
         value = self.frontend_origin_regex.strip()
         return value or None
+
+    @property
+    def startup_memory_safe_mode(self) -> bool:
+        on_render = self.render_environment or bool(self.render_service_name.strip()) or bool(self.render_instance_id.strip())
+        return on_render and not self.startup_allow_heavy_render_jobs
+
+    @property
+    def effective_startup_prediction_accuracy_refresh(self) -> bool:
+        if self.startup_memory_safe_mode:
+            return False
+        return self.startup_prediction_accuracy_refresh
+
+    @property
+    def effective_startup_research_archive_sync(self) -> bool:
+        if self.startup_memory_safe_mode:
+            return False
+        return self.startup_research_archive_sync
+
+    @property
+    def effective_startup_market_opportunity_prewarm_timeout(self) -> int:
+        if self.startup_memory_safe_mode:
+            return min(self.startup_market_opportunity_prewarm_timeout, 45)
+        return self.startup_market_opportunity_prewarm_timeout
+
+    @property
+    def effective_startup_background_task_concurrency(self) -> int:
+        if self.startup_memory_safe_mode:
+            return 1
+        return max(1, int(self.startup_background_task_concurrency))
 
 
 @lru_cache

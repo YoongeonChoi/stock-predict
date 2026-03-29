@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.5 - 2026-03-29
+
+- Render production이 예전 `STARTUP_*` 환경값을 계속 들고 있어도 backend가 메모리 세이프 startup profile을 우선 적용하도록 바꿨습니다. 이제 Render 런타임으로 감지되면 `prediction_accuracy_refresh`, `research_archive_sync`는 startup에서 강제로 건너뛰고, `market_opportunity_prewarm`만 `45초` 예산과 concurrency `1`로 실행합니다.
+- startup 진단 detail도 이유를 더 분명하게 남깁니다. 메모리 세이프 모드에서 건너뛴 작업은 단순 `skipped by configuration`이 아니라 `Render 메모리 세이프 startup 프로필` 때문에 보류되었다는 안내를 남겨, health/diagnostics에서 실제 원인을 바로 읽을 수 있게 했습니다.
+- `/api/market/opportunities/{code}`는 full/quick task를 만든 직후 이벤트 루프에 한 번 올려 timeout 직후 취소 경로가 더 안정적으로 작동하도록 맞췄습니다. 아주 짧은 timeout 테스트에서도 background cancel signal이 일관되게 잡히도록 회귀 테스트를 보강했습니다.
+
 ## v2.51.4 - 2026-03-29
 
 - Render free backend startup profile을 메모리 절약형으로 다시 고정했습니다. 운영 `render.yaml`에서는 `prediction_accuracy_refresh`, `research_archive_sync`를 startup에서 기본 비활성화하고, `market_opportunity_prewarm`만 `45초` 예산 안에서 우선 실행하도록 바꿨습니다.
