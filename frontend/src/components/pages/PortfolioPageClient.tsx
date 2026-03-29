@@ -178,6 +178,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const summary = data?.summary;
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
   const mixedCountries = useMemo(() => false, []);
+  const demoPreviewItems = (demoData?.opportunities || []).slice(0, 2);
 
   const loadPortfolio = async (showFailureToast = false) => {
     if (!session) {
@@ -530,25 +531,61 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             </div>
           </div>
         </section>
-        <WorkspaceStateCard
-          eyebrow="포트폴리오 지연"
-          title="계정 자산 워크스페이스를 아직 불러오지 못했습니다"
-          message={portfolioLoadError}
-          tone="warning"
-          actionLabel="포트폴리오 다시 불러오기"
-          onAction={() => {
-            setLoading(true);
-            setPortfolioLoadError(null);
-            void loadPortfolio(true).finally(() => setLoading(false));
-          }}
-        />
+        <section className="workspace-grid">
+          <WorkspaceStateCard
+            eyebrow="포트폴리오 지연"
+            title="계정 자산 워크스페이스를 아직 불러오지 못했습니다"
+            message={portfolioLoadError}
+            tone="warning"
+            className="min-h-[240px]"
+            actionLabel="포트폴리오 다시 불러오기"
+            onAction={() => {
+              setLoading(true);
+              setPortfolioLoadError(null);
+              void loadPortfolio(true).finally(() => setLoading(false));
+            }}
+          />
+          <div className="workspace-stack">
+            <div className="workspace-panel-tight space-y-3">
+              <div className="text-sm font-semibold text-text">지금 확인할 것</div>
+              <div className="text-sm leading-6 text-text-secondary">
+                계정 세션은 살아 있지만 자산 요약이나 보유 종목 응답이 아직 도착하지 않았습니다. 다시 불러오기로 계정 포트폴리오를 새로 요청하고, 실패가 길어지면 네트워크나 백엔드 상태를 먼저 확인합니다.
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                <span className="info-chip">총자산 → 보유 종목 → 추천 순서 유지</span>
+                <span className="info-chip">계정별 데이터 분리</span>
+              </div>
+            </div>
+            {demoPreviewItems.length > 0 ? (
+              <div className="workspace-panel-tight space-y-3">
+                <div className="text-sm font-semibold text-text">공개 레이더 미리보기</div>
+                <div className="space-y-2">
+                  {demoPreviewItems.map((item) => (
+                    <Link key={`portfolio-recovery-${item.ticker}`} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/60 px-3 py-3 transition-colors hover:border-accent/35">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium text-text">{item.name}</div>
+                          <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.sector}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-sm text-text">{formatPrice(item.current_price, item.country_code)}</div>
+                          <div className={`mt-1 text-xs ${changeColor(item.change_pct ?? 0)}`}>{formatPct(item.change_pct)}</div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="page-shell">
-      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.86fr)]">
+      <section className="workspace-grid">
         <div className="card !p-5 space-y-5">
           <div className="section-heading">
             <div>
@@ -603,7 +640,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           </div>
         </div>
 
-        <div className="card !p-5 space-y-4">
+        <div className="card !p-5 space-y-4 h-fit xl:sticky xl:top-5">
           <div>
             <h2 className="section-title">총자산 설정</h2>
           </div>
@@ -791,7 +828,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             검증 기준 보기
           </Link>
         </div>
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)] 2xl:items-start">
+        <div className="workspace-grid-balanced">
           <div className="min-w-0">
             <PortfolioConditionalRecommendationPanel
               data={conditionalRecommendation}

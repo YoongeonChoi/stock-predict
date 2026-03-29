@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -56,6 +56,14 @@ export default function Navigation() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [themeReady, setThemeReady] = useState(false);
+
+  useEffect(() => {
+    setThemeReady(true);
+  }, []);
+
+  const isDarkMode = themeReady && theme === "dark";
+  const themeButtonLabel = isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환";
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -132,12 +140,14 @@ export default function Navigation() {
           <div className="mt-6 card !p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-text-secondary">테마</div>
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              onClick={() => setTheme(isDarkMode ? "light" : "dark")}
               className="mt-3 flex w-full items-center justify-between rounded-2xl border border-border px-4 py-3 text-sm text-text transition-colors hover:border-accent/30 hover:bg-white/40 dark:hover:bg-slate-900/40"
             >
               <span className="flex items-center gap-3">
-                {theme === "dark" ? <SunMedium size={17} /> : <MoonStar size={17} />}
-                {theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+                <span className="flex h-[17px] w-[17px] items-center justify-center">
+                  {isDarkMode ? <SunMedium size={17} /> : <MoonStar size={17} />}
+                </span>
+                {themeButtonLabel}
               </span>
               <ChevronRight size={16} className="text-text-secondary" />
             </button>
@@ -151,10 +161,12 @@ export default function Navigation() {
         </Link>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            onClick={() => setTheme(isDarkMode ? "light" : "dark")}
             className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border text-text-secondary"
           >
-            {theme === "dark" ? <SunMedium size={17} /> : <MoonStar size={17} />}
+            <span className="flex h-[17px] w-[17px] items-center justify-center">
+              {isDarkMode ? <SunMedium size={17} /> : <MoonStar size={17} />}
+            </span>
           </button>
           <button
             onClick={() => setMobileOpen(!mobileOpen)}

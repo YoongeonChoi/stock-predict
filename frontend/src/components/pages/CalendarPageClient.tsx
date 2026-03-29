@@ -244,13 +244,13 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 먼저 묶는 중입니다."
             className="min-h-[160px]"
           />
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+          <div className="workspace-grid">
             <WorkspaceLoadingCard
               title="월간 일정 보드를 그리고 있습니다"
               message="날짜별 이벤트 수와 중요도를 월간 캘린더 격자에 다시 배치하고 있습니다."
               className="min-h-[620px]"
             />
-            <div className="space-y-4">
+            <div className="workspace-stack">
               <WorkspaceLoadingCard
                 title="선택한 날짜 패널을 준비하고 있습니다"
                 message="날짜별 상세 설명과 태그를 먼저 정리하는 중입니다."
@@ -320,7 +320,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             ))}
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+          <section className="workspace-grid">
             <div className="min-w-0 card !p-4 space-y-4">
               <div className="section-heading gap-4">
                 <div className="min-w-0">
@@ -409,7 +409,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="workspace-stack xl:sticky xl:top-5">
               <div className="card !p-4 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold">선택한 날짜</h2>

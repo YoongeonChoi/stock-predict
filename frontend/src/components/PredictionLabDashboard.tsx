@@ -76,6 +76,14 @@ export default function PredictionLabDashboard({ data }: Props) {
   const recentFailures = data.recent_records
     .filter((row) => row.direction_hit === false || row.within_range === false)
     .slice(0, 5);
+  const hasValidationSamples = accuracy.total_predictions > 0;
+  const hasTrendData =
+    trendData.length > 1
+    && trendData.some((row) => row.direction_accuracy_pct > 0 || row.within_range_rate_pct > 0 || row.avg_error_pct > 0);
+  const hasCountryBreakdown = data.breakdown.by_country.some((row) => row.total > 0);
+  const hasScopeBreakdown = data.breakdown.by_scope.some((row) => row.total > 0);
+  const hasModelBreakdown = data.breakdown.by_model.some((row) => row.total > 0);
+  const hasRecentRecords = data.recent_records.length > 0;
 
   return (
     <div className="space-y-6">
@@ -127,18 +135,31 @@ export default function PredictionLabDashboard({ data }: Props) {
             <h2 className="font-semibold text-base">신뢰도 보정 상태</h2>
             <p className="text-sm text-text-secondary mt-1">신뢰도가 높을수록 실제 방향 적중률도 함께 올라가는지 확인합니다.</p>
           </div>
-          <div className="h-[320px] mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.calibration}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
-                <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)}%`} />
-                <Bar dataKey="direction_accuracy" name="방향 적중률" fill="#7C6AE6" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="avg_confidence" name="평균 신뢰도" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {hasValidationSamples ? (
+            <div className="h-[320px] mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.calibration}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
+                  <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)}%`} />
+                  <Bar dataKey="direction_accuracy" name="방향 적중률" fill="#7C6AE6" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="avg_confidence" name="평균 신뢰도" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="workspace-empty-frame mt-4 min-h-[260px] space-y-3">
+              <div className="text-sm font-semibold text-text">보정 차트는 표본이 쌓이면 자동으로 채워집니다</div>
+              <div className="text-sm leading-6 text-text-secondary">
+                지금은 실측 종가 기준 검증 표본이 충분하지 않아 캘리브레이션 막대를 그리지 않고, 현재 모델 상태와 표본 축적 단계를 먼저 보여줍니다.
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                <span className="info-chip">검증 완료 {accuracy.total_predictions}건</span>
+                <span className="info-chip">표본 축적 중</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -316,25 +337,34 @@ export default function PredictionLabDashboard({ data }: Props) {
             <h2 className="font-semibold text-base">최근 검증 추세</h2>
             <p className="text-sm text-text-secondary mt-1">최근 타깃 날짜 기준으로 방향 적중률과 평균 오차 흐름을 함께 봅니다.</p>
           </div>
-          <div className="h-[320px] mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="target_date" tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="left" tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
-                <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
-                <Tooltip
-                  formatter={(value: number, name: string) =>
-                    name === "방향 적중률"
-                      ? `${Number(value).toFixed(1)}%`
-                      : `${Number(value).toFixed(2)}%`
-                  }
-                />
-                <Line yAxisId="left" type="monotone" dataKey="direction_accuracy_pct" name="방향 적중률" stroke="#7C6AE6" strokeWidth={2} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="avg_error_pct" name="평균 오차" stroke="#ef4444" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {hasTrendData ? (
+            <div className="h-[320px] mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="target_date" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${value}%`} tick={{ fontSize: 12 }} width={44} />
+                  <Tooltip
+                    formatter={(value: number, name: string) =>
+                      name === "방향 적중률"
+                        ? `${Number(value).toFixed(1)}%`
+                        : `${Number(value).toFixed(2)}%`
+                    }
+                  />
+                  <Line yAxisId="left" type="monotone" dataKey="direction_accuracy_pct" name="방향 적중률" stroke="#7C6AE6" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="avg_error_pct" name="평균 오차" stroke="#ef4444" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="workspace-empty-frame mt-4 min-h-[260px] space-y-3">
+              <div className="text-sm font-semibold text-text">추세 차트는 아직 공개할 만큼 쌓이지 않았습니다</div>
+              <div className="text-sm leading-6 text-text-secondary">
+                날짜별 적중률과 평균 오차는 검증 완료 표본이 일정 수준을 넘으면 자동으로 그려집니다. 지금은 horizon별 표본 상태와 fusion/graph 진단을 먼저 읽는 단계입니다.
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card !p-4 space-y-4">
@@ -343,8 +373,10 @@ export default function PredictionLabDashboard({ data }: Props) {
             <p className="text-sm text-text-secondary mt-1">지금 시점에서 어느 시장에서 모델이 더 안정적으로 작동하는지 보여줍니다.</p>
           </div>
           <div className="space-y-2">
-            {data.breakdown.by_country.length === 0 ? (
-              <div className="text-sm text-text-secondary">검증 표본이 아직 충분히 쌓이지 않았습니다.</div>
+            {!hasCountryBreakdown ? (
+              <div className="workspace-empty-frame min-h-[220px] text-sm leading-6 text-text-secondary">
+                시장별 비교는 같은 시점의 검증 표본이 더 쌓이면 채워집니다. 지금은 모델이 어느 시장에서 안정적인지 결론을 내리기보다, 전체 표본을 먼저 축적하는 단계입니다.
+              </div>
             ) : (
               data.breakdown.by_country.map((row) => (
                 <div key={row.label} className="rounded-xl border border-border/70 px-3 py-2">
@@ -434,22 +466,28 @@ export default function PredictionLabDashboard({ data }: Props) {
             <h2 className="font-semibold text-base">스코프별 안정성</h2>
             <p className="text-sm text-text-secondary mt-1">국가, 종목, 섹터 예측을 분리해서 어느 층이 더 강한지 추적합니다.</p>
           </div>
-          <div className="space-y-2">
-            {data.breakdown.by_scope.map((row) => (
-              <div key={row.label} className="rounded-xl border border-border/70 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium">{scopeLabel(row.label)}</div>
-                    <div className="text-xs text-text-secondary mt-1">표본 {row.total}건</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">{pct(row.direction_accuracy)}</div>
-                    <div className="text-xs text-text-secondary mt-1">밴드 적중 {pct(row.within_range_rate)}</div>
+          {hasScopeBreakdown ? (
+            <div className="space-y-2">
+              {data.breakdown.by_scope.map((row) => (
+                <div key={row.label} className="rounded-xl border border-border/70 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{scopeLabel(row.label)}</div>
+                      <div className="text-xs text-text-secondary mt-1">표본 {row.total}건</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{pct(row.direction_accuracy)}</div>
+                      <div className="text-xs text-text-secondary mt-1">밴드 적중 {pct(row.within_range_rate)}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="workspace-empty-frame min-h-[200px] text-sm leading-6 text-text-secondary">
+              국가, 섹터, 종목 스코프를 분리한 안정성 비교는 아직 충분한 공개 표본이 없습니다. 표본이 쌓이면 어느 층이 더 일관적인지 자동으로 채워집니다.
+            </div>
+          )}
         </div>
 
         <div className="card !p-4 space-y-3">
@@ -457,22 +495,28 @@ export default function PredictionLabDashboard({ data }: Props) {
             <h2 className="font-semibold text-base">모델 버전 추적</h2>
             <p className="text-sm text-text-secondary mt-1">새 버전이 실제로 성능을 개선하는지 비교할 수 있게 했습니다.</p>
           </div>
-          <div className="space-y-2">
-            {data.breakdown.by_model.map((row) => (
-              <div key={row.label} className="rounded-xl border border-border/70 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium">{row.label}</div>
-                    <div className="text-xs text-text-secondary mt-1">표본 {row.total}건</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">{pct(row.direction_accuracy)}</div>
-                    <div className="text-xs text-text-secondary mt-1">평균 신뢰도 {row.avg_confidence.toFixed(1)}</div>
+          {hasModelBreakdown ? (
+            <div className="space-y-2">
+              {data.breakdown.by_model.map((row) => (
+                <div key={row.label} className="rounded-xl border border-border/70 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{row.label}</div>
+                      <div className="text-xs text-text-secondary mt-1">표본 {row.total}건</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{pct(row.direction_accuracy)}</div>
+                      <div className="text-xs text-text-secondary mt-1">평균 신뢰도 {row.avg_confidence.toFixed(1)}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="workspace-empty-frame min-h-[200px] text-sm leading-6 text-text-secondary">
+              모델 버전 비교는 아직 버전별 검증 표본이 분리될 만큼 충분하지 않습니다. 현재는 상단의 active model과 fusion 상태를 기준으로 먼저 읽도록 유지합니다.
+            </div>
+          )}
         </div>
       </div>
 
@@ -481,63 +525,72 @@ export default function PredictionLabDashboard({ data }: Props) {
           <h2 className="font-semibold text-base">최근 예측 로그</h2>
           <p className="text-sm text-text-secondary mt-1">예상 종가와 실제 종가를 빠르게 대조할 수 있는 검증 로그입니다.</p>
         </div>
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-text-secondary">
-                <th className="pb-2">심볼</th>
-                <th className="pb-2">구분</th>
-                <th className="pb-2">Fusion</th>
-                <th className="pb-2 text-right">예상 종가</th>
-                <th className="pb-2 text-right">실제 종가</th>
-                <th className="pb-2 text-right">오차</th>
-                <th className="pb-2 text-right">신뢰도</th>
-                <th className="pb-2 text-right">상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.recent_records.map((row) => (
-                <tr key={row.id} className="border-b border-border/40">
-                  <td className="py-2">
-                    <div className="font-medium">{row.symbol}</div>
-                    <div className="text-[11px] text-text-secondary">
-                      {row.target_date}
-                      {row.country_code ? ` • ${row.country_code}` : ""}
-                    </div>
-                  </td>
-                  <td className="py-2">{scopeLabel(row.scope)}</td>
-                  <td className="py-2">
-                    <div className="font-medium">{methodLabel(row.fusion_method ?? "prior_only")}</div>
-                    <div className="text-[11px] text-text-secondary">
-                      blend {((row.fusion_blend_weight ?? 0) * 100).toFixed(0)}% · graph{" "}
-                      {row.graph_context_used ? `${((row.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
-                    </div>
-                  </td>
-                  <td className="py-2 text-right font-mono">{row.predicted_close.toFixed(2)}</td>
-                  <td className="py-2 text-right font-mono">{row.actual_close != null ? row.actual_close.toFixed(2) : "대기"}</td>
-                  <td className="py-2 text-right font-mono">{row.abs_error_pct != null ? `${row.abs_error_pct.toFixed(2)}%` : "-"}</td>
-                  <td className="py-2 text-right">{row.confidence.toFixed(1)}</td>
-                  <td
-                    className={`py-2 text-right font-medium ${
-                      row.direction_hit == null
-                        ? "text-text-secondary"
-                        : row.direction_hit
-                          ? "text-emerald-500"
-                          : "text-red-500"
-                    }`}
-                  >
-                    {row.direction_hit == null ? "대기" : row.direction_hit ? "적중" : "미스"}
-                    {row.within_range != null ? (
-                      <span className={`ml-2 text-[11px] ${changeColor(row.within_range ? 1 : -1)}`}>
-                        {row.within_range ? "밴드 안" : "밴드 밖"}
-                      </span>
-                    ) : null}
-                  </td>
+        {hasRecentRecords ? (
+          <div className="overflow-x-auto mt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-text-secondary">
+                  <th className="pb-2">심볼</th>
+                  <th className="pb-2">구분</th>
+                  <th className="pb-2">Fusion</th>
+                  <th className="pb-2 text-right">예상 종가</th>
+                  <th className="pb-2 text-right">실제 종가</th>
+                  <th className="pb-2 text-right">오차</th>
+                  <th className="pb-2 text-right">신뢰도</th>
+                  <th className="pb-2 text-right">상태</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.recent_records.map((row) => (
+                  <tr key={row.id} className="border-b border-border/40">
+                    <td className="py-2">
+                      <div className="font-medium">{row.symbol}</div>
+                      <div className="text-[11px] text-text-secondary">
+                        {row.target_date}
+                        {row.country_code ? ` • ${row.country_code}` : ""}
+                      </div>
+                    </td>
+                    <td className="py-2">{scopeLabel(row.scope)}</td>
+                    <td className="py-2">
+                      <div className="font-medium">{methodLabel(row.fusion_method ?? "prior_only")}</div>
+                      <div className="text-[11px] text-text-secondary">
+                        blend {((row.fusion_blend_weight ?? 0) * 100).toFixed(0)}% · graph{" "}
+                        {row.graph_context_used ? `${((row.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
+                      </div>
+                    </td>
+                    <td className="py-2 text-right font-mono">{row.predicted_close.toFixed(2)}</td>
+                    <td className="py-2 text-right font-mono">{row.actual_close != null ? row.actual_close.toFixed(2) : "대기"}</td>
+                    <td className="py-2 text-right font-mono">{row.abs_error_pct != null ? `${row.abs_error_pct.toFixed(2)}%` : "-"}</td>
+                    <td className="py-2 text-right">{row.confidence.toFixed(1)}</td>
+                    <td
+                      className={`py-2 text-right font-medium ${
+                        row.direction_hit == null
+                          ? "text-text-secondary"
+                          : row.direction_hit
+                            ? "text-emerald-500"
+                            : "text-red-500"
+                      }`}
+                    >
+                      {row.direction_hit == null ? "대기" : row.direction_hit ? "적중" : "미스"}
+                      {row.within_range != null ? (
+                        <span className={`ml-2 text-[11px] ${changeColor(row.within_range ? 1 : -1)}`}>
+                          {row.within_range ? "밴드 안" : "밴드 밖"}
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="workspace-empty-frame mt-4 min-h-[220px] space-y-3">
+            <div className="text-sm font-semibold text-text">최근 예측 로그는 아직 축적 중입니다</div>
+            <div className="text-sm leading-6 text-text-secondary">
+              지금은 저장된 예측이 많지 않아 표 형식 로그를 크게 비워 두지 않고, 위 카드에서 표본 상태와 fusion/graph 준비 단계를 먼저 읽도록 유지합니다.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

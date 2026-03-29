@@ -216,6 +216,7 @@
 - 공개 first screen은 가능하면 server-first로 `decision thread + audit thread`를 함께 채운다
 - `/`, `/radar`, `/calendar`, `/archive`, `/screener`는 첫 screen에서 최소 한 개의 실제 수치 카드와 한 개의 freshness/audit 정보가 동시에 보여야 한다
 - 공개 first screen에 `blank card`, `skeleton-only`, raw `Failed to fetch`를 그대로 두지 않는다
+- dense workspace 페이지는 임의의 비율을 페이지마다 새로 만들기보다, 공용 `main / aside` grid 축을 재사용해 같은 화면 언어를 유지한다
 - 공개 허브 카드의 요약 영역은 HTML 원문이 아니라 정리된 plain text만 렌더한다
 - 공개 숫자 카피는 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 숫자 없는 정성 문장으로 유지한다
 - 공개 종목 상세의 상단 thread는 `판단 요약 -> 반대 근거 / 무효화 조건 -> 상세 분석 -> 실행 가이드` 순서를 유지하고, sell-side 가격 문구는 상단 판단 요약에 올리지 않는다
@@ -367,6 +368,8 @@ aside에 부적합한 내용:
 - 카드 안 요소는 가운데 정렬보다 좌측 정렬을 기본으로 합니다.
 - 숫자 카드도 label, value, helper의 기준선이 흐트러지지 않게 합니다.
 - 비어 있는 공간은 “의미 없는 여백”이 아니라 섹션 전환 리듬을 만드는 데 사용합니다.
+- 오른쪽 rail은 보조 설명과 짧은 리스트를 담는 폭으로 유지하고, 주 분석 카드와 같은 무게로 커지지 않게 합니다.
+- 검증 표본이나 연결 데이터가 부족할 때는 큰 빈 차트 캔버스보다 compact 상태 카드나 staging panel을 먼저 사용합니다.
 
 ---
 
