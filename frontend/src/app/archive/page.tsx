@@ -6,6 +6,8 @@ import {
   getPublicResearchStatus,
 } from "@/lib/public-server-api";
 
+export const revalidate = 0;
+
 export default async function ArchivePage() {
   const [archives, accuracy, researchReports, researchStatus] = await Promise.allSettled([
     getPublicArchive(),
