@@ -27,7 +27,12 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   kr_representative_snapshot_warming: "대표 종목 스냅샷 기준",
   cached_snapshot: "기본 캐시 결과",
   calendar_refresh_pending: "일정 동기화 중",
+  calendar_live_partial_data: "일부 실제 일정 확인 중",
+  calendar_external_source_unavailable: "외부 일정 공급 제한",
   research_sync_pending: "기관 리포트 동기화 중",
+  prediction_lab_partial_data: "검증 세부 집계 일부 지연",
+  prediction_lab_cache_wait_timeout: "검증 스냅샷 준비 중",
+  prediction_lab_timeout: "검증 집계 지연",
 };
 
 function normalizeReason(reason?: string | null) {
@@ -83,6 +88,12 @@ export function buildPublicAuditSummary(
 ) {
   if (meta?.partial && meta?.fallback_reason === "opportunity_placeholder_response") {
     return "이번 요청에서는 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "calendar_external_source_unavailable") {
+    return "외부 일정 공급 제한으로 이번 달은 월간 핵심 일정부터 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "prediction_lab_partial_data") {
+    return "검증 세부 집계 일부가 늦어도 최근 스냅샷과 fusion 상태부터 먼저 보여주고 있습니다.";
   }
   const reason = normalizeReason(meta?.fallback_reason);
   if (meta?.partial && reason) {
