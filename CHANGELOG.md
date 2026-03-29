@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.3 - 2026-03-29
+
+- 종목 상세 `SP-4004` timeout fallback이 공개 판단 요약과 트레이드 플랜에 영어 내부 문구를 섞어 보여주던 문제를 고쳤습니다. 이제 `public_summary`는 영어 bullet을 공개 카드에 올리지 않고, fallback 근거와 무효화 조건도 한국어 우선 문장으로만 정리합니다.
+- `trade_plan`의 `setup_label`, `thesis`, `invalidation`을 한국어 운영 문장으로 바꿨습니다. 그래서 LLM 보조 요약이 제한 시간 안에 오지 않아도 종목 상세의 `판단 요약`, `트레이드 플랜`, `무효화 조건`이 같은 톤과 언어로 유지됩니다.
+- 회귀 테스트를 추가해 영어 fallback 문장이 `public_summary.evidence_for`로 새지 않는지, 리스크 축소 시나리오의 `trade_plan`이 한국어 label과 무효화 문구를 유지하는지 고정했습니다.
+
 ## v2.51.2 - 2026-03-29
 
 - KR `Opportunity Radar`의 quick 경로가 `yfinance` quick 배치에서 usable 후보를 만들지 못하면, 이제 `KOSPI/KOSDAQ 대표 시총 페이지` 기반 quote-only 후보로 즉시 전환합니다. 그래서 `첫 판단 스레드 준비 중` placeholder가 이틀씩 고정되는 대신 대표 후보 보드가 더 빨리 살아나도록 맞췄습니다.

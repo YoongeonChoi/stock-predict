@@ -406,6 +406,10 @@ def _normalize_public_summary_text(value: str | None) -> str:
     return " ".join(str(value or "").split())
 
 
+def _contains_hangul(value: str) -> bool:
+    return bool(re.search(r"[가-힣]", value))
+
+
 def _contains_public_summary_prohibited_content(value: str) -> bool:
     lowered = value.lower()
     prohibited_keywords = (
@@ -422,6 +426,8 @@ def _contains_public_summary_prohibited_content(value: str) -> bool:
         "sell target",
     )
     if any(keyword in lowered for keyword in prohibited_keywords):
+        return True
+    if re.search(r"[A-Za-z]", value) and not _contains_hangul(value):
         return True
     return bool(re.search(r"\d", value))
 
