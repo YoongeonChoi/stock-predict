@@ -142,6 +142,7 @@ export default function ArchivePageClient({
       defaultSummary: "기관별 최신 리포트를 먼저 보여주고, 지역 전환 시 같은 구조로 다시 정리합니다.",
     },
   );
+  const summaryFallback = "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다.";
 
   return (
     <div className="page-shell">
@@ -189,7 +190,7 @@ export default function ArchivePageClient({
               </div>
               <div className="mt-3 font-medium text-text">{report.title}</div>
               <p className="mt-2 text-sm leading-6 text-text-secondary">
-                {report.summary || "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다."}
+                {report.summary_plain || report.summary || summaryFallback}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {report.has_pdf && report.pdf_url ? (
@@ -344,7 +345,7 @@ export default function ArchivePageClient({
                     </div>
                     <div className="mt-3 font-medium text-text">{report.title}</div>
                     <p className="mt-2 text-sm leading-6 text-text-secondary">
-                      {report.summary || "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다."}
+                      {report.summary_plain || report.summary || summaryFallback}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-text-secondary">
                       {report.category ? <span>{report.category}</span> : null}

@@ -30,6 +30,22 @@ function scopeLabel(label: string) {
   return label;
 }
 
+function directionLabel(direction: string) {
+  if (direction === "up") return "상승";
+  if (direction === "down") return "하락";
+  if (direction === "flat") return "보합";
+  return direction;
+}
+
+function realizedDirectionLabel(actualClose?: number | null, referencePrice?: number) {
+  if (actualClose == null || referencePrice == null) {
+    return "대기";
+  }
+  if (actualClose > referencePrice) return "상승";
+  if (actualClose < referencePrice) return "하락";
+  return "보합";
+}
+
 export default function PredictionLabDashboard({ data }: Props) {
   const accuracy = data.accuracy;
   const trendData = data.recent_trend.map((row) => ({
@@ -39,6 +55,10 @@ export default function PredictionLabDashboard({ data }: Props) {
   }));
   const horizonRows = data.horizon_accuracy ?? [];
   const empiricalRows = data.empirical_calibration ?? [];
+  const empiricalByType = new Map(empiricalRows.map((row) => [row.prediction_type, row]));
+  const recentFailures = data.recent_records
+    .filter((row) => row.direction_hit === false || row.within_range === false)
+    .slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -124,6 +144,12 @@ export default function PredictionLabDashboard({ data }: Props) {
                   <div className="text-right">
                     <div className="font-semibold">{pct(row.direction_accuracy)}</div>
                     <div className="text-xs text-text-secondary mt-1">평균 오차 {row.avg_error_pct.toFixed(2)}%</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      Brier {empiricalByType.get(row.prediction_type)?.brier_score?.toFixed(4) ?? "대기"}
+                    </div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      Gap {empiricalByType.get(row.prediction_type)?.max_reliability_gap?.toFixed(1) ?? "대기"}%
+                    </div>
                   </div>
                 </div>
               </div>
@@ -219,6 +245,57 @@ export default function PredictionLabDashboard({ data }: Props) {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="card !p-4 space-y-3">
+        <div>
+          <h2 className="font-semibold text-base">최근 실패 사례</h2>
+          <p className="text-sm text-text-secondary mt-1">방향 미스나 밴드 이탈이 있었던 최근 사례를 먼저 공개해 검증 흐름이 좋은 결과만 보여주지 않도록 유지합니다.</p>
+        </div>
+        {recentFailures.length === 0 ? (
+          <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
+            최근 표본에서는 공개할 실패 사례가 아직 없습니다. 새 실측 로그가 들어오면 이 영역이 자동으로 채워집니다.
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {recentFailures.map((row) => (
+              <div key={`failure-${row.id}`} className="rounded-xl border border-border/70 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{row.symbol}</div>
+                    <div className="text-xs text-text-secondary mt-1">{scopeLabel(row.scope)} · {row.target_date}{row.country_code ? ` · ${row.country_code}` : ""}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-text-secondary">예측</div>
+                    <div className="font-semibold">{directionLabel(row.direction)}</div>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <div className="text-[11px] text-text-secondary">실현 결과</div>
+                    <div className="font-semibold">{realizedDirectionLabel(row.actual_close, row.reference_price)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-text-secondary">오차</div>
+                    <div className={row.abs_error_pct != null ? changeColor(-Math.abs(row.abs_error_pct)) : "text-text-secondary"}>
+                      {row.abs_error_pct != null ? `${row.abs_error_pct.toFixed(2)}%` : "대기"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-text-secondary">신뢰도</div>
+                    <div className="font-semibold">{row.confidence.toFixed(1)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-text-secondary">밴드</div>
+                    <div className={row.within_range ? "text-positive" : "text-negative"}>
+                      {row.within_range == null ? "대기" : row.within_range ? "밴드 안" : "밴드 밖"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">

@@ -222,6 +222,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await market_service.get_market_opportunities("KR", limit=1, max_candidates=1)
 
         self.assertEqual(result["country_code"], "KR")
+        self.assertIn("snapshot_id", result)
+        self.assertEqual(result["fallback_tier"], "full")
         self.assertEqual(result["universe_size"], 3)
         self.assertEqual(result["total_scanned"], 3)
         self.assertEqual(result["quote_available_count"], 3)
@@ -288,6 +290,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await market_service.get_market_opportunities("KR", limit=2, max_candidates=2)
 
         self.assertEqual(result["country_code"], "KR")
+        self.assertIn("snapshot_id", result)
+        self.assertEqual(result["fallback_tier"], "full")
         self.assertEqual(result["universe_size"], 2)
         self.assertEqual(result["total_scanned"], 2)
         self.assertEqual(result["quote_available_count"], 2)
@@ -336,6 +340,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await market_service.get_market_opportunities_quick("KR", limit=2)
 
         self.assertEqual(result["country_code"], "KR")
+        self.assertIn("snapshot_id", result)
+        self.assertEqual(result["fallback_tier"], "quick")
         self.assertEqual(result["universe_size"], 2)
         self.assertEqual(result["quote_available_count"], 2)
         self.assertEqual(result["detailed_scanned_count"], 0)
@@ -427,6 +433,58 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["total_scanned"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
         self.assertEqual(result["quote_available_count"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
         self.assertIn("대표 1차 스캔 120개", result["universe_note"])
+
+    async def test_get_cached_market_opportunities_quick_reuses_other_limit_when_usable(self):
+        cached_payload = {
+            "country_code": "KR",
+            "snapshot_id": "KR:quick:20260329T120000",
+            "generated_at": "2026-03-29T12:00:00",
+            "fallback_tier": "quick",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "대표 후보 기준 빠른 응답입니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 210,
+            "total_scanned": 120,
+            "quote_available_count": 84,
+            "detailed_scanned_count": 0,
+            "actionable_count": 6,
+            "bullish_count": 5,
+            "universe_source": "fallback",
+            "universe_note": "대표 후보 cache",
+            "opportunities": [
+                {"ticker": "000001.KS", "action": "accumulate", "up_probability": 61.0},
+                {"ticker": "000002.KS", "action": "breakout_watch", "up_probability": 58.0},
+                {"ticker": "000003.KS", "action": "hold", "up_probability": 54.0},
+                {"ticker": "000004.KS", "action": "reduce_risk", "up_probability": 47.0},
+                {"ticker": "000005.KS", "action": "avoid", "up_probability": 38.0},
+                {"ticker": "000006.KS", "action": "stay_selective", "up_probability": 56.0},
+            ],
+        }
+
+        async def _cache_get(key: str):
+            if key == market_service._quick_opportunity_cache_key("KR", 8):
+                return cached_payload
+            return None
+
+        with patch("app.services.market_service.cache.get", new=AsyncMock(side_effect=_cache_get)):
+            result = await market_service.get_cached_market_opportunities_quick("KR", limit=5)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result["opportunities"]), 5)
+        self.assertEqual(result["actionable_count"], 4)
+        self.assertEqual(result["bullish_count"], 2)
+        self.assertIn("최근 usable quick 후보", result["universe_note"])
+        self.assertEqual(result["quote_available_count"], 84)
 
     async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_before_dynamic_fetch(self):
         with (

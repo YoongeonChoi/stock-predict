@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 from datetime import datetime
 from app.models.score import CountryScore
@@ -27,6 +29,16 @@ class InstitutionalAnalysis(BaseModel):
     policy_sellside_aligned: bool
     consensus_count: int
     consensus_summary: str
+
+
+class MacroClaim(BaseModel):
+    source: str
+    published_at: str
+    metric: str
+    value: float
+    unit: str = ""
+    direction: Literal["up", "down", "flat"] = "flat"
+    confidence: float = 0.5
 
 
 class NewsItem(BaseModel):
@@ -59,6 +71,7 @@ class CountryReport(BaseModel):
     country: CountryInfo
     score: CountryScore
     market_summary: str
+    macro_claims: list[MacroClaim] = []
     key_news: list[NewsItem]
     institutional_analysis: InstitutionalAnalysis
     top_stocks: list["StockSummaryRef"]

@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime
+import re
 
 import numpy as np
 import pandas as pd
@@ -18,7 +19,7 @@ from app.analysis.historical_pattern_forecast import build_historical_pattern_fo
 from app.analysis.llm_client import ask_json
 from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
-from app.analysis.prompts import stock_analysis_prompt
+from app.analysis.prompts import stock_detail_analysis_prompt, stock_public_summary_prompt
 from app.analysis.trade_planner import build_trade_plan
 from app.config import get_settings
 from app.errors import SP_4004
@@ -41,6 +42,7 @@ from app.models.stock import (
     EarningsEvent,
     PeerComparison,
     PricePoint,
+    PublicStockSummary,
     QuarterlyFinancial,
     StockDetail,
     TechnicalIndicators,
@@ -141,11 +143,15 @@ async def analyze_stock(ticker: str) -> dict:
     change_pct = ((price - prev) / prev * 100) if prev else 0
     combined_news = [*google_news, *naver_news]
     reference_date = prices_6mo[-1]["date"] if prices_6mo else prices_raw[-1]["date"]
-    system, user = stock_analysis_prompt(
+    system, user = stock_detail_analysis_prompt(
         ticker, info, financials_raw, google_news, quant_score.model_dump()
     )
-    llm_result, event_context = await asyncio.gather(
+    public_system, public_user = stock_public_summary_prompt(
+        ticker, info, combined_news, quant_score.model_dump()
+    )
+    llm_result, public_llm_result, event_context = await asyncio.gather(
         _ask_stock_summary_with_timeout(system, user),
+        _ask_public_stock_summary_with_timeout(public_system, public_user),
         _build_event_context_with_timeout(
             ticker=ticker,
             asset_name=info.get("name", ticker),
@@ -156,6 +162,7 @@ async def analyze_stock(ticker: str) -> dict:
         ),
     )
     llm_failed = "error_code" in llm_result or "error" in llm_result
+    public_llm_failed = "error_code" in public_llm_result or "error" in public_llm_result
 
     if not llm_failed:
         quant_score.total = (
@@ -249,6 +256,16 @@ async def analyze_stock(ticker: str) -> dict:
         next_day_forecast=next_day_forecast,
         market_regime=market_regime,
     )
+    public_summary = _build_public_stock_summary(
+        llm_result=public_llm_result,
+        info=info,
+        quant_score=quant_score,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+        trade_plan=trade_plan,
+        buy_sell_guide=buy_sell,
+        llm_available=not public_llm_failed,
+    )
 
     detail = StockDetail(
         ticker=ticker,
@@ -289,6 +306,7 @@ async def analyze_stock(ticker: str) -> dict:
         setup_backtest=setup_backtest,
         market_regime=market_regime,
         trade_plan=trade_plan,
+        public_summary=public_summary,
     )
 
     result = detail.model_dump()
@@ -307,6 +325,8 @@ async def analyze_stock(ticker: str) -> dict:
         result["analysis_summary"] = llm_result.get("analysis_summary", "")
         result["key_risks"] = llm_result.get("key_risks", [])
         result["key_catalysts"] = llm_result.get("key_catalysts", [])
+
+    result["public_summary"] = public_summary.model_dump()
 
     if historical_error:
         result["errors"].append("SP-3007")
@@ -336,6 +356,17 @@ async def _ask_stock_summary_with_timeout(system_prompt: str, user_prompt: str) 
         err = SP_4004()
         err.log("warning")
         return err.to_dict()
+
+
+async def _ask_public_stock_summary_with_timeout(system_prompt: str, user_prompt: str) -> dict:
+    try:
+        return await asyncio.wait_for(
+            ask_json(system_prompt, user_prompt),
+            timeout=STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        SP_4004().log("warning")
+        return {}
 
 
 async def _build_event_context_with_timeout(
@@ -369,6 +400,259 @@ async def _build_event_context_with_timeout(
         if not heuristic.summary:
             heuristic.summary = "이벤트 구조화 응답이 늦어 정량 시계열 신호를 우선 사용했습니다."
         return heuristic
+
+
+def _normalize_public_summary_text(value: str | None) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _contains_public_summary_prohibited_content(value: str) -> bool:
+    lowered = value.lower()
+    prohibited_keywords = (
+        "fair value",
+        "buy zone",
+        "sell zone",
+        "target price",
+        "analyst target",
+        "목표가",
+        "적정가",
+        "매수 구간",
+        "매도 구간",
+        "buy target",
+        "sell target",
+    )
+    if any(keyword in lowered for keyword in prohibited_keywords):
+        return True
+    return bool(re.search(r"\d", value))
+
+
+def _clean_public_summary_text(value: str | None, fallback: str) -> str:
+    text = _normalize_public_summary_text(value)
+    if not text or _contains_public_summary_prohibited_content(text):
+        return fallback
+    return text
+
+
+def _clean_public_summary_items(values: list[str] | None, *, limit: int = 2) -> list[str]:
+    cleaned: list[str] = []
+    for raw in values or []:
+        text = _normalize_public_summary_text(raw)
+        if not text or _contains_public_summary_prohibited_content(text) or text in cleaned:
+            continue
+        cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+def _merge_public_summary_items(primary: list[str], fallback: list[str], *, limit: int = 2) -> list[str]:
+    merged: list[str] = []
+    for item in [*primary, *fallback]:
+        text = _normalize_public_summary_text(item)
+        if not text or text in merged:
+            continue
+        merged.append(text)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _build_public_stock_summary(
+    *,
+    llm_result: dict,
+    info: dict,
+    quant_score,
+    next_day_forecast,
+    market_regime,
+    trade_plan,
+    buy_sell_guide,
+    llm_available: bool,
+) -> PublicStockSummary:
+    fallback_summary = _build_public_summary_fallback_text(
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+        trade_plan=trade_plan,
+    )
+    support_points = _build_public_support_points(
+        trade_plan=trade_plan,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+        quant_score=quant_score,
+    )
+    counter_points = _build_public_counter_points(
+        trade_plan=trade_plan,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+    )
+    wait_points = _build_public_wait_points(
+        info=info,
+        trade_plan=trade_plan,
+        market_regime=market_regime,
+        buy_sell_guide=buy_sell_guide,
+    )
+    breaker_points = _build_public_thesis_breakers(
+        trade_plan=trade_plan,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+    )
+
+    return PublicStockSummary(
+        summary=_clean_public_summary_text(llm_result.get("summary"), fallback_summary),
+        evidence_for=_merge_public_summary_items(
+            _clean_public_summary_items(llm_result.get("evidence_for")),
+            support_points,
+        ),
+        evidence_against=_merge_public_summary_items(
+            _clean_public_summary_items(llm_result.get("evidence_against")),
+            counter_points,
+        ),
+        why_not_buy_now=_merge_public_summary_items(
+            _clean_public_summary_items(llm_result.get("why_not_buy_now")),
+            wait_points,
+        ),
+        thesis_breakers=_merge_public_summary_items(
+            _clean_public_summary_items(llm_result.get("thesis_breakers")),
+            breaker_points,
+        ),
+        data_quality=_clean_public_summary_text(
+            llm_result.get("data_quality"),
+            _build_public_data_quality_note(llm_available=llm_available, market_regime=market_regime),
+        ),
+        confidence_note=_clean_public_summary_text(
+            llm_result.get("confidence_note"),
+            _build_public_confidence_note(next_day_forecast=next_day_forecast, trade_plan=trade_plan),
+        ),
+    )
+
+
+def _build_public_summary_fallback_text(*, next_day_forecast, market_regime, trade_plan) -> str:
+    action = getattr(trade_plan, "action", "")
+    if action in {"reduce_risk", "avoid"}:
+        lead = "현재 정량 신호는 비중 확대보다 방어 대응이 먼저라는 쪽에 가깝습니다."
+    elif action == "wait_pullback":
+        lead = "관심은 유지할 수 있지만 지금 바로 추격하기보다 진입 조건을 다시 확인하는 편이 낫습니다."
+    elif action == "breakout_watch":
+        lead = "추세 확인 여지는 있지만 돌파가 자리 잡는지부터 지켜보는 편이 더 자연스럽습니다."
+    else:
+        lead = "정량 신호는 우호적이지만 한 방향으로 과하게 단정하기보다 조건 확인을 곁들여 읽는 편이 좋습니다."
+
+    regime_sentence = ""
+    if getattr(market_regime, "stance", None) == "risk_off":
+        regime_sentence = "시장 국면도 공격적 확대보다 방어 해석에 무게를 두고 있습니다."
+    elif getattr(market_regime, "stance", None) == "risk_on":
+        regime_sentence = "시장 국면은 완전한 역풍은 아니지만 개별 종목별 선별이 계속 중요합니다."
+
+    confidence = float(getattr(next_day_forecast, "confidence", 0.0) or 0.0)
+    if confidence >= 70:
+        confidence_sentence = "신호 강도는 나쁘지 않지만 실패 조건을 함께 보는 전제가 필요합니다."
+    elif confidence >= 55:
+        confidence_sentence = "확률 우위가 아주 넓지는 않아 분할 대응과 재확인이 어울립니다."
+    else:
+        confidence_sentence = "신뢰 우위가 크지 않아 성급한 확대보다 관찰과 보수적 대응이 더 적합합니다."
+
+    return " ".join(
+        sentence for sentence in [lead, regime_sentence, confidence_sentence] if sentence
+    )
+
+
+def _build_public_support_points(*, trade_plan, next_day_forecast, market_regime, quant_score) -> list[str]:
+    points = _clean_public_summary_items(list(getattr(trade_plan, "thesis", []) or []), limit=2)
+    if points:
+        return points
+
+    driver_points: list[str] = []
+    for driver in getattr(next_day_forecast, "drivers", []) or []:
+        signal = getattr(driver, "signal", "")
+        detail = _normalize_public_summary_text(getattr(driver, "detail", ""))
+        if signal == "bullish" and detail and not _contains_public_summary_prohibited_content(detail):
+            driver_points.append(detail)
+        if len(driver_points) >= 2:
+            break
+    if driver_points:
+        return driver_points
+
+    score_total = float(getattr(quant_score, "total", 0.0) or 0.0)
+    if score_total >= 65:
+        points.append("기초체력과 밸류에이션 점수가 함께 무너지지 않았습니다.")
+    if getattr(market_regime, "stance", None) != "risk_off":
+        points.append("시장 국면이 완전한 위험회피로 기울지 않아 선별 관찰 여지가 남아 있습니다.")
+    if not points:
+        points.append("정량 시계열 신호 기준으로는 아직 관찰할 가치는 남아 있습니다.")
+    return points[:2]
+
+
+def _build_public_counter_points(*, trade_plan, next_day_forecast, market_regime) -> list[str]:
+    points = _clean_public_summary_items(list(getattr(next_day_forecast, "risk_flags", []) or []), limit=2)
+    if getattr(trade_plan, "action", "") in {"reduce_risk", "avoid"}:
+        points.append("현재 실행 플랜이 비중 확대보다 리스크 관리 쪽으로 기울어 있습니다.")
+    if getattr(market_regime, "stance", None) == "risk_off":
+        points.append("시장 국면이 방어적으로 기울어 개별 종목 우위가 약해질 수 있습니다.")
+    if float(getattr(next_day_forecast, "up_probability", 0.0) or 0.0) <= 50:
+        points.append("상승 확률 우위가 크게 벌어지지 않았습니다.")
+    return _merge_public_summary_items([], points)
+
+
+def _build_public_wait_points(*, info: dict, trade_plan, market_regime, buy_sell_guide) -> list[str]:
+    points: list[str] = []
+    current_price = float(info.get("current_price") or 0.0)
+    buy_high = float(getattr(buy_sell_guide, "buy_zone_high", 0.0) or 0.0)
+    if current_price > 0 and buy_high > 0 and current_price > buy_high:
+        points.append("현재 가격이 선호 진입 구간 위에 있어 추격보다 재확인이 낫습니다.")
+
+    action = getattr(trade_plan, "action", "")
+    action_reason = {
+        "breakout_watch": "돌파 확인 전까지는 성급한 확대보다 추세 확인이 먼저입니다.",
+        "wait_pullback": "진입 타이밍을 더 고를 여지가 있어 바로 매수 쪽으로 기울 필요는 없습니다.",
+        "reduce_risk": "현재 플랜은 신규 확대보다 기존 리스크 점검을 우선합니다.",
+        "avoid": "현재 구조에서는 매수 근거보다 피해야 할 조건이 더 많습니다.",
+        "accumulate": "긍정 신호가 있어도 분할 대응과 손절 기준 확인이 먼저입니다.",
+    }.get(action)
+    if action_reason:
+        points.append(action_reason)
+
+    if float(getattr(trade_plan, "risk_reward_estimate", 0.0) or 0.0) < 1.2:
+        points.append("손익비가 넉넉하지 않아 진입 타이밍을 더 가려야 합니다.")
+    if getattr(market_regime, "stance", None) == "risk_off":
+        points.append("시장 국면이 위험회피 쪽이라 개별 종목 확대보다 방어 비중 점검이 우선입니다.")
+    return _merge_public_summary_items([], points)
+
+
+def _build_public_thesis_breakers(*, trade_plan, next_day_forecast, market_regime) -> list[str]:
+    points: list[str] = []
+    invalidation = _normalize_public_summary_text(getattr(trade_plan, "invalidation", ""))
+    if invalidation and not _contains_public_summary_prohibited_content(invalidation):
+        points.append(invalidation)
+    if getattr(next_day_forecast, "risk_flags", None):
+        points.extend(list(getattr(next_day_forecast, "risk_flags", []) or [])[:1])
+    if getattr(market_regime, "stance", None) == "risk_off":
+        points.append("시장 국면 약세가 더 강해지면 현재 가설은 접는 편이 낫습니다.")
+    if not points:
+        points.append("핵심 가정이 흔들리면 관찰 의견을 보수적으로 낮춰야 합니다.")
+    return _merge_public_summary_items([], points)
+
+
+def _build_public_data_quality_note(*, llm_available: bool, market_regime) -> str:
+    if not llm_available:
+        return "공개 요약은 정량 시계열과 공개 데이터 기준으로 구성했고, 서술형 보조 요약은 fallback으로 정리했습니다."
+    if getattr(market_regime, "stance", None) == "risk_off":
+        return "가격, 변동성, 뉴스, 수급, 시장 국면을 함께 반영했고 방어 신호를 더 먼저 읽도록 정리했습니다."
+    return "가격, 변동성, 뉴스, 수급, 시장 국면을 함께 반영했고 공개 요약은 실행 가이드보다 근거와 반대 조건을 먼저 보여줍니다."
+
+
+def _build_public_confidence_note(*, next_day_forecast, trade_plan) -> str:
+    action = getattr(trade_plan, "action", "")
+    confidence = float(getattr(next_day_forecast, "confidence", 0.0) or 0.0)
+    if action in {"reduce_risk", "avoid"}:
+        return "현재 해석은 공격적 진입보다 방어 대응 쪽 신뢰가 더 높습니다."
+    if action == "wait_pullback":
+        return "우호 신호가 있어도 타이밍 확인이 더 필요해 선택적으로 접근하는 편이 좋습니다."
+    if action == "breakout_watch":
+        return "추세 확인이 끝나기 전까지는 후보 관찰과 조건 확인을 함께 가져가는 편이 안전합니다."
+    if confidence >= 70:
+        return "신뢰도는 양호하지만 무효화 조건을 함께 확인하는 전제가 필요합니다."
+    if confidence >= 55:
+        return "확률 우위는 있으나 한 번에 밀어붙이기보다 분할 대응이 더 어울립니다."
+    return "신뢰 우위가 충분히 크지 않아 관찰과 재확인을 우선하는 해석이 적합합니다."
 
 
 def _latest_price_stamp(prices: list[dict]) -> str:

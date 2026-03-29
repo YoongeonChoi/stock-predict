@@ -460,4 +460,5 @@ async def list_public_research_reports(
     for row in rows:
         row["is_new_today"] = str(row.get("published_at", "")).startswith(today_iso)
         row["has_pdf"] = bool(row.get("pdf_url"))
+        row["summary_plain"] = _strip_html(row.get("summary"))
     return rows

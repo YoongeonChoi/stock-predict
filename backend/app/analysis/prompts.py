@@ -33,6 +33,8 @@ def country_report_prompt(
         "You are a senior equity strategist analyzing a country's stock market.\n"
         "You MUST respond with valid JSON only.\n"
         "Follow the scoring rubric EXACTLY. Each score must be justified.\n"
+        "The market_summary field is for qualitative public narration only.\n"
+        "Do NOT include explicit digits, percentages, dates, targets, or price levels in market_summary.\n"
         "Cross-validate: check if 3+ institutions agree, if policy vs sell-side align,\n"
         "and if assumptions match the latest data provided.\n\n"
         f"CRITICAL: For top_5_tickers, {ticker_guide}.\n"
@@ -55,7 +57,7 @@ def country_report_prompt(
 
 ## Required JSON Output
 {{
-  "market_summary": "2-3 paragraph market overview in Korean",
+  "market_summary": "2-3 paragraph qualitative market overview in Korean without any digits, percentages, dates, target prices, or valuation numbers",
   "scores": {{
     "monetary_policy": {{"score": <number>, "description": "<1-2 sentences>"}},
     "economic_growth": {{"score": <number>, "description": "<1-2 sentences>"}},
@@ -150,6 +152,16 @@ def stock_analysis_prompt(
     news: list[dict],
     quant_score: dict,
 ) -> tuple[str, str]:
+    return stock_detail_analysis_prompt(ticker, info, financials, news, quant_score)
+
+
+def stock_detail_analysis_prompt(
+    ticker: str,
+    info: dict,
+    financials: list[dict],
+    news: list[dict],
+    quant_score: dict,
+) -> tuple[str, str]:
     news_text = "\n".join(f"- {n['title']} ({n.get('source', '')})" for n in news[:10])
     fin_text = "\n".join(
         f"  {f['period']}: Rev={f.get('revenue')}, OI={f.get('operating_income')}, "
@@ -201,6 +213,50 @@ Analyst Target Mean: {info.get('target_mean')}, Median: {info.get('target_median
   "estimate_revision_score": <0-5>,
   "key_risks": ["<risk1>", "<risk2>"],
   "key_catalysts": ["<catalyst1>", "<catalyst2>"]
+}}"""
+
+    return system, user
+
+
+def stock_public_summary_prompt(
+    ticker: str,
+    info: dict,
+    news: list[dict],
+    quant_score: dict,
+) -> tuple[str, str]:
+    news_text = "\n".join(f"- {n['title']} ({n.get('source', '')})" for n in news[:8])
+
+    system = (
+        "You are a public-market analyst writing concise, evidence-led stock summaries.\n"
+        "You MUST respond with valid JSON only.\n"
+        "Do not include fair value, buy/sell zones, analyst targets, or promotional language.\n"
+        "Lead with balance, downside conditions, and data quality."
+    )
+
+    user = f"""Summarize {ticker} ({info.get('name', '')}) for a public market workspace.
+
+## Company Info
+Sector: {info.get('sector')}, Industry: {info.get('industry')}
+Market Cap: {info.get('market_cap')}, Price: {info.get('current_price')}
+P/E: {info.get('pe_ratio')}, P/B: {info.get('pb_ratio')}, EV/EBITDA: {info.get('ev_ebitda')}
+ROE: {info.get('roe')}, Debt/Equity: {info.get('debt_to_equity')}
+Dividend Yield: {info.get('dividend_yield')}
+
+## Recent News
+{news_text}
+
+## Quantitative Score Breakdown
+{_format_dict(quant_score)}
+
+## Required JSON Output
+{{
+  "summary": "2-3 sentence Korean summary without fair value, target prices, or buy/sell zones",
+  "evidence_for": ["<supporting point 1>", "<supporting point 2>"],
+  "evidence_against": ["<counter point 1>", "<counter point 2>"],
+  "why_not_buy_now": ["<reason 1>", "<reason 2>"],
+  "thesis_breakers": ["<breaker 1>", "<breaker 2>"],
+  "data_quality": "<1 sentence in Korean>",
+  "confidence_note": "<1 sentence in Korean>"
 }}"""
 
     return system, user

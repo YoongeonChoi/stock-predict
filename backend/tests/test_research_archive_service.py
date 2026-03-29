@@ -88,6 +88,7 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
                 "id": 1,
                 "source_id": "bok_monetary_policy",
                 "title": "테스트",
+                "summary": "<p>요약&nbsp;<b>강조</b></p>",
                 "published_at": today_iso,
                 "pdf_url": "https://example.com/file.pdf",
             },
@@ -95,6 +96,7 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
                 "id": 2,
                 "source_id": "bok_monetary_policy",
                 "title": "이전 자료",
+                "summary": None,
                 "published_at": "2026-03-20",
                 "pdf_url": None,
             },
@@ -108,8 +110,10 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result[0]["is_new_today"])
         self.assertTrue(result[0]["has_pdf"])
+        self.assertEqual(result[0]["summary_plain"], "요약 강조")
         self.assertFalse(result[1]["is_new_today"])
         self.assertFalse(result[1]["has_pdf"])
+        self.assertEqual(result[1]["summary_plain"], "")
 
     async def test_list_public_research_reports_filters_out_inactive_sources(self):
         rows = [

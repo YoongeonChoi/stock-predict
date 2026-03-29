@@ -216,6 +216,10 @@
 - 공개 first screen은 가능하면 server-first로 `decision thread + audit thread`를 함께 채운다
 - `/`, `/radar`, `/calendar`, `/archive`, `/screener`는 첫 screen에서 최소 한 개의 실제 수치 카드와 한 개의 freshness/audit 정보가 동시에 보여야 한다
 - 공개 first screen에 `blank card`, `skeleton-only`, raw `Failed to fetch`를 그대로 두지 않는다
+- 공개 허브 카드의 요약 영역은 HTML 원문이 아니라 정리된 plain text만 렌더한다
+- 공개 숫자 카피는 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 숫자 없는 정성 문장으로 유지한다
+- 공개 종목 상세의 상단 thread는 `판단 요약 -> 반대 근거 / 무효화 조건 -> 상세 분석 -> 실행 가이드` 순서를 유지하고, sell-side 가격 문구는 상단 판단 요약에 올리지 않는다
+- `/portfolio`, `/watchlist`처럼 로그아웃 preview를 제공하는 보호 페이지는 anonymous first paint에서 auth loading보다 preview를 먼저 렌더한다
 
 ### 4.3 Evidence thread
 

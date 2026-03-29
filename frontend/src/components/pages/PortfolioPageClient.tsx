@@ -423,35 +423,6 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     }
   };
 
-  if (loading) {
-    return (
-      <div className="page-shell space-y-5">
-        <section className="card !p-5 space-y-3">
-          <div className="section-heading">
-            <div>
-              <h1 className="section-title text-2xl">포트폴리오</h1>
-              <p className="section-copy">총자산, 보유 종목, 추천 패널을 계정 기준으로 순서대로 준비합니다.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="info-chip">계정별 자산</span>
-              <span className="info-chip">불러오는 중</span>
-            </div>
-          </div>
-        </section>
-        <WorkspaceLoadingCard
-          title="자산 요약과 보유 비중을 계산하고 있습니다"
-          message="총자산, 예수금, 보유 평가액을 먼저 읽어 운영 요약으로 다시 묶는 중입니다."
-          className="min-h-[180px]"
-        />
-        <WorkspaceLoadingCard
-          title="보유 종목과 추천 패널을 준비하고 있습니다"
-          message="보유 종목, 이벤트 레이더, 조건 추천을 같은 작업 흐름으로 채우는 중입니다."
-          className="min-h-[260px]"
-        />
-      </div>
-    );
-  }
-
   if (!session) {
     return (
       <AuthGateCard
@@ -516,6 +487,35 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           </div>
         }
       />
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-shell space-y-5">
+        <section className="card !p-5 space-y-3">
+          <div className="section-heading">
+            <div>
+              <h1 className="section-title text-2xl">포트폴리오</h1>
+              <p className="section-copy">총자산, 보유 종목, 추천 패널을 계정 기준으로 순서대로 준비합니다.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="info-chip">계정별 자산</span>
+              <span className="info-chip">불러오는 중</span>
+            </div>
+          </div>
+        </section>
+        <WorkspaceLoadingCard
+          title="자산 요약과 보유 비중을 계산하고 있습니다"
+          message="총자산, 예수금, 보유 평가액을 먼저 읽어 운영 요약으로 다시 묶는 중입니다."
+          className="min-h-[180px]"
+        />
+        <WorkspaceLoadingCard
+          title="보유 종목과 추천 패널을 준비하고 있습니다"
+          message="보유 종목, 이벤트 레이더, 조건 추천을 같은 작업 흐름으로 채우는 중입니다."
+          className="min-h-[260px]"
+        />
+      </div>
     );
   }
 
@@ -785,7 +785,11 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
         <div className="section-heading">
           <div>
             <h2 className="section-title">추천</h2>
+            <p className="section-copy">늘릴 종목과 방어 행동을 함께 보고, 검증 기준은 예측 연구실에서 같은 척도로 확인합니다.</p>
           </div>
+          <Link href="/lab" className="action-chip-secondary">
+            검증 기준 보기
+          </Link>
         </div>
         <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)] 2xl:items-start">
           <div className="min-w-0">

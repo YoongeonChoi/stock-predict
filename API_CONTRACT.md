@@ -61,6 +61,11 @@
 - `partial`
 - `fallback_reason`
 
+공개 snapshot 일치성 진단이 필요한 응답은 아래 내부 메타데이터를 함께 가질 수 있습니다.
+
+- `snapshot_id`
+- `fallback_tier`
+
 프론트 표시 규칙:
 
 - 정상: `마지막 갱신 시각`
@@ -69,6 +74,27 @@
 
 가능한 경우 public page는 raw 브라우저 fetch 에러보다 `200 + partial + fallback_reason`을 먼저 사용자에게 보여 줍니다.
 
+### 공개 숫자 서술 규칙
+
+공개 숫자와 공개 서술은 같은 필드에 섞지 않습니다.
+
+- `macro_claims`
+  - 구조화된 숫자 근거
+  - 권장 필드: `source`, `published_at`, `metric`, `value`, `unit`, `direction`, `confidence`
+- `market_summary`, `summary`
+  - 공개 정성 서술
+  - 숫자, 퍼센트, 날짜, 목표가, 밸류에이션 숫자를 직접 넣지 않습니다.
+- `public_summary`
+  - 공개 종목 판단 요약
+  - 필드: `summary`, `evidence_for`, `evidence_against`, `why_not_buy_now`, `thesis_breakers`, `data_quality`, `confidence_note`
+  - `fair value`, `buy/sell zone`, `analyst target`, 목표가, 가격대 직접 제시는 허용하지 않습니다.
+
+검증 규칙:
+
+- 공개 UI의 숫자 문장은 구조화 claim 필드 기반으로만 렌더합니다.
+- 자유 서술에 숫자가 섞이면 프론트 정규식이 아니라 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
+- 구조화 claim이 비어 있더라도 공개 요약은 숫자 없는 정성 서술로만 남겨야 합니다.
+
 `/api/market/opportunities/{code}`의 현재 우선순위:
 
 1. full radar response
@@ -76,7 +102,12 @@
 3. cached quick response reuse + `fallback_reason=opportunity_cached_quick_response`
 4. placeholder partial response + `fallback_reason=opportunity_placeholder_response`
 
-즉 이 경로는 가능한 한 hard `504`보다 `200 + partial`을 먼저 선택합니다.
+즉 이 경로는 가능한 한 hard `504`보다 `200 + partial`을 먼저 선택합니다. 또한 홈과 `/radar`는 같은 KR 공개 snapshot을 공유할 수 있도록 `snapshot_id`, `fallback_tier`, `generated_at`를 함께 전달합니다.
+
+`/api/archive/research` 공개 목록 계약:
+
+- `summary_plain`이 있으면 공개 카드와 목록은 이 필드만 렌더합니다.
+- `summary` HTML 원문은 상세 보기나 내부 처리에서만 사용합니다.
 
 ## 인증 관련 계약
 
@@ -134,10 +165,25 @@
 - `GET /api/market/movers/{code}`
 - `GET /api/market/opportunities/{code}`
 
+`GET /api/country/{code}/report` 공개 응답 메모:
+
+- `market_summary`
+  - 정성 요약
+- `macro_claims`
+  - 공개 숫자 근거 배열
+- `generated_at`, `partial`, `fallback_reason`
+  - freshness / fallback audit 메타
+
 ### 섹터 / 종목 / 검색
 
 - `GET /api/country/{code}/sector/{sector_id}/report`
 - `GET /api/stock/{ticker}/detail`
+  - `public_summary`
+    - 공개 판단 요약 전용 블록
+    - UI는 `근거 -> 반대 근거 -> 지금 바로 사지 않는 이유 -> 무효화 조건 -> 데이터 품질 / 신뢰 메모` 순서로 읽습니다.
+  - `analysis_summary`, `buy_sell_guide`
+    - 상세 분석과 실행 가이드 전용
+    - 목표가/가격대/valuation 설명은 이 상세 레이어에만 남깁니다.
 - `GET /api/stock/{ticker}/chart`
 - `GET /api/stock/{ticker}/technical-summary`
 - `GET /api/stock/{ticker}/pivot-points`
@@ -172,7 +218,7 @@
 - `GET /api/archive/research/status`
 - `POST /api/archive/research/refresh`
 - `GET /api/archive/{report_id}`
-- `GET /api/predictions`
+- `GET /api/research/predictions`
 - `GET /api/compare`
 - `GET /api/screener`
 - `GET /api/export/{fmt}/{report_id}`

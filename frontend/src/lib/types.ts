@@ -320,9 +320,11 @@ export interface OpportunityItem {
 
 export interface OpportunityRadarResponse {
   country_code: string;
+  snapshot_id: string;
   generated_at: string;
   partial?: boolean;
   fallback_reason?: string | null;
+  fallback_tier?: "full" | "quick" | "cached_quick" | "placeholder";
   market_regime: MarketRegime;
   universe_size: number;
   total_scanned: number;
@@ -381,6 +383,16 @@ export interface NewsItem {
   sentiment?: string;
 }
 
+export interface MacroClaim {
+  source: string;
+  published_at: string;
+  metric: string;
+  value: number;
+  unit: string;
+  direction: "up" | "down" | "flat";
+  confidence: number;
+}
+
 export interface PricePoint {
   date: string;
   open: number;
@@ -400,6 +412,7 @@ export interface CountryReport {
   };
   score: CountryScore;
   market_summary: string;
+  macro_claims: MacroClaim[];
   key_news: NewsItem[];
   institutional_analysis: InstitutionalAnalysis;
   top_stocks: StockSummaryRef[];
@@ -466,6 +479,16 @@ export interface BuySellGuide {
   confidence_grade: string;
   methodology: { name: string; value: number; weight: number; details: string }[];
   summary: string;
+}
+
+export interface PublicStockSummary {
+  summary: string;
+  evidence_for: string[];
+  evidence_against: string[];
+  why_not_buy_now: string[];
+  thesis_breakers: string[];
+  data_quality: string;
+  confidence_note: string;
 }
 
 export interface StockScoreDetail {
@@ -536,6 +559,7 @@ export interface StockDetail {
   setup_backtest?: SetupBacktest | null;
   market_regime?: MarketRegime;
   trade_plan?: TradePlan;
+  public_summary?: PublicStockSummary;
   analysis_summary?: string;
   key_risks?: string[];
   key_catalysts?: string[];

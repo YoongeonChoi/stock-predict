@@ -890,6 +890,7 @@ export interface ResearchArchiveEntry {
   category?: string | null;
   title: string;
   summary?: string | null;
+  summary_plain?: string | null;
   published_at: string;
   report_url: string;
   pdf_url?: string | null;

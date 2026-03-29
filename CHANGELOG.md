@@ -2,6 +2,22 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.0 - 2026-03-29
+
+- `country report`는 공개 숫자와 공개 서술을 분리했습니다. 이제 `market_summary`는 숫자·퍼센트·날짜 없는 정성 요약만 유지하고, 공개 홈과 국가 상세의 숫자 근거는 `macro_claims` 구조체에서만 렌더합니다.
+- `country report` 생성 단계는 숫자가 섞인 자유 서술을 그대로 공개하지 않습니다. LLM 요약에 숫자가 섞이거나 비어 있으면, 백엔드 validation이 이를 폐기하고 점수·기관 정렬 상태 기반의 정성 요약으로 자동 강등합니다.
+- 공개용 prompt 계층을 분리하기 위해 stock detailed analysis prompt와 public stock summary prompt를 나눴고, 종목 상세 응답에 `public_summary` 블록을 실제로 연결했습니다. 상단 판단 요약은 이제 `근거 / 반대 근거 / 지금 바로 사지 않는 이유 / 무효화 조건 / 데이터 품질 / 신뢰 메모`를 먼저 보여주고, 목표가·buy/sell zone 중심 문구는 상세 가이드 레이어에만 남깁니다.
+- `stock_analyzer`는 공개 요약용 LLM 응답이 늦거나 비어도 빈 카드 대신 정량 기반 fallback을 생성합니다. 트레이드 플랜, 보정 confidence, 리스크 플래그, 시장 국면, 진입 구간 정보를 조합해 공개 요약을 구성하고, sell-side 가격 문구나 숫자가 섞인 텍스트는 상단 공개 판단 요약에서 폐기합니다.
+- 홈과 `/radar`가 같은 KR 공개 opportunities snapshot을 기준으로 first screen을 맞출 수 있도록 `snapshot_id`, `fallback_tier` 메타데이터를 추가했습니다. 홈은 이제 `/radar`와 같은 limit 기준 snapshot을 먼저 받고, 레이더는 `partial=true`라도 `quote_available_count=0` 또는 후보 `0개`인 placeholder snapshot을 usable 결과로 고정하지 않습니다.
+- `/radar`는 usable snapshot이 없는 placeholder partial을 별도 준비 상태로 다루고, 마지막 usable snapshot이 있으면 그 보드를 먼저 유지한 채 최신 audit 상태만 갱신합니다. 그래서 “대표 스냅샷만 잡힌 상태”와 “실제로 쓸 수 있는 후보가 있는 상태”를 같은 것으로 보지 않게 됐습니다.
+- `market opportunities`의 cached quick 재사용은 이제 정확히 같은 limit 캐시만 보지 않고, 최근에 확보된 다른 quick limit 결과도 usable하면 잘라서 먼저 재사용합니다. 그래서 `/radar` 재시도 시 같은 usable 후보를 더 안정적으로 먼저 보여주고, placeholder로 바로 떨어지는 경우를 한 번 더 줄였습니다.
+- `/radar` placeholder first screen은 raw `0 / 0 / 0` 숫자 보드 대신 `첫 판단 스레드 준비 중` 상태 카드와 준비 중인 유니버스, 다음 갱신 단계를 먼저 안내하도록 정리했습니다.
+- `/portfolio`, `/watchlist`는 로그아웃 first paint에서 auth loading보다 public preview를 먼저 렌더합니다. 익명 상태에서는 demo cards와 로그인 CTA가 바로 나오고, user-specific API 호출은 세션이 확인된 뒤에만 시작합니다.
+- `/archive` 공개 리포트 목록은 이제 HTML이 제거된 `summary_plain`만 렌더합니다. 최신 기관 리포트 카드와 전체 목록에서 raw `<p>`, `<br>`, `&nbsp;` 같은 마크업이 그대로 노출되지 않도록 sanitizer와 프론트 렌더를 함께 맞췄습니다.
+- `/lab` 첫 화면은 공개 검증 스냅샷을 서버에서 먼저 채웁니다. 1D / 5D / 20D 방향 적중률, Brier score, reliability gap, 표본 수, generated_at을 바로 보여주고, 최근 실패 사례도 같은 페이지에서 공개해 검증 흐름이 좋은 결과만 보여주지 않도록 정리했습니다.
+- 포트폴리오와 레이더에는 `/lab`로 이어지는 검증 링크를 추가해 추천 결과와 검증 기록이 분리된 섬처럼 보이지 않게 했습니다.
+- 회귀 테스트를 추가해 research archive `summary_plain` 생성과 opportunities snapshot 메타(`snapshot_id`, `fallback_tier`) 계약을 고정했고, README / API_CONTRACT / DESIGN_BIBLE / AGENTS 문서도 새 공개 신뢰도 기준에 맞춰 동기화했습니다.
+
 ## v2.50.1 - 2026-03-29
 
 - `/api/market/opportunities/{code}`는 정밀 응답과 quick fallback이 모두 늦어질 때 더 이상 바로 `504 / SP-5018`로 끝나지 않고, 가능한 경우 `cached quick`를 다시 사용하거나 placeholder `200 + partial` 응답을 먼저 반환합니다. 그래서 전용 `/radar` first screen이 통째로 비는 구간을 줄였습니다.

@@ -373,6 +373,44 @@ def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
     return f"opportunity_radar_quick:v2:{country_code.upper()}:{int(limit)}"
 
 
+def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> dict:
+    normalized = dict(payload)
+    opportunities = list(normalized.get("opportunities") or [])
+    clipped = opportunities[: max(int(requested_limit), 1)]
+    normalized["opportunities"] = clipped
+    normalized["actionable_count"] = sum(1 for item in clipped if item.get("action") != "avoid")
+    normalized["bullish_count"] = sum(
+        1
+        for item in clipped
+        if float(item.get("up_probability_20d") or item.get("up_probability") or 0.0) >= 55.0
+    )
+    return normalized
+
+
+def _cached_quick_limit_candidates(limit: int) -> list[int]:
+    candidates: list[int] = []
+    for candidate in [limit, 12, 8, 20, 24, 10, 6, 5]:
+        normalized = max(int(candidate), 1)
+        if normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def _build_opportunity_snapshot_id(
+    *,
+    country_code: str,
+    fallback_tier: str,
+    generated_at: str,
+) -> str:
+    normalized = (
+        generated_at.replace("-", "")
+        .replace(":", "")
+        .replace(".", "")
+        .replace("T", "")
+    )
+    return f"{country_code.upper()}:{fallback_tier}:{normalized}"
+
+
 async def _build_quote_screen(
     *,
     country_code: str,
@@ -959,9 +997,16 @@ async def get_market_opportunities(
             if skip_hint not in resolved_universe_note:
                 resolved_universe_note = f"{resolved_universe_note} {skip_hint}".strip()
 
+        generated_at = datetime.now().isoformat()
         return OpportunityRadarResponse(
             country_code=country_code,
-            generated_at=datetime.now().isoformat(),
+            snapshot_id=_build_opportunity_snapshot_id(
+                country_code=country_code,
+                fallback_tier="full",
+                generated_at=generated_at,
+            ),
+            generated_at=generated_at,
+            fallback_tier="full",
             market_regime=market_regime,
             universe_size=resolved_universe_size,
             total_scanned=scanned_count,
@@ -1040,9 +1085,16 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
         note_parts.append("같은 조건으로 다시 열면 백그라운드 계산이 끝난 정밀 후보가 바로 보일 수 있습니다.")
         resolved_universe_note = " ".join(part for part in note_parts if part).strip()
 
+        generated_at = datetime.now().isoformat()
         return OpportunityRadarResponse(
             country_code=country_code,
-            generated_at=datetime.now().isoformat(),
+            snapshot_id=_build_opportunity_snapshot_id(
+                country_code=country_code,
+                fallback_tier="quick",
+                generated_at=generated_at,
+            ),
+            generated_at=generated_at,
+            fallback_tier="quick",
             market_regime=market_regime,
             universe_size=resolved_universe_size,
             total_scanned=scanned_count,
@@ -1059,7 +1111,23 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
 
 
 async def get_cached_market_opportunities_quick(country_code: str, limit: int = 12) -> dict | None:
-    return await cache.get(_quick_opportunity_cache_key(country_code, limit))
+    for candidate_limit in _cached_quick_limit_candidates(limit):
+        cached = await cache.get(_quick_opportunity_cache_key(country_code, candidate_limit))
+        if not cached:
+            continue
+        opportunities = list(cached.get("opportunities") or [])
+        quote_available_count = int(cached.get("quote_available_count") or 0)
+        if quote_available_count <= 0 or not opportunities:
+            continue
+        normalized = _normalize_cached_quick_payload(cached, requested_limit=limit)
+        if candidate_limit != limit:
+            existing_note = str(normalized.get("universe_note") or "").strip()
+            reused_note = "이번 응답은 최근 usable quick 후보를 먼저 재사용했습니다."
+            normalized["universe_note"] = " ".join(
+                part for part in [existing_note, reused_note] if part
+            ).strip()
+        return normalized
+    return None
 
 
 def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:
@@ -1069,9 +1137,16 @@ def build_market_opportunities_placeholder(country_code: str, *, note: str) -> d
     fallback_universe = UNIVERSE.get(country_code, {})
     fallback_universe_size = len(_flatten_universe(fallback_universe))
     placeholder_note = note.strip() or "대표 1차 스캔 준비가 길어져 현재는 시장 국면만 먼저 표시합니다."
+    generated_at = datetime.now().isoformat()
     return OpportunityRadarResponse(
         country_code=country_code,
-        generated_at=datetime.now().isoformat(),
+        snapshot_id=_build_opportunity_snapshot_id(
+            country_code=country_code,
+            fallback_tier="placeholder",
+            generated_at=generated_at,
+        ),
+        generated_at=generated_at,
+        fallback_tier="placeholder",
         market_regime=_build_placeholder_market_regime(
             country_code=country_code,
             index_name=index_name,
