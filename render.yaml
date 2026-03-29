@@ -27,12 +27,16 @@ services:
         value: "false"
       - key: STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT
         value: "20"
+      - key: STARTUP_LEARNED_FUSION_REFRESH
+        value: "false"
+      - key: STARTUP_LEARNED_FUSION_REFRESH_TIMEOUT
+        value: "25"
       - key: STARTUP_RESEARCH_ARCHIVE_SYNC
         value: "false"
       - key: STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT
         value: "35"
       - key: STARTUP_MARKET_OPPORTUNITY_PREWARM
-        value: "true"
+        value: "false"
       - key: STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT
         value: "45"
       - key: STARTUP_BACKGROUND_TASK_CONCURRENCY

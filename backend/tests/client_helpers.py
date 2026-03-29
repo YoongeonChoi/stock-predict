@@ -29,6 +29,7 @@ def patched_client(
 
     with (
         patch("app.main.db.initialize", new=AsyncMock()),
+        patch.object(app_settings, "startup_learned_fusion_refresh", False),
         patch.object(app_settings, "startup_prediction_accuracy_refresh", False),
         patch.object(app_settings, "startup_research_archive_sync", False),
         patch.object(app_settings, "startup_market_opportunity_prewarm", False),

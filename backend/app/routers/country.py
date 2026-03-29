@@ -11,6 +11,7 @@ from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
+from app.runtime import get_or_create_background_job
 from app.services import archive_service, export_service, market_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
@@ -20,9 +21,15 @@ PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
 OPPORTUNITY_TIMEOUT_SECONDS = 12
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 12
 HEATMAP_TIMEOUT_SECONDS = 10
+COUNTRIES_TIMEOUT_SECONDS = 6
+COUNTRIES_CACHE_TTL_SECONDS = 300
+COUNTRIES_CONCURRENCY = 4
+MARKET_MOVERS_TIMEOUT_SECONDS = 6
+MARKET_MOVERS_CACHE_TTL_SECONDS = 300
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
+MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -166,10 +173,148 @@ def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
 def _spawn_opportunity_refresh(code: str, limit: int) -> None:
     code = code.upper()
     label = f"Opportunity radar background refresh for {code}"
-    task = asyncio.create_task(market_service.get_market_opportunities(code, limit))
+    task, created = get_or_create_background_job(
+        f"opportunity_refresh:{code}:{limit}",
+        lambda: market_service.get_market_opportunities(code, limit),
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing refresh task.", label)
+        return
     task.add_done_callback(
         lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
     )
+
+
+async def _build_countries_payload() -> list[dict]:
+    index_requests: list[tuple[str, object, object]] = []
+    for code, info in COUNTRY_REGISTRY.items():
+        for idx in info.indices:
+            index_requests.append((code, info, idx))
+
+    async def _load_index_quote(entry: tuple[str, object, object]) -> dict:
+        _code, _info, idx = entry
+        try:
+            quote = await yfinance_client.get_index_quote(idx.ticker)
+        except Exception:
+            SP_2005(idx.ticker).log()
+            quote = {"price": 0, "change_pct": 0}
+        return {
+            "ticker": idx.ticker,
+            "name": idx.name,
+            "price": quote.get("price", 0),
+            "change_pct": quote.get("change_pct", 0),
+        }
+
+    index_quotes = await gather_limited(
+        index_requests,
+        _load_index_quote,
+        limit=COUNTRIES_CONCURRENCY,
+    )
+
+    quote_map: dict[str, list[dict]] = {code: [] for code in COUNTRY_REGISTRY}
+    for request, quote in zip(index_requests, index_quotes):
+        code = request[0]
+        if isinstance(quote, Exception):
+            idx = request[2]
+            SP_2005(idx.ticker).log()
+            quote = {"ticker": idx.ticker, "name": idx.name, "price": 0, "change_pct": 0}
+        quote_map[code].append(quote)
+
+    return [
+        {
+            "code": code,
+            "name": info.name,
+            "name_local": info.name_local,
+            "currency": info.currency,
+            "indices": quote_map.get(code, []),
+        }
+        for code, info in COUNTRY_REGISTRY.items()
+    ]
+
+
+def _build_countries_fallback() -> list[dict]:
+    return [
+        {
+            "code": code,
+            "name": info.name,
+            "name_local": info.name_local,
+            "currency": info.currency,
+            "indices": [
+                {
+                    "ticker": idx.ticker,
+                    "name": idx.name,
+                    "price": 0,
+                    "change_pct": 0,
+                }
+                for idx in info.indices
+            ],
+        }
+        for code, info in COUNTRY_REGISTRY.items()
+    ]
+
+
+async def _build_market_movers_payload(code: str) -> dict:
+    if code == "KR":
+        representative_quotes = await kr_market_quote_client.get_kr_representative_quotes(
+            limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+        )
+        if representative_quotes:
+            stocks = [
+                {
+                    "ticker": quote.get("ticker") or ticker,
+                    "name": quote.get("name") or ticker,
+                    "price": round(float(quote.get("current_price") or 0.0), 2),
+                    "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+                }
+                for ticker, quote in representative_quotes.items()
+            ]
+            stocks.sort(key=lambda item: item["change_pct"], reverse=True)
+            return {
+                "gainers": stocks[:5],
+                "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
+            }
+
+    from app.data.universe_data import get_universe
+
+    universe = await get_universe(code)
+    all_tickers = []
+    seen = set()
+    for sec_tickers in universe.values():
+        for ticker in sec_tickers[:8]:
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            all_tickers.append(ticker)
+
+    fetched = await gather_limited(all_tickers, lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=6)
+    stocks = []
+    for item in fetched:
+        if isinstance(item, Exception) or item is None:
+            continue
+        stocks.append(
+            {
+                "ticker": item["ticker"],
+                "name": item.get("name", item["ticker"]),
+                "price": round(item.get("price", 0), 2),
+                "change_pct": round(item.get("change_pct", 0), 2),
+            }
+        )
+
+    stocks.sort(key=lambda x: x["change_pct"], reverse=True)
+    return {
+        "gainers": stocks[:5],
+        "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
+    }
+
+
+def _build_market_movers_fallback(*, reason: str) -> dict:
+    return {
+        "gainers": [],
+        "losers": [],
+        "partial": True,
+        "fallback_reason": reason,
+        "generated_at": datetime.now().isoformat(),
+    }
 
 
 async def _build_country_report_fallback(
@@ -266,10 +411,15 @@ async def _load_country_report_with_fallback(
     keep_background: bool,
 ) -> tuple[dict, bool]:
     if keep_background:
-        report_task = asyncio.create_task(analyze_country(code))
-        report_task.add_done_callback(
-            lambda task, label=f"Country report for {code}": _log_background_completion(task, label=label)
+        report_label = f"Country report for {code}"
+        report_task, created = get_or_create_background_job(
+            f"country_report:{code}",
+            lambda: analyze_country(code),
         )
+        if created:
+            report_task.add_done_callback(
+                lambda task, label=report_label: _log_background_completion(task, label=label)
+            )
         try:
             report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
             return report, False
@@ -384,29 +534,24 @@ async def _build_sector_performance_payload(code: str) -> list[dict]:
 
 @router.get("/countries")
 async def list_countries():
-    results = []
-    for code, info in COUNTRY_REGISTRY.items():
-        indices_data = []
-        for idx in info.indices:
-            try:
-                q = await yfinance_client.get_index_quote(idx.ticker)
-            except Exception:
-                SP_2005(idx.ticker).log()
-                q = {"price": 0, "change_pct": 0}
-            indices_data.append({
-                "ticker": idx.ticker,
-                "name": idx.name,
-                "price": q.get("price", 0),
-                "change_pct": q.get("change_pct", 0),
-            })
-        results.append({
-            "code": code,
-            "name": info.name,
-            "name_local": info.name_local,
-            "currency": info.currency,
-            "indices": indices_data,
-        })
-    return results
+    from app.data import cache as data_cache
+
+    cache_key = "countries:v2"
+
+    async def _fetch_countries():
+        try:
+            return await asyncio.wait_for(
+                _build_countries_payload(),
+                timeout=COUNTRIES_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning("countries payload timed out after %ss", COUNTRIES_TIMEOUT_SECONDS)
+            return _build_countries_fallback()
+        except Exception as exc:
+            logging.warning("countries payload failed: %s", exc, exc_info=True)
+            return _build_countries_fallback()
+
+    return await data_cache.get_or_fetch(cache_key, _fetch_countries, ttl=COUNTRIES_CACHE_TTL_SECONDS)
 
 
 @router.get("/country/{code}/report")
@@ -608,41 +753,25 @@ async def get_market_movers(code: str):
         return JSONResponse(status_code=404, content=SP_6001(code).to_dict())
 
     from app.data import cache as data_cache
-    cache_key = f"movers:{code}"
-    cached = await data_cache.get(cache_key)
-    if cached:
-        return cached
 
-    from app.data.universe_data import get_universe
-    universe = await get_universe(code)
-    all_tickers = []
-    seen = set()
-    for sec_tickers in universe.values():
-        for ticker in sec_tickers[:8]:
-            if ticker in seen:
-                continue
-            seen.add(ticker)
-            all_tickers.append(ticker)
+    cache_key = f"movers:v2:{code}"
 
-    fetched = await gather_limited(all_tickers, lambda ticker: _load_market_snapshot(ticker, period="6mo"), limit=6)
-    stocks = []
-    for item in fetched:
-        if isinstance(item, Exception) or item is None:
-            continue
-        stocks.append({
-            "ticker": item["ticker"],
-            "name": item.get("name", item["ticker"]),
-            "price": round(item.get("price", 0), 2),
-            "change_pct": round(item.get("change_pct", 0), 2),
-        })
+    async def _fetch_movers():
+        try:
+            payload = await asyncio.wait_for(
+                _build_market_movers_payload(code),
+                timeout=MARKET_MOVERS_TIMEOUT_SECONDS,
+            )
+            payload["generated_at"] = datetime.now().isoformat()
+            return payload
+        except asyncio.TimeoutError:
+            logging.warning("market movers timed out for %s after %ss", code, MARKET_MOVERS_TIMEOUT_SECONDS)
+            return _build_market_movers_fallback(reason="market_movers_timeout")
+        except Exception as exc:
+            logging.warning("market movers failed for %s: %s", code, exc, exc_info=True)
+            return _build_market_movers_fallback(reason="market_movers_error")
 
-    stocks.sort(key=lambda x: x["change_pct"], reverse=True)
-    result = {
-        "gainers": stocks[:5],
-        "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
-    }
-    await data_cache.set(cache_key, result, 900)
-    return result
+    return await data_cache.get_or_fetch(cache_key, _fetch_movers, ttl=MARKET_MOVERS_CACHE_TTL_SECONDS)
 
 
 @router.get("/market/opportunities/{code}")

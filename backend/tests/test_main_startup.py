@@ -408,6 +408,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(app_settings, "render_environment", True),
             patch.object(app_settings, "render_service_name", "stock-predict-api"),
             patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
+            patch.object(app_settings, "startup_learned_fusion_refresh", True),
             patch.object(app_settings, "startup_prediction_accuracy_refresh", True),
             patch.object(app_settings, "startup_research_archive_sync", True),
             patch.object(app_settings, "startup_market_opportunity_prewarm", True),
@@ -426,7 +427,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         tasks = {task["name"]: task for task in state["startup_tasks"]}
-        fusion_refresh.assert_awaited_once()
+        self.assertIn(
+            "Render 메모리 세이프 startup 프로필",
+            tasks["learned_fusion_profile_refresh"]["detail"],
+        )
         self.assertIn(
             "Render 메모리 세이프 startup 프로필",
             tasks["prediction_accuracy_refresh"]["detail"],
@@ -435,9 +439,14 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             "Render 메모리 세이프 startup 프로필",
             tasks["research_archive_sync"]["detail"],
         )
+        self.assertIn(
+            "Render 메모리 세이프 startup 프로필",
+            tasks["market_opportunity_prewarm"]["detail"],
+        )
+        fusion_refresh.assert_not_called()
         accuracy_refresh.assert_not_called()
         research_sync.assert_not_called()
-        radar_prewarm.assert_awaited_once_with("KR", limit=12)
+        radar_prewarm.assert_not_called()
 
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):

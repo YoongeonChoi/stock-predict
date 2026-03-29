@@ -5,6 +5,7 @@ from fastapi.params import Param
 from app.data import cache, kr_market_quote_client, yfinance_client
 from app.data.universe_data import get_universe
 from app.errors import SP_5018
+from app.runtime import get_or_create_background_job
 from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
 
@@ -224,7 +225,9 @@ def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
         except Exception as exc:
             logging.warning("screener cache warmup failed for %s: %s", cache_key, exc)
 
-    asyncio.create_task(_warm())
+    _, created = get_or_create_background_job(f"screener_cache_warmup:{cache_key}", _warm)
+    if not created:
+        logging.info("screener cache warmup already running for %s; reusing existing task", cache_key)
 
 
 async def _build_kr_bulk_snapshot_results(

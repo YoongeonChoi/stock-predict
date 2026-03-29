@@ -112,10 +112,22 @@ class Settings(BaseSettings):
         return self.startup_prediction_accuracy_refresh
 
     @property
+    def effective_startup_learned_fusion_refresh(self) -> bool:
+        if self.startup_memory_safe_mode:
+            return False
+        return self.startup_learned_fusion_refresh
+
+    @property
     def effective_startup_research_archive_sync(self) -> bool:
         if self.startup_memory_safe_mode:
             return False
         return self.startup_research_archive_sync
+
+    @property
+    def effective_startup_market_opportunity_prewarm(self) -> bool:
+        if self.startup_memory_safe_mode:
+            return False
+        return self.startup_market_opportunity_prewarm
 
     @property
     def effective_startup_market_opportunity_prewarm_timeout(self) -> int:

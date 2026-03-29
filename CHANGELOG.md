@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.2 - 2026-03-29
+
+- 공개 집계 API 안정화를 위해 `/api/countries`는 더 이상 국가별 지수 quote를 순차 호출하지 않습니다. 이제 병렬 quote + `6초` timeout + `5분` 캐시를 사용하고, 느릴 때도 zeroed index fallback으로 먼저 살아남아 홈 SSR이 국가 selector 때문에 같이 멈추지 않게 맞췄습니다.
+- `/api/market/movers/{code}`는 KR에서 representative quote 경로를 먼저 사용하고, `6초` timeout과 partial fallback을 함께 둡니다. 홈의 상승/하락 상위 패널이 전체 유니버스 snapshot 경로에 끌려가다 backend를 다시 흔들던 부담을 줄였습니다.
+- 공개 background refresh는 이제 중복 실행을 재사용합니다. `country report`, `opportunity radar`, `screener cache warmup`은 같은 key의 background task가 이미 돌고 있으면 새 task를 또 만들지 않아, 홈·레이더·포트폴리오를 같이 열었을 때 Render free 인스턴스에 무거운 refresh가 겹쳐 쌓이는 경로를 줄였습니다.
+- Render production startup profile도 문서와 배포 설정을 같은 의미로 맞췄습니다. `STARTUP_LEARNED_FUSION_REFRESH=false`, `STARTUP_MARKET_OPPORTUNITY_PREWARM=false`를 render.yaml에 명시하고, code는 Render memory-safe mode에서 startup heavy job을 건너뛰는 기준을 유지합니다. 그래서 cold start는 on-demand 공개 응답을 먼저 살리고, learned fusion refresh와 radar warmup은 요청 시점 캐시/refresh 경로로 넘기도록 정리했습니다.
+- 회귀 테스트를 추가해 `countries timeout fallback`, `KR market movers representative path`, `opportunity refresh dedupe`, `Render memory-safe startup skip` 계약을 고정했습니다.
+
 ## v2.52.1 - 2026-03-29
 
 - KR `Opportunity Radar` 공개 API는 더 이상 같은 요청 안에서 `full`과 `quick` 계산을 동시에 붙잡고 기다리지 않습니다. 이제 `/api/market/opportunities/{code}`는 `cached full -> cached quick -> fresh quick -> background full warmup` 순서로 응답해, cold start 직후에도 `/radar`가 20초 이상 비어 있다가 실패 카드로 떨어지는 경우를 줄였습니다.
