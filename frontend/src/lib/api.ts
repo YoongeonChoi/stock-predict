@@ -964,6 +964,13 @@ export interface PredictionLabResponse {
     within_range_rate: number;
     avg_error_pct: number;
     avg_confidence: number;
+    current_method: "prior_only" | "learned_blended" | "learned_blended_graph";
+    fusion_profile_sample_count: number;
+    avg_blend_weight: number;
+    graph_coverage: number;
+    graph_context_used_rate: number;
+    prior_brier_delta?: number | null;
+    fusion_status: string;
   }[];
   empirical_calibration: {
     prediction_type: string;
@@ -989,9 +996,65 @@ export interface PredictionLabResponse {
     by_scope: PredictionBreakdownRow[];
     by_model: PredictionBreakdownRow[];
   };
+  fusion_profiles: {
+    prediction_type: string;
+    label: string;
+    method: string;
+    sample_count: number;
+    positive_rate: number;
+    brier_score?: number | null;
+    prior_brier_score?: number | null;
+    prior_brier_delta?: number | null;
+    fitted_at?: string | null;
+    profile_bucket?: string | null;
+    status: string;
+  }[];
+  graph_context_summary: {
+    coverage_available: boolean;
+    used_rate: number;
+    avg_coverage: number;
+    avg_score: number;
+    avg_peer_count: number;
+    records: number;
+    by_horizon: {
+      prediction_type: string;
+      label: string;
+      used_rate: number;
+      avg_coverage: number;
+      avg_score: number;
+      avg_peer_count: number;
+      records: number;
+    }[];
+  };
+  fusion_status_summary: {
+    active_model_version: string;
+    last_refresh_time?: string | null;
+    graph_coverage_available: boolean;
+    avg_blend_weight: number;
+    method_mix: {
+      prior_only: number;
+      learned_blended: number;
+      learned_blended_graph: number;
+    };
+    horizons: {
+      prediction_type: string;
+      label: string;
+      current_method: string;
+      profile_sample_count: number;
+      avg_blend_weight: number;
+      graph_coverage: number;
+      prior_brier_delta?: number | null;
+      status: string;
+    }[];
+  };
   calibration: PredictionCalibrationBucket[];
   recent_trend: PredictionTrendPoint[];
-  recent_records: PredictionRecentRecord[];
+  recent_records: (PredictionRecentRecord & {
+    fusion_method?: string;
+    fusion_blend_weight?: number;
+    graph_context_used?: boolean;
+    graph_coverage?: number;
+  })[];
   insights: string[];
 }
 
@@ -1043,6 +1106,20 @@ export interface SystemDiagnostics {
     }[];
     fitted_at?: string | null;
   }[] | null;
+  learned_fusion_status?: {
+    active_model_version: string;
+    last_refresh_time?: string | null;
+    graph_coverage_available: boolean;
+    horizons: {
+      prediction_type: string;
+      label: string;
+      method: string;
+      status: string;
+      sample_count: number;
+      prior_brier_delta?: number | null;
+      fitted_at?: string | null;
+    }[];
+  } | null;
   prediction_accuracy?: PredictionAccuracyStats | null;
   prediction_accuracy_error?: string | null;
   research_archive?: ResearchArchiveStatus | null;

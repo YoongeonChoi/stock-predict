@@ -171,6 +171,13 @@ def build_free_kr_forecast(
                 volatility_ratio=horizon.volatility_ratio,
                 confidence_calibrator=horizon.confidence_calibrator,
                 calibration_snapshot=horizon.calibration_snapshot,
+                fusion_method=horizon.fusion_method,
+                fusion_profile_sample_count=horizon.fusion_profile_sample_count,
+                fusion_blend_weight=horizon.fusion_blend_weight,
+                graph_context_used=horizon.graph_context_used,
+                graph_context_score=horizon.graph_context_score,
+                graph_coverage=horizon.graph_coverage,
+                fusion_profile_fitted_at=horizon.fusion_profile_fitted_at,
             )
         )
 

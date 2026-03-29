@@ -95,6 +95,33 @@
 - 자유 서술에 숫자가 섞이면 프론트 정규식이 아니라 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
 - 구조화 claim이 비어 있더라도 공개 요약은 숫자 없는 정성 서술로만 남겨야 합니다.
 
+### forecast horizon 확장 메타데이터
+
+분포형 forecast의 horizon 단위 응답은 기존 `q10 / q25 / q50 / q75 / q90`, `p_up / p_flat / p_down`, confidence 흐름을 유지한 채 아래 optional 메타데이터를 함께 가질 수 있습니다.
+
+- `fusion_method`
+- `fusion_profile_sample_count`
+- `fusion_blend_weight`
+- `graph_context_used`
+- `graph_context_score`
+- `graph_coverage`
+- `fusion_profile_fitted_at`
+
+이 필드는 backward-compatible optional 필드이며, 값이 없으면 프론트는 기존 prior backbone 결과만으로 계속 동작해야 합니다.
+
+### calibration_json 내부 확장 규칙
+
+`prediction_records`는 새 SQL 컬럼을 추가하지 않고 기존 `calibration_json`을 확장합니다. top-level calibration 필드는 유지하고, 아래 nested block이 추가될 수 있습니다.
+
+- `fusion_features`
+  - `prior_fused_score`, `fundamental_score`, `macro_score`, `event_sentiment`, `event_surprise`, `event_uncertainty`, `flow_score`, `coverage_naver`, `coverage_opendart`, `regime_spread`
+- `graph_context`
+  - `used`, `coverage`, `peer_count`, `peer_momentum_5d`, `peer_momentum_20d`, `peer_dispersion`, `sector_relative_strength`, `correlation_support`, `news_relation_support`, `graph_context_score`
+- `fusion_metadata`
+  - `method`, `profile_bucket`, `profile_sample_count`, `blend_weight`, `profile_fitted_at`
+
+old/new record가 섞여 있어도 집계 API와 연구실 UI는 이를 정상적으로 읽어야 합니다.
+
 `/api/market/opportunities/{code}`의 현재 우선순위:
 
 1. full radar response
@@ -214,11 +241,19 @@
 - `GET /api/calendar/{code}`
 - `GET /api/archive`
 - `GET /api/archive/accuracy/stats`
+  - 기존 정확도 요약은 유지하고, 필요 시 learned fusion 상태를 보조 summary 수준으로 함께 실을 수 있습니다.
 - `GET /api/archive/research`
 - `GET /api/archive/research/status`
 - `POST /api/archive/research/refresh`
 - `GET /api/archive/{report_id}`
 - `GET /api/research/predictions`
+  - 현재 Prediction Lab의 canonical API입니다.
+  - top-level 확장 필드:
+    - `fusion_profiles[]`
+    - `graph_context_summary`
+    - `fusion_status_summary`
+  - `horizon_accuracy[]`는 `current_method`, `fusion_profile_sample_count`, `avg_blend_weight`, `graph_coverage`, `graph_context_used_rate`, `prior_brier_delta`, `fusion_status`를 optional로 가질 수 있습니다.
+  - `recent_records[]`는 `fusion_method`, `fusion_blend_weight`, `graph_context_used`, `graph_coverage`를 optional로 가질 수 있습니다.
 - `GET /api/compare`
 - `GET /api/screener`
 - `GET /api/export/{fmt}/{report_id}`

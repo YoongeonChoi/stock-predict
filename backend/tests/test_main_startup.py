@@ -29,9 +29,13 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         return last_state
 
     async def test_startup_runs_background_tasks_without_blocking_app_boot(self):
+        fusion_gate = asyncio.Event()
         accuracy_gate = asyncio.Event()
         research_gate = asyncio.Event()
         radar_gate = asyncio.Event()
+
+        async def wait_for_fusion(*args, **kwargs):
+            await fusion_gate.wait()
 
         async def wait_for_accuracy(*args, **kwargs):
             await accuracy_gate.wait()
@@ -44,6 +48,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(side_effect=wait_for_fusion),
+            ),
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(side_effect=wait_for_accuracy),
@@ -62,16 +70,19 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state["status"], "starting")
                 tasks = {task["name"]: task for task in state["startup_tasks"]}
                 self.assertEqual(tasks["database_initialize"]["status"], "ok")
+                self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "running")
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "running")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "running")
-                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "running")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "queued")
 
+                fusion_gate.set()
                 accuracy_gate.set()
                 research_gate.set()
                 radar_gate.set()
                 state = await self._wait_for_status(
                     "ok",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
@@ -79,13 +90,53 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(state["status"], "ok")
                 tasks = {task["name"]: task for task in state["startup_tasks"]}
+                self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "ok")
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "ok")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
                 self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
 
+    async def test_startup_continues_when_learned_fusion_refresh_fails(self):
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(side_effect=RuntimeError("fusion refresh failed")),
+            ),
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(return_value={"processed_total": 0}),
+            ),
+            patch(
+                "app.main.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
+            ),
+        ):
+            async with lifespan(app):
+                state = await self._wait_for_status(
+                    "degraded",
+                    {
+                        "learned_fusion_profile_refresh": "warning",
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
+                    },
+                )
+
+        self.assertEqual(state["status"], "degraded")
+        tasks = {task["name"]: task for task in state["startup_tasks"]}
+        self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "warning")
+
     async def test_startup_continues_when_accuracy_refresh_fails(self):
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ),
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(side_effect=RuntimeError("refresh failed")),
@@ -103,6 +154,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "degraded",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "warning",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
@@ -111,6 +163,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state["status"], "degraded")
                 tasks = {task["name"]: task for task in state["startup_tasks"]}
                 self.assertEqual(tasks["database_initialize"]["status"], "ok")
+                self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "ok")
                 self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "warning")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
                 self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
@@ -118,6 +171,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_continues_when_market_opportunity_prewarm_fails(self):
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ),
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(return_value=None),
@@ -135,6 +192,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "degraded",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "warning",
@@ -151,6 +209,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ),
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(side_effect=slow_accuracy),
@@ -169,6 +231,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "ok",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
@@ -177,12 +240,19 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(state["status"], "ok")
         tasks = {task["name"]: task for task in state["startup_tasks"]}
-        self.assertIn("Startup window ended before prediction accuracy refresh finished", tasks["prediction_accuracy_refresh"]["detail"])
+        self.assertIn(
+            "Startup window ended before prediction accuracy refresh finished",
+            tasks["prediction_accuracy_refresh"]["detail"],
+        )
 
     async def test_startup_queues_tasks_when_concurrency_is_one(self):
+        fusion_gate = asyncio.Event()
         accuracy_gate = asyncio.Event()
         research_gate = asyncio.Event()
         radar_gate = asyncio.Event()
+
+        async def wait_for_fusion(*args, **kwargs):
+            await fusion_gate.wait()
 
         async def wait_for_accuracy(*args, **kwargs):
             await accuracy_gate.wait()
@@ -195,6 +265,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(side_effect=wait_for_fusion),
+            ),
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(side_effect=wait_for_accuracy),
@@ -213,20 +287,34 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "starting",
                     {
-                        "prediction_accuracy_refresh": "running",
+                        "learned_fusion_profile_refresh": "running",
+                        "prediction_accuracy_refresh": "queued",
                         "research_archive_sync": "queued",
                         "market_opportunity_prewarm": "queued",
                     },
                 )
                 tasks = {task["name"]: task for task in state["startup_tasks"]}
-                self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "running")
+                self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "running")
+                self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "queued")
                 self.assertEqual(tasks["research_archive_sync"]["status"], "queued")
                 self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "queued")
+
+                fusion_gate.set()
+                state = await self._wait_for_status(
+                    "starting",
+                    {
+                        "learned_fusion_profile_refresh": "ok",
+                        "prediction_accuracy_refresh": "running",
+                        "research_archive_sync": "queued",
+                        "market_opportunity_prewarm": "queued",
+                    },
+                )
 
                 accuracy_gate.set()
                 state = await self._wait_for_status(
                     "starting",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "running",
                         "market_opportunity_prewarm": "queued",
@@ -237,6 +325,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "starting",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "running",
@@ -247,6 +336,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "ok",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
@@ -257,6 +347,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_marks_disabled_tasks_as_skipped(self):
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ) as fusion_refresh,
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(return_value=None),
@@ -269,6 +363,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.market_service.get_market_opportunities_quick",
                 new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
             ) as radar_prewarm,
+            patch.object(app_settings, "startup_learned_fusion_refresh", False),
             patch.object(app_settings, "startup_prediction_accuracy_refresh", False),
             patch.object(app_settings, "startup_research_archive_sync", False),
             patch.object(app_settings, "startup_market_opportunity_prewarm", False),
@@ -278,12 +373,15 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(state["status"], "ok")
         tasks = {task["name"]: task for task in state["startup_tasks"]}
+        self.assertEqual(tasks["learned_fusion_profile_refresh"]["status"], "ok")
         self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "ok")
         self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
         self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
+        self.assertIn("skipped by configuration", tasks["learned_fusion_profile_refresh"]["detail"])
         self.assertIn("skipped by configuration", tasks["prediction_accuracy_refresh"]["detail"])
         self.assertIn("skipped by configuration", tasks["research_archive_sync"]["detail"])
         self.assertIn("skipped by configuration", tasks["market_opportunity_prewarm"]["detail"])
+        fusion_refresh.assert_not_called()
         accuracy_refresh.assert_not_called()
         research_sync.assert_not_called()
         radar_prewarm.assert_not_called()
@@ -291,6 +389,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
     async def test_render_memory_safe_mode_skips_heavy_startup_jobs(self):
         with (
             patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ) as fusion_refresh,
             patch(
                 "app.main.archive_service.refresh_prediction_accuracy",
                 new=AsyncMock(return_value=None),
@@ -316,6 +418,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 state = await self._wait_for_status(
                     "ok",
                     {
+                        "learned_fusion_profile_refresh": "ok",
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
@@ -323,8 +426,15 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         tasks = {task["name"]: task for task in state["startup_tasks"]}
-        self.assertIn("Render 메모리 세이프 startup 프로필", tasks["prediction_accuracy_refresh"]["detail"])
-        self.assertIn("Render 메모리 세이프 startup 프로필", tasks["research_archive_sync"]["detail"])
+        fusion_refresh.assert_awaited_once()
+        self.assertIn(
+            "Render 메모리 세이프 startup 프로필",
+            tasks["prediction_accuracy_refresh"]["detail"],
+        )
+        self.assertIn(
+            "Render 메모리 세이프 startup 프로필",
+            tasks["research_archive_sync"]["detail"],
+        )
         accuracy_refresh.assert_not_called()
         research_sync.assert_not_called()
         radar_prewarm.assert_awaited_once_with("KR", limit=12)

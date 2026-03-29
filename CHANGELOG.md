@@ -2,6 +2,15 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.0 - 2026-03-29
+
+- 예측 엔진 backbone은 그대로 유지한 채 `learned fusion + lightweight graph context`를 추가했습니다. `distributional_return_engine`는 기존 prior 분포 예측을 계속 생성하고, horizon `1 / 5 / 20`별로 실측 prediction log가 충분할 때만 pure `numpy` L2 logistic profile을 사용해 prior score를 보강합니다.
+- `prediction_records`의 `calibration_json`은 새 SQL 컬럼 없이 확장됐습니다. 이제 기존 calibration snapshot 위에 `fusion_features`, `graph_context`, `fusion_metadata`를 함께 적재해, 과거 레코드와 새 레코드가 섞여 있어도 연구실 집계와 시스템 진단이 backward-compatible하게 동작합니다.
+- 경량 graph context는 full GNN 대신 `FMP peers -> same sector/industry -> rolling return correlation` 순서로 피어 문맥을 구성하고, coverage가 있을 때만 bounded scalar로 blend에 반영합니다. graph가 비어도 전체 forecast는 자동으로 `prior_only`로 안전 종료합니다.
+- `/api/research/predictions`는 이제 horizon별 `fusion_method`, `fusion_profile_sample_count`, `fusion_blend_weight`, `graph_context_used`, `graph_context_score`, `graph_coverage`, `fusion_profile_fitted_at` 메타데이터를 포함하고, top-level `fusion_profiles`, `graph_context_summary`, `fusion_status_summary`도 함께 반환합니다.
+- `/lab`과 `/settings` 진단 패널은 새 엔진 메타데이터를 바로 읽습니다. Prediction Lab은 horizon별 현재 method, sample count, graph coverage, prior 대비 Brier delta, 평균 blend weight를 보여 주고, 시스템 진단은 active model version, 마지막 profile refresh 시각, horizon별 learned fusion 상태를 함께 노출합니다.
+- startup task에 `learned_fusion_profile_refresh`를 추가했습니다. 권장 env는 `STARTUP_LEARNED_FUSION_REFRESH=true`, `STARTUP_LEARNED_FUSION_REFRESH_TIMEOUT=25`이고, timeout이나 예외가 나도 서비스 시작은 계속되며 엔진은 자동으로 `prior_only`로 동작합니다.
+
 ## v2.51.5 - 2026-03-29
 
 - Render production이 예전 `STARTUP_*` 환경값을 계속 들고 있어도 backend가 메모리 세이프 startup profile을 우선 적용하도록 바꿨습니다. 이제 Render 런타임으로 감지되면 `prediction_accuracy_refresh`, `research_archive_sync`는 startup에서 강제로 건너뛰고, `market_opportunity_prewarm`만 `45초` 예산과 concurrency `1`로 실행합니다.

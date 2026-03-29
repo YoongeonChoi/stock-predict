@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 
+from app.analysis.next_day_forecast import MODEL_VERSION
 from app.data import cache
 from app.database import db
-from app.services import archive_service, confidence_calibration_service
+from app.services import (
+    archive_service,
+    confidence_calibration_service,
+    learned_fusion_profile_service,
+)
+
+
+def _prediction_label(prediction_type: str) -> str:
+    if prediction_type == "next_day":
+        return "1D"
+    if prediction_type.endswith("5d"):
+        return "5D"
+    if prediction_type.endswith("20d"):
+        return "20D"
+    return prediction_type
 
 
 def _rate(hit_count: float | int | None, total: float | int | None) -> float:
@@ -33,6 +49,20 @@ def _normalize_breakdown(rows: list[dict]) -> list[dict]:
     return normalized
 
 
+def _parse_calibration_json(raw_snapshot: str | dict | None) -> dict:
+    if raw_snapshot is None:
+        return {}
+    if isinstance(raw_snapshot, dict):
+        return raw_snapshot
+    if isinstance(raw_snapshot, str):
+        try:
+            parsed = json.loads(raw_snapshot)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 def _normalize_recent(rows: list[dict]) -> list[dict]:
     records = []
     for row in rows:
@@ -43,6 +73,9 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
         direction_hit = None
         within_range = None
         abs_error_pct = None
+        calibration_snapshot = _parse_calibration_json(row.get("calibration_json"))
+        fusion_metadata = calibration_snapshot.get("fusion_metadata") or {}
+        graph_context = calibration_snapshot.get("graph_context") or {}
 
         if actual_close is not None and reference_price:
             actual_close = float(actual_close)
@@ -79,6 +112,10 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
                 "model_version": row.get("model_version") or "unknown",
                 "created_at": row["created_at"],
                 "evaluated_at": row.get("evaluated_at"),
+                "fusion_method": fusion_metadata.get("method") or "prior_only",
+                "fusion_blend_weight": round(float(fusion_metadata.get("blend_weight") or 0.0), 4),
+                "graph_context_used": bool(graph_context.get("used")),
+                "graph_coverage": round(float(graph_context.get("coverage") or 0.0), 4),
             }
         )
     return records
@@ -101,38 +138,14 @@ def _normalize_trend(rows: list[dict]) -> list[dict]:
     return trend
 
 
-def _normalize_horizon_accuracy(entries: list[tuple[str, str, dict]]) -> list[dict]:
-    rows: list[dict] = []
-    for prediction_type, label, stats in entries:
-        rows.append(
-            {
-                "prediction_type": prediction_type,
-                "label": label,
-                "stored_predictions": stats.get("stored_predictions", 0),
-                "pending_predictions": stats.get("pending_predictions", 0),
-                "total_predictions": stats.get("total_predictions", 0),
-                "direction_accuracy": stats.get("direction_accuracy", 0.0),
-                "within_range_rate": stats.get("within_range_rate", 0.0),
-                "avg_error_pct": stats.get("avg_error_pct", 0.0),
-                "avg_confidence": stats.get("avg_confidence", 0.0),
-            }
-        )
-    return rows
-
-
 def _normalize_empirical_calibration(rows: list[dict]) -> list[dict]:
     normalized: list[dict] = []
     for row in rows:
         prediction_type = str(row.get("prediction_type") or "")
-        label = "1D"
-        if prediction_type.endswith("5d"):
-            label = "5D"
-        elif prediction_type.endswith("20d"):
-            label = "20D"
         normalized.append(
             {
                 "prediction_type": prediction_type,
-                "label": label,
+                "label": _prediction_label(prediction_type),
                 "method": row.get("method") or "empirical_sigmoid",
                 "sample_count": int(row.get("sample_count") or 0),
                 "positive_rate": round(float(row.get("positive_rate") or 0.0) * 100.0, 1),
@@ -146,6 +159,172 @@ def _normalize_empirical_calibration(rows: list[dict]) -> list[dict]:
     return normalized
 
 
+def _summarize_fusion_rows(rows: list[dict]) -> dict:
+    method_counts = {
+        "prior_only": 0,
+        "learned_blended": 0,
+        "learned_blended_graph": 0,
+    }
+    graph_used_count = 0
+    graph_coverages: list[float] = []
+    graph_scores: list[float] = []
+    blend_weights: list[float] = []
+    peer_counts: list[float] = []
+    parsed_count = 0
+
+    for row in rows:
+        calibration_snapshot = _parse_calibration_json(row.get("calibration_json"))
+        if not calibration_snapshot:
+            continue
+        fusion_metadata = calibration_snapshot.get("fusion_metadata") or {}
+        graph_context = calibration_snapshot.get("graph_context") or {}
+        method = str(fusion_metadata.get("method") or "prior_only")
+        if method not in method_counts:
+            method = "prior_only"
+        method_counts[method] += 1
+        blend_weights.append(float(fusion_metadata.get("blend_weight") or 0.0))
+        coverage = float(
+            graph_context.get("coverage")
+            or fusion_metadata.get("graph_coverage")
+            or 0.0
+        )
+        graph_coverages.append(coverage)
+        graph_scores.append(float(graph_context.get("graph_context_score") or 0.0))
+        peer_counts.append(float(graph_context.get("peer_count") or 0.0))
+        if bool(graph_context.get("used")):
+            graph_used_count += 1
+        parsed_count += 1
+
+    current_method = max(method_counts, key=method_counts.get) if parsed_count else "prior_only"
+    avg_blend_weight = sum(blend_weights) / len(blend_weights) if blend_weights else 0.0
+    avg_graph_coverage = sum(graph_coverages) / len(graph_coverages) if graph_coverages else 0.0
+    avg_graph_score = sum(graph_scores) / len(graph_scores) if graph_scores else 0.0
+    avg_peer_count = sum(peer_counts) / len(peer_counts) if peer_counts else 0.0
+
+    return {
+        "record_count": parsed_count,
+        "method_counts": method_counts,
+        "current_method": current_method,
+        "avg_blend_weight": round(avg_blend_weight, 4),
+        "graph_context_used_rate": round(graph_used_count / parsed_count, 4) if parsed_count else 0.0,
+        "avg_graph_coverage": round(avg_graph_coverage, 4),
+        "avg_graph_score": round(avg_graph_score, 4),
+        "avg_peer_count": round(avg_peer_count, 2),
+        "graph_coverage_available": avg_graph_coverage > 0.0,
+    }
+
+
+def _normalize_horizon_accuracy(
+    entries: list[tuple[str, str, dict, dict, dict | None]],
+) -> list[dict]:
+    rows: list[dict] = []
+    for prediction_type, label, stats, fusion_summary, profile_summary in entries:
+        profile_summary = profile_summary or {}
+        rows.append(
+            {
+                "prediction_type": prediction_type,
+                "label": label,
+                "stored_predictions": stats.get("stored_predictions", 0),
+                "pending_predictions": stats.get("pending_predictions", 0),
+                "total_predictions": stats.get("total_predictions", 0),
+                "direction_accuracy": stats.get("direction_accuracy", 0.0),
+                "within_range_rate": stats.get("within_range_rate", 0.0),
+                "avg_error_pct": stats.get("avg_error_pct", 0.0),
+                "avg_confidence": stats.get("avg_confidence", 0.0),
+                "current_method": fusion_summary.get("current_method") or "prior_only",
+                "fusion_profile_sample_count": int(profile_summary.get("sample_count") or 0),
+                "avg_blend_weight": float(fusion_summary.get("avg_blend_weight") or 0.0),
+                "graph_coverage": float(fusion_summary.get("avg_graph_coverage") or 0.0),
+                "graph_context_used_rate": float(fusion_summary.get("graph_context_used_rate") or 0.0),
+                "prior_brier_delta": profile_summary.get("prior_brier_delta"),
+                "fusion_status": profile_summary.get("status") or "bootstrapping",
+            }
+        )
+    return rows
+
+
+def _build_graph_context_summary(
+    per_horizon: list[dict],
+) -> dict:
+    total_records = sum(int(item.get("record_count") or 0) for item in per_horizon)
+    if total_records <= 0:
+        return {
+            "coverage_available": False,
+            "used_rate": 0.0,
+            "avg_coverage": 0.0,
+            "avg_score": 0.0,
+            "avg_peer_count": 0.0,
+            "records": 0,
+            "by_horizon": [],
+        }
+
+    weighted = lambda key: round(
+        sum(float(item.get(key) or 0.0) * int(item.get("record_count") or 0) for item in per_horizon)
+        / total_records,
+        4,
+    )
+    return {
+        "coverage_available": any(bool(item.get("graph_coverage_available")) for item in per_horizon),
+        "used_rate": weighted("graph_context_used_rate"),
+        "avg_coverage": weighted("avg_graph_coverage"),
+        "avg_score": weighted("avg_graph_score"),
+        "avg_peer_count": weighted("avg_peer_count"),
+        "records": total_records,
+        "by_horizon": [
+            {
+                "prediction_type": item["prediction_type"],
+                "label": item["label"],
+                "used_rate": float(item.get("graph_context_used_rate") or 0.0),
+                "avg_coverage": float(item.get("avg_graph_coverage") or 0.0),
+                "avg_score": float(item.get("avg_graph_score") or 0.0),
+                "avg_peer_count": float(item.get("avg_peer_count") or 0.0),
+                "records": int(item.get("record_count") or 0),
+            }
+            for item in per_horizon
+        ],
+    }
+
+
+def _build_fusion_status_summary(
+    horizon_accuracy: list[dict],
+    fusion_profiles: list[dict],
+    graph_context_summary: dict,
+) -> dict:
+    profile_map = {row["prediction_type"]: row for row in fusion_profiles}
+    last_refresh_time = learned_fusion_profile_service.get_last_refresh_time()
+    method_mix = {
+        "prior_only": sum(int(row.get("current_method") == "prior_only") for row in horizon_accuracy),
+        "learned_blended": sum(int(row.get("current_method") == "learned_blended") for row in horizon_accuracy),
+        "learned_blended_graph": sum(
+            int(row.get("current_method") == "learned_blended_graph") for row in horizon_accuracy
+        ),
+    }
+    return {
+        "active_model_version": MODEL_VERSION,
+        "last_refresh_time": last_refresh_time,
+        "graph_coverage_available": bool(graph_context_summary.get("coverage_available")),
+        "avg_blend_weight": round(
+            sum(float(row.get("avg_blend_weight") or 0.0) for row in horizon_accuracy)
+            / max(len(horizon_accuracy), 1),
+            4,
+        ),
+        "method_mix": method_mix,
+        "horizons": [
+            {
+                "prediction_type": row["prediction_type"],
+                "label": row["label"],
+                "current_method": row.get("current_method") or "prior_only",
+                "profile_sample_count": int(profile_map.get(row["prediction_type"], {}).get("sample_count") or 0),
+                "avg_blend_weight": float(row.get("avg_blend_weight") or 0.0),
+                "graph_coverage": float(row.get("graph_coverage") or 0.0),
+                "prior_brier_delta": profile_map.get(row["prediction_type"], {}).get("prior_brier_delta"),
+                "status": profile_map.get(row["prediction_type"], {}).get("status") or "bootstrapping",
+            }
+            for row in horizon_accuracy
+        ],
+    }
+
+
 def _build_insights(
     accuracy: dict,
     by_country: list[dict],
@@ -153,60 +332,69 @@ def _build_insights(
     recent_records: list[dict],
     horizon_accuracy: list[dict],
     empirical_calibration: list[dict],
+    fusion_profiles: list[dict],
+    graph_context_summary: dict,
+    fusion_status_summary: dict,
 ) -> list[str]:
     insights: list[str] = []
-    total_predictions = accuracy.get("total_predictions", 0)
-    direction_accuracy = accuracy.get("direction_accuracy", 0) * 100.0
-    within_range_rate = accuracy.get("within_range_rate", 0) * 100.0
-    avg_error_pct = accuracy.get("avg_error_pct", 0)
+    total_predictions = int(accuracy.get("total_predictions", 0) or 0)
+    direction_accuracy = float(accuracy.get("direction_accuracy", 0.0) or 0.0) * 100.0
+    within_range_rate = float(accuracy.get("within_range_rate", 0.0) or 0.0) * 100.0
+    avg_error_pct = float(accuracy.get("avg_error_pct", 0.0) or 0.0)
 
     if total_predictions == 0:
-        return ["Validated next-day predictions are still sparse, so the lab is ready but waiting for more observed outcomes."]
+        return ["검증 완료 표본이 아직 많지 않아 예측 연구실은 실측 로그를 더 쌓는 단계에 있습니다."]
 
     insights.append(
-        f"Validated next-day forecasts currently hit direction {direction_accuracy:.1f}% of the time with an average absolute error of {avg_error_pct:.2f}%."
+        f"현재 검증 완료 표본 {total_predictions}건 기준으로 방향 적중률 {direction_accuracy:.1f}%, 평균 오차 {avg_error_pct:.2f}%를 기록하고 있습니다."
     )
     insights.append(
-        f"Prediction bands captured the realized close {within_range_rate:.1f}% of the time across {total_predictions} evaluated signals."
+        f"예측 밴드는 실현 종가를 {within_range_rate:.1f}% 비율로 포함하고 있어, 점예측보다 분포 해석이 더 중요하다는 점을 보여 줍니다."
     )
 
     if by_country:
         best_country = min(by_country, key=lambda item: (-item["direction_accuracy"], item["avg_error_pct"]))
         insights.append(
-            f"Best validated market so far is {best_country['label']} with {best_country['direction_accuracy'] * 100:.1f}% direction accuracy."
+            f"현재 가장 안정적인 시장은 {best_country['label']}이며, 방향 적중률 {best_country['direction_accuracy'] * 100:.1f}%와 평균 오차 {best_country['avg_error_pct']:.2f}%를 보입니다."
         )
 
     if calibration:
         strongest_bucket = max(calibration, key=lambda item: item.get("direction_accuracy", 0))
         insights.append(
-            f"Confidence bucket {strongest_bucket['bucket']} is currently the most reliable, converting at {strongest_bucket['direction_accuracy']:.1f}% direction accuracy."
+            f"신뢰도 구간 {strongest_bucket['bucket']}은 방향 적중률 {strongest_bucket['direction_accuracy']:.1f}%로 현재 가장 안정적으로 작동합니다."
         )
 
-    multi_horizon = [row for row in horizon_accuracy if row["prediction_type"] != "next_day" and row["total_predictions"] > 0]
-    if multi_horizon:
-        best_horizon = min(multi_horizon, key=lambda item: (-item["direction_accuracy"], item["avg_error_pct"]))
+    active_profiles = [row for row in fusion_profiles if row.get("status") == "active"]
+    if active_profiles:
+        best_profile = max(active_profiles, key=lambda item: float(item.get("prior_brier_delta") or 0.0))
         insights.append(
-            f"{best_horizon['label']} 분포 예측은 현재 방향 적중률 {best_horizon['direction_accuracy'] * 100:.1f}%로, 다중기간 calibrator가 실제 결과를 기준으로 다시 맞춰지고 있습니다."
+            f"{best_profile['label']} learned fusion은 표본 {best_profile['sample_count']}건에서 prior 대비 Brier {float(best_profile.get('prior_brier_delta') or 0.0):.4f}만큼 개선했습니다."
         )
+    else:
+        insights.append("learned fusion은 아직 bootstrap 단계라 prior backbone 중심으로 동작하고 있습니다.")
 
-    if empirical_calibration:
-        strongest_profile = max(empirical_calibration, key=lambda item: item.get("sample_count", 0))
+    if graph_context_summary.get("coverage_available"):
         insights.append(
-            f"{strongest_profile['label']} empirical calibrator는 {strongest_profile['sample_count']}건의 실측 로그를 사용 중이며 Brier score {strongest_profile['brier_score']:.4f}, 최대 reliability gap {strongest_profile['max_reliability_gap']:.1f}%로 관리됩니다."
+            f"graph context는 최근 검증 로그의 {float(graph_context_summary.get('used_rate') or 0.0) * 100:.1f}%에서 사용됐고, 평균 coverage {float(graph_context_summary.get('avg_coverage') or 0.0):.2f}로 반영됐습니다."
         )
 
     misses = [record for record in recent_records if record.get("direction_hit") is False and record.get("abs_error_pct") is not None]
     if misses:
         worst = max(misses, key=lambda item: item["abs_error_pct"])
         insights.append(
-            f"Largest recent miss was {worst['symbol']} for {worst['target_date']}, where realized price diverged {worst['abs_error_pct']:.2f}% from the reference."
+            f"최근 가장 큰 실패 사례는 {worst['symbol']} ({worst['target_date']})이며, 기준가 대비 오차 {worst['abs_error_pct']:.2f}%였습니다."
         )
 
-    return insights[:5]
+    if fusion_status_summary.get("last_refresh_time"):
+        insights.append(
+            f"learned fusion profile은 {fusion_status_summary['last_refresh_time']} 기준으로 갱신됐고, 현재 모델 버전은 {fusion_status_summary['active_model_version']}입니다."
+        )
+
+    return insights[:6]
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v3:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v4:{limit_recent}:{int(refresh)}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -214,6 +402,7 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
     if refresh:
         await archive_service.refresh_prediction_accuracy(limit=200)
 
+    sample_window = max(200, limit_recent * 5)
     (
         accuracy,
         stats_5d,
@@ -224,6 +413,9 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
         by_scope_rows,
         by_model_rows,
         calibration_rows,
+        next_day_samples,
+        distribution_5d_samples,
+        distribution_20d_samples,
     ) = await asyncio.gather(
         db.prediction_stats("next_day"),
         db.prediction_stats("distributional_5d"),
@@ -234,13 +426,56 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
         db.prediction_scope_breakdown("next_day", 10),
         db.prediction_model_breakdown("next_day", 10),
         db.prediction_confidence_buckets("next_day"),
+        db.prediction_evaluated_samples(prediction_type="next_day", limit=sample_window),
+        db.prediction_evaluated_samples(prediction_type="distributional_5d", limit=sample_window),
+        db.prediction_evaluated_samples(prediction_type="distributional_20d", limit=sample_window),
     )
-    empirical_calibration = _normalize_empirical_calibration(confidence_calibration_service.get_profile_summary())
+
+    fusion_profiles = learned_fusion_profile_service.get_profile_summary()
+    fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
+    empirical_calibration = _normalize_empirical_calibration(
+        confidence_calibration_service.get_profile_summary()
+    )
+    per_horizon_fusion = [
+        {
+            "prediction_type": "next_day",
+            "label": "1D",
+            **_summarize_fusion_rows(next_day_samples),
+        },
+        {
+            "prediction_type": "distributional_5d",
+            "label": "5D",
+            **_summarize_fusion_rows(distribution_5d_samples),
+        },
+        {
+            "prediction_type": "distributional_20d",
+            "label": "20D",
+            **_summarize_fusion_rows(distribution_20d_samples),
+        },
+    ]
     horizon_accuracy = _normalize_horizon_accuracy(
         [
-            ("next_day", "1D", accuracy),
-            ("distributional_5d", "5D", stats_5d),
-            ("distributional_20d", "20D", stats_20d),
+            (
+                "next_day",
+                "1D",
+                accuracy,
+                per_horizon_fusion[0],
+                fusion_profile_map.get("next_day"),
+            ),
+            (
+                "distributional_5d",
+                "5D",
+                stats_5d,
+                per_horizon_fusion[1],
+                fusion_profile_map.get("distributional_5d"),
+            ),
+            (
+                "distributional_20d",
+                "20D",
+                stats_20d,
+                per_horizon_fusion[2],
+                fusion_profile_map.get("distributional_20d"),
+            ),
         ]
     )
 
@@ -260,12 +495,21 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
         }
         for row in calibration_rows
     ]
+    graph_context_summary = _build_graph_context_summary(per_horizon_fusion)
+    fusion_status_summary = _build_fusion_status_summary(
+        horizon_accuracy,
+        fusion_profiles,
+        graph_context_summary,
+    )
 
     response = {
         "generated_at": datetime.now().isoformat(),
         "accuracy": accuracy,
         "horizon_accuracy": horizon_accuracy,
         "empirical_calibration": empirical_calibration,
+        "fusion_profiles": fusion_profiles,
+        "graph_context_summary": graph_context_summary,
+        "fusion_status_summary": fusion_status_summary,
         "breakdown": {
             "by_country": by_country,
             "by_scope": by_scope,
@@ -281,6 +525,9 @@ async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> di
             recent_records,
             horizon_accuracy,
             empirical_calibration,
+            fusion_profiles,
+            graph_context_summary,
+            fusion_status_summary,
         ),
     }
     await cache.set(cache_key, response, 180)

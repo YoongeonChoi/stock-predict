@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.51.5`
+현재 릴리즈: `v2.52.0`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -35,6 +35,8 @@
   - 대시보드, 레이더, 포트폴리오, 리서치가 서로 이어집니다.
 - `확률 기반 예측`
   - 점 하나를 찍는 대신 미래 로그수익률의 조건부 분포를 예측합니다.
+- `학습형 fusion + graph context`
+  - prior backbone은 유지한 채, 실측 prediction log가 충분한 horizon만 learned fusion과 경량 graph context로 보강합니다.
 - `보정된 확신도`
   - 표시 confidence는 단순 heuristic 점수가 아니라, 실제 적중률과 맞도록 보정된 확률을 사용합니다.
   - 표본이 충분해지면 horizon별 calibrator가 `empirical sigmoid`에서 `isotonic + reliability bin` 단계로 승격됩니다.
@@ -115,6 +117,7 @@
 - 예측 연구실
   - `1D / 5D / 20D` 실측 성과
   - empirical calibrator 샘플 수, Brier score, reliability gap 확인
+  - horizon별 learned fusion 상태, graph coverage, prior 대비 Brier delta, 평균 blend weight 확인
   - `/lab` first screen은 공개 검증 스냅샷과 최근 실패 사례를 서버에서 먼저 채워 추천과 검증 흐름이 같은 제품 안에서 이어지게 합니다.
 
 공개 API의 운영 원칙도 현재 구조에 맞춰 정리되어 있습니다.
@@ -325,13 +328,35 @@
 
 ## 분석 엔진 상세
 
-현재 canonical backbone은 `backend/app/analysis/distributional_return_engine.py` 입니다.
+현재 canonical backbone은 `backend/app/analysis/distributional_return_engine.py` 입니다. 현재 운영 모델 버전은 `dist-studentt-v3.3-lfgraph`이며, prior backbone 위에 learned fusion과 경량 graph context를 조건부로 얹는 구조를 사용합니다.
 
 핵심 원칙은 아래 세 가지입니다.
 
 1. 숫자 예측은 `LLM`이 아니라 `확률모형`이 한다.
 2. 가격·변동성·상대강도 같은 `숫자 시계열`이 주신호다.
 3. 점예측이 아니라 `미래 로그수익률의 조건부 분포`를 직접 예측한다.
+
+### 0. prior backbone + learned fusion + graph context
+
+현재 엔진은 기존 분포 엔진을 버리지 않고, horizon별로 `prior backbone -> learned fusion -> graph context blend` 순서로 보강합니다.
+
+- `prior backbone`
+  - 가격·변동성·거시·펀더멘털·이벤트 신호를 결합한 기존 분포형 예측
+- `learned fusion`
+  - `prediction_records`에 저장된 실측 로그에서 horizon `1 / 5 / 20`별 pure `numpy` L2 logistic profile을 다시 맞춰 prior score를 보정
+  - 표본 부족 기준은 `MIN_FUSION_SAMPLES = 36`, `MIN_DIRECTION_CLASS_COUNT = 8`
+- `graph context`
+  - full GNN 대신 `FMP peers -> same sector/industry -> rolling return correlation` 순서로 경량 peer context를 만든 뒤, coverage가 있을 때만 blend에 반영
+
+현재 blend 정책은 아래를 따릅니다.
+
+- profile 없음 또는 표본 부족: `prior_only`
+- profile 있음, graph 없음: `learned_blended`
+- profile 있음, graph 있음: `learned_blended_graph`
+- blend weight
+  - `clip((sample_count - 24) / 120, 0.0, 0.65) * data_quality_support * max(0.35, graph_coverage)`
+
+중요한 점은 learned fusion이 기존 분포 예측을 대체하지 않는다는 것입니다. 기존 `q10 / q25 / q50 / q75 / q90`, `p_up / p_flat / p_down`, confidence calibration loop는 그대로 유지하고, horizon별 mean/tilt/score 입력만 더 정교하게 보강합니다.
 
 ### 1. 예측 타깃
 
@@ -430,15 +455,17 @@ display_confidence_h = 100 * G_h(raw_confidence_h)
 
 를 뜻합니다.
 
-현재는 `bootstrap prior -> empirical sigmoid -> isotonic 승격` 구조를 사용합니다. 처음에는 horizon별 bootstrap prior가 confidence를 보수적으로 잡고, 이후 `prediction_records`에 쌓이는 실측 결과를 바탕으로 `next_day / 5D / 20D`별 empirical sigmoid가 다시 맞춰집니다. 표본 수와 클래스 균형이 충분히 쌓이면, 그 위에 horizon별 isotonic 보정을 한 번 더 얹어 reliability gap을 더 줄입니다. 즉, 시간이 지날수록 단순 heuristic이 아니라 실제 적중 로그가 confidence를 재학습합니다.
+현재는 `bootstrap prior -> empirical sigmoid -> isotonic 승격` 구조를 사용합니다. 처음에는 horizon별 bootstrap prior가 confidence를 보수적으로 잡고, 이후 `prediction_records`에 쌓이는 실측 결과를 바탕으로 `next_day / 5D / 20D`별 empirical sigmoid가 다시 맞춰집니다. 표본 수와 클래스 균형이 충분히 쌓이면, 그 위에 horizon별 isotonic 보정을 한 번 더 얹어 reliability gap을 더 줄입니다. 즉, 시간이 지날수록 단순 heuristic이 아니라 실제 적중 로그가 confidence를 재학습합니다. learned fusion이 함께 활성화되더라도 confidence loop의 canonical 기준선은 그대로 유지됩니다.
 
 운영 루프는 다음과 같습니다.
 
 ```text
 예측 저장
   -> prediction_records에 calibration snapshot 함께 적재
+  -> calibration_json 안에 fusion_features / graph_context / fusion_metadata 중첩 저장
   -> target_date 이후 actual_close 평가
   -> horizon별 empirical sigmoid 재학습
+  -> horizon별 learned fusion profile refresh
   -> 표본이 충분하면 isotonic + reliability bin 재계산
   -> 다음 예측의 표시 confidence에 다시 반영
 ```
@@ -787,6 +814,9 @@ selection
 - `GET /api/archive/research`
 - `GET /api/archive/research/status`
 - `POST /api/archive/research/refresh`
+- `GET /api/research/predictions`
+  - `/lab`의 canonical 검증 API입니다.
+  - `fusion_profiles`, `graph_context_summary`, `fusion_status_summary`를 함께 반환합니다.
 
 ## 환경 변수
 
@@ -814,6 +844,8 @@ STARTUP_PREDICTION_ACCURACY_REFRESH=false
 STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT=20
 STARTUP_RESEARCH_ARCHIVE_SYNC=false
 STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
+STARTUP_LEARNED_FUSION_REFRESH=true
+STARTUP_LEARNED_FUSION_REFRESH_TIMEOUT=25
 STARTUP_MARKET_OPPORTUNITY_PREWARM=true
 STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=45
 STARTUP_BACKGROUND_TASK_CONCURRENCY=1

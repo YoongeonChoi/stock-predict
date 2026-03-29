@@ -31,7 +31,12 @@ from app.routers import (
     watchlist,
 )
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
-from app.services import archive_service, market_service, research_archive_service
+from app.services import (
+    archive_service,
+    learned_fusion_profile_service,
+    market_service,
+    research_archive_service,
+)
 from app.version import APP_VERSION
 
 logging.basicConfig(
@@ -159,6 +164,24 @@ async def lifespan(app: FastAPI):
     upsert_startup_task("database_initialize", "ok", "Database initialization complete.")
 
     startup_tasks: list[StartupTaskDefinition] = []
+
+    if settings.startup_learned_fusion_refresh:
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="learned_fusion_profile_refresh",
+                running_detail="Refreshing learned fusion profiles from stored prediction records.",
+                success_detail="Learned fusion profile refresh completed.",
+                failure_prefix="Learned fusion profile refresh failed during startup",
+                timeout_seconds=settings.startup_learned_fusion_refresh_timeout,
+                job=lambda: learned_fusion_profile_service.refresh_profiles(),
+            )
+        )
+    else:
+        upsert_startup_task(
+            "learned_fusion_profile_refresh",
+            "ok",
+            "Learned fusion profile refresh skipped by configuration.",
+        )
 
     if settings.effective_startup_prediction_accuracy_refresh:
         startup_tasks.append(

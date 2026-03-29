@@ -37,6 +37,19 @@ function directionLabel(direction: string) {
   return direction;
 }
 
+function methodLabel(method: string) {
+  if (method === "learned_blended_graph") return "학습형 fusion + graph";
+  if (method === "learned_blended") return "학습형 fusion";
+  if (method === "prior_only") return "prior backbone";
+  return method;
+}
+
+function fusionStatusLabel(status: string) {
+  if (status === "active") return "활성";
+  if (status === "bootstrapping") return "표본 축적 중";
+  return status;
+}
+
 function realizedDirectionLabel(actualClose?: number | null, referencePrice?: number) {
   if (actualClose == null || referencePrice == null) {
     return "대기";
@@ -56,6 +69,10 @@ export default function PredictionLabDashboard({ data }: Props) {
   const horizonRows = data.horizon_accuracy ?? [];
   const empiricalRows = data.empirical_calibration ?? [];
   const empiricalByType = new Map(empiricalRows.map((row) => [row.prediction_type, row]));
+  const fusionProfiles = data.fusion_profiles ?? [];
+  const fusionProfileByType = new Map(fusionProfiles.map((row) => [row.prediction_type, row]));
+  const graphSummary = data.graph_context_summary;
+  const fusionStatus = data.fusion_status_summary;
   const recentFailures = data.recent_records
     .filter((row) => row.direction_hit === false || row.within_range === false)
     .slice(0, 5);
@@ -125,11 +142,93 @@ export default function PredictionLabDashboard({ data }: Props) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_1fr] gap-5">
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">Learned Fusion 상태</h2>
+            <p className="text-sm text-text-secondary mt-1">
+              prior backbone 위에 학습형 fusion이 어느 horizon에서 실제로 활성화됐는지, prior 대비 Brier가 얼마나 줄었는지 먼저 보여줍니다.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {fusionProfiles.map((profile) => (
+              <div key={profile.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{profile.label}</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      {fusionStatusLabel(profile.status)} · {methodLabel(profile.method)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{profile.sample_count.toLocaleString("ko-KR")}건</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      delta {profile.prior_brier_delta != null ? profile.prior_brier_delta.toFixed(4) : "대기"}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-text-secondary">
+                  <div>
+                    Brier {profile.brier_score != null ? profile.brier_score.toFixed(4) : "대기"} / prior{" "}
+                    {profile.prior_brier_score != null ? profile.prior_brier_score.toFixed(4) : "대기"}
+                  </div>
+                  <div>positive rate {profile.positive_rate.toFixed(1)}% · bucket {profile.profile_bucket ?? "default"}</div>
+                  <div>최근 갱신 {profile.fitted_at ? new Date(profile.fitted_at).toLocaleString("ko-KR") : "아직 없음"}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-border/70 bg-surface/50 px-3 py-3 text-sm text-text-secondary">
+            현재 모델 {fusionStatus.active_model_version} · 평균 blend weight {(fusionStatus.avg_blend_weight * 100).toFixed(1)}% · 마지막 프로필 갱신{" "}
+            {fusionStatus.last_refresh_time ? new Date(fusionStatus.last_refresh_time).toLocaleString("ko-KR") : "아직 없음"}
+          </div>
+        </div>
+
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">Graph Context 활용도</h2>
+            <p className="text-sm text-text-secondary mt-1">
+              피어·섹터·상관관계 기반 경량 graph context가 최근 실측 로그에서 어느 정도 coverage로 들어가는지 같은 기준으로 봅니다.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border/70 px-3 py-3">
+              <div className="text-xs text-text-secondary">활용 비율</div>
+              <div className="mt-2 text-2xl font-semibold">{pct(graphSummary.used_rate)}</div>
+              <div className="mt-1 text-xs text-text-secondary">검증 로그 {graphSummary.records.toLocaleString("ko-KR")}건 기준</div>
+            </div>
+            <div className="rounded-xl border border-border/70 px-3 py-3">
+              <div className="text-xs text-text-secondary">평균 coverage</div>
+              <div className="mt-2 text-2xl font-semibold">{(graphSummary.avg_coverage * 100).toFixed(1)}%</div>
+              <div className="mt-1 text-xs text-text-secondary">평균 peer 수 {graphSummary.avg_peer_count.toFixed(1)}</div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {graphSummary.by_horizon.map((row) => (
+              <div key={row.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{row.label}</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      활용 {pct(row.used_rate)} · 평균 coverage {(row.avg_coverage * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-text-secondary">
+                    <div>graph score {row.avg_score.toFixed(2)}</div>
+                    <div className="mt-1">표본 {row.records.toLocaleString("ko-KR")}건</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-5">
         <div className="card !p-4 space-y-3">
           <div>
             <h2 className="font-semibold text-base">Horizon별 실측 성과</h2>
-            <p className="text-sm text-text-secondary mt-1">1D, 5D, 20D 예측이 각자 어느 정도의 표본과 적중률을 갖는지 같은 기준으로 봅니다.</p>
+            <p className="text-sm text-text-secondary mt-1">1D, 5D, 20D 예측을 적중률뿐 아니라 현재 fusion 상태와 graph 활용도까지 같이 봅니다.</p>
           </div>
           <div className="space-y-2">
             {horizonRows.map((row) => (
@@ -139,6 +238,9 @@ export default function PredictionLabDashboard({ data }: Props) {
                     <div className="font-medium">{row.label}</div>
                     <div className="text-xs text-text-secondary mt-1">
                       저장 {row.stored_predictions}건 · 평가 완료 {row.total_predictions}건 · 대기 {row.pending_predictions}건
+                    </div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      {methodLabel(row.current_method)} · profile {row.fusion_profile_sample_count.toLocaleString("ko-KR")}건 · {fusionStatusLabel(row.fusion_status)}
                     </div>
                   </div>
                   <div className="text-right">
@@ -150,7 +252,14 @@ export default function PredictionLabDashboard({ data }: Props) {
                     <div className="text-xs text-text-secondary mt-1">
                       Gap {empiricalByType.get(row.prediction_type)?.max_reliability_gap?.toFixed(1) ?? "대기"}%
                     </div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      blend {(row.avg_blend_weight * 100).toFixed(1)}% · graph {(row.graph_coverage * 100).toFixed(1)}%
+                    </div>
                   </div>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 text-xs text-text-secondary">
+                  <div>prior 대비 Brier delta {row.prior_brier_delta != null ? row.prior_brier_delta.toFixed(4) : "대기"}</div>
+                  <div>graph 활용률 {pct(row.graph_context_used_rate)}</div>
                 </div>
               </div>
             ))}
@@ -168,25 +277,34 @@ export default function PredictionLabDashboard({ data }: Props) {
                 아직 충분한 실측 로그가 쌓이지 않아 empirical calibrator가 bootstrap prior 위주로 동작하고 있습니다.
               </div>
             ) : (
-              empiricalRows.map((row) => (
-                <div key={row.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{row.label}</div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        {row.method} · 표본 {row.sample_count}건 · positive rate {row.positive_rate.toFixed(1)}%
+              empiricalRows.map((row) => {
+                const fusionProfile = fusionProfileByType.get(row.prediction_type);
+                return (
+                  <div key={row.prediction_type} className="rounded-xl border border-border/70 px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{row.label}</div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          {row.method} · 표본 {row.sample_count}건 · positive rate {row.positive_rate.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          fusion {methodLabel(fusionProfile?.method ?? "prior_only")}
+                          {fusionProfile?.prior_brier_delta != null
+                            ? ` · prior delta ${fusionProfile.prior_brier_delta.toFixed(4)}`
+                            : ""}
+                        </div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          reliability bin {row.reliability_bins.length}개 · 최대 gap {row.max_reliability_gap.toFixed(1)}%
+                        </div>
                       </div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        reliability bin {row.reliability_bins.length}개 · 최대 gap {row.max_reliability_gap.toFixed(1)}%
+                      <div className="text-right">
+                        <div className="font-semibold">{row.brier_score.toFixed(4)}</div>
+                        <div className="text-xs text-text-secondary mt-1">prior {row.prior_brier_score.toFixed(4)}</div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{row.brier_score.toFixed(4)}</div>
-                      <div className="text-xs text-text-secondary mt-1">prior {row.prior_brier_score.toFixed(4)}</div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -263,14 +381,20 @@ export default function PredictionLabDashboard({ data }: Props) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-medium">{row.symbol}</div>
-                    <div className="text-xs text-text-secondary mt-1">{scopeLabel(row.scope)} · {row.target_date}{row.country_code ? ` · ${row.country_code}` : ""}</div>
+                    <div className="text-xs text-text-secondary mt-1">
+                      {scopeLabel(row.scope)} · {row.target_date}
+                      {row.country_code ? ` · ${row.country_code}` : ""}
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-text-secondary">예측</div>
                     <div className="font-semibold">{directionLabel(row.direction)}</div>
+                    <div className="text-[11px] text-text-secondary mt-1">
+                      {methodLabel(row.fusion_method ?? "prior_only")}
+                    </div>
                   </div>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
                     <div className="text-[11px] text-text-secondary">실현 결과</div>
                     <div className="font-semibold">{realizedDirectionLabel(row.actual_close, row.reference_price)}</div>
@@ -289,6 +413,12 @@ export default function PredictionLabDashboard({ data }: Props) {
                     <div className="text-[11px] text-text-secondary">밴드</div>
                     <div className={row.within_range ? "text-positive" : "text-negative"}>
                       {row.within_range == null ? "대기" : row.within_range ? "밴드 안" : "밴드 밖"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-text-secondary">Graph</div>
+                    <div className="font-semibold">
+                      {row.graph_context_used ? `${(Number(row.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
                     </div>
                   </div>
                 </div>
@@ -357,6 +487,7 @@ export default function PredictionLabDashboard({ data }: Props) {
               <tr className="border-b border-border text-left text-text-secondary">
                 <th className="pb-2">심볼</th>
                 <th className="pb-2">구분</th>
+                <th className="pb-2">Fusion</th>
                 <th className="pb-2 text-right">예상 종가</th>
                 <th className="pb-2 text-right">실제 종가</th>
                 <th className="pb-2 text-right">오차</th>
@@ -369,20 +500,32 @@ export default function PredictionLabDashboard({ data }: Props) {
                 <tr key={row.id} className="border-b border-border/40">
                   <td className="py-2">
                     <div className="font-medium">{row.symbol}</div>
-                    <div className="text-[11px] text-text-secondary">{row.target_date}{row.country_code ? ` • ${row.country_code}` : ""}</div>
+                    <div className="text-[11px] text-text-secondary">
+                      {row.target_date}
+                      {row.country_code ? ` • ${row.country_code}` : ""}
+                    </div>
                   </td>
                   <td className="py-2">{scopeLabel(row.scope)}</td>
+                  <td className="py-2">
+                    <div className="font-medium">{methodLabel(row.fusion_method ?? "prior_only")}</div>
+                    <div className="text-[11px] text-text-secondary">
+                      blend {((row.fusion_blend_weight ?? 0) * 100).toFixed(0)}% · graph{" "}
+                      {row.graph_context_used ? `${((row.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
+                    </div>
+                  </td>
                   <td className="py-2 text-right font-mono">{row.predicted_close.toFixed(2)}</td>
                   <td className="py-2 text-right font-mono">{row.actual_close != null ? row.actual_close.toFixed(2) : "대기"}</td>
                   <td className="py-2 text-right font-mono">{row.abs_error_pct != null ? `${row.abs_error_pct.toFixed(2)}%` : "-"}</td>
                   <td className="py-2 text-right">{row.confidence.toFixed(1)}</td>
-                  <td className={`py-2 text-right font-medium ${
-                    row.direction_hit == null
-                      ? "text-text-secondary"
-                      : row.direction_hit
-                        ? "text-emerald-500"
-                        : "text-red-500"
-                  }`}>
+                  <td
+                    className={`py-2 text-right font-medium ${
+                      row.direction_hit == null
+                        ? "text-text-secondary"
+                        : row.direction_hit
+                          ? "text-emerald-500"
+                          : "text-red-500"
+                    }`}
+                  >
                     {row.direction_hit == null ? "대기" : row.direction_hit ? "적중" : "미스"}
                     {row.within_range != null ? (
                       <span className={`ml-2 text-[11px] ${changeColor(row.within_range ? 1 : -1)}`}>
@@ -399,5 +542,3 @@ export default function PredictionLabDashboard({ data }: Props) {
     </div>
   );
 }
-
-

@@ -1,4 +1,5 @@
 import unittest
+import json
 from unittest.mock import AsyncMock, call, patch
 
 from app.models.forecast import ForecastScenario, NextDayForecast
@@ -122,6 +123,41 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["monthly_budget"], 500000.0)
 
     async def test_prediction_lab_normalizes_breakdowns(self):
+        calibration_snapshot = json.dumps(
+            {
+                "fusion_features": {
+                    "prior_fused_score": 0.42,
+                    "fundamental_score": 0.18,
+                    "macro_score": 0.09,
+                    "event_sentiment": 0.22,
+                    "event_surprise": 0.11,
+                    "event_uncertainty": 0.14,
+                    "flow_score": 0.08,
+                    "coverage_naver": 0.7,
+                    "coverage_opendart": 0.6,
+                    "regime_spread": 0.16,
+                },
+                "graph_context": {
+                    "used": True,
+                    "coverage": 0.72,
+                    "peer_count": 4,
+                    "peer_momentum_5d": 0.03,
+                    "peer_momentum_20d": 0.08,
+                    "peer_dispersion": 0.02,
+                    "sector_relative_strength": 0.05,
+                    "correlation_support": 0.41,
+                    "news_relation_support": 0.33,
+                    "graph_context_score": 0.24,
+                },
+                "fusion_metadata": {
+                    "method": "learned_blended_graph",
+                    "profile_bucket": "default",
+                    "profile_sample_count": 64,
+                    "blend_weight": 0.31,
+                    "profile_fitted_at": "2026-03-28T10:15:00",
+                },
+            }
+        )
         with (
             patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.research_service.cache.set", new=AsyncMock()),
@@ -186,6 +222,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                             "confidence": 67.0,
                             "up_probability": 61.0,
                             "model_version": "signal-v2.1",
+                            "calibration_json": calibration_snapshot,
                             "created_at": 1.0,
                             "evaluated_at": 2.0,
                         }
@@ -268,6 +305,39 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
+                "app.services.research_service.db.prediction_evaluated_samples",
+                new=AsyncMock(
+                    side_effect=[
+                        [
+                            {
+                                "calibration_json": calibration_snapshot,
+                                "reference_price": 100.0,
+                                "actual_close": 101.5,
+                            },
+                            {
+                                "calibration_json": calibration_snapshot,
+                                "reference_price": 100.0,
+                                "actual_close": 98.5,
+                            },
+                        ],
+                        [
+                            {
+                                "calibration_json": calibration_snapshot,
+                                "reference_price": 100.0,
+                                "actual_close": 103.0,
+                            }
+                        ],
+                        [
+                            {
+                                "calibration_json": calibration_snapshot,
+                                "reference_price": 100.0,
+                                "actual_close": 104.0,
+                            }
+                        ],
+                    ]
+                ),
+            ),
+            patch(
                 "app.services.research_service.confidence_calibration_service.get_profile_summary",
                 return_value=[
                     {
@@ -290,16 +360,56 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     },
                 ],
             ),
+            patch(
+                "app.services.research_service.learned_fusion_profile_service.get_profile_summary",
+                return_value=[
+                    {
+                        "prediction_type": "next_day",
+                        "label": "1D",
+                        "method": "learned_blended_graph",
+                        "sample_count": 64,
+                        "positive_rate": 61.0,
+                        "brier_score": 0.1742,
+                        "prior_brier_score": 0.1899,
+                        "prior_brier_delta": 0.0157,
+                        "fitted_at": "2026-03-28T10:15:00",
+                        "profile_bucket": "default",
+                        "status": "active",
+                    },
+                    {
+                        "prediction_type": "distributional_5d",
+                        "label": "5D",
+                        "method": "learned_blended",
+                        "sample_count": 28,
+                        "positive_rate": 57.0,
+                        "brier_score": 0.192,
+                        "prior_brier_score": 0.201,
+                        "prior_brier_delta": 0.009,
+                        "fitted_at": "2026-03-28T10:15:00",
+                        "profile_bucket": "default",
+                        "status": "bootstrapping",
+                    },
+                ],
+            ),
+            patch(
+                "app.services.research_service.learned_fusion_profile_service.get_last_refresh_time",
+                return_value="2026-03-28T10:15:00",
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
         self.assertEqual(result["accuracy"]["total_predictions"], 10)
         self.assertEqual(len(result["horizon_accuracy"]), 3)
         self.assertEqual(result["horizon_accuracy"][1]["label"], "5D")
+        self.assertEqual(result["horizon_accuracy"][0]["current_method"], "learned_blended_graph")
         self.assertEqual(len(result["empirical_calibration"]), 2)
         self.assertEqual(result["empirical_calibration"][0]["prediction_type"], "next_day")
+        self.assertEqual(result["fusion_profiles"][0]["prediction_type"], "next_day")
+        self.assertTrue(result["graph_context_summary"]["coverage_available"])
+        self.assertEqual(result["fusion_status_summary"]["active_model_version"], "dist-studentt-v3.3-lfgraph")
         self.assertEqual(result["breakdown"]["by_country"][0]["label"], "KR")
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
+        self.assertEqual(result["recent_records"][0]["fusion_method"], "learned_blended_graph")
         self.assertTrue(result["insights"])
 
     async def test_portfolio_empty_snapshot(self):

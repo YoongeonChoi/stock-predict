@@ -87,6 +87,14 @@ export interface NextDayForecast {
   data_quality_support?: number | null;
   volatility_ratio?: number | null;
   confidence_calibrator?: string | null;
+  calibration_snapshot?: Record<string, unknown> | null;
+  fusion_method?: "prior_only" | "learned_blended" | "learned_blended_graph" | null;
+  fusion_profile_sample_count?: number | null;
+  fusion_blend_weight?: number | null;
+  graph_context_used?: boolean | null;
+  graph_context_score?: number | null;
+  graph_coverage?: number | null;
+  fusion_profile_fitted_at?: string | null;
   confidence_note: string;
   news_sentiment: number;
   raw_signal: number;
@@ -149,6 +157,14 @@ export interface FreeKrForecastHorizon {
   data_quality_support?: number | null;
   volatility_ratio?: number | null;
   confidence_calibrator?: string | null;
+  calibration_snapshot?: Record<string, unknown> | null;
+  fusion_method?: "prior_only" | "learned_blended" | "learned_blended_graph" | null;
+  fusion_profile_sample_count?: number | null;
+  fusion_blend_weight?: number | null;
+  graph_context_used?: boolean | null;
+  graph_context_score?: number | null;
+  graph_coverage?: number | null;
+  fusion_profile_fitted_at?: string | null;
 }
 
 export interface FreeKrForecast {

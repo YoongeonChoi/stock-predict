@@ -14,6 +14,7 @@ export default async function LabPage() {
   const data = await getPublicPredictionLab(40, false).catch(() => null);
   const horizonRows = data?.horizon_accuracy ?? [];
   const empiricalByType = new Map((data?.empirical_calibration ?? []).map((row) => [row.prediction_type, row]));
+  const fusionSummary = data?.fusion_status_summary;
 
   return (
     <div className="page-shell">
@@ -22,7 +23,7 @@ export default async function LabPage() {
         title="예측 연구실"
         description={
           data
-            ? `1D / 5D / 20D 실측 검증 ${data.accuracy.total_predictions.toLocaleString("ko-KR")}건 기준 / 방향 적중 ${pct(data.accuracy.direction_accuracy)} / 밴드 적중 ${pct(data.accuracy.within_range_rate)} / 평균 오차 ${data.accuracy.avg_error_pct.toFixed(2)}%`
+            ? `1D / 5D / 20D 실측 검증 ${data.accuracy.total_predictions.toLocaleString("ko-KR")}건 기준 / 방향 적중 ${pct(data.accuracy.direction_accuracy)} / 밴드 적중 ${pct(data.accuracy.within_range_rate)} / 평균 오차 ${data.accuracy.avg_error_pct.toFixed(2)}% / 모델 ${fusionSummary?.active_model_version ?? "dist-studentt-v3.3-lfgraph"}`
             : "예측 방향 적중률, 밴드 적중률, 평균 오차, 보정 상태를 같은 기준으로 묶어 공개 검증 흐름을 먼저 보여줍니다."
         }
         meta={
@@ -44,7 +45,7 @@ export default async function LabPage() {
               </div>
               <PublicAuditStrip meta={{ generated_at: data.generated_at, partial: false, fallback_reason: null }} staleLabel="실측 로그 기준" />
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               {horizonRows.map((row) => {
                 const empirical = empiricalByType.get(row.prediction_type);
                 return (
@@ -61,6 +62,16 @@ export default async function LabPage() {
                 <div className="mt-2 text-sm font-semibold text-text">{new Date(data.generated_at).toLocaleString("ko-KR")}</div>
                 <div className="mt-1 text-xs text-text-secondary">평가 완료 {data.accuracy.total_predictions.toLocaleString("ko-KR")}건</div>
                 <div className="mt-1 text-xs text-text-secondary">평가 대기 {data.accuracy.pending_predictions.toLocaleString("ko-KR")}건</div>
+              </div>
+              <div className="metric-card">
+                <div className="text-xs text-text-secondary">Learned Fusion</div>
+                <div className="mt-2 text-sm font-semibold text-text">{fusionSummary?.active_model_version ?? "dist-studentt-v3.3-lfgraph"}</div>
+                <div className="mt-1 text-xs text-text-secondary">
+                  평균 blend {(Number(fusionSummary?.avg_blend_weight ?? 0) * 100).toFixed(1)}%
+                </div>
+                <div className="mt-1 text-xs text-text-secondary">
+                  graph coverage {Number(data.graph_context_summary?.avg_coverage ?? 0).toFixed(2)}
+                </div>
               </div>
             </div>
           </section>

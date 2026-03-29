@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     startup_prediction_accuracy_refresh_timeout: int = 20
     startup_research_archive_sync: bool = True
     startup_research_archive_sync_timeout: int = 35
+    startup_learned_fusion_refresh: bool = True
+    startup_learned_fusion_refresh_timeout: int = 25
     startup_market_opportunity_prewarm: bool = True
     startup_market_opportunity_prewarm_timeout: int = 180
     startup_background_task_concurrency: int = 3

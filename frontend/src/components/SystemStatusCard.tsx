@@ -29,6 +29,7 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
   const primaryModel = diagnostics.forecast_models[0];
   const criticalSources = diagnostics.data_sources.slice(0, 4);
   const calibrationProfiles = diagnostics.confidence_calibration_profiles ?? [];
+  const learnedFusionStatus = diagnostics.learned_fusion_status;
   const versionsAligned = frontendVersion === diagnostics.version;
   const backendStartedAtLabel = diagnostics.started_at
     ? new Date(diagnostics.started_at).toLocaleString("ko-KR")
@@ -219,6 +220,39 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
           </div>
         )}
       </div>
+
+      {learnedFusionStatus ? (
+        <div className="mt-4 rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary mb-2">Learned Fusion / Graph Context</div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-lg bg-border/20 px-3 py-3">
+              <div className="font-medium text-sm">{learnedFusionStatus.active_model_version}</div>
+              <div className="mt-1 text-xs text-text-secondary">
+                최근 프로필 갱신 {learnedFusionStatus.last_refresh_time ? new Date(learnedFusionStatus.last_refresh_time).toLocaleString("ko-KR") : "아직 없음"}
+              </div>
+              <div className="mt-1 text-xs text-text-secondary">
+                graph coverage {learnedFusionStatus.graph_coverage_available ? "사용 가능" : "표본 축적 중"}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {learnedFusionStatus.horizons.map((row) => (
+                <div key={row.prediction_type} className="rounded-lg bg-border/20 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm">{row.label}</span>
+                    <span className="text-xs text-text-secondary">{row.method}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">
+                    상태 {row.status} · 표본 {row.sample_count}건
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">
+                    prior delta {row.prior_brier_delta != null ? row.prior_brier_delta.toFixed(4) : "대기"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
