@@ -105,6 +105,35 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(summary.thesis_breakers), 1)
         self.assertIn("fallback", summary.data_quality.lower())
 
+    def test_build_public_stock_summary_rejects_english_fallback_points(self):
+        summary = stock_analyzer._build_public_stock_summary(
+            llm_result={},
+            info={"current_price": 58800},
+            quant_score=SimpleNamespace(total=47),
+            next_day_forecast=SimpleNamespace(
+                confidence=28,
+                up_probability=44.9,
+                risk_flags=[
+                    "시장 체제가 risk-off 쪽으로 기울어 있어 단기 반등 시도도 변동성이 크게 나올 수 있습니다."
+                ],
+                drivers=[],
+            ),
+            market_regime=SimpleNamespace(stance="neutral"),
+            trade_plan=SimpleNamespace(
+                action="reduce_risk",
+                thesis=[
+                    "Market regime is rangebound rotation, which creates a mixed tape for this setup."
+                ],
+                invalidation="수익성이 개선되지 않을 경우",
+                risk_reward_estimate=0.8,
+            ),
+            buy_sell_guide=SimpleNamespace(buy_zone_high=45266.88),
+            llm_available=False,
+        )
+
+        self.assertTrue(all("Market regime" not in item for item in summary.evidence_for))
+        self.assertTrue(all(any("\uac00" <= ch <= "\ud7a3" for ch in item) for item in summary.evidence_for))
+
 
 if __name__ == "__main__":
     unittest.main()

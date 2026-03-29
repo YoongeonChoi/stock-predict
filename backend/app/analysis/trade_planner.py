@@ -48,11 +48,11 @@ def build_trade_plan(
 ) -> TradePlan:
     if current_price <= 0:
         return TradePlan(
-            setup_label=f"{ticker} Observation Only",
+            setup_label=f"{ticker} 관찰 전용",
             action="avoid",
             conviction=30.0,
-            thesis=["Price data is incomplete, so execution planning is disabled."],
-            invalidation="Refresh the dataset before acting on this name.",
+            thesis=["가격 데이터가 부족해 실행 플랜을 잠시 보류했습니다."],
+            invalidation="데이터를 다시 불러온 뒤 판단을 이어가세요.",
         )
 
     ma20 = _last_value(technical.ma_20)
@@ -104,31 +104,31 @@ def build_trade_plan(
     )
 
     if should_reduce_risk:
-        setup_label = "Risk Reduction"
+        setup_label = "리스크 축소"
         action = "reduce_risk"
         entry_low = None
         entry_high = None
         hold_days = 3
     elif bullish_forecast and near_buy_zone and long_ready:
-        setup_label = "Pullback Accumulation"
+        setup_label = "눌림목 분할 대응"
         action = "accumulate"
         entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.985)
         entry_high = min(buy_sell_guide.buy_zone_high, current_price * 1.01)
         hold_days = 8
     elif bullish_forecast and trend_confirmed and macd_hist >= 0 and long_ready:
-        setup_label = "Momentum Continuation"
+        setup_label = "추세 지속 확인"
         action = "breakout_watch"
         entry_low = current_price * 0.995
         entry_high = current_price * 1.02
         hold_days = 5
     elif rsi < 38 and next_day_forecast and up_probability >= 55 and long_ready:
-        setup_label = "Mean-Reversion Swing"
+        setup_label = "되돌림 스윙"
         action = "accumulate"
         entry_low = max(buy_sell_guide.buy_zone_low, current_price * 0.98)
         entry_high = min(current_price * 1.005, buy_sell_guide.buy_zone_high * 1.02)
         hold_days = 6
     else:
-        setup_label = "Wait For Confirmation"
+        setup_label = "확인 대기"
         action = "wait_pullback"
         entry_low = buy_sell_guide.buy_zone_low
         entry_high = min(buy_sell_guide.buy_zone_high, current_price * 0.99)
@@ -156,25 +156,39 @@ def build_trade_plan(
 
     thesis = []
     if next_day_forecast:
+        if next_day_forecast.direction == "down":
+            thesis.append(
+                f"단기 확률모형은 {next_day_forecast.target_date}까지 하방 압력이 남아 있다고 보고, 상승 확률은 {next_day_forecast.up_probability:.1f}% 수준에 머뭅니다."
+            )
+        elif next_day_forecast.direction == "up":
+            thesis.append(
+                f"단기 확률모형은 {next_day_forecast.target_date}까지 상방 시도를 열어 두지만, 상승 확률 우위는 {next_day_forecast.up_probability:.1f}% 수준입니다."
+            )
+        else:
+            thesis.append(
+                f"단기 확률모형은 {next_day_forecast.target_date}까지 뚜렷한 한 방향보다 혼조 흐름을 가정하며, 상승 확률은 {next_day_forecast.up_probability:.1f}%입니다."
+            )
+    if buy_sell_guide.fair_value:
         thesis.append(
-            f"Short-horizon model points to {next_day_forecast.direction} with {next_day_forecast.up_probability:.1f}% upside odds into {next_day_forecast.target_date}."
+            f"현재 가격은 적정가 대비 {((current_price / buy_sell_guide.fair_value) - 1.0) * 100:+.1f}% 위치에 있어 추격 여부를 더 신중히 봐야 합니다."
         )
-    thesis.append(
-        f"Current price is {((current_price / buy_sell_guide.fair_value) - 1.0) * 100:+.1f}% versus fair value."
-        if buy_sell_guide.fair_value
-        else "Fair value estimate is neutral, so execution should stay size-aware."
-    )
-    if market_regime:
-        tailwind = "tailwind" if market_regime.stance == "risk_on" else "headwind" if market_regime.stance == "risk_off" else "mixed tape"
-        thesis.append(f"Market regime is {market_regime.label.lower()}, which creates a {tailwind} for this setup.")
     else:
-        thesis.append("Market regime context is limited, so execution should stay flexible.")
+        thesis.append("적정가 추정이 넓지 않아 비중과 타이밍을 더 보수적으로 잡는 편이 낫습니다.")
+    if market_regime:
+        if market_regime.stance == "risk_on":
+            thesis.append("시장 국면이 완전한 역풍은 아니어서 추세 확인이 붙으면 해석 여지는 남아 있습니다.")
+        elif market_regime.stance == "risk_off":
+            thesis.append("시장 국면이 방어적으로 기울어 있어 공격적 확대에는 불리합니다.")
+        else:
+            thesis.append("시장 국면이 한쪽으로 크게 기울지 않아 선별 대응이 더 중요합니다.")
+    else:
+        thesis.append("시장 국면 보조 신호가 제한적이라 실행 플랜도 유연하게 가져가는 편이 좋습니다.")
 
-    invalidation = "A daily close below the proposed stop loss invalidates the setup."
+    invalidation = "제안한 손절 구간 아래로 일봉 마감이 이어지면 현재 가설은 무효로 봅니다."
     if action == "reduce_risk":
-        invalidation = "If price reclaims the 20-day structure with rising forecast odds, reassess the defensive posture."
+        invalidation = "20일선 구조를 다시 회복하고 단기 확률이 개선되면 방어 대응을 재평가합니다."
     elif action == "wait_pullback":
-        invalidation = "If price extends without resetting into the entry band, do not chase; wait for a cleaner pullback."
+        invalidation = "진입 밴드 재확인 없이 가격만 먼저 달아나면 추격하지 않고 다음 눌림을 기다립니다."
 
     conviction = 42.0
     if next_day_forecast:

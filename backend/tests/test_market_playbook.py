@@ -174,4 +174,6 @@ class MarketPlaybookTests(unittest.TestCase):
         )
 
         self.assertEqual(plan.action, "reduce_risk")
-        self.assertEqual(plan.setup_label, "Risk Reduction")
+        self.assertEqual(plan.setup_label, "리스크 축소")
+        self.assertTrue(any("시장 국면" in item for item in plan.thesis))
+        self.assertIn("재평가", plan.invalidation)
