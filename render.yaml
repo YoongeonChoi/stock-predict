@@ -24,17 +24,19 @@ services:
       - key: FRONTEND_ORIGIN_REGEX
         sync: false
       - key: STARTUP_PREDICTION_ACCURACY_REFRESH
-        value: "true"
+        value: "false"
       - key: STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT
         value: "20"
       - key: STARTUP_RESEARCH_ARCHIVE_SYNC
-        value: "true"
+        value: "false"
       - key: STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT
         value: "35"
       - key: STARTUP_MARKET_OPPORTUNITY_PREWARM
         value: "true"
       - key: STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT
-        value: "180"
+        value: "45"
+      - key: STARTUP_BACKGROUND_TASK_CONCURRENCY
+        value: "1"
       - key: OPENAI_API_KEY
         sync: false
       - key: ECOS_API_KEY

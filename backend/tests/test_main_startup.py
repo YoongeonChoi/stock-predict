@@ -179,6 +179,115 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         tasks = {task["name"]: task for task in state["startup_tasks"]}
         self.assertIn("Startup window ended before prediction accuracy refresh finished", tasks["prediction_accuracy_refresh"]["detail"])
 
+    async def test_startup_queues_tasks_when_concurrency_is_one(self):
+        accuracy_gate = asyncio.Event()
+        research_gate = asyncio.Event()
+        radar_gate = asyncio.Event()
+
+        async def wait_for_accuracy(*args, **kwargs):
+            await accuracy_gate.wait()
+
+        async def wait_for_research(*args, **kwargs):
+            await research_gate.wait()
+
+        async def wait_for_radar(*args, **kwargs):
+            await radar_gate.wait()
+
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(side_effect=wait_for_accuracy),
+            ),
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(side_effect=wait_for_research),
+            ),
+            patch(
+                "app.main.market_service.get_market_opportunities_quick",
+                new=AsyncMock(side_effect=wait_for_radar),
+            ),
+            patch.object(app_settings, "startup_background_task_concurrency", 1),
+        ):
+            async with lifespan(app):
+                state = await self._wait_for_status(
+                    "starting",
+                    {
+                        "prediction_accuracy_refresh": "running",
+                        "research_archive_sync": "queued",
+                        "market_opportunity_prewarm": "queued",
+                    },
+                )
+                tasks = {task["name"]: task for task in state["startup_tasks"]}
+                self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "running")
+                self.assertEqual(tasks["research_archive_sync"]["status"], "queued")
+                self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "queued")
+
+                accuracy_gate.set()
+                state = await self._wait_for_status(
+                    "starting",
+                    {
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "running",
+                        "market_opportunity_prewarm": "queued",
+                    },
+                )
+
+                research_gate.set()
+                state = await self._wait_for_status(
+                    "starting",
+                    {
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "running",
+                    },
+                )
+
+                radar_gate.set()
+                state = await self._wait_for_status(
+                    "ok",
+                    {
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
+                    },
+                )
+                self.assertEqual(state["status"], "ok")
+
+    async def test_startup_marks_disabled_tasks_as_skipped(self):
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(return_value=None),
+            ) as accuracy_refresh,
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(return_value={"processed_total": 0}),
+            ) as research_sync,
+            patch(
+                "app.main.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
+            ) as radar_prewarm,
+            patch.object(app_settings, "startup_prediction_accuracy_refresh", False),
+            patch.object(app_settings, "startup_research_archive_sync", False),
+            patch.object(app_settings, "startup_market_opportunity_prewarm", False),
+        ):
+            async with lifespan(app):
+                state = get_runtime_state()
+
+        self.assertEqual(state["status"], "ok")
+        tasks = {task["name"]: task for task in state["startup_tasks"]}
+        self.assertEqual(tasks["prediction_accuracy_refresh"]["status"], "ok")
+        self.assertEqual(tasks["research_archive_sync"]["status"], "ok")
+        self.assertEqual(tasks["market_opportunity_prewarm"]["status"], "ok")
+        self.assertIn("skipped by configuration", tasks["prediction_accuracy_refresh"]["detail"])
+        self.assertIn("skipped by configuration", tasks["research_archive_sync"]["detail"])
+        self.assertIn("skipped by configuration", tasks["market_opportunity_prewarm"]["detail"])
+        accuracy_refresh.assert_not_called()
+        research_sync.assert_not_called()
+        radar_prewarm.assert_not_called()
+
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):
             with self.assertRaises(RuntimeError):

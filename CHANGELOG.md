@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.4 - 2026-03-29
+
+- Render free backend startup profile을 메모리 절약형으로 다시 고정했습니다. 운영 `render.yaml`에서는 `prediction_accuracy_refresh`, `research_archive_sync`를 startup에서 기본 비활성화하고, `market_opportunity_prewarm`만 `45초` 예산 안에서 우선 실행하도록 바꿨습니다.
+- backend startup orchestrator는 이제 설정된 concurrency에 따라 task를 `running / queued` 상태로 순차 실행할 수 있습니다. cold start 시 여러 background job이 동시에 올라가 메모리 피크와 SQLite lock을 만들던 경로를 줄였고, `startup_tasks` 진단에도 현재 어떤 작업이 대기 중인지 그대로 남기도록 맞췄습니다.
+- 운영 진단에서 보이던 `research_archive_sync`의 `database is locked` 경쟁을 줄이기 위해 startup 동시성 제어와 Render env를 함께 정리했습니다. 공개 `/archive`와 `/lab`은 계속 on-demand 경로로 데이터를 갱신하므로, cold start first paint 안정성을 우선해도 기능 계약은 유지합니다.
+
 ## v2.51.3 - 2026-03-29
 
 - 종목 상세 `SP-4004` timeout fallback이 공개 판단 요약과 트레이드 플랜에 영어 내부 문구를 섞어 보여주던 문제를 고쳤습니다. 이제 `public_summary`는 영어 bullet을 공개 카드에 올리지 않고, fallback 근거와 무효화 조건도 한국어 우선 문장으로만 정리합니다.

@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     startup_research_archive_sync_timeout: int = 35
     startup_market_opportunity_prewarm: bool = True
     startup_market_opportunity_prewarm_timeout: int = 180
+    startup_background_task_concurrency: int = 3
 
     cache_ttl_price: int = 900
     cache_ttl_chart: int = 3600
