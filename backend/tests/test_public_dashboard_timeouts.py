@@ -35,7 +35,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "country_report_timeout")
 
-    def test_market_opportunities_timeout_returns_quick_fallback(self):
+    def test_market_opportunities_returns_quick_fallback_without_waiting_for_full_timeout(self):
         quick_payload = {
             "country_code": "KR",
             "generated_at": "2026-03-27T12:00:00",
@@ -60,12 +60,13 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "bullish_count": 5,
             "universe_source": "krx_listing",
             "universe_note": "상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.",
-            "opportunities": [],
+            "opportunities": [{"ticker": "005930.KS", "action": "accumulate"}],
         }
         with (
-            patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
             patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(return_value=quick_payload)),
+            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(return_value={"ok": True})),
             patched_client() as client,
         ):
             response = client.get("/api/market/opportunities/KR?limit=8")
@@ -76,7 +77,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "opportunity_quick_response")
 
-    def test_market_opportunities_timeout_reuses_cached_quick_payload(self):
+    def test_market_opportunities_prefers_cached_quick_payload_before_live_refresh(self):
         cached_quick_payload = {
             "country_code": "KR",
             "generated_at": "2026-03-27T12:00:00",
@@ -101,13 +102,13 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "bullish_count": 5,
             "universe_source": "krx_listing",
             "universe_note": "이전 quick 응답입니다.",
-            "opportunities": [],
+            "opportunities": [{"ticker": "005930.KS", "action": "accumulate"}],
         }
         with (
-            patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=_slow_response)),
-            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=RuntimeError("quick failed"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
             patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=cached_quick_payload)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("live quick should not run"))),
+            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(return_value={"ok": True})),
             patched_client() as client,
         ):
             response = client.get("/api/market/opportunities/KR?limit=8")
@@ -117,7 +118,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
         self.assertIn("최근 usable 후보", response.json()["universe_note"])
 
-    def test_market_opportunities_timeout_returns_placeholder_partial_when_no_quick_exists(self):
+    def test_market_opportunities_returns_placeholder_when_quick_times_out_and_no_cache_exists(self):
         placeholder_payload = {
             "country_code": "KR",
             "generated_at": "2026-03-27T12:00:00",
@@ -145,10 +146,11 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "opportunities": [],
         }
         with (
-            patch("app.routers.country.OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(side_effect=_slow_response)),
-            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=RuntimeError("quick failed"))),
+            patch("app.routers.country.OPPORTUNITY_QUICK_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
             patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.country.market_service.get_market_opportunities", new=AsyncMock(return_value={"ok": True})),
             patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
             patched_client() as client,
         ):

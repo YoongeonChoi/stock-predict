@@ -18,7 +18,7 @@ from app.utils.async_tools import gather_limited
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
 OPPORTUNITY_TIMEOUT_SECONDS = 12
-OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 8
+OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 12
 HEATMAP_TIMEOUT_SECONDS = 10
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
@@ -130,6 +130,12 @@ def _with_opportunity_partial(
     return response
 
 
+def _is_usable_opportunity_payload(payload: dict | None) -> bool:
+    if not payload:
+        return False
+    return int(payload.get("quote_available_count") or 0) > 0 and bool(payload.get("opportunities"))
+
+
 def _empty_institutional_analysis() -> dict:
     return {
         "policy_institutions": [],
@@ -155,6 +161,15 @@ def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
             }
         )
     return refs
+
+
+def _spawn_opportunity_refresh(code: str, limit: int) -> None:
+    code = code.upper()
+    label = f"Opportunity radar background refresh for {code}"
+    task = asyncio.create_task(market_service.get_market_opportunities(code, limit))
+    task.add_done_callback(
+        lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
+    )
 
 
 async def _build_country_report_fallback(
@@ -637,77 +652,61 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
-    radar_label = f"Opportunity radar for {code}"
+
+    cached_full = await market_service.get_cached_market_opportunities(code, limit)
+    if _is_usable_opportunity_payload(cached_full):
+        return cached_full
+
+    cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
+    if _is_usable_opportunity_payload(cached_quick):
+        _spawn_opportunity_refresh(code, limit)
+        return _with_opportunity_partial(
+            cached_quick,
+            fallback_reason="opportunity_cached_quick_response",
+            note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
+            fallback_tier="cached_quick",
+        )
+
     quick_label = f"Opportunity quick fallback for {code}"
-    opportunity_task = asyncio.create_task(market_service.get_market_opportunities(code, limit))
-    opportunity_task.add_done_callback(
-        lambda task, label=radar_label: _log_background_completion(task, label=label)
-    )
     quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
     quick_task.add_done_callback(
         lambda task, label=quick_label: _log_background_completion(task, label=label)
     )
-    # Let both tasks enter the event loop once so timeout/cancel paths see a started task consistently.
-    await asyncio.sleep(0)
     try:
-        response = await asyncio.wait_for(
-            asyncio.shield(opportunity_task),
-            timeout=OPPORTUNITY_TIMEOUT_SECONDS,
+        quick_response = await asyncio.wait_for(
+            quick_task,
+            timeout=OPPORTUNITY_QUICK_TIMEOUT_SECONDS,
         )
-        _cancel_background_task(quick_task, label=quick_label)
-        return response
-    except asyncio.TimeoutError:
-        try:
-            quick_response = await asyncio.wait_for(
-                asyncio.shield(quick_task),
-                timeout=max(2.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 4.0)),
-            )
-            _cancel_background_task(opportunity_task, label=radar_label)
+        if _is_usable_opportunity_payload(quick_response):
+            _spawn_opportunity_refresh(code, limit)
             return _with_opportunity_partial(
                 quick_response,
                 fallback_reason="opportunity_quick_response",
+                note="이번 응답에서는 1차 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             )
-        except asyncio.TimeoutError:
-            logging.warning("opportunity quick fallback timed out for %s", code)
-            _cancel_background_task(opportunity_task, label=radar_label)
-            _cancel_background_task(quick_task, label=quick_label)
-            cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
-            if cached_quick:
-                return _with_opportunity_partial(
-                    cached_quick,
-                    fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 최근 usable 후보를 먼저 표시합니다.",
-                    fallback_tier="cached_quick",
-                )
-            return _with_opportunity_partial(
-                market_service.build_market_opportunities_placeholder(
-                    code,
-                    note=(
-                        f"{code} 기회 레이더가 이번 요청에서 사용 가능한 후보를 만들지 못했습니다. "
-                        "자동 장기 스캔이 계속 유지되는 상태는 아니며, 다음 재조회에서는 quick 스냅샷을 새로 시도합니다."
-                    ),
-                ),
-                fallback_reason="opportunity_placeholder_response",
-            )
-        except Exception as quick_exc:
-            logging.warning("opportunity quick fallback failed for %s: %s", code, quick_exc, exc_info=True)
-            _cancel_background_task(opportunity_task, label=radar_label)
-            _cancel_background_task(quick_task, label=quick_label)
-            cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
-            if cached_quick:
-                return _with_opportunity_partial(
-                    cached_quick,
-                    fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 최근 usable 후보를 먼저 표시합니다.",
-                    fallback_tier="cached_quick",
-                )
-            return _with_opportunity_partial(
-                market_service.build_market_opportunities_placeholder(
-                    code,
-                    note=(
-                        f"{code} 기회 레이더가 이번 요청에서 사용 가능한 후보를 만들지 못했습니다. "
-                        "잠시 뒤 다시 열면 fresh quick 스냅샷을 새로 시도합니다."
-                    ),
-                ),
-                fallback_reason="opportunity_placeholder_response",
-            )
+    except asyncio.TimeoutError:
+        logging.warning("opportunity quick fetch timed out for %s", code)
+    except Exception as quick_exc:
+        logging.warning("opportunity quick fetch failed for %s: %s", code, quick_exc, exc_info=True)
+
+    cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
+    if _is_usable_opportunity_payload(cached_quick):
+        _spawn_opportunity_refresh(code, limit)
+        return _with_opportunity_partial(
+            cached_quick,
+            fallback_reason="opportunity_cached_quick_response",
+            note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
+            fallback_tier="cached_quick",
+        )
+
+    _spawn_opportunity_refresh(code, limit)
+    return _with_opportunity_partial(
+        market_service.build_market_opportunities_placeholder(
+            code,
+            note=(
+                f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
+                "정밀 후보 계산은 백그라운드에서 계속 시도하고, 다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
+            ),
+        ),
+        fallback_reason="opportunity_placeholder_response",
+    )

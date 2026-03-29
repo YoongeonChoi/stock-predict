@@ -467,6 +467,15 @@ def _build_opportunity_snapshot_id(
     return f"{country_code.upper()}:{fallback_tier}:{normalized}"
 
 
+def _full_opportunity_cache_key(
+    country_code: str,
+    limit: int,
+    *,
+    max_candidates: int | None = None,
+) -> str:
+    return f"opportunity_radar:v16:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
+
+
 async def _build_quote_screen(
     *,
     country_code: str,
@@ -737,7 +746,11 @@ async def get_market_opportunities(
     max_candidates: int | None = None,
 ) -> dict:
     country_code = country_code.upper()
-    cache_key = f"opportunity_radar:v16:{country_code}:{limit}:{max_candidates or 'auto'}"
+    cache_key = _full_opportunity_cache_key(
+        country_code,
+        limit,
+        max_candidates=max_candidates,
+    )
 
     country = COUNTRY_REGISTRY.get(country_code)
     if not country:
@@ -1106,21 +1119,38 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             note="정밀 시장 국면 계산이 길어져 1차 시세 스캔 후보를 먼저 제공합니다.",
         )
         universe_selection = await _resolve_quick_opportunity_universe(country_code)
-        universe_selection, quote_screen = await _resolve_resilient_quote_screen(
-            country_code=country_code,
-            universe_selection=universe_selection,
-            market_regime=market_regime,
-            max_pairs=QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
-        )
-        ranked_quotes = list(quote_screen.get("ranked") or [])
-        scanned_count = int(quote_screen.get("scanned_count") or len(ranked_quotes))
-        ranked = _build_quote_only_opportunities(
-            ranked_quotes=ranked_quotes,
-            country_code=country_code,
-            market_regime=market_regime,
-            limit=limit,
-        )
+        quote_screen = {
+            "universe_size": len(_flatten_universe(universe_selection.sectors)),
+            "scanned_count": 0,
+            "quote_available_count": 0,
+            "ranked": [],
+        }
+        ranked: list[OpportunityItem] = []
         representative_scanned_count = 0
+        if country_code == "KR":
+            ranked, representative_scanned_count = await _build_kr_representative_quote_only_opportunities(
+                country_code=country_code,
+                market_regime=market_regime,
+                universe_selection=universe_selection,
+                limit=limit,
+            )
+        if not ranked:
+            universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                country_code=country_code,
+                universe_selection=universe_selection,
+                market_regime=market_regime,
+                max_pairs=QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
+            )
+            ranked_quotes = list(quote_screen.get("ranked") or [])
+            ranked = _build_quote_only_opportunities(
+                ranked_quotes=ranked_quotes,
+                country_code=country_code,
+                market_regime=market_regime,
+                limit=limit,
+            )
+        scanned_count = int(quote_screen.get("scanned_count") or 0)
+        if representative_scanned_count > 0:
+            scanned_count = representative_scanned_count
         if not ranked:
             ranked = await _build_lightweight_opportunities(
                 candidates=_sample_universe_pairs(
@@ -1131,15 +1161,6 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
                 market_regime=market_regime,
                 limit=limit,
             )
-        if not ranked and country_code == "KR":
-            ranked, representative_scanned_count = await _build_kr_representative_quote_only_opportunities(
-                country_code=country_code,
-                market_regime=market_regime,
-                universe_selection=universe_selection,
-                limit=limit,
-            )
-            if representative_scanned_count > 0:
-                scanned_count = representative_scanned_count
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         note_parts = [universe_selection.note.strip()]
@@ -1201,6 +1222,28 @@ async def get_cached_market_opportunities_quick(country_code: str, limit: int = 
             ).strip()
         return normalized
     return None
+
+
+async def get_cached_market_opportunities(
+    country_code: str,
+    limit: int = 12,
+    *,
+    max_candidates: int | None = None,
+) -> dict | None:
+    cached = await cache.get(
+        _full_opportunity_cache_key(
+            country_code,
+            limit,
+            max_candidates=max_candidates,
+        )
+    )
+    if not cached:
+        return None
+    opportunities = list(cached.get("opportunities") or [])
+    quote_available_count = int(cached.get("quote_available_count") or 0)
+    if quote_available_count <= 0 or not opportunities:
+        return None
+    return cached
 
 
 def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:
