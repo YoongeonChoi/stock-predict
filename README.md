@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.3`
+현재 릴리즈: `v2.52.4`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -128,6 +128,7 @@
 - 공개 숫자 문장은 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 정성 문장으로만 유지합니다. 숫자가 섞인 자유 서술은 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
 - 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
 - 프론트의 공개 서버 fetch는 route별 timeout과 page-level timebox를 함께 사용합니다. 기본 fetch 예산은 `8초`, `opportunity radar`는 `18초`, `screener seed`는 `12초`, `prediction lab / research archive`는 `10초`를 유지하고, 각 server page는 더 짧은 화면 예산 안에서 `timeboxServerPromise`로 first paint를 보호합니다. 그래서 느린 backend 응답이 있어도 `/`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist`가 서버에서 너무 오래 붙잡히지 않고 부분 렌더로 먼저 내려갑니다.
+- 백엔드 공용 캐시의 `get_or_fetch`도 이제 첫 호출자부터 `wait_timeout`을 적용합니다. 덕분에 cold cache 첫 요청이 곧바로 긴 live fetch에 매달리지 않고, `calendar`, `daily briefing`, `prediction accuracy`, `prediction lab` 같은 경로가 첫 요청부터 `fallback + background cache warmup` 구조를 유지합니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
 - KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.

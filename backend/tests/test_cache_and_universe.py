@@ -59,6 +59,28 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback, {"value": 5})
         self.assertEqual(resolved, {"value": 11})
 
+    async def test_get_or_fetch_first_caller_can_timeout_and_background_task_still_caches(self):
+        started = asyncio.Event()
+
+        async def slow_fetcher():
+            started.set()
+            await asyncio.sleep(0.05)
+            return {"value": 19}
+
+        fallback = await cache.get_or_fetch(
+            "unit_test:first_caller_timeout_fallback",
+            slow_fetcher,
+            ttl=60,
+            wait_timeout=0.001,
+            timeout_fallback={"value": 3},
+        )
+        await started.wait()
+        await asyncio.sleep(0.08)
+        cached = await cache.get("unit_test:first_caller_timeout_fallback")
+
+        self.assertEqual(fallback, {"value": 3})
+        self.assertEqual(cached, {"value": 19})
+
     async def test_get_universe_filters_known_invalid_tickers(self):
         with patch(
             "app.data.fmp_client.probe_stock_screener",

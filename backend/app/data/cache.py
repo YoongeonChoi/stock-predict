@@ -48,21 +48,27 @@ async def get_or_fetch(
     if cached is not None:
         return cached
 
-    in_flight = _INFLIGHT_FETCHES.get(key)
-    if in_flight is not None:
+    async def _await_inflight(task: asyncio.Task):
         if wait_timeout is None:
-            return await in_flight
+            return await task
         try:
-            return await asyncio.wait_for(asyncio.shield(in_flight), timeout=wait_timeout)
+            return await asyncio.wait_for(asyncio.shield(task), timeout=wait_timeout)
         except asyncio.TimeoutError:
             return await _resolve_timeout_fallback(timeout_fallback)
 
-    task = asyncio.create_task(fetcher())
+    in_flight = _INFLIGHT_FETCHES.get(key)
+    if in_flight is not None:
+        return await _await_inflight(in_flight)
+
+    async def _fetch_and_cache():
+        try:
+            value = await fetcher()
+            if value is not None:
+                await set(key, value, ttl)
+            return value
+        finally:
+            _INFLIGHT_FETCHES.pop(key, None)
+
+    task = asyncio.create_task(_fetch_and_cache())
     _INFLIGHT_FETCHES[key] = task
-    try:
-        value = await task
-        if value is not None:
-            await set(key, value, ttl)
-        return value
-    finally:
-        _INFLIGHT_FETCHES.pop(key, None)
+    return await _await_inflight(task)

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.4 - 2026-03-29
+
+- 공용 캐시 레이어의 `get_or_fetch`가 더 이상 `두 번째 요청부터만` `wait_timeout`을 적용하지 않습니다. 이제 첫 호출자도 같은 시간 예산 안에서 fallback으로 빠지고 background task가 cache를 채우도록 바꿔, cold cache에서 `/api/calendar/KR`, `/api/briefing/daily`, `/api/archive/accuracy/stats`, `/api/research/predictions`가 첫 요청 한 번에 오래 붙잡히던 경로를 줄였습니다.
+- 회귀 테스트를 추가해 첫 호출자가 timeout fallback을 먼저 받고, 뒤에서 완료된 background fetch가 실제 cache를 채우는 계약을 고정했습니다.
+
 ## v2.52.3 - 2026-03-29
 
 - 공개 화면 전수 점검 기준으로 남아 있던 연결 어긋남을 정리했습니다. `/portfolio`, `/watchlist`의 로그아웃 미리보기는 다시 공개 `Opportunity Radar` snapshot을 기준으로 렌더하고, 더 이상 느린 `screener seed`를 first paint 데이터 원천으로 쓰지 않습니다. 그래서 익명 first paint가 preview보다 늦게 뜨거나, preview 카드가 seed-only 필드에 기대다 빈 상태로 흔들리던 경로를 줄였습니다.
