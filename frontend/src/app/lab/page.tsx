@@ -4,6 +4,8 @@ import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard from "@/components/WorkspaceStateCard";
 import { getPublicPredictionLab } from "@/lib/public-server-api";
 
+export const revalidate = 0;
+
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }

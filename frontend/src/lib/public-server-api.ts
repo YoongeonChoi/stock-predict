@@ -15,20 +15,34 @@ import type {
 import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
 
 const API_BASE_URL = (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+const DEFAULT_PUBLIC_FETCH_TIMEOUT_MS = Number.parseInt(process.env.PUBLIC_SERVER_FETCH_TIMEOUT_MS || "8000", 10);
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
 }
 
-async function getPublicJson<T>(path: string, revalidate: number): Promise<T> {
-  const response = await fetch(apiUrl(path), {
-    next: { revalidate },
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`${path} -> ${response.status}`);
+async function getPublicJson<T>(path: string, revalidate: number, timeoutMs = DEFAULT_PUBLIC_FETCH_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(apiUrl(path), {
+      next: { revalidate },
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`${path} -> ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${path} -> timeout ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.json();
 }
 
 export function getPublicCountries() {
@@ -65,6 +79,7 @@ export function getPublicOpportunities(code = "KR", limit = 12) {
   return getPublicJson<OpportunityRadarResponse & { partial?: boolean; fallback_reason?: string | null }>(
     `/api/market/opportunities/${encodeURIComponent(code)}?limit=${limit}`,
     90,
+    12000,
   );
 }
 
@@ -72,6 +87,7 @@ export function getPublicPredictionLab(limitRecent = 40, refresh = false) {
   return getPublicJson<PredictionLabResponse>(
     `/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`,
     180,
+    10000,
   );
 }
 
@@ -94,16 +110,17 @@ export function getPublicPredictionAccuracy() {
 }
 
 export function getPublicResearchArchive(region: "KR" | "US" | "EU" | "JP" = "KR", limit = 24) {
-  return getPublicJson<ResearchArchiveEntry[]>(`/api/archive/research?region_code=${region}&limit=${limit}`, 300);
+  return getPublicJson<ResearchArchiveEntry[]>(`/api/archive/research?region_code=${region}&limit=${limit}`, 300, 10000);
 }
 
 export function getPublicResearchStatus() {
-  return getPublicJson<ResearchArchiveStatus>("/api/archive/research/status?cached=true", 300);
+  return getPublicJson<ResearchArchiveStatus>("/api/archive/research/status?cached=true", 300, 10000);
 }
 
 export function getPublicScreenerSeed(country = "KR", limit = 10) {
   return getPublicJson<ScreenerResponse & { generated_at?: string; partial?: boolean; fallback_reason?: string | null }>(
     `/api/screener?country=${encodeURIComponent(country)}&limit=${limit}`,
     90,
+    12000,
   );
 }

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.1 - 2026-03-29
+
+- 공개 서버 페이지 `/`, `/radar`, `/calendar`, `/archive`, `/screener`, `/lab`, `/portfolio`, `/watchlist`는 이제 `export const revalidate = 0`으로 request-time SSR을 강제합니다. 각 페이지의 개별 공개 fetch는 기존 `next.revalidate` 캐시를 유지하므로, Vercel build의 `Collecting page data` 단계가 Render live API 응답에 매달리다 실패하는 경로를 막았습니다.
+- `public-server-api`는 route별 timeout을 추가했습니다. 기본 공개 fetch는 `8초`, `market opportunities / screener seed`는 `12초`, `prediction lab / research archive`는 `10초` 예산 안에서만 대기하고, timeout이면 구조화 에러로 떨어져 page-level `.catch()`와 `Promise.allSettled()`가 부분 결과를 먼저 살릴 수 있게 했습니다.
+
 ## v2.51.0 - 2026-03-29
 
 - `country report`는 공개 숫자와 공개 서술을 분리했습니다. 이제 `market_summary`는 숫자·퍼센트·날짜 없는 정성 요약만 유지하고, 공개 홈과 국가 상세의 숫자 근거는 `macro_claims` 구조체에서만 렌더합니다.
