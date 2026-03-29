@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -20,6 +21,7 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.cache.set", new=AsyncMock()),
             patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=earning_rows)),
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
             result = await calendar_service.get_calendar("KR", year=2026, month=3)
@@ -39,12 +41,14 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.cache.set", new=AsyncMock()),
             patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
             result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
         cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
         self.assertEqual(len(cpi_dates), 1)
+        self.assertIn("월간 핵심 일정", result["summary"]["note"])
 
     async def test_actual_economic_event_replaces_monthly_recurring_estimate(self):
         economic_rows = [
@@ -56,12 +60,58 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.calendar_service.cache.set", new=AsyncMock()),
             patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
             patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
             patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
         ):
             result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
         cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
         self.assertEqual(cpi_dates, ["2026-03-12"])
+
+    async def test_calendar_returns_partial_with_available_source_data_when_one_feed_is_slow(self):
+        async def _slow_earnings():
+            await asyncio.sleep(0.05)
+            return [{"date": "2026-03-19", "symbol": "005930.KS", "time": "bmo", "epsEstimated": 2.1}]
+
+        economic_rows = [
+            {"date": "2026-03-12", "event": "CPI Release", "country": "KR"},
+        ]
+
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.CALENDAR_SOURCE_WAIT_TIMEOUT_SECONDS", 0.01),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(side_effect=_slow_earnings)),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
+
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "calendar_live_partial_data")
+        self.assertTrue(any(event["title_en"] == "CPI Release" for event in result["events"]))
+        self.assertGreater(result["summary"]["total_events"], 0)
+
+    async def test_calendar_marks_external_source_unavailable_when_fmp_feature_is_disabled(self):
+        disabled_status = {"status_code": 403, "detail": "quota"}
+
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=[])),
+            patch(
+                "app.services.calendar_service.fmp_client.get_feature_status",
+                new=AsyncMock(side_effect=[disabled_status, disabled_status]),
+            ),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("KR", year=2026, month=4)
+
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "calendar_external_source_unavailable")
+        self.assertIn("외부 캘린더 공급 제한", result["summary"]["note"])
 
 
 if __name__ == "__main__":

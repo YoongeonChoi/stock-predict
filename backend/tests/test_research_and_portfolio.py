@@ -1,5 +1,6 @@
 import unittest
 import json
+import asyncio
 from unittest.mock import AsyncMock, call, patch
 
 from app.models.forecast import ForecastScenario, NextDayForecast
@@ -305,39 +306,6 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.services.research_service.db.prediction_evaluated_samples",
-                new=AsyncMock(
-                    side_effect=[
-                        [
-                            {
-                                "calibration_json": calibration_snapshot,
-                                "reference_price": 100.0,
-                                "actual_close": 101.5,
-                            },
-                            {
-                                "calibration_json": calibration_snapshot,
-                                "reference_price": 100.0,
-                                "actual_close": 98.5,
-                            },
-                        ],
-                        [
-                            {
-                                "calibration_json": calibration_snapshot,
-                                "reference_price": 100.0,
-                                "actual_close": 103.0,
-                            }
-                        ],
-                        [
-                            {
-                                "calibration_json": calibration_snapshot,
-                                "reference_price": 100.0,
-                                "actual_close": 104.0,
-                            }
-                        ],
-                    ]
-                ),
-            ),
-            patch(
                 "app.services.research_service.confidence_calibration_service.get_profile_summary",
                 return_value=[
                     {
@@ -395,6 +363,62 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.research_service.learned_fusion_profile_service.get_last_refresh_time",
                 return_value="2026-03-28T10:15:00",
             ),
+            patch(
+                "app.services.research_service.learned_fusion_profile_service.get_runtime_summary",
+                return_value=[
+                    {
+                        "prediction_type": "next_day",
+                        "label": "1D",
+                        "current_method": "learned_blended_graph",
+                        "record_count": 2,
+                        "avg_blend_weight": 0.31,
+                        "graph_context_used_rate": 1.0,
+                        "avg_graph_coverage": 0.72,
+                        "avg_graph_score": 0.24,
+                        "avg_peer_count": 4.0,
+                        "graph_coverage_available": True,
+                        "method_counts": {
+                            "prior_only": 0,
+                            "learned_blended": 0,
+                            "learned_blended_graph": 2,
+                        },
+                    },
+                    {
+                        "prediction_type": "distributional_5d",
+                        "label": "5D",
+                        "current_method": "learned_blended",
+                        "record_count": 1,
+                        "avg_blend_weight": 0.19,
+                        "graph_context_used_rate": 0.0,
+                        "avg_graph_coverage": 0.0,
+                        "avg_graph_score": 0.0,
+                        "avg_peer_count": 0.0,
+                        "graph_coverage_available": False,
+                        "method_counts": {
+                            "prior_only": 0,
+                            "learned_blended": 1,
+                            "learned_blended_graph": 0,
+                        },
+                    },
+                    {
+                        "prediction_type": "distributional_20d",
+                        "label": "20D",
+                        "current_method": "prior_only",
+                        "record_count": 1,
+                        "avg_blend_weight": 0.0,
+                        "graph_context_used_rate": 0.0,
+                        "avg_graph_coverage": 0.0,
+                        "avg_graph_score": 0.0,
+                        "avg_peer_count": 0.0,
+                        "graph_coverage_available": False,
+                        "method_counts": {
+                            "prior_only": 1,
+                            "learned_blended": 0,
+                            "learned_blended_graph": 0,
+                        },
+                    },
+                ],
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
@@ -411,6 +435,83 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
         self.assertEqual(result["recent_records"][0]["fusion_method"], "learned_blended_graph")
         self.assertTrue(result["insights"])
+
+    async def test_prediction_lab_uses_runtime_summary_when_recent_query_times_out(self):
+        async def _slow_recent(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return []
+
+        with (
+            patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.research_service.cache.set", new=AsyncMock()),
+            patch("app.services.research_service.archive_service.refresh_prediction_accuracy", new=AsyncMock()),
+            patch("app.services.research_service.PREDICTION_LAB_RECENT_TIMEOUT_SECONDS", 0.01),
+            patch(
+                "app.services.research_service.db.prediction_stats",
+                new=AsyncMock(
+                    side_effect=[
+                        {"stored_predictions": 12, "pending_predictions": 2, "total_predictions": 10, "within_range": 7, "within_range_rate": 0.7, "direction_hits": 6, "direction_accuracy": 0.6, "avg_error_pct": 1.8, "avg_confidence": 63.0},
+                        {"stored_predictions": 8, "pending_predictions": 1, "total_predictions": 7, "within_range": 5, "within_range_rate": 0.714, "direction_hits": 5, "direction_accuracy": 0.714, "avg_error_pct": 2.1, "avg_confidence": 61.0},
+                        {"stored_predictions": 6, "pending_predictions": 2, "total_predictions": 4, "within_range": 3, "within_range_rate": 0.75, "direction_hits": 3, "direction_accuracy": 0.75, "avg_error_pct": 3.4, "avg_confidence": 58.0},
+                    ]
+                ),
+            ),
+            patch("app.services.research_service.db.prediction_recent", new=AsyncMock(side_effect=_slow_recent)),
+            patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_confidence_buckets", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch(
+                "app.services.research_service.learned_fusion_profile_service.get_profile_summary",
+                return_value=[
+                    {
+                        "prediction_type": "next_day",
+                        "label": "1D",
+                        "method": "learned_blended_graph",
+                        "sample_count": 64,
+                        "positive_rate": 61.0,
+                        "brier_score": 0.1742,
+                        "prior_brier_score": 0.1899,
+                        "prior_brier_delta": 0.0157,
+                        "fitted_at": "2026-03-28T10:15:00",
+                        "profile_bucket": "default",
+                        "status": "active",
+                    }
+                ],
+            ),
+            patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value="2026-03-28T10:15:00"),
+            patch(
+                "app.services.research_service.learned_fusion_profile_service.get_runtime_summary",
+                return_value=[
+                    {
+                        "prediction_type": "next_day",
+                        "label": "1D",
+                        "current_method": "learned_blended_graph",
+                        "record_count": 24,
+                        "avg_blend_weight": 0.28,
+                        "graph_context_used_rate": 0.75,
+                        "avg_graph_coverage": 0.61,
+                        "avg_graph_score": 0.19,
+                        "avg_peer_count": 3.6,
+                        "graph_coverage_available": True,
+                        "method_counts": {
+                            "prior_only": 2,
+                            "learned_blended": 4,
+                            "learned_blended_graph": 18,
+                        },
+                    }
+                ],
+            ),
+        ):
+            result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
+
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "prediction_lab_partial_data")
+        self.assertEqual(result["recent_records"], [])
+        self.assertEqual(result["horizon_accuracy"][0]["current_method"], "learned_blended_graph")
+        self.assertTrue(result["graph_context_summary"]["coverage_available"])
 
     async def test_portfolio_empty_snapshot(self):
         with (

@@ -20,8 +20,8 @@ PREDICTION_LAB_WAIT_TIMEOUT_SECONDS = 2.5
 PREDICTION_LAB_BUILD_TIMEOUT_SECONDS = 8.0
 PREDICTION_LAB_STATS_TIMEOUT_SECONDS = 2.0
 PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS = 8.0
-PREDICTION_LAB_SAMPLE_WINDOW_MIN = 96
-PREDICTION_LAB_SAMPLE_WINDOW_MAX = 180
+PREDICTION_LAB_RECENT_TIMEOUT_SECONDS = 1.5
+PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS = 1.5
 
 
 def _prediction_label(prediction_type: str) -> str:
@@ -167,58 +167,10 @@ def _normalize_empirical_calibration(rows: list[dict]) -> list[dict]:
     return normalized
 
 
-def _summarize_fusion_rows(rows: list[dict]) -> dict:
-    method_counts = {
-        "prior_only": 0,
-        "learned_blended": 0,
-        "learned_blended_graph": 0,
-    }
-    graph_used_count = 0
-    graph_coverages: list[float] = []
-    graph_scores: list[float] = []
-    blend_weights: list[float] = []
-    peer_counts: list[float] = []
-    parsed_count = 0
-
-    for row in rows:
-        calibration_snapshot = _parse_calibration_json(row.get("calibration_json"))
-        if not calibration_snapshot:
-            continue
-        fusion_metadata = calibration_snapshot.get("fusion_metadata") or {}
-        graph_context = calibration_snapshot.get("graph_context") or {}
-        method = str(fusion_metadata.get("method") or "prior_only")
-        if method not in method_counts:
-            method = "prior_only"
-        method_counts[method] += 1
-        blend_weights.append(float(fusion_metadata.get("blend_weight") or 0.0))
-        coverage = float(
-            graph_context.get("coverage")
-            or fusion_metadata.get("graph_coverage")
-            or 0.0
-        )
-        graph_coverages.append(coverage)
-        graph_scores.append(float(graph_context.get("graph_context_score") or 0.0))
-        peer_counts.append(float(graph_context.get("peer_count") or 0.0))
-        if bool(graph_context.get("used")):
-            graph_used_count += 1
-        parsed_count += 1
-
-    current_method = max(method_counts, key=method_counts.get) if parsed_count else "prior_only"
-    avg_blend_weight = sum(blend_weights) / len(blend_weights) if blend_weights else 0.0
-    avg_graph_coverage = sum(graph_coverages) / len(graph_coverages) if graph_coverages else 0.0
-    avg_graph_score = sum(graph_scores) / len(graph_scores) if graph_scores else 0.0
-    avg_peer_count = sum(peer_counts) / len(peer_counts) if peer_counts else 0.0
-
+def _runtime_summary_map() -> dict[str, dict]:
     return {
-        "record_count": parsed_count,
-        "method_counts": method_counts,
-        "current_method": current_method,
-        "avg_blend_weight": round(avg_blend_weight, 4),
-        "graph_context_used_rate": round(graph_used_count / parsed_count, 4) if parsed_count else 0.0,
-        "avg_graph_coverage": round(avg_graph_coverage, 4),
-        "avg_graph_score": round(avg_graph_score, 4),
-        "avg_peer_count": round(avg_peer_count, 2),
-        "graph_coverage_available": avg_graph_coverage > 0.0,
+        row["prediction_type"]: row
+        for row in learned_fusion_profile_service.get_runtime_summary()
     }
 
 
@@ -415,6 +367,13 @@ def _zero_prediction_stats() -> dict:
     }
 
 
+async def _safe_prediction_query(query, fallback, *, timeout: float):
+    try:
+        return await asyncio.wait_for(query(), timeout=timeout), None
+    except Exception:
+        return fallback, "timed_out"
+
+
 async def _safe_prediction_stats(prediction_type: str) -> dict:
     try:
         return await asyncio.wait_for(
@@ -437,22 +396,30 @@ async def _build_prediction_lab_fallback(
     )
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
+    runtime_summary_map = _runtime_summary_map()
     empirical_calibration = _normalize_empirical_calibration(
         confidence_calibration_service.get_profile_summary()
     )
-    per_horizon_fusion = [
-        {"prediction_type": "next_day", "label": "1D", **_summarize_fusion_rows([])},
-        {"prediction_type": "distributional_5d", "label": "5D", **_summarize_fusion_rows([])},
-        {"prediction_type": "distributional_20d", "label": "20D", **_summarize_fusion_rows([])},
-    ]
     horizon_accuracy = _normalize_horizon_accuracy(
         [
-            ("next_day", "1D", accuracy, per_horizon_fusion[0], fusion_profile_map.get("next_day")),
-            ("distributional_5d", "5D", stats_5d, per_horizon_fusion[1], fusion_profile_map.get("distributional_5d")),
-            ("distributional_20d", "20D", stats_20d, per_horizon_fusion[2], fusion_profile_map.get("distributional_20d")),
+            ("next_day", "1D", accuracy, runtime_summary_map.get("next_day", {}), fusion_profile_map.get("next_day")),
+            (
+                "distributional_5d",
+                "5D",
+                stats_5d,
+                runtime_summary_map.get("distributional_5d", {}),
+                fusion_profile_map.get("distributional_5d"),
+            ),
+            (
+                "distributional_20d",
+                "20D",
+                stats_20d,
+                runtime_summary_map.get("distributional_20d", {}),
+                fusion_profile_map.get("distributional_20d"),
+            ),
         ]
     )
-    graph_context_summary = _build_graph_context_summary(per_horizon_fusion)
+    graph_context_summary = _build_graph_context_summary(list(runtime_summary_map.values()))
     fusion_status_summary = _build_fusion_status_summary(
         horizon_accuracy,
         fusion_profiles,
@@ -502,59 +469,56 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             timeout=PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS,
         )
 
-    sample_window = max(
-        PREDICTION_LAB_SAMPLE_WINDOW_MIN,
-        min(PREDICTION_LAB_SAMPLE_WINDOW_MAX, limit_recent * 3),
-    )
-    (
-        accuracy,
-        stats_5d,
-        stats_20d,
-        recent_rows,
-        trend_rows,
-        by_country_rows,
-        by_scope_rows,
-        by_model_rows,
-        calibration_rows,
-        next_day_samples,
-        distribution_5d_samples,
-        distribution_20d_samples,
-    ) = await asyncio.gather(
-        db.prediction_stats("next_day"),
-        db.prediction_stats("distributional_5d"),
-        db.prediction_stats("distributional_20d"),
-        db.prediction_recent("next_day", limit_recent),
-        db.prediction_daily_trend("next_day", 14),
-        db.prediction_country_breakdown("next_day", 10),
-        db.prediction_scope_breakdown("next_day", 10),
-        db.prediction_model_breakdown("next_day", 10),
-        db.prediction_confidence_buckets("next_day"),
-        db.prediction_evaluated_samples(prediction_type="next_day", limit=sample_window),
-        db.prediction_evaluated_samples(prediction_type="distributional_5d", limit=sample_window),
-        db.prediction_evaluated_samples(prediction_type="distributional_20d", limit=sample_window),
-    )
-
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
+    runtime_summary_map = _runtime_summary_map()
     empirical_calibration = _normalize_empirical_calibration(
         confidence_calibration_service.get_profile_summary()
     )
-    per_horizon_fusion = [
-        {
-            "prediction_type": "next_day",
-            "label": "1D",
-            **_summarize_fusion_rows(next_day_samples),
-        },
-        {
-            "prediction_type": "distributional_5d",
-            "label": "5D",
-            **_summarize_fusion_rows(distribution_5d_samples),
-        },
-        {
-            "prediction_type": "distributional_20d",
-            "label": "20D",
-            **_summarize_fusion_rows(distribution_20d_samples),
-        },
+    (
+        accuracy_result,
+        stats_5d_result,
+        stats_20d_result,
+        recent_rows_result,
+        trend_rows_result,
+        by_country_rows_result,
+        by_scope_rows_result,
+        by_model_rows_result,
+        calibration_rows_result,
+    ) = await asyncio.gather(
+        _safe_prediction_query(lambda: db.prediction_stats("next_day"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_stats("distributional_5d"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_stats("distributional_20d"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_recent("next_day", limit_recent), [], timeout=PREDICTION_LAB_RECENT_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_daily_trend("next_day", 14), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_country_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_scope_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_model_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_confidence_buckets("next_day"), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+    )
+    accuracy, accuracy_reason = accuracy_result
+    stats_5d, stats_5d_reason = stats_5d_result
+    stats_20d, stats_20d_reason = stats_20d_result
+    recent_rows, recent_rows_reason = recent_rows_result
+    trend_rows, trend_rows_reason = trend_rows_result
+    by_country_rows, by_country_rows_reason = by_country_rows_result
+    by_scope_rows, by_scope_rows_reason = by_scope_rows_result
+    by_model_rows, by_model_rows_reason = by_model_rows_result
+    calibration_rows, calibration_rows_reason = calibration_rows_result
+    partial_reasons = [
+        reason
+        for reason in (
+            accuracy_reason,
+            stats_5d_reason,
+            stats_20d_reason,
+            recent_rows_reason,
+            trend_rows_reason,
+            by_country_rows_reason,
+            by_scope_rows_reason,
+            by_model_rows_reason,
+            calibration_rows_reason,
+        )
+        if reason
     ]
     horizon_accuracy = _normalize_horizon_accuracy(
         [
@@ -562,21 +526,21 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
                 "next_day",
                 "1D",
                 accuracy,
-                per_horizon_fusion[0],
+                runtime_summary_map.get("next_day", {}),
                 fusion_profile_map.get("next_day"),
             ),
             (
                 "distributional_5d",
                 "5D",
                 stats_5d,
-                per_horizon_fusion[1],
+                runtime_summary_map.get("distributional_5d", {}),
                 fusion_profile_map.get("distributional_5d"),
             ),
             (
                 "distributional_20d",
                 "20D",
                 stats_20d,
-                per_horizon_fusion[2],
+                runtime_summary_map.get("distributional_20d", {}),
                 fusion_profile_map.get("distributional_20d"),
             ),
         ]
@@ -598,7 +562,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         }
         for row in calibration_rows
     ]
-    graph_context_summary = _build_graph_context_summary(per_horizon_fusion)
+    graph_context_summary = _build_graph_context_summary(list(runtime_summary_map.values()))
     fusion_status_summary = _build_fusion_status_summary(
         horizon_accuracy,
         fusion_profiles,
@@ -607,8 +571,8 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
     response = {
         "generated_at": datetime.now().isoformat(),
-        "partial": False,
-        "fallback_reason": None,
+        "partial": bool(partial_reasons),
+        "fallback_reason": "prediction_lab_partial_data" if partial_reasons else None,
         "accuracy": accuracy,
         "horizon_accuracy": horizon_accuracy,
         "empirical_calibration": empirical_calibration,
@@ -639,7 +603,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v5:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v6:{limit_recent}:{int(refresh)}"
 
     async def _fetch_prediction_lab():
         try:

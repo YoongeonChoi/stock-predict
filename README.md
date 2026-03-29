@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.5`
+현재 릴리즈: `v2.52.6`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -98,6 +98,8 @@
 - 일일 이상적 포트폴리오
 - 월간 캘린더
   - `/calendar`는 다음 3개 일정과 official / estimated 상태를 first screen에 먼저 보여주고, 월간 보드는 그 아래에서 이어집니다.
+  - 경제 일정과 실적 일정은 병렬 source fetch로 가져오고, 한 source가 늦어도 확인된 실제 일정과 월간 핵심 일정부터 먼저 보여줍니다.
+  - 외부 캘린더 공급이 제한되면 `partial + fallback_reason=calendar_external_source_unavailable` 상태로 월간 핵심 일정 중심 보드를 유지합니다.
 - 리서치 아카이브
   - 한국, 미국, 유로존, 일본 공식 기관 리포트를 지역별로 다시 볼 수 있습니다.
 - 아카이브 공개 첫 화면
@@ -118,6 +120,7 @@
   - `1D / 5D / 20D` 실측 성과
   - empirical calibrator 샘플 수, Brier score, reliability gap 확인
   - horizon별 learned fusion 상태, graph coverage, prior 대비 Brier delta, 평균 blend weight 확인
+  - learned fusion runtime summary를 profile refresh 결과에서 재사용해, 연구실 first screen이 무거운 샘플 재집계 때문에 오래 비지 않도록 유지합니다.
   - `/lab` first screen은 공개 검증 스냅샷과 최근 실패 사례를 서버에서 먼저 채워 추천과 검증 흐름이 같은 제품 안에서 이어지게 합니다.
 
 공개 API의 운영 원칙도 현재 구조에 맞춰 정리되어 있습니다.
@@ -129,6 +132,7 @@
 - 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
 - 프론트의 공개 서버 fetch는 route별 timeout과 page-level timebox를 함께 사용합니다. 기본 fetch 예산은 `8초`, `opportunity radar`는 `18초`, `screener seed`는 `12초`, `prediction lab / research archive`는 `10초`를 유지하고, 각 server page는 더 짧은 화면 예산 안에서 `timeboxServerPromise`로 first paint를 보호합니다. 그래서 느린 backend 응답이 있어도 `/`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist`가 서버에서 너무 오래 붙잡히지 않고 부분 렌더로 먼저 내려갑니다.
 - 백엔드 공용 캐시의 `get_or_fetch`도 이제 첫 호출자부터 `wait_timeout`을 적용합니다. 덕분에 cold cache 첫 요청이 곧바로 긴 live fetch에 매달리지 않고, `calendar`, `daily briefing`, `prediction accuracy`, `prediction lab` 같은 경로가 첫 요청부터 `fallback + background cache warmup` 구조를 유지합니다.
+- 운영 smoke는 `calendar`, `prediction lab`, `/radar`, `/screener`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist`까지 함께 확인해 공개 화면 전반의 first screen 회귀를 더 빨리 잡습니다.
 - 공용 cache 레이어는 SQLite cache table 앞에 프로세스 메모리 캐시를 함께 두고, cache read/write는 짧은 SQLite timeout으로 fast-fail 처리합니다. 그래서 같은 공개 스냅샷을 여러 화면이 연달아 읽을 때 SQLite 락 때문에 20~30초씩 대기하기보다, 최근 snapshot을 먼저 재사용하고 느린 DB 접근은 fallback으로 넘기도록 유지합니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.

@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.6 - 2026-03-29
+
+- `calendar`와 `prediction lab`의 남아 있던 복합 병목을 추가로 정리했습니다. `calendar`는 경제 일정과 실적 일정을 순차로 기다리지 않고 병렬 source fetch로 가져오며, 한 source가 늦어도 이미 확인된 실제 일정과 월간 핵심 일정을 먼저 반환합니다. 그래서 외부 FMP 한쪽이 지연돼도 전체 월간 보드가 recurring placeholder처럼 오래 고정되는 경로를 줄였습니다.
+- FMP 경제/실적 캘린더 source cache key를 `v2`로 올리고 source HTTP timeout을 줄였습니다. 예전 빈 source 결과가 오래 재사용되던 상태를 끊고, 이번 릴리즈부터는 새 병렬 fetch 결과가 바로 새 cache로 채워지도록 맞췄습니다.
+- `prediction lab`은 더 이상 요청 시마다 `prediction_evaluated_samples`를 다시 훑어 learned fusion / graph runtime 상태를 집계하지 않습니다. profile refresh에서 만든 runtime summary를 재사용해 first screen을 더 가볍게 만들고, 일부 세부 breakdown 쿼리가 늦어도 `recent_records`, `fusion_status_summary`, `graph_context_summary`를 먼저 보여주는 partial payload를 유지합니다.
+- 운영 배포 smoke 범위도 넓혔습니다. 이제 `calendar`, `prediction-lab`, 그리고 `/radar`, `/screener`, `/calendar`, `/archive`, `/lab`, `/portfolio`, `/watchlist` HTML까지 함께 확인해, 공개 화면 전반의 회귀를 더 빨리 잡습니다.
+
 ## v2.52.5 - 2026-03-29
 
 - 공개 집계 화면이 여전히 느려지던 공통 원인을 추가로 정리했습니다. `SQLite cache/summary read`가 최대 30초까지 락 대기를 하면서 `wait_timeout`과 partial fallback 설계보다 먼저 전체 응답을 붙잡는 경로가 있었고, 실제 운영에서도 `/api/countries`, `/api/briefing/daily`, `/api/market/opportunities/KR`, `/api/calendar/KR`, `/api/archive/accuracy/stats`가 20~60초까지 늘어지는 현상이 재현됐습니다.

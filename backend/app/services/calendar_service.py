@@ -11,6 +11,7 @@ from app.data import cache, fmp_client
 
 CALENDAR_FETCH_TIMEOUT_SECONDS = 8
 CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
+CALENDAR_SOURCE_WAIT_TIMEOUT_SECONDS = 1.75
 
 KR_MAJOR_EVENTS = (
     {
@@ -77,7 +78,7 @@ def _format_month_label(year: int, month: int) -> str:
 
 
 def calendar_cache_key(year: int, month: int) -> str:
-    return f"calendar:KR:{year}:{month:02d}"
+    return f"calendar:v2:KR:{year}:{month:02d}"
 
 
 def _month_window(year: int, month: int) -> tuple[datetime, datetime, datetime, datetime]:
@@ -354,29 +355,63 @@ def _build_calendar_result(
 
 async def _build_calendar_payload(target_year: int, target_month: int, now: datetime) -> dict:
     month_start, month_end, grid_start, grid_end = _month_window(target_year, target_month)
-    economic_rows: list[dict] = []
-    earnings_rows: list[dict] = []
-    try:
-        economic_rows = await fmp_client.get_economic_calendar(
-            grid_start.date().isoformat(),
-            grid_end.date().isoformat(),
-        )
-    except Exception:
-        economic_rows = []
-    try:
-        earnings_rows = await fmp_client.get_earning_calendar(
-            grid_start.date().isoformat(),
-            grid_end.date().isoformat(),
-        )
-    except Exception:
-        earnings_rows = []
+    partial_sources: list[str] = []
+
+    async def _await_rows(loader, source_label: str) -> list[dict]:
+        task = asyncio.create_task(loader())
+        try:
+            rows = await asyncio.wait_for(asyncio.shield(task), timeout=CALENDAR_SOURCE_WAIT_TIMEOUT_SECONDS)
+            return rows or []
+        except Exception:
+            partial_sources.append(source_label)
+            return []
+
+    economic_rows, earnings_rows = await asyncio.gather(
+        _await_rows(
+            lambda: fmp_client.get_economic_calendar(
+                grid_start.date().isoformat(),
+                grid_end.date().isoformat(),
+            ),
+            "economic_calendar",
+        ),
+        _await_rows(
+            lambda: fmp_client.get_earning_calendar(
+                grid_start.date().isoformat(),
+                grid_end.date().isoformat(),
+            ),
+            "earning_calendar",
+        ),
+    )
 
     actual_events = [
         event
-        for event in [*(_normalize_economic_event(row, "fmp") for row in economic_rows), *(_normalize_earnings_event(row) for row in earnings_rows)]
+        for event in [
+            *(_normalize_economic_event(row, "fmp") for row in economic_rows),
+            *(_normalize_earnings_event(row) for row in earnings_rows),
+        ]
         if event is not None
     ]
     events = _merge_events(_build_recurring_major_events(target_year, target_month), actual_events)
+    economic_source_status, earnings_source_status = await asyncio.gather(
+        fmp_client.get_feature_status("economic_calendar"),
+        fmp_client.get_feature_status("earning_calendar"),
+    )
+    partial = bool(partial_sources)
+    fallback_reason = None
+    note = None
+    if economic_source_status or earnings_source_status:
+        partial = True
+        fallback_reason = "calendar_external_source_unavailable"
+        note = "외부 캘린더 공급 제한으로 이번 달은 월간 핵심 일정 위주로 먼저 보여주고, 실제 세부 일정은 다른 공급원이 확보되면 보강합니다."
+    elif partial_sources:
+        fallback_reason = "calendar_live_partial_data"
+        if actual_events:
+            note = "외부 일정 일부가 지연돼 확인된 실제 일정부터 먼저 보여주고, 남은 항목은 캐시가 채워지면 바로 반영합니다."
+        else:
+            note = "외부 캘린더 연결이 늦어 월간 핵심 일정부터 먼저 보여주고, 실제 일정은 캐시가 채워지면 바로 반영합니다."
+    elif not actual_events:
+        note = "이번 달은 확인된 외부 일정이 많지 않아 월간 핵심 일정 위주로 먼저 보여줍니다."
+
     return _build_calendar_result(
         target_year=target_year,
         target_month=target_month,
@@ -384,6 +419,9 @@ async def _build_calendar_payload(target_year: int, target_month: int, now: date
         month_end=month_end,
         now=now,
         events=events,
+        partial=partial,
+        fallback_reason=fallback_reason,
+        note=note,
     )
 
 

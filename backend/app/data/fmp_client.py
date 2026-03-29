@@ -62,6 +62,10 @@ async def _feature_available(feature: str) -> bool:
     return await cache.get(_feature_disabled_key(feature)) is None
 
 
+async def get_feature_status(feature: str) -> dict | None:
+    return await cache.get(_feature_disabled_key(feature))
+
+
 async def probe_stock_screener(exchange: str, market_cap_min: int = 1_000_000_000) -> bool:
     settings = get_settings()
     if not settings.fmp_api_key:
@@ -142,7 +146,7 @@ async def get_earning_calendar(from_date: str, to_date: str) -> list[dict]:
 
     async def _fetch():
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=6) as client:
                 resp = await client.get(
                     f"{BASE}/earning_calendar",
                     params={"from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
@@ -159,7 +163,7 @@ async def get_earning_calendar(from_date: str, to_date: str) -> list[dict]:
             return []
 
     return await cache.get_or_fetch(
-        f"fmp_earn_cal:{from_date}:{to_date}", _fetch, settings.cache_ttl_fmp
+        f"fmp_earn_cal:v2:{from_date}:{to_date}", _fetch, settings.cache_ttl_fmp
     )
 
 
@@ -173,7 +177,7 @@ async def get_economic_calendar(from_date: str, to_date: str) -> list[dict]:
 
     async def _fetch():
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=6) as client:
                 resp = await client.get(
                     f"{BASE}/economic_calendar",
                     params={"from": from_date, "to": to_date, "apikey": settings.fmp_api_key},
@@ -190,7 +194,7 @@ async def get_economic_calendar(from_date: str, to_date: str) -> list[dict]:
             return []
 
     return await cache.get_or_fetch(
-        f"fmp_econ_cal:{from_date}:{to_date}", _fetch, settings.cache_ttl_fmp
+        f"fmp_econ_cal:v2:{from_date}:{to_date}", _fetch, settings.cache_ttl_fmp
     )
 
 
