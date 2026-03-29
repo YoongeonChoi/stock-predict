@@ -394,6 +394,61 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["opportunities"]), 2)
         self.assertIn("즉시 전환", result["universe_note"])
 
+    async def test_get_market_opportunities_quick_uses_representative_quotes_when_no_quick_candidates_exist(self):
+        fallback_selection = market_service.UniverseSelection(
+            sectors={
+                "Information Technology": ["005930.KS", "000660.KS"],
+                "Communication Services": ["035420.KS"],
+            },
+            source="fallback",
+            note="검증된 한국 기본 종목군으로 추천 중입니다.",
+        )
+        empty_quote_screen = {
+            "universe_size": 3,
+            "scanned_count": 0,
+            "quote_available_count": 0,
+            "ranked": [],
+        }
+        representative_quotes = {
+            "005930.KS": {
+                "ticker": "005930.KS",
+                "name": "삼성전자",
+                "current_price": 70100.0,
+                "prev_close": 69300.0,
+                "change_pct": 1.15,
+            },
+            "035420.KS": {
+                "ticker": "035420.KS",
+                "name": "NAVER",
+                "current_price": 223000.0,
+                "prev_close": 220500.0,
+                "change_pct": 1.13,
+            },
+        }
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=fallback_selection),
+            ),
+            patch(
+                "app.services.market_service._resolve_resilient_quote_screen",
+                new=AsyncMock(return_value=(fallback_selection, empty_quote_screen)),
+            ),
+            patch(
+                "app.services.market_service.kr_market_quote_client.get_kr_representative_quotes",
+                new=AsyncMock(return_value=representative_quotes),
+            ),
+        ):
+            result = await market_service.get_market_opportunities_quick("KR", limit=2)
+
+        self.assertEqual(result["quote_available_count"], 2)
+        self.assertEqual(result["total_scanned"], 2)
+        self.assertEqual(len(result["opportunities"]), 2)
+        self.assertIn("대표 시총 페이지", result["universe_note"])
+        self.assertEqual(result["opportunities"][0]["ticker"], "005930.KS")
+
     async def test_get_market_opportunities_quick_caps_large_kr_quote_screen(self):
         tickers = [f"{index:06d}.KS" for index in range(240)]
         capped_tickers = tickers[: market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP]

@@ -7,8 +7,8 @@ from app.routers import country
 
 
 class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_market_opportunities_timeout_keeps_background_build_running(self):
-        completion_gate = asyncio.Event()
+    async def test_market_opportunities_timeout_cancels_background_build_after_quick_fallback(self):
+        cancelled_gate = asyncio.Event()
         quick_payload = {
             "country_code": "KR",
             "generated_at": "2026-03-27T12:00:00",
@@ -25,8 +25,11 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         }
 
         async def slow_builder(*args, **kwargs):
-            await asyncio.sleep(0.03)
-            completion_gate.set()
+            try:
+                await asyncio.sleep(0.03)
+            except asyncio.CancelledError:
+                cancelled_gate.set()
+                raise
             return {"country_code": "KR", "opportunities": []}
 
         with (
@@ -41,7 +44,7 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["universe_note"], "기본 종목군 quick fallback")
         self.assertTrue(response["partial"])
         self.assertEqual(response["fallback_reason"], "opportunity_quick_response")
-        await asyncio.wait_for(completion_gate.wait(), timeout=0.2)
+        await asyncio.wait_for(cancelled_gate.wait(), timeout=0.2)
 
 
 if __name__ == "__main__":

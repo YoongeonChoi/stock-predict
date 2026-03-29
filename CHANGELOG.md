@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.51.2 - 2026-03-29
+
+- KR `Opportunity Radar`의 quick 경로가 `yfinance` quick 배치에서 usable 후보를 만들지 못하면, 이제 `KOSPI/KOSDAQ 대표 시총 페이지` 기반 quote-only 후보로 즉시 전환합니다. 그래서 `첫 판단 스레드 준비 중` placeholder가 이틀씩 고정되는 대신 대표 후보 보드가 더 빨리 살아나도록 맞췄습니다.
+- `/api/market/opportunities/{code}` timeout fallback은 이제 partial 응답을 반환한 뒤 무거운 레이더 task를 계속 백그라운드에 쌓아 두지 않습니다. quick 또는 cached quick로 먼저 응답한 경우 남은 full task를 정리하고, placeholder로 내려간 경우에도 다음 재조회에서 fresh quick 스냅샷을 새로 시도하도록 바꿨습니다.
+- `/radar` placeholder 문구와 audit 라벨은 더 이상 `계속 스캔 중`처럼 오해되지 않게 정리했습니다. 이번 요청에서 `사용 가능한 후보를 만들지 못함`을 먼저 설명하고, 같은 화면을 켜 둔다고 완료되는 구조가 아니라 `다시 불러오기`가 새 quick 시도를 시작한다는 점을 명시합니다.
+- 회귀 테스트를 추가해 quick 경로가 비었을 때 representative quotes fallback으로 candidate를 다시 살리는 흐름을 고정했고, README도 current release와 운영 설명을 같은 의미로 업데이트했습니다.
+
 ## v2.51.1 - 2026-03-29
 
 - 공개 서버 페이지 `/`, `/radar`, `/calendar`, `/archive`, `/screener`, `/lab`, `/portfolio`, `/watchlist`는 이제 `export const revalidate = 0`으로 request-time SSR을 강제합니다. 각 페이지의 개별 공개 fetch는 기존 `next.revalidate` 캐시를 유지하므로, Vercel build의 `Collecting page data` 단계가 Render live API 응답에 매달리다 실패하는 경로를 막았습니다.

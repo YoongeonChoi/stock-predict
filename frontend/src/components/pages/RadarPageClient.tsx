@@ -153,14 +153,14 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             <div>
               <h2 className="section-title">첫 판단 스레드 준비 중</h2>
               <p className="section-copy">
-                시장 국면은 먼저 읽었고, 대표 후보는 아직 준비 중입니다. 지금은 0 / 0 / 0 지표를 크게 보여주기보다 어떤 단계에서 기다리는지 먼저 안내합니다.
+                시장 국면은 먼저 읽었지만, 이번 요청에서는 바로 쓸 후보 스냅샷을 만들지 못했습니다. 지금은 0 / 0 / 0 지표를 크게 보여주기보다 무엇이 실패했는지 먼저 안내합니다.
               </p>
             </div>
             <PublicAuditStrip meta={placeholderData} />
           </div>
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
             <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/5 px-4 py-4 text-sm leading-6 text-amber-700">
-              최신 레이더는 아직 바로 쓸 수 있는 후보 스냅샷을 만들지 못했습니다. 백그라운드에서는 대표 1차 시세 스캔과 빠른 fallback을 계속 시도하고 있고, 사용 가능한 후보가 확보되면 이 영역이 바로 후보 보드로 교체됩니다.
+              최신 레이더는 이번 요청에서 바로 쓸 수 있는 후보 스냅샷을 만들지 못했습니다. 자동 장기 스캔이 계속 도는 상태를 기다리는 것이 아니라, 다시 불러오기 때 fresh quick 스냅샷과 캐시 재사용을 새로 시도하는 구조입니다.
             </div>
             <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">현재 상태</div>
@@ -174,7 +174,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
                 <div className="rounded-xl border border-border/70 bg-surface/70 px-3 py-3">
                   <div className="text-xs text-text-secondary">다음 동작</div>
                   <div className="mt-2 leading-6">
-                    1차 시세 스캔이 사용 가능한 상태가 되면 상위 후보와 실행 메모를 먼저 채우고, 정밀 분포 계산은 그다음에 이어서 붙입니다.
+                    다시 불러오기를 누르거나 새로 열면 quick 후보 스냅샷을 새로 만들고, usable 후보가 생기면 그 즉시 후보 보드로 바뀝니다. 계속 같은 화면을 띄워 두는 것만으로 완료되지는 않습니다.
                   </div>
                 </div>
               </div>

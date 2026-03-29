@@ -93,9 +93,9 @@ def _build_placeholder_market_regime(
         summary=note,
         playbook=[
             f"{index_name} 정밀 국면 계산이 완료되기 전까지 1차 시세 스캔 후보를 우선 제공합니다.",
-            "강한 후보를 먼저 확인하고, 잠시 뒤 다시 열어 정밀 분포 신호를 확인해 주세요.",
+            "이번 응답에서는 사용 가능한 후보 스냅샷을 만들지 못했습니다. 잠시 뒤 다시 열어 fresh quick 스냅샷을 다시 시도해 주세요.",
         ],
-        warnings=["시장 국면과 분포 신호는 백그라운드 계산이 끝난 뒤 더 정교하게 갱신됩니다."],
+        warnings=["이번 응답은 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 표시합니다."],
         signals=[],
     )
 
@@ -141,6 +141,16 @@ def _sample_universe_pairs(universe: dict[str, list[str]], limit: int) -> list[t
             break
 
     return sampled
+
+
+def _build_sector_lookup(universe: dict[str, list[str]]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for sector, tickers in universe.items():
+        for ticker in tickers:
+            normalized = str(ticker or "").upper()
+            if normalized and normalized not in lookup:
+                lookup[normalized] = sector
+    return lookup
 
 
 def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidates: int | None) -> int:
@@ -367,6 +377,52 @@ def _build_quote_only_opportunities(
     ]
     items.sort(key=lambda item: item.opportunity_score, reverse=True)
     return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
+
+
+async def _build_kr_representative_quote_only_opportunities(
+    *,
+    country_code: str,
+    market_regime,
+    universe_selection,
+    limit: int,
+) -> tuple[list[OpportunityItem], int]:
+    representative_limit = max(limit * 6, 24)
+    representative_quotes = await kr_market_quote_client.get_kr_representative_quotes(limit=representative_limit)
+    if not representative_quotes:
+        return [], 0
+
+    sector_lookup = _build_sector_lookup(universe_selection.sectors)
+    regime_bias = 0.75 if market_regime.stance == "risk_on" else -0.55 if market_regime.stance == "risk_off" else 0.0
+    ranked_quotes: list[dict] = []
+    for quote in representative_quotes.values():
+        ticker = str(quote.get("ticker") or "").upper()
+        current_price = _safe_float(quote.get("current_price"), 0.0)
+        if current_price <= 0:
+            continue
+        change_pct = _safe_float(quote.get("change_pct"))
+        ranked_quotes.append(
+            {
+                "sector": sector_lookup.get(ticker, "대표 후보"),
+                "ticker": ticker,
+                "current_price": round(current_price, 2),
+                "change_pct": round(change_pct, 2),
+                "quick_score": round(change_pct * 2.2 + regime_bias, 4),
+            }
+        )
+
+    if not ranked_quotes:
+        return [], 0
+
+    ranked_quotes.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
+    return (
+        _build_quote_only_opportunities(
+            ranked_quotes=ranked_quotes,
+            country_code=country_code,
+            market_regime=market_regime,
+            limit=limit,
+        ),
+        len(ranked_quotes),
+    )
 
 
 def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
@@ -1064,6 +1120,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             market_regime=market_regime,
             limit=limit,
         )
+        representative_scanned_count = 0
         if not ranked:
             ranked = await _build_lightweight_opportunities(
                 candidates=_sample_universe_pairs(
@@ -1074,6 +1131,15 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
                 market_regime=market_regime,
                 limit=limit,
             )
+        if not ranked and country_code == "KR":
+            ranked, representative_scanned_count = await _build_kr_representative_quote_only_opportunities(
+                country_code=country_code,
+                market_regime=market_regime,
+                universe_selection=universe_selection,
+                limit=limit,
+            )
+            if representative_scanned_count > 0:
+                scanned_count = representative_scanned_count
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         note_parts = [universe_selection.note.strip()]
@@ -1081,9 +1147,16 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             note_parts.append(
                 f"현재 응답은 전체 {resolved_universe_size}개 중 대표 1차 스캔 {scanned_count}개를 기준으로 먼저 계산했습니다."
             )
+        if representative_scanned_count > 0:
+            note_parts.append(
+                f"yfinance quick 시세가 비어 KOSPI/KOSDAQ 대표 시총 페이지 기준 {representative_scanned_count}개 1차 후보로 즉시 전환했습니다."
+            )
         note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
-        note_parts.append("같은 조건으로 다시 열면 백그라운드 계산이 끝난 정밀 후보가 바로 보일 수 있습니다.")
+        note_parts.append("같은 화면을 다시 열면 fresh quick 스냅샷과 정밀 후보 계산을 새로 시도합니다.")
         resolved_universe_note = " ".join(part for part in note_parts if part).strip()
+        resolved_quote_available_count = int(quote_screen.get("quote_available_count") or 0)
+        if representative_scanned_count > 0:
+            resolved_quote_available_count = max(resolved_quote_available_count, representative_scanned_count)
 
         generated_at = datetime.now().isoformat()
         return OpportunityRadarResponse(
@@ -1098,7 +1171,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             market_regime=market_regime,
             universe_size=resolved_universe_size,
             total_scanned=scanned_count,
-            quote_available_count=int(quote_screen.get("quote_available_count") or 0),
+            quote_available_count=resolved_quote_available_count,
             detailed_scanned_count=0,
             actionable_count=sum(1 for item in ranked if item.action != "avoid"),
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),

@@ -21,7 +21,7 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   opportunity_quick_fallback: "대표 후보 기준 빠른 응답",
   opportunity_quick_response: "대표 후보 기준 빠른 응답",
   opportunity_cached_quick_response: "이전 usable 후보 기준",
-  opportunity_placeholder_response: "대표 후보 준비 중",
+  opportunity_placeholder_response: "사용 가능 후보 미확보",
   screener_timeout: "스크리너 계산 지연",
   screener_seeded_cache: "전일 종가 기준 기본 캐시",
   kr_representative_snapshot_warming: "대표 종목 스냅샷 기준",
@@ -81,6 +81,9 @@ export function buildPublicAuditSummary(
     defaultSummary?: string;
   } = {},
 ) {
+  if (meta?.partial && meta?.fallback_reason === "opportunity_placeholder_response") {
+    return "이번 요청에서는 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 보여주고 있습니다.";
+  }
   const reason = normalizeReason(meta?.fallback_reason);
   if (meta?.partial && reason) {
     return `일부 데이터가 늦어 ${reason} 기준으로 먼저 보여주고 있습니다.`;
