@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.0`
+현재 릴리즈: `v2.52.1`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -127,7 +127,7 @@
 - 공개 카드 헤더는 가능한 한 `generated_at`, `partial`, `fallback_reason`을 같은 audit strip 규칙으로 노출해 freshness와 fallback 상태를 즉시 읽을 수 있게 유지합니다.
 - 공개 숫자 문장은 `macro_claims` 같은 구조화 근거 필드에서만 렌더하고, 자유 서술 요약은 정성 문장으로만 유지합니다. 숫자가 섞인 자유 서술은 백엔드 validation 단계에서 공개 서술로 승격하지 않습니다.
 - 프론트의 공개 읽기 fetch는 `revalidate` 기반 서버 fetch를 우선 사용하고, 브라우저 인증 호출과 저장성 호출만 계속 `no-store`로 유지합니다.
-- 프론트의 공개 서버 fetch는 route별 timeout을 함께 사용합니다. 기본값은 `8초`, `opportunity radar / screener seed`는 `12초`, `prediction lab / research archive`는 `10초` 예산을 사용하고, timeout 시에는 페이지별 `.catch(() => null)` 또는 `Promise.allSettled` 흐름으로 안전하게 부분 렌더로 내려갑니다.
+- 프론트의 공개 서버 fetch는 route별 timeout을 함께 사용합니다. 기본값은 `8초`, `opportunity radar`는 `18초`, `screener seed`는 `12초`, `prediction lab / research archive`는 `10초` 예산을 사용하고, timeout 시에는 페이지별 `.catch(() => null)` 또는 `Promise.allSettled` 흐름으로 안전하게 부분 렌더로 내려갑니다.
 - `country report`, `heatmap`, `screener`, `opportunity radar` 같은 집계형 경로는 느린 외부 소스 하나 때문에 전체 화면이 멈추지 않도록 timeout과 부분 fallback을 함께 둡니다.
 - KR `screener` 기본 조회는 운영 배포에서 느린 동적 유니버스 조회보다 검증된 기본 종목군과 bulk quote 경로를 먼저 사용해, 공개 경로 timeout이 길게 이어지지 않도록 유지합니다.
 - KR `screener`의 소규모 공개 요청은 yfinance batch coverage가 조금 부족하더라도 전체 Naver 시총 페이지 scrape로 바로 내려가지 않고, 확보된 bulk quote만으로 먼저 응답합니다.
@@ -135,8 +135,8 @@
 - KR `screener` 기본 공개 경로는 cold cache에서 먼저 `Naver 시총 대표 페이지` snapshot partial을 돌려주고, 뒤에서 전체 cache를 채우는 2단계 구조를 사용합니다. Render 배포 직후 첫 호출도 read timeout 대신 `200 + partial`로 살아남게 유지하는 쪽에 초점을 둡니다.
 - KR 기회 레이더의 빠른 경로는 `KRX 상장사 목록 캐시 -> 운영용 기본 종목군 fallback` 순서로 내려가므로, cold start 직후에도 `총 8개 스캔`처럼 과도하게 작은 숫자로 고정되지 않게 관리합니다.
 - KR 기회 레이더의 quick fallback은 전체 유니버스를 포기하는 것이 아니라, 초기 응답에서는 `대표 1차 스캔`만 먼저 계산하고 전체 스캔은 후속 재조회에서 다시 시도하도록 설계합니다.
-- KR 기회 레이더의 quick fallback은 `yfinance 1차 배치 -> 운영용 기본 종목군 -> KOSPI/KOSDAQ 대표 시총 페이지` 순서로 내려갑니다. 그래서 quick 시세가 비어도 대표 페이지 기반 후보를 먼저 살리고, `실제 시세 확보 0 / 표시 후보 0` placeholder가 오래 고정되지 않게 유지합니다.
-- KR 기회 레이더 timeout fallback은 더 이상 응답 뒤에 무거운 레이더 task를 계속 쌓아 두지 않습니다. partial 응답을 반환하면 기존 task를 정리하고, 다음 재조회에서 fresh quick 스냅샷과 정밀 후보 계산을 새로 시도합니다.
+- KR 기회 레이더의 quick 경로는 이제 `KOSPI/KOSDAQ 대표 시총 페이지 -> sampled universe quote screen -> lightweight snapshot` 순서로 usable 후보를 먼저 확보합니다. 그래서 Render free cold start에서도 representative quick 후보가 먼저 살아나고, sampled `yfinance` quote screen은 그 다음 fallback으로만 사용합니다.
+- KR 기회 레이더 공개 API는 이제 `cached full -> cached quick -> fresh quick -> background full warmup` 순서로 응답합니다. 그래서 같은 요청 안에서 `full`과 `quick`가 서로 느리게 물고 늘어지던 경로를 줄이고, 다음 재조회에서는 warmup된 full cache를 더 빨리 재사용할 수 있게 유지합니다.
 - 기관 리서치 아카이브는 이제 `KDI / 한국은행 / Federal Reserve / ECB / BOJ` 공식 소스를 같은 화면에서 지역별로 보여주고, 현재 운영 기준 활성 소스만 상태 카드와 목록에 함께 반영합니다.
 - 프론트의 공통 오류 배너는 더 이상 raw `Failed to fetch`를 그대로 보여주지 않고, 백엔드 워밍업·네트워크 지연을 한국어 안내와 재시도 흐름으로 정리합니다.
 - `설정 및 시스템`은 `시장 세션 / 시스템 진단 / 기관 리서치 상태`를 독립적으로 불러오므로, 한 패널이 늦어도 전체 페이지가 같이 빈 상태로 멈추지 않게 유지합니다.
@@ -885,7 +885,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 - FMP KR 스크리너가 막히더라도 레이더는 가능한 한 `krx_listing` 또는 운영 fallback 유니버스로 내려가 1차 후보를 먼저 보여주며, 현재 기본 fallback 종목군은 `201개`입니다.
 - 큰 KR fallback 유니버스에서는 응답 안정성을 우선해 `1차 전수 스캔 결과`를 먼저 반환하고, 정밀 분석은 상위 후보나 후속 상세 화면에서 이어집니다.
 - Render free에서 서버가 막 깨어난 직후에는 KR 레이더 warmup이 먼저 돌고, 정밀 계산이 길어지면 `504` 대신 빠른 1차 후보 응답을 먼저 돌려주도록 구성합니다. 다만 partial 뒤에 장기 스캔이 계속 유지된다고 가정하지 않고, 다음 재조회에서 quick 스냅샷과 정밀 계산을 다시 시작하는 방식으로 안정성을 맞춥니다.
-- `/api/market/opportunities/{code}`는 정밀 응답이 `12초` 안에 끝나지 않으면 quick fallback을 기다리고, quick fallback도 `4초` 안에 끝나지 않으면 이제 `cached quick` 또는 placeholder `200 + partial`로 먼저 내려갑니다. 그래서 `/radar` first screen이 통째로 비어 버리는 구간을 줄였습니다.
+- `/api/market/opportunities/{code}`는 먼저 `cached full`, 그다음 `cached quick`, 그다음 `fresh quick`를 우선 확인하고, 정밀 full 계산은 필요할 때만 background warmup으로 분리합니다. 그래서 `/radar` first screen이 full 계산 때문에 같이 늦어지던 구간을 줄였습니다.
 - cached quick 재사용은 이제 요청 limit와 정확히 같은 캐시 키만 보지 않고, 최근에 확보된 다른 quick limit 결과도 usable하면 잘라서 다시 사용합니다. 그래서 `/radar?limit=12`가 막혀도 직전 `limit=8` quick 결과를 먼저 보여 줄 수 있습니다.
 - 레이더 응답 캐시는 이제 `시장 컨텍스트 계산 + 유니버스 해석 + 1차 quote screen`까지 함께 감싸므로, 같은 조건의 재조회가 들어올 때 매번 무거운 전처리를 다시 수행하지 않습니다.
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
@@ -919,7 +919,7 @@ BACKEND_PROXY_URL=http://localhost:8000
   - `prediction_accuracy_refresh`: startup 비활성화, on-demand
   - `research_archive_sync`: startup 비활성화, on-demand
   - `startup background concurrency`: `1`
-- `/radar` 클라이언트 재호출 timeout: `22초`
+- `/radar` 클라이언트 재호출 timeout: `28초`
 - startup opportunity prewarm timeout: `180초`
 
 사진 두 장이 다르게 보인 이유:

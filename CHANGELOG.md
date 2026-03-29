@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.1 - 2026-03-29
+
+- KR `Opportunity Radar` 공개 API는 더 이상 같은 요청 안에서 `full`과 `quick` 계산을 동시에 붙잡고 기다리지 않습니다. 이제 `/api/market/opportunities/{code}`는 `cached full -> cached quick -> fresh quick -> background full warmup` 순서로 응답해, cold start 직후에도 `/radar`가 20초 이상 비어 있다가 실패 카드로 떨어지는 경우를 줄였습니다.
+- KR quick 후보는 `대표 시총 페이지` 기반 representative quote를 우선 사용하도록 바꿨습니다. 기존에는 sampled universe `yfinance` quote screen이 먼저여서 Render free 환경에서 quick 자체가 10초 이상 걸리거나 usable 후보를 못 만들 수 있었는데, 이제 representative quick가 먼저 살아나고 sampled quote screen은 그 다음 fallback으로만 내려갑니다.
+- 공개 SSR과 클라이언트 재호출 timeout도 레이더 경로에 맞춰 다시 잡았습니다. `/radar` server fetch는 `18초`, 브라우저 재호출은 `28초`까지 허용하고, 실제 후보가 아직 준비되지 않은 경우에도 `background full warmup`이 다음 재조회용 cache를 채우도록 정리했습니다.
+- 회귀 테스트를 추가해 `cached quick 우선 응답`, `quick timeout placeholder`, `KR representative quick 우선 경로`, `full cache reusable snapshot` 계약을 함께 고정했습니다.
+
 ## v2.52.0 - 2026-03-29
 
 - 예측 엔진 backbone은 그대로 유지한 채 `learned fusion + lightweight graph context`를 추가했습니다. `distributional_return_engine`는 기존 prior 분포 예측을 계속 생성하고, horizon `1 / 5 / 20`별로 실측 prediction log가 충분할 때만 pure `numpy` L2 logistic profile을 사용해 prior score를 보강합니다.

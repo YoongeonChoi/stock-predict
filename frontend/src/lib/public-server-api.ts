@@ -79,7 +79,7 @@ export function getPublicOpportunities(code = "KR", limit = 12) {
   return getPublicJson<OpportunityRadarResponse & { partial?: boolean; fallback_reason?: string | null }>(
     `/api/market/opportunities/${encodeURIComponent(code)}?limit=${limit}`,
     90,
-    12000,
+    18000,
   );
 }
 

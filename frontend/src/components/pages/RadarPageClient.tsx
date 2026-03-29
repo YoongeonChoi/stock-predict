@@ -61,7 +61,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
     }
     setLoading(true);
     setError(null);
-    api.getMarketOpportunities(market, 12, { timeoutMs: 22_000 })
+    api.getMarketOpportunities(market, 12, { timeoutMs: 28_000 })
       .then((next) => {
         setData(next);
         if (isUsableRadarSnapshot(next)) {
