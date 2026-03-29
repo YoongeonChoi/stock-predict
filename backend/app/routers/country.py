@@ -105,6 +105,13 @@ def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
         logging.warning("%s background task failed: %s", label, exc, exc_info=True)
 
 
+def _cancel_background_task(task: asyncio.Task, *, label: str) -> None:
+    if task.done():
+        return
+    task.cancel()
+    logging.info("%s background task cancelled after fallback response.", label)
+
+
 def _with_opportunity_partial(
     payload: dict,
     *,
@@ -630,31 +637,38 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
+    radar_label = f"Opportunity radar for {code}"
+    quick_label = f"Opportunity quick fallback for {code}"
     opportunity_task = asyncio.create_task(market_service.get_market_opportunities(code, limit))
     opportunity_task.add_done_callback(
-        lambda task, label=f"Opportunity radar for {code}": _log_background_completion(task, label=label)
+        lambda task, label=radar_label: _log_background_completion(task, label=label)
     )
     quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
     quick_task.add_done_callback(
-        lambda task, label=f"Opportunity quick fallback for {code}": _log_background_completion(task, label=label)
+        lambda task, label=quick_label: _log_background_completion(task, label=label)
     )
     try:
-        return await asyncio.wait_for(
+        response = await asyncio.wait_for(
             asyncio.shield(opportunity_task),
             timeout=OPPORTUNITY_TIMEOUT_SECONDS,
         )
+        _cancel_background_task(quick_task, label=quick_label)
+        return response
     except asyncio.TimeoutError:
         try:
             quick_response = await asyncio.wait_for(
                 asyncio.shield(quick_task),
                 timeout=max(2.0, min(OPPORTUNITY_QUICK_TIMEOUT_SECONDS, 4.0)),
             )
+            _cancel_background_task(opportunity_task, label=radar_label)
             return _with_opportunity_partial(
                 quick_response,
                 fallback_reason="opportunity_quick_response",
             )
         except asyncio.TimeoutError:
             logging.warning("opportunity quick fallback timed out for %s", code)
+            _cancel_background_task(opportunity_task, label=radar_label)
+            _cancel_background_task(quick_task, label=quick_label)
             cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
             if cached_quick:
                 return _with_opportunity_partial(
@@ -667,14 +681,16 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 market_service.build_market_opportunities_placeholder(
                     code,
                     note=(
-                        f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
-                        "대표 1차 스캔도 아직 끝나지 않아 시장 국면과 빈 후보 보드를 먼저 표시합니다."
+                        f"{code} 기회 레이더가 이번 요청에서 사용 가능한 후보를 만들지 못했습니다. "
+                        "자동 장기 스캔이 계속 유지되는 상태는 아니며, 다음 재조회에서는 quick 스냅샷을 새로 시도합니다."
                     ),
                 ),
                 fallback_reason="opportunity_placeholder_response",
             )
         except Exception as quick_exc:
             logging.warning("opportunity quick fallback failed for %s: %s", code, quick_exc, exc_info=True)
+            _cancel_background_task(opportunity_task, label=radar_label)
+            _cancel_background_task(quick_task, label=quick_label)
             cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
             if cached_quick:
                 return _with_opportunity_partial(
@@ -687,8 +703,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 market_service.build_market_opportunities_placeholder(
                     code,
                     note=(
-                        f"{code} 기회 레이더 초기 워밍업이 길어지고 있습니다. "
-                        "백그라운드 계산은 계속 진행되니 잠시 후 다시 열면 후보가 채워질 수 있습니다."
+                        f"{code} 기회 레이더가 이번 요청에서 사용 가능한 후보를 만들지 못했습니다. "
+                        "잠시 뒤 다시 열면 fresh quick 스냅샷을 새로 시도합니다."
                     ),
                 ),
                 fallback_reason="opportunity_placeholder_response",
