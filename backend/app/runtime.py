@@ -41,7 +41,7 @@ def get_runtime_state() -> dict:
     overall = "ok"
     if "error" in statuses or "warning" in statuses:
         overall = "degraded"
-    elif "running" in statuses:
+    elif "running" in statuses or "queued" in statuses:
         overall = "starting"
     return {
         "started_at": _state["started_at"],

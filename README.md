@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.51.3`
+현재 릴리즈: `v2.51.4`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -810,12 +810,13 @@ SUPABASE_SERVER_KEY=
 FRONTEND_URL=http://localhost:3000
 FRONTEND_URLS=
 FRONTEND_ORIGIN_REGEX=
-STARTUP_PREDICTION_ACCURACY_REFRESH=true
+STARTUP_PREDICTION_ACCURACY_REFRESH=false
 STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT=20
-STARTUP_RESEARCH_ARCHIVE_SYNC=true
+STARTUP_RESEARCH_ARCHIVE_SYNC=false
 STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
 STARTUP_MARKET_OPPORTUNITY_PREWARM=true
-STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=180
+STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=45
+STARTUP_BACKGROUND_TASK_CONCURRENCY=1
 ```
 
 프론트 `frontend/.env.example` 예시:
@@ -857,6 +858,8 @@ BACKEND_PROXY_URL=http://localhost:8000
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계하며, 가능한 경우 `504` 대신 `200 + partial` 응답으로 먼저 살아남는 것을 우선합니다.
+- Render 운영 로그에서 `Ran out of memory (used over 512MB)`가 잡힌 뒤부터는 cold start startup profile을 메모리 절약형으로 고정했습니다. 현재 production은 `prediction_accuracy_refresh=false`, `research_archive_sync=false`, `market_opportunity_prewarm=true`, `STARTUP_BACKGROUND_TASK_CONCURRENCY=1`로 동작하고, startup에서 꼭 필요한 KR 레이더 quick prewarm만 먼저 올립니다.
+- `prediction_accuracy_refresh`와 `research_archive_sync`는 startup에서 빠졌지만 기능이 없어진 것은 아닙니다. 예측 검증은 `/api/research/predictions` 계열에서, 기관 리포트 동기화는 `/api/archive/research`와 `/api/archive/research/refresh`에서 on-demand로 계속 갱신됩니다. 즉 cold start 메모리 피크를 줄이고, 실제로 해당 화면을 열었을 때만 무거운 보강 작업을 시작합니다.
 
 ### 운영 latency / warm-up 메모
 
@@ -866,6 +869,7 @@ BACKEND_PROXY_URL=http://localhost:8000
 
 - Render Free web service는 `15분` 동안 inbound traffic이 없으면 spin down 되고, 다음 요청 시 다시 깨어나는 데 `약 1분`이 걸릴 수 있습니다. 공식 문서: [Render Free instances](https://render.com/docs/free), [Render FAQ](https://render.com/docs/faq)
 - Supabase는 프로젝트가 inactivity 때문에 pause될 수 있고, pause된 project는 `540 project paused`를 반환합니다. 공식 문서: [Supabase HTTP status codes](https://supabase.com/docs/guides/troubleshooting/http-status-codes)
+- 현재 Render free 인스턴스 로그 기준 메모리 한도는 `512MB`였고, 2026-03-29 17:46 KST 장애는 cold start background job이 겹치며 이 한도를 넘은 사례로 기록했습니다. 그래서 운영 startup profile을 `한 번에 한 작업` 기준으로 다시 맞췄습니다.
 
 이 프로젝트에서 실제로 중요한 시간 예산:
 
@@ -875,6 +879,12 @@ BACKEND_PROXY_URL=http://localhost:8000
   - service-level 1차 스캔 timeout: `4초`
   - service-level 후보 정밀 계산 timeout: `4초`
   - quick quote screen 내부 빠른 quote timeout: `1.2초`
+- Render production startup
+  - `database_initialize`: 즉시
+  - `market_opportunity_prewarm`: startup에서만 유지, 현재 예산 `45초`
+  - `prediction_accuracy_refresh`: startup 비활성화, on-demand
+  - `research_archive_sync`: startup 비활성화, on-demand
+  - `startup background concurrency`: `1`
 - `/radar` 클라이언트 재호출 timeout: `22초`
 - startup opportunity prewarm timeout: `180초`
 

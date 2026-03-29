@@ -1,16 +1,35 @@
-﻿import logging
 import asyncio
+import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Awaitable, Callable
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.config import get_settings
 from app.database import db
 from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
 from app.exceptions import ApiAppException
-from app.routers import account, country, sector, stock, watchlist, compare, archive, calendar, export, screener, portfolio, system, research, briefing
+from app.routers import (
+    account,
+    archive,
+    briefing,
+    calendar,
+    compare,
+    country,
+    export,
+    portfolio,
+    research,
+    screener,
+    sector,
+    stock,
+    system,
+    watchlist,
+)
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
 from app.services import archive_service, market_service, research_archive_service
 from app.version import APP_VERSION
@@ -22,6 +41,16 @@ logging.basicConfig(
 )
 
 startup_log = logging.getLogger("stock_predict.startup")
+
+
+@dataclass(frozen=True)
+class StartupTaskDefinition:
+    name: str
+    running_detail: str
+    success_detail: str
+    failure_prefix: str
+    timeout_seconds: int
+    job: Callable[[], Awaitable[object]]
 
 
 async def _run_startup_task(
@@ -65,6 +94,50 @@ async def _run_startup_task(
         upsert_startup_task(name, "ok", success_detail)
 
 
+async def _run_startup_tasks(
+    task_definitions: list[StartupTaskDefinition],
+    *,
+    concurrency: int,
+) -> None:
+    pending = list(task_definitions)
+    active: set[asyncio.Task] = set()
+    max_concurrency = max(1, int(concurrency))
+
+    try:
+        while pending or active:
+            while pending and len(active) < max_concurrency:
+                task_definition = pending.pop(0)
+                active.add(
+                    asyncio.create_task(
+                        _run_startup_task(
+                            name=task_definition.name,
+                            running_detail=task_definition.running_detail,
+                            success_detail=task_definition.success_detail,
+                            failure_prefix=task_definition.failure_prefix,
+                            timeout_seconds=task_definition.timeout_seconds,
+                            job=task_definition.job,
+                        )
+                    )
+                )
+            if not active:
+                break
+            done, active = await asyncio.wait(active, return_when=asyncio.FIRST_COMPLETED)
+            for completed in done:
+                try:
+                    await completed
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    startup_log.warning("Unexpected startup coordinator error.", exc_info=True)
+    except asyncio.CancelledError:
+        for task in active:
+            if not task.done():
+                task.cancel()
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
+        raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     background_tasks: list[asyncio.Task] = []
@@ -73,22 +146,17 @@ async def lifespan(app: FastAPI):
     await db.initialize()
     upsert_startup_task("database_initialize", "ok", "Database initialization complete.")
 
+    startup_tasks: list[StartupTaskDefinition] = []
+
     if settings.startup_prediction_accuracy_refresh:
-        upsert_startup_task(
-            "prediction_accuracy_refresh",
-            "running",
-            "Refreshing stored next-day prediction accuracy in background.",
-        )
-        background_tasks.append(
-            asyncio.create_task(
-                _run_startup_task(
-                    name="prediction_accuracy_refresh",
-                    running_detail="Refreshing stored next-day prediction accuracy in background.",
-                    success_detail="Prediction accuracy refresh completed.",
-                    failure_prefix="Prediction accuracy refresh failed during startup",
-                    timeout_seconds=settings.startup_prediction_accuracy_refresh_timeout,
-                    job=lambda: archive_service.refresh_prediction_accuracy(limit=100),
-                )
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="prediction_accuracy_refresh",
+                running_detail="Refreshing stored next-day prediction accuracy in background.",
+                success_detail="Prediction accuracy refresh completed.",
+                failure_prefix="Prediction accuracy refresh failed during startup",
+                timeout_seconds=settings.startup_prediction_accuracy_refresh_timeout,
+                job=lambda: archive_service.refresh_prediction_accuracy(limit=100),
             )
         )
     else:
@@ -99,21 +167,14 @@ async def lifespan(app: FastAPI):
         )
 
     if settings.startup_research_archive_sync:
-        upsert_startup_task(
-            "research_archive_sync",
-            "running",
-            "Syncing curated public research archive in background.",
-        )
-        background_tasks.append(
-            asyncio.create_task(
-                _run_startup_task(
-                    name="research_archive_sync",
-                    running_detail="Syncing curated public research archive in background.",
-                    success_detail="Curated research archive refresh completed.",
-                    failure_prefix="Research archive sync failed during startup",
-                    timeout_seconds=settings.startup_research_archive_sync_timeout,
-                    job=lambda: research_archive_service.sync_public_research_reports(force=False),
-                )
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="research_archive_sync",
+                running_detail="Syncing curated public research archive in background.",
+                success_detail="Curated research archive refresh completed.",
+                failure_prefix="Research archive sync failed during startup",
+                timeout_seconds=settings.startup_research_archive_sync_timeout,
+                job=lambda: research_archive_service.sync_public_research_reports(force=False),
             )
         )
     else:
@@ -124,21 +185,14 @@ async def lifespan(app: FastAPI):
         )
 
     if settings.startup_market_opportunity_prewarm:
-        upsert_startup_task(
-            "market_opportunity_prewarm",
-            "running",
-            "Prewarming KR opportunity radar cache in background.",
-        )
-        background_tasks.append(
-            asyncio.create_task(
-                _run_startup_task(
-                    name="market_opportunity_prewarm",
-                    running_detail="Prewarming KR opportunity radar cache in background.",
-                    success_detail="KR opportunity radar prewarm completed.",
-                    failure_prefix="Market opportunity prewarm failed during startup",
-                    timeout_seconds=settings.startup_market_opportunity_prewarm_timeout,
-                    job=lambda: market_service.get_market_opportunities_quick("KR", limit=12),
-                )
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="market_opportunity_prewarm",
+                running_detail="Prewarming KR opportunity radar cache in background.",
+                success_detail="KR opportunity radar prewarm completed.",
+                failure_prefix="Market opportunity prewarm failed during startup",
+                timeout_seconds=settings.startup_market_opportunity_prewarm_timeout,
+                job=lambda: market_service.get_market_opportunities_quick("KR", limit=12),
             )
         )
     else:
@@ -146,6 +200,30 @@ async def lifespan(app: FastAPI):
             "market_opportunity_prewarm",
             "ok",
             "KR opportunity radar prewarm skipped by configuration.",
+        )
+
+    if startup_tasks:
+        startup_concurrency = max(1, int(settings.startup_background_task_concurrency))
+        for index, task_definition in enumerate(startup_tasks):
+            if index < startup_concurrency:
+                upsert_startup_task(
+                    task_definition.name,
+                    "running",
+                    task_definition.running_detail,
+                )
+            else:
+                upsert_startup_task(
+                    task_definition.name,
+                    "queued",
+                    f"{task_definition.running_detail} 앞선 startup 작업이 끝나면 이어서 시작합니다.",
+                )
+        background_tasks.append(
+            asyncio.create_task(
+                _run_startup_tasks(
+                    startup_tasks,
+                    concurrency=startup_concurrency,
+                )
+            )
         )
     try:
         yield
@@ -252,4 +330,3 @@ async def health():
         "version": APP_VERSION,
         "startup_tasks": runtime_state["startup_tasks"],
     }
-

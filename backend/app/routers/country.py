@@ -647,6 +647,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     quick_task.add_done_callback(
         lambda task, label=quick_label: _log_background_completion(task, label=label)
     )
+    # Let both tasks enter the event loop once so timeout/cancel paths see a started task consistently.
+    await asyncio.sleep(0)
     try:
         response = await asyncio.wait_for(
             asyncio.shield(opportunity_task),
