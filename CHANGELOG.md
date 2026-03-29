@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.5 - 2026-03-29
+
+- 공개 집계 화면이 여전히 느려지던 공통 원인을 추가로 정리했습니다. `SQLite cache/summary read`가 최대 30초까지 락 대기를 하면서 `wait_timeout`과 partial fallback 설계보다 먼저 전체 응답을 붙잡는 경로가 있었고, 실제 운영에서도 `/api/countries`, `/api/briefing/daily`, `/api/market/opportunities/KR`, `/api/calendar/KR`, `/api/archive/accuracy/stats`가 20~60초까지 늘어지는 현상이 재현됐습니다.
+- `backend/app/data/cache.py`에는 프로세스 메모리 캐시를 추가해, 한 번 생성한 공개 스냅샷을 같은 인스턴스 안에서는 SQLite 상태와 무관하게 바로 재사용하도록 바꿨습니다. 그래서 홈, 레이더, 캘린더, 연구실, 포트폴리오/관심종목 미리보기처럼 같은 공개 스냅샷을 여러 화면이 함께 쓰는 흐름에서 first paint가 더 안정적으로 유지됩니다.
+- `backend/app/database.py`는 cache read/write와 공개 요약 read 경로를 `fast-fail` 프로필로 분리했습니다. cache, 리서치 상태, 예측 정확도/연구실 통계가 DB 락을 오래 기다리지 않고 짧게 비워진 값이나 partial fallback으로 내려가도록 바꿔, 공개 fallback 계약이 실제 운영에서도 의미 있게 작동하도록 맞췄습니다.
+- 회귀 테스트를 추가해 메모리 캐시가 DB roundtrip 없이 최근 값을 재사용하는지, 공개 read-only DB 메서드가 락 상황에서 빈 요약으로 안전하게 내려오는지를 고정했습니다.
+
 ## v2.52.4 - 2026-03-29
 
 - 공용 캐시 레이어의 `get_or_fetch`가 더 이상 `두 번째 요청부터만` `wait_timeout`을 적용하지 않습니다. 이제 첫 호출자도 같은 시간 예산 안에서 fallback으로 빠지고 background task가 cache를 채우도록 바꿔, cold cache에서 `/api/calendar/KR`, `/api/briefing/daily`, `/api/archive/accuracy/stats`, `/api/research/predictions`가 첫 요청 한 번에 오래 붙잡히던 경로를 줄였습니다.

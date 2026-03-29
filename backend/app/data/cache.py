@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import fnmatch
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -10,18 +13,49 @@ from app.config import get_settings
 from app.database import db
 
 _INFLIGHT_FETCHES: dict[str, asyncio.Task] = {}
+_MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
+
+
+def _memory_get(key: str):
+    entry = _MEMORY_CACHE.get(key)
+    if entry is None:
+        return None
+    expires_at, value = entry
+    if expires_at <= time.time():
+        _MEMORY_CACHE.pop(key, None)
+        return None
+    return copy.deepcopy(value)
+
+
+def _memory_set(key: str, value: Any, ttl: int):
+    if ttl <= 0:
+        _MEMORY_CACHE.pop(key, None)
+        return
+    _MEMORY_CACHE[key] = (time.time() + ttl, copy.deepcopy(value))
+
+
+def _memory_invalidate(pattern: str):
+    glob_pattern = pattern.replace("%", "*").replace("_", "?")
+    for key in list(_MEMORY_CACHE):
+        if fnmatch.fnmatch(key, glob_pattern):
+            _MEMORY_CACHE.pop(key, None)
 
 
 async def get(key: str):
+    cached = _memory_get(key)
+    if cached is not None:
+        return cached
     return await db.cache_get(key)
 
 
 async def set(key: str, value, ttl: int | None = None):
     ttl = ttl or get_settings().cache_ttl_price
+    _memory_set(key, value, ttl)
     await db.cache_set(key, value, ttl)
 
 
 async def invalidate(pattern: str):
+    _memory_invalidate(pattern)
     await db.cache_invalidate(pattern)
 
 
