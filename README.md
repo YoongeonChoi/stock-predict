@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.1`
+현재 릴리즈: `v2.52.2`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -844,9 +844,9 @@ STARTUP_PREDICTION_ACCURACY_REFRESH=false
 STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT=20
 STARTUP_RESEARCH_ARCHIVE_SYNC=false
 STARTUP_RESEARCH_ARCHIVE_SYNC_TIMEOUT=35
-STARTUP_LEARNED_FUSION_REFRESH=true
+STARTUP_LEARNED_FUSION_REFRESH=false
 STARTUP_LEARNED_FUSION_REFRESH_TIMEOUT=25
-STARTUP_MARKET_OPPORTUNITY_PREWARM=true
+STARTUP_MARKET_OPPORTUNITY_PREWARM=false
 STARTUP_MARKET_OPPORTUNITY_PREWARM_TIMEOUT=45
 STARTUP_BACKGROUND_TASK_CONCURRENCY=1
 STARTUP_ALLOW_HEAVY_RENDER_JOBS=false
@@ -891,8 +891,10 @@ BACKEND_PROXY_URL=http://localhost:8000
 - KR처럼 큰 fallback 유니버스를 batch quote로 읽을 때는 개별 `stock_quote` 캐시를 수백 건씩 추가 기록하지 않고 batch 응답만 우선 사용해, Render free의 캐시 쓰기 병목을 줄입니다.
 - 사용자 핵심 데이터는 Supabase에 있으므로 Render 재기동 시에도 계정 데이터는 유지됩니다.
 - 공개 집계형 패널은 timeout과 fallback을 기본 전제로 설계하며, 가능한 경우 `504` 대신 `200 + partial` 응답으로 먼저 살아남는 것을 우선합니다.
-- Render 운영 로그에서 `Ran out of memory (used over 512MB)`가 잡힌 뒤부터는 cold start startup profile을 메모리 절약형으로 고정했습니다. 현재 production은 `prediction_accuracy_refresh=false`, `research_archive_sync=false`, `market_opportunity_prewarm=true`, `STARTUP_BACKGROUND_TASK_CONCURRENCY=1` 기준으로 동작하고, startup에서 꼭 필요한 KR 레이더 quick prewarm만 먼저 올립니다.
-- Render 서비스에 예전 `STARTUP_*` 값이 남아 있어도 backend code는 이제 자동으로 메모리 세이프 startup profile을 우선 적용합니다. 즉 Render 런타임으로 감지되면 `prediction_accuracy_refresh`, `research_archive_sync`는 강제로 startup에서 건너뛰고, concurrency는 `1`, 레이더 prewarm timeout은 최대 `45초`로 자동 clamp 됩니다. 정말 무거운 startup job까지 함께 돌려야 할 때만 `STARTUP_ALLOW_HEAVY_RENDER_JOBS=true`로 명시적으로 풀어야 합니다.
+- Render 운영 로그에서 `Ran out of memory (used over 512MB)`가 잡힌 뒤부터는 cold start startup profile을 메모리 절약형으로 고정했습니다. 현재 production은 `prediction_accuracy_refresh=false`, `learned_fusion_refresh=false`, `research_archive_sync=false`, `market_opportunity_prewarm=false`, `STARTUP_BACKGROUND_TASK_CONCURRENCY=1` 기준으로 동작하고, 공개 경로가 먼저 살아난 뒤 on-demand refresh와 캐시로 후속 보강을 이어갑니다.
+- Render 서비스에 예전 `STARTUP_*` 값이 남아 있어도 backend code는 자동으로 메모리 세이프 startup profile을 우선 적용합니다. 즉 Render 런타임으로 감지되면 `prediction_accuracy_refresh`, `learned_fusion_profile_refresh`, `research_archive_sync`, `market_opportunity_prewarm`는 startup에서 건너뛰고, concurrency는 `1`로 유지됩니다. 정말 무거운 startup job까지 함께 돌려야 할 때만 `STARTUP_ALLOW_HEAVY_RENDER_JOBS=true`로 명시적으로 풀어야 합니다.
+- `/api/countries`와 `/api/market/movers/KR`는 이제 홈 SSR 안정화를 위해 가벼운 대표 경로를 우선 사용합니다. `countries`는 병렬 quote + timeout fallback으로, `market movers`는 KR representative quote + timeout fallback으로 먼저 응답해 공용 홈 패널이 같은 cold start 구간에서 backend를 다시 무겁게 만들지 않도록 맞췄습니다.
+- 공개 background refresh는 이제 key 단위로 dedupe됩니다. 같은 시점에 홈, 레이더, 포트폴리오, 스크리너가 비슷한 cache warmup을 다시 걸어도 `country report`, `opportunity radar`, `screener cache warmup`은 기존 background task를 재사용해 Render free 인스턴스에 중복 job이 쌓이지 않게 유지합니다.
 - `prediction_accuracy_refresh`와 `research_archive_sync`는 startup에서 빠졌지만 기능이 없어진 것은 아닙니다. 예측 검증은 `/api/research/predictions` 계열에서, 기관 리포트 동기화는 `/api/archive/research`와 `/api/archive/research/refresh`에서 on-demand로 계속 갱신됩니다. 즉 cold start 메모리 피크를 줄이고, 실제로 해당 화면을 열었을 때만 무거운 보강 작업을 시작합니다.
 
 ### 운영 latency / warm-up 메모
@@ -915,12 +917,13 @@ BACKEND_PROXY_URL=http://localhost:8000
   - quick quote screen 내부 빠른 quote timeout: `1.2초`
 - Render production startup
   - `database_initialize`: 즉시
-  - `market_opportunity_prewarm`: startup에서만 유지, 현재 예산 `45초`
+  - `market_opportunity_prewarm`: startup 비활성화, on-demand
+  - `learned_fusion_profile_refresh`: startup 비활성화, on-demand
   - `prediction_accuracy_refresh`: startup 비활성화, on-demand
   - `research_archive_sync`: startup 비활성화, on-demand
   - `startup background concurrency`: `1`
 - `/radar` 클라이언트 재호출 timeout: `28초`
-- startup opportunity prewarm timeout: `180초`
+- startup opportunity prewarm timeout: `45초` budget only when explicitly enabled
 
 사진 두 장이 다르게 보인 이유:
 

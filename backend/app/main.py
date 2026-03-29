@@ -60,8 +60,10 @@ class StartupTaskDefinition:
 
 def _startup_skip_detail(*, name: str, configured_detail: str) -> str:
     if settings.startup_memory_safe_mode and name in {
+        "learned_fusion_profile_refresh",
         "prediction_accuracy_refresh",
         "research_archive_sync",
+        "market_opportunity_prewarm",
     }:
         return (
             "Render 메모리 세이프 startup 프로필에서 건너뜁니다. "
@@ -165,7 +167,7 @@ async def lifespan(app: FastAPI):
 
     startup_tasks: list[StartupTaskDefinition] = []
 
-    if settings.startup_learned_fusion_refresh:
+    if settings.effective_startup_learned_fusion_refresh:
         startup_tasks.append(
             StartupTaskDefinition(
                 name="learned_fusion_profile_refresh",
@@ -180,7 +182,10 @@ async def lifespan(app: FastAPI):
         upsert_startup_task(
             "learned_fusion_profile_refresh",
             "ok",
-            "Learned fusion profile refresh skipped by configuration.",
+            _startup_skip_detail(
+                name="learned_fusion_profile_refresh",
+                configured_detail="Learned fusion profile refresh skipped by configuration.",
+            ),
         )
 
     if settings.effective_startup_prediction_accuracy_refresh:
@@ -225,7 +230,7 @@ async def lifespan(app: FastAPI):
             ),
         )
 
-    if settings.startup_market_opportunity_prewarm:
+    if settings.effective_startup_market_opportunity_prewarm:
         startup_tasks.append(
             StartupTaskDefinition(
                 name="market_opportunity_prewarm",
@@ -240,7 +245,10 @@ async def lifespan(app: FastAPI):
         upsert_startup_task(
             "market_opportunity_prewarm",
             "ok",
-            "KR opportunity radar prewarm skipped by configuration.",
+            _startup_skip_detail(
+                name="market_opportunity_prewarm",
+                configured_detail="KR opportunity radar prewarm skipped by configuration.",
+            ),
         )
 
     if startup_tasks:
