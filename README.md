@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 위한 AI 분석 워크스페이스입니다.
 
-현재 릴리즈: `v2.52.8`
+현재 릴리즈: `v2.52.9`
 
 이 프로젝트는 단순한 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증` 흐름을 한 제품 안에서 연결하는 것을 목표로 합니다. 프론트는 `Vercel`, 백엔드는 `Render`, 인증과 사용자 데이터는 `Supabase`, 도메인과 DNS는 `Cloudflare`를 기준으로 운영합니다.
 
@@ -152,7 +152,8 @@
 - 종목 상세 분석은 요약 생성과 이벤트 구조화를 병렬로 처리하고, 느린 AI 보조 단계는 timeout fallback으로 전환해 정량 시계열 분석 결과가 먼저 보이도록 유지합니다.
 - 종목 상세 상단의 공개 판단 요약은 `public_summary` 구조를 사용합니다. 여기에는 `근거`, `반대 근거`, `지금 바로 사지 않는 이유`, `무효화 조건`, `데이터 품질`, `신뢰 메모`를 먼저 보여주고, `fair value`, `매수 구간`, `매도 구간`, `애널리스트 목표가` 같은 sell-side 문구는 아래 상세 가이드 영역에만 남깁니다.
 - 종목 상세의 `SP-4004` timeout fallback은 부분 응답을 허용하되, 공개 판단 요약과 트레이드 플랜이 영어 내부 문구를 그대로 노출하지 않도록 한국어 운영 문장으로 정리합니다.
-- 종목 상세 `/api/stock/{ticker}/detail`은 이벤트 날짜를 UTC 기준으로 정규화해 계산하며, 상세 분석이 timeout 또는 조합 오류로 실패해도 최근 저장 스냅샷이 있으면 `200 + partial + fallback_reason=stock_cached_detail`로 먼저 내려 화면이 통째로 비지 않게 유지합니다.
+- 종목 상세 `/api/stock/{ticker}/detail`은 이벤트 날짜를 UTC 기준으로 정규화해 계산하며, uncached 상태에서는 `빠른 종목 스냅샷 -> background full refresh` 순서로 응답합니다. quick snapshot을 만들 수 있으면 `200 + partial + fallback_reason=stock_quick_detail`로 먼저 내려 첫 클릭이 통째로 빈 실패 화면으로 무너지지 않게 유지하고, 최근 저장 스냅샷이 있으면 `fallback_reason=stock_cached_detail`도 계속 사용합니다.
+- 개별 종목 페이지 `/stock/[ticker]`는 server-first initial snapshot을 사용합니다. 첫 HTML에 partial stock snapshot이 있으면 그대로 보여주고, hydration 뒤에는 partial일 때만 background refetch를 걸어 full detail로 자연스럽게 교체합니다.
 - startup 보강 작업은 정해진 시간 안에 끝나지 않아도 헬스 상태를 즉시 `degraded`로 내리지 않고, 본 서비스 응답을 먼저 살린 뒤 다음 워밍업/재요청에서 다시 보강되도록 유지합니다.
 - 예측 정확도 집계와 관련된 SQLite 경로는 동일한 `WAL + busy_timeout` 설정을 공유해, startup refresh나 집계 화면이 `database is locked`로 불안정해지는 구간을 줄였습니다.
 - 운영 스모크 검증은 현재 제품 기준선에 맞춰 KR 대표 종목(`005930.KS`, `000660.KS`) 중심으로 확인합니다.
@@ -795,6 +796,8 @@ selection
     - freshness / fallback audit 메타
   - `fallback_reason=stock_cached_detail`
     - 상세 계산이 timeout 또는 조합 오류로 끝나지 않을 때 최근 저장 스냅샷을 먼저 보여줍니다.
+  - `fallback_reason=stock_quick_detail`
+    - uncached 종목 상세에서 가격 흐름, 기술 신호, 시장 국면을 기준으로 빠른 스냅샷을 먼저 보여주고, full detail과 archive save는 background refresh로 이어갑니다.
 - `GET /api/stock/{ticker}/chart`
 - `GET /api/stock/{ticker}/technical-summary`
 - `GET /api/stock/{ticker}/pivot-points`

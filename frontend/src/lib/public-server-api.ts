@@ -12,7 +12,7 @@ import type {
   ResearchArchiveStatus,
   ScreenerResponse,
 } from "@/lib/api";
-import type { CountryListItem, CountryReport, OpportunityRadarResponse } from "@/lib/types";
+import type { CountryListItem, CountryReport, OpportunityRadarResponse, StockDetail } from "@/lib/types";
 
 const API_BASE_URL = (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const DEFAULT_PUBLIC_FETCH_TIMEOUT_MS = Number.parseInt(process.env.PUBLIC_SERVER_FETCH_TIMEOUT_MS || "8000", 10);
@@ -79,6 +79,14 @@ export function getPublicOpportunities(code = "KR", limit = 12) {
   return getPublicJson<OpportunityRadarResponse & { partial?: boolean; fallback_reason?: string | null }>(
     `/api/market/opportunities/${encodeURIComponent(code)}?limit=${limit}`,
     90,
+    18000,
+  );
+}
+
+export function getPublicStockDetail(ticker: string) {
+  return getPublicJson<StockDetail & { partial?: boolean; fallback_reason?: string | null }>(
+    `/api/stock/${encodeURIComponent(ticker)}/detail`,
+    120,
     18000,
   );
 }
