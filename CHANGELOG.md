@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.9 - 2026-03-30
+
+- 개별 종목 상세의 first click 흐름을 다시 정리했습니다. `/api/stock/{ticker}/detail`은 이제 `cached full -> cached quick -> fresh quick -> background full refresh` 순서로 응답해, uncached 종목이라도 빠른 partial snapshot을 먼저 내려 화면이 통째로 빈 에러 카드로 무너지지 않게 맞췄습니다.
+- quick stock snapshot은 `fallback_reason=stock_quick_detail`로 명시하고, full detail과 archive save는 응답 뒤 background task로 분리했습니다. 그래서 detail route가 archive DB 저장까지 기다리며 더 느려지던 복합 병목을 줄였습니다.
+- 개별 종목 페이지 `/stock/[ticker]`는 client-only first paint 대신 server-first initial snapshot을 사용하도록 바꿨습니다. 첫 HTML에 partial stock snapshot이 있으면 그대로 보여주고, hydration 뒤에는 partial일 때만 background refetch를 걸어 full detail로 교체합니다.
+- 운영 스모크 범위에 `GET /api/stock/003670/detail`과 `/stock/003670.KS`를 추가해, stock detail API와 페이지가 다시 `504` 또는 빈 화면으로 회귀하는 문제를 더 빨리 잡을 수 있게 했습니다.
+
 ## v2.52.8 - 2026-03-30
 
 - 개별 종목 상세 `/api/stock/{ticker}/detail`의 복합 장애를 정리했습니다. 이벤트 컨텍스트가 ISO timezone 날짜와 naive 날짜를 섞어 읽을 때 `can't subtract offset-naive and offset-aware datetimes`로 `SP-3003` 500을 내던 경로를 UTC 정규화로 고쳤습니다.

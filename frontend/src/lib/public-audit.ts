@@ -34,6 +34,7 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   prediction_lab_cache_wait_timeout: "검증 스냅샷 준비 중",
   prediction_lab_timeout: "검증 집계 지연",
   stock_cached_detail: "최근 저장 상세 스냅샷 기준",
+  stock_quick_detail: "빠른 종목 스냅샷 기준",
 };
 
 function normalizeReason(reason?: string | null) {
@@ -98,6 +99,9 @@ export function buildPublicAuditSummary(
   }
   if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
     return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "stock_quick_detail") {
+    return "정밀 종목 분석을 이어가는 동안 가격 흐름과 기술 신호를 기준으로 빠른 상세 스냅샷을 먼저 보여주고 있습니다.";
   }
   const reason = normalizeReason(meta?.fallback_reason);
   if (meta?.partial && reason) {

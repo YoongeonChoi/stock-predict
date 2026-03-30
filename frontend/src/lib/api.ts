@@ -1369,9 +1369,9 @@ export const api = {
   getStockDetail: (ticker: string, options: RequestOptions = {}) =>
     get<import("./types").StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail`, options),
   getStockChart: (ticker: string, period = "3mo") =>
-    get<{ data: import("./types").PricePoint[] }>(`/api/stock/${ticker}/chart?period=${period}`),
-  getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${ticker}/technical-summary`),
-  getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${ticker}/pivot-points`),
+    get<{ data: import("./types").PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
+  getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${encodeURIComponent(ticker)}/technical-summary`),
+  getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${encodeURIComponent(ticker)}/pivot-points`),
   getWatchlist: () => get<import("./types").WatchlistItem[]>("/api/watchlist"),
   addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),

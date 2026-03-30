@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
@@ -7,23 +8,30 @@ import pandas as pd
 from ta.trend import SMAIndicator, EMAIndicator, MACD, ADXIndicator, CCIIndicator
 from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
 from ta.volatility import BollingerBands
-from app.analysis.stock_analyzer import analyze_stock, get_cached_stock_detail
+from app.analysis.stock_analyzer import (
+    analyze_stock,
+    build_quick_stock_detail,
+    get_cached_quick_stock_detail,
+    get_cached_stock_detail,
+)
 from app.data import yfinance_client, cache
 from app.services import archive_service, ticker_resolver_service, forecast_monitor_service
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
 
 router = APIRouter(prefix="/api", tags=["stock"])
-STOCK_DETAIL_TIMEOUT_SECONDS = 18.0
+logger = logging.getLogger(__name__)
+STOCK_DETAIL_TIMEOUT_SECONDS = 12.0
+_STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 
 
 def _resolve_kr_ticker(ticker: str) -> str:
     return ticker_resolver_service.resolve_ticker(ticker, "KR")["ticker"] or ticker.upper()
 
 
-def _build_partial_stock_detail(cached: dict, *, error_code: str, fallback_reason: str) -> dict:
+def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallback_reason: str) -> dict:
     partial = dict(cached)
     errors = list(partial.get("errors") or [])
-    if error_code not in errors:
+    if error_code and error_code not in errors:
         errors.append(error_code)
     partial["errors"] = errors
     partial["partial"] = True
@@ -32,15 +40,65 @@ def _build_partial_stock_detail(cached: dict, *, error_code: str, fallback_reaso
     return partial
 
 
+async def _archive_stock_report(detail: dict, ticker: str) -> None:
+    try:
+        await archive_service.save_report("stock", detail, ticker=ticker)
+    except Exception as exc:
+        SP_5002(str(exc)[:100]).log()
+
+
+def _schedule_stock_detail_refresh(ticker: str) -> None:
+    existing = _STOCK_DETAIL_REFRESH_TASKS.get(ticker)
+    if existing and not existing.done():
+        return
+
+    async def _run_refresh() -> None:
+        try:
+            detail = await analyze_stock(ticker)
+            await _archive_stock_report(detail, ticker)
+        except Exception as exc:
+            logger.warning("stock detail background refresh failed for %s: %s", ticker, str(exc)[:180])
+        finally:
+            _STOCK_DETAIL_REFRESH_TASKS.pop(ticker, None)
+
+    _STOCK_DETAIL_REFRESH_TASKS[ticker] = asyncio.create_task(_run_refresh())
+
+
 @router.get("/stock/{ticker}/detail")
 async def get_stock_detail(ticker: str):
     ticker = _resolve_kr_ticker(ticker)
-    try:
-        detail = await asyncio.wait_for(
-            analyze_stock(ticker),
-            timeout=STOCK_DETAIL_TIMEOUT_SECONDS,
+    cached = await get_cached_stock_detail(ticker, refresh_quote=False)
+    if cached:
+        return cached
+
+    cached_quick = await get_cached_quick_stock_detail(ticker)
+    if cached_quick:
+        _schedule_stock_detail_refresh(ticker)
+        return _build_partial_stock_detail(
+            cached_quick,
+            error_code=None,
+            fallback_reason="stock_quick_detail",
         )
+
+    try:
+        detail = await asyncio.wait_for(build_quick_stock_detail(ticker), timeout=STOCK_DETAIL_TIMEOUT_SECONDS)
+        if detail:
+            _schedule_stock_detail_refresh(ticker)
+            return _build_partial_stock_detail(
+                detail,
+                error_code=None,
+                fallback_reason="stock_quick_detail",
+            )
+        detail = await asyncio.wait_for(analyze_stock(ticker), timeout=STOCK_DETAIL_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
+        cached_quick = await get_cached_quick_stock_detail(ticker)
+        if cached_quick:
+            _schedule_stock_detail_refresh(ticker)
+            return _build_partial_stock_detail(
+                cached_quick,
+                error_code="SP-5018",
+                fallback_reason="stock_quick_detail",
+            )
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
             return _build_partial_stock_detail(
@@ -52,6 +110,14 @@ async def get_stock_detail(ticker: str):
         err.log()
         return JSONResponse(status_code=504, content=err.to_dict())
     except Exception as e:
+        cached_quick = await get_cached_quick_stock_detail(ticker)
+        if cached_quick:
+            _schedule_stock_detail_refresh(ticker)
+            return _build_partial_stock_detail(
+                cached_quick,
+                error_code="SP-3003",
+                fallback_reason="stock_quick_detail",
+            )
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
             return _build_partial_stock_detail(
@@ -64,10 +130,7 @@ async def get_stock_detail(ticker: str):
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
-    try:
-        await archive_service.save_report("stock", detail, ticker=ticker)
-    except Exception as e:
-        SP_5002(str(e)[:100]).log()
+    asyncio.create_task(_archive_stock_report(detail, ticker))
 
     return detail
 

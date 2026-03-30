@@ -57,6 +57,9 @@ EVENT_CONTEXT_TIMEOUT_SECONDS = 8.0
 STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
 STOCK_DETAIL_CACHE_VERSION = "v9"
 STOCK_DETAIL_LATEST_CACHE_VERSION = "latest-v9"
+STOCK_DETAIL_QUICK_CACHE_VERSION = "quick-v1"
+STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 5.0
+STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS = 900
 
 
 def _stock_detail_cache_key(ticker: str, prices: list[dict]) -> str:
@@ -67,6 +70,10 @@ def _stock_detail_latest_cache_key(ticker: str) -> str:
     return f"stock_detail:{STOCK_DETAIL_LATEST_CACHE_VERSION}:{ticker}"
 
 
+def _stock_detail_quick_cache_key(ticker: str) -> str:
+    return f"stock_detail:{STOCK_DETAIL_QUICK_CACHE_VERSION}:{ticker}"
+
+
 async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
     cached = await cache.get(_stock_detail_latest_cache_key(ticker))
     if not cached:
@@ -74,6 +81,160 @@ async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -
     if not refresh_quote:
         return dict(cached)
     return await _refresh_cached_stock_detail(dict(cached), ticker)
+
+
+async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
+    cached = await cache.get(_stock_detail_quick_cache_key(ticker))
+    return dict(cached) if cached else None
+
+
+async def build_quick_stock_detail(ticker: str) -> dict | None:
+    country_code = _detect_country(ticker)
+
+    async def _with_timeout(coro, timeout: float, default):
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except Exception:
+            return default
+
+    prices_full, market_prices_full, info = await asyncio.gather(
+        _with_timeout(yfinance_client.get_price_history(ticker, period="6mo"), STOCK_DETAIL_QUICK_TIMEOUT_SECONDS, []),
+        _with_timeout(
+            yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="6mo"),
+            STOCK_DETAIL_QUICK_TIMEOUT_SECONDS,
+            [],
+        ),
+        _with_timeout(yfinance_client.get_stock_info(ticker), STOCK_DETAIL_QUICK_TIMEOUT_SECONDS, {}),
+    )
+
+    if not prices_full and not info:
+        return None
+
+    prices_raw = _window_prices(prices_full, 63)
+    price_source = prices_raw or prices_full
+    if not price_source:
+        return None
+
+    market_prices = _window_prices(market_prices_full, 126)
+    info = _enrich_info_from_history(info or {"ticker": ticker, "name": ticker}, prices_full or price_source)
+    peer_avg = {"pe_avg": None, "pb_avg": None, "ev_ebitda_avg": None}
+    analyst_raw = {"buy": 0, "hold": 0, "sell": 0}
+    quant_score = score_stock(info, peers_avg=peer_avg, price_hist=price_source, analyst_counts=analyst_raw)
+    composite = score_composite(
+        info,
+        peers_avg=peer_avg,
+        price_hist=price_source,
+        price_hist_6mo=prices_full or price_source,
+        analyst_counts=analyst_raw,
+    )
+
+    technical = _calc_technicals(price_source)
+    price_history = [PricePoint(**p) for p in price_source]
+    buy_sell = _build_buy_sell(info, {}, peer_avg)
+    reference_date = price_source[-1]["date"]
+    heuristic_event_context = build_heuristic_event_context(
+        news_items=[],
+        filings=[],
+        reference_date=reference_date,
+    )
+    market_regime = build_market_regime(
+        country_code=country_code,
+        name=COUNTRY_REGISTRY[country_code].indices[0].name,
+        price_history=market_prices,
+        next_day_forecast=forecast_next_day(
+            ticker=COUNTRY_REGISTRY[country_code].indices[0].ticker,
+            name=COUNTRY_REGISTRY[country_code].indices[0].name,
+            country_code=country_code,
+            price_history=market_prices,
+            asset_type="index",
+            event_context=heuristic_event_context,
+        ),
+    )
+    next_day_forecast = forecast_next_day(
+        ticker=ticker,
+        name=info.get("name", ticker),
+        country_code=country_code,
+        price_history=price_source,
+        asset_type="stock",
+        benchmark_history=market_prices_full or market_prices,
+        fundamental_context=info,
+        event_context=heuristic_event_context,
+    )
+    trade_plan = build_trade_plan(
+        ticker=ticker,
+        current_price=round(float(info.get("current_price") or 0.0), 2),
+        price_history=price_history,
+        technical=technical,
+        buy_sell_guide=buy_sell,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+    )
+    public_summary = _build_public_stock_summary(
+        llm_result={},
+        info=info,
+        quant_score=quant_score,
+        next_day_forecast=next_day_forecast,
+        market_regime=market_regime,
+        trade_plan=trade_plan,
+        buy_sell_guide=buy_sell,
+        llm_available=False,
+    )
+
+    detail = StockDetail(
+        ticker=ticker,
+        name=info.get("name", ticker),
+        country_code=country_code,
+        sector=info.get("sector", "N/A"),
+        industry=info.get("industry", "N/A"),
+        market_cap=float(info.get("market_cap") or 0.0),
+        current_price=round(float(info.get("current_price") or 0.0), 2),
+        change_pct=round(float(info.get("change_pct") or 0.0), 2),
+        financials=[],
+        pe_ratio=info.get("pe_ratio"),
+        pb_ratio=info.get("pb_ratio"),
+        ev_ebitda=info.get("ev_ebitda"),
+        peg_ratio=info.get("peg_ratio"),
+        week52_high=info.get("52w_high"),
+        week52_low=info.get("52w_low"),
+        peer_comparisons=[],
+        dividend=DividendInfo(
+            dividend_yield=info.get("dividend_yield"),
+            payout_ratio=info.get("payout_ratio"),
+        ),
+        analyst_ratings=AnalystRatings(**analyst_raw),
+        earnings_history=[],
+        price_history=price_history,
+        technical=technical,
+        score=quant_score,
+        buy_sell_guide=buy_sell,
+        next_day_forecast=next_day_forecast,
+        free_kr_forecast=None,
+        historical_pattern_forecast=None,
+        setup_backtest=None,
+        market_regime=market_regime,
+        trade_plan=trade_plan,
+        public_summary=public_summary,
+    )
+
+    result = detail.model_dump()
+    result["composite_score"] = composite.model_dump()
+    result["llm_available"] = False
+    result["errors"] = []
+    result["generated_at"] = datetime.now(timezone.utc).isoformat()
+    result["partial"] = True
+    result["fallback_reason"] = "stock_quick_detail"
+    result["analysis_summary"] = (
+        "정밀 종목 분석이 지연돼 가격 흐름, 기술 지표, 시장 국면을 기준으로 빠른 상세 스냅샷을 먼저 보여주고 있습니다."
+    )
+    result["key_risks"] = []
+    result["key_catalysts"] = []
+    result["public_summary"] = public_summary.model_dump()
+    await cache.set(
+        _stock_detail_quick_cache_key(ticker),
+        result,
+        min(get_settings().cache_ttl_report, STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS),
+    )
+    return result
 
 
 async def analyze_stock(ticker: str) -> dict:
@@ -360,6 +521,7 @@ async def analyze_stock(ticker: str) -> dict:
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
     await cache.set(_stock_detail_latest_cache_key(ticker), result, settings.cache_ttl_report)
+    await cache.invalidate(_stock_detail_quick_cache_key(ticker))
     return result
 
 
