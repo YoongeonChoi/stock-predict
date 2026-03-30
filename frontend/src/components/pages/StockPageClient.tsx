@@ -81,7 +81,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
     const shouldRefreshDetail = !initialData || Boolean(initialData.partial);
     if (shouldRefreshDetail) {
-      api.getStockDetail(normalizedTicker, { timeoutMs: 32000 })
+      api.getStockDetail(normalizedTicker, { timeoutMs: 32000, preferFull: true })
         .then((next) => {
           if (cancelled) return;
           setStock(next);
