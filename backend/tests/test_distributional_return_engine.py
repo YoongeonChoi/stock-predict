@@ -119,6 +119,62 @@ class DistributionalReturnEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("GPT 구조화 이벤트", result.summary)
         self.assertIn("contract", result.event_type_scores)
 
+    async def test_build_structured_event_context_handles_mixed_timezone_dates(self):
+        news_items = [
+            {
+                "title": "삼성전자 공급 계약 기대",
+                "description": "수주 기대가 이어지고 있습니다.",
+                "source": "Naver Search",
+                "published": "2026-03-25T09:30:00+09:00",
+            }
+        ]
+        filings = [
+            {
+                "report_name": "주요사항보고서(공급계약체결)",
+                "remark": "중장기 매출에 긍정적인 계약 체결",
+                "source": "OpenDART",
+                "receipt_date": "20260324",
+            }
+        ]
+        llm_payload = {
+            "items": [
+                {
+                    "id": "filing_1",
+                    "sentiment": 0.7,
+                    "surprise": 0.5,
+                    "uncertainty": 0.2,
+                    "relevance": 0.8,
+                    "event_type": "contract",
+                    "horizon": "medium",
+                },
+                {
+                    "id": "news_1",
+                    "sentiment": 0.4,
+                    "surprise": 0.2,
+                    "uncertainty": 0.2,
+                    "relevance": 0.7,
+                    "event_type": "guidance",
+                    "horizon": "short",
+                },
+            ]
+        }
+
+        with patch(
+            "app.analysis.distributional_return_engine.ask_json",
+            new=AsyncMock(return_value=llm_payload),
+        ):
+            result = await build_structured_event_context(
+                ticker="005930.KS",
+                asset_name="삼성전자",
+                country_code="KR",
+                news_items=news_items,
+                filings=filings,
+                reference_date="2026-03-26",
+            )
+
+        self.assertEqual(result.item_count, 2)
+        self.assertGreater(result.sentiment, 0.0)
+
     async def test_distributional_forecast_marks_prior_only_when_no_profile_is_available(self):
         with patch(
             "app.analysis.distributional_return_engine.learned_fusion_profile_service.get_profile_for_horizon",

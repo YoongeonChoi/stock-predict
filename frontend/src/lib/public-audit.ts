@@ -33,6 +33,7 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   prediction_lab_partial_data: "검증 세부 집계 일부 지연",
   prediction_lab_cache_wait_timeout: "검증 스냅샷 준비 중",
   prediction_lab_timeout: "검증 집계 지연",
+  stock_cached_detail: "최근 저장 상세 스냅샷 기준",
 };
 
 function normalizeReason(reason?: string | null) {
@@ -94,6 +95,9 @@ export function buildPublicAuditSummary(
   }
   if (meta?.partial && meta?.fallback_reason === "prediction_lab_partial_data") {
     return "검증 세부 집계 일부가 늦어도 최근 스냅샷과 fusion 상태부터 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
+    return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";
   }
   const reason = normalizeReason(meta?.fallback_reason);
   if (meta?.partial && reason) {

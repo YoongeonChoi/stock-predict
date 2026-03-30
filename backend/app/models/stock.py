@@ -136,3 +136,6 @@ class StockDetail(BaseModel):
     market_regime: MarketRegime | None = None
     trade_plan: TradePlan | None = None
     public_summary: PublicStockSummary | None = None
+    generated_at: str | None = None
+    partial: bool | None = None
+    fallback_reason: str | None = None

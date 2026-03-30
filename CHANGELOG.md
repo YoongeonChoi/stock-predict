@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.8 - 2026-03-30
+
+- 개별 종목 상세 `/api/stock/{ticker}/detail`의 복합 장애를 정리했습니다. 이벤트 컨텍스트가 ISO timezone 날짜와 naive 날짜를 섞어 읽을 때 `can't subtract offset-naive and offset-aware datetimes`로 `SP-3003` 500을 내던 경로를 UTC 정규화로 고쳤습니다.
+- 종목 상세 캐시는 더 이상 2년 price history를 먼저 모두 읽은 뒤에야 cache hit를 확인하지 않습니다. 최신 usable detail snapshot을 먼저 확인하고, quote refresh가 늦거나 실패해도 저장된 snapshot을 그대로 재사용하도록 바꿔 first paint를 더 안정적으로 유지합니다.
+- stock detail route는 timeout이나 조합 오류가 나도 최근 저장 snapshot이 있으면 `200 + partial + fallback_reason=stock_cached_detail`로 먼저 반환합니다. 프론트 detail 화면도 이 메타를 audit strip으로 표시해, 개별 종목 페이지가 한 번의 detail 실패로 통째로 빈 에러 화면이 되지 않도록 맞췄습니다.
+
 ## v2.52.7 - 2026-03-30
 
 - dense workspace 화면의 공통 레이아웃 축을 정리했습니다. 대시보드, 레이더, 포트폴리오, 캘린더, 아카이브, 관심종목이 더 이상 페이지마다 다른 `main / aside` 비율을 쓰지 않고, 같은 폭과 시작선 기준으로 읽히도록 맞췄습니다.
