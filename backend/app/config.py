@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     startup_market_opportunity_prewarm_timeout: int = 180
     startup_background_task_concurrency: int = 3
     startup_allow_heavy_render_jobs: bool = False
+    stock_detail_background_refresh: bool = True
+    stock_detail_allow_render_background_refresh: bool = False
 
     cache_ttl_price: int = 900
     cache_ttl_chart: int = 3600
@@ -140,6 +142,14 @@ class Settings(BaseSettings):
         if self.startup_memory_safe_mode:
             return 1
         return max(1, int(self.startup_background_task_concurrency))
+
+    @property
+    def effective_stock_detail_background_refresh(self) -> bool:
+        if not self.stock_detail_background_refresh:
+            return False
+        if self.startup_memory_safe_mode and not self.stock_detail_allow_render_background_refresh:
+            return False
+        return True
 
 
 @lru_cache

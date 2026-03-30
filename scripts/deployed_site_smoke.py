@@ -117,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         HttpCheck("calendar", api_url, "/api/calendar/KR", expected_status=200, expect_json=True, timeout=60),
         HttpCheck("prediction-lab", api_url, "/api/research/predictions?limit_recent=20&refresh=false", expected_status=200, expect_json=True, timeout=60),
         HttpCheck("stock-detail", api_url, "/api/stock/003670/detail", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("health-post-stock", api_url, "/api/health", expected_status=200, expect_json=True, timeout=45),
         HttpCheck("frontend-home", frontend_url, "/", expected_status=200, contains_text="<html"),
         HttpCheck("frontend-radar", frontend_url, "/radar", expected_status=200, contains_text="<html"),
         HttpCheck("frontend-screener", frontend_url, "/screener", expected_status=200, contains_text="<html"),

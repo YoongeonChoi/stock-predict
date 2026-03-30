@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.52.10 - 2026-03-30
+
+- 개별 종목 상세 quick fallback의 후속 처리 방식을 Render 저메모리 운영 환경에 맞게 다시 정리했습니다. 이제 `/api/stock/{ticker}/detail`이 quick partial을 반환한 뒤 무거운 full 분석을 무조건 background task로 떼어놓지 않고, memory-safe 모드에서는 브라우저의 후속 `prefer_full=true` 요청 안에서만 bounded full refresh를 시도합니다.
+- 그래서 stock detail 한 번 조회한 뒤 detached full-analysis task가 남아 backend health까지 같이 흔들리던 복합 장애를 줄였습니다. quick snapshot은 계속 first click을 살리고, richer detail 업그레이드는 사용자가 실제 보고 있는 페이지의 follow-up request 안에서만 수행됩니다.
+- full detail이 완성됐을 때 archive save도 memory-safe 모드에서는 같은 요청 안에서 마치도록 바꿔, post-response background 작업이 Render 인스턴스에 남지 않게 했습니다.
+- 운영 스모크는 `stock-detail` 호출 뒤 `/api/health`를 한 번 더 확인하도록 넓혀, 개별 종목 페이지가 200을 준 직후 backend가 다시 502로 쓰러지는 회귀를 더 빨리 잡을 수 있게 했습니다.
+
 ## v2.52.9 - 2026-03-30
 
 - 개별 종목 상세의 first click 흐름을 다시 정리했습니다. `/api/stock/{ticker}/detail`은 이제 `cached full -> cached quick -> fresh quick -> background full refresh` 순서로 응답해, uncached 종목이라도 빠른 partial snapshot을 먼저 내려 화면이 통째로 빈 에러 카드로 무너지지 않게 맞췄습니다.

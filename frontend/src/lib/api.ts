@@ -17,6 +17,10 @@ export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
 }
 
+export interface StockDetailRequestOptions extends RequestOptions {
+  preferFull?: boolean;
+}
+
 export interface AccountProfile {
   user_id: string;
   email?: string | null;
@@ -1366,8 +1370,11 @@ export const api = {
   getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
   getSectorReport: (code: string, sectorId: string) =>
     get<import("./types").SectorReport>(`/api/country/${code}/sector/${sectorId}/report`),
-  getStockDetail: (ticker: string, options: RequestOptions = {}) =>
-    get<import("./types").StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail`, options),
+  getStockDetail: (ticker: string, options: StockDetailRequestOptions = {}) => {
+    const { preferFull = false, ...requestOptions } = options;
+    const query = preferFull ? "?prefer_full=true" : "";
+    return get<import("./types").StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail${query}`, requestOptions);
+  },
   getStockChart: (ticker: string, period = "3mo") =>
     get<{ data: import("./types").PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${encodeURIComponent(ticker)}/technical-summary`),
