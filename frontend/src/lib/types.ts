@@ -582,6 +582,9 @@ export interface StockDetail {
   llm_available?: boolean;
   errors?: string[];
   historical_pattern_warning?: string;
+  generated_at?: string | null;
+  partial?: boolean | null;
+  fallback_reason?: string | null;
 }
 
 export interface WatchlistItem {

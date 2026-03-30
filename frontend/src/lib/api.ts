@@ -1366,7 +1366,8 @@ export const api = {
   getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
   getSectorReport: (code: string, sectorId: string) =>
     get<import("./types").SectorReport>(`/api/country/${code}/sector/${sectorId}/report`),
-  getStockDetail: (ticker: string) => get<import("./types").StockDetail>(`/api/stock/${ticker}/detail`),
+  getStockDetail: (ticker: string, options: RequestOptions = {}) =>
+    get<import("./types").StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail`, options),
   getStockChart: (ticker: string, period = "3mo") =>
     get<{ data: import("./types").PricePoint[] }>(`/api/stock/${ticker}/chart?period=${period}`),
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${ticker}/technical-summary`),

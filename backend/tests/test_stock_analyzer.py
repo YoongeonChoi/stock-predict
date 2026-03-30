@@ -68,6 +68,53 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {})
 
+    async def test_analyze_stock_prefers_latest_cached_detail_before_history_fetch(self):
+        cached_snapshot = {
+            "ticker": "005930.KS",
+            "current_price": 70000,
+            "change_pct": 1.2,
+            "generated_at": "2026-03-30T08:00:00+00:00",
+            "partial": False,
+            "fallback_reason": None,
+            "errors": [],
+        }
+
+        with (
+            patch("app.analysis.stock_analyzer.cache.get", new=AsyncMock(return_value=cached_snapshot)),
+            patch("app.analysis.stock_analyzer.yfinance_client.get_stock_info", new=AsyncMock(return_value={})),
+            patch(
+                "app.analysis.stock_analyzer.yfinance_client.get_price_history",
+                new=AsyncMock(side_effect=AssertionError("history fetch should not run")),
+            ),
+        ):
+            result = await stock_analyzer.analyze_stock("005930.KS")
+
+        self.assertEqual(result["ticker"], "005930.KS")
+        self.assertEqual(result["current_price"], 70000)
+
+    async def test_get_cached_stock_detail_returns_cached_snapshot_when_quote_refresh_fails(self):
+        cached_snapshot = {
+            "ticker": "005930.KS",
+            "current_price": 70100,
+            "change_pct": -0.4,
+            "generated_at": "2026-03-30T08:00:00+00:00",
+            "errors": [],
+        }
+
+        async def _timeout_info(*args, **kwargs):
+            raise asyncio.TimeoutError
+
+        with (
+            patch("app.analysis.stock_analyzer.cache.get", new=AsyncMock(return_value=cached_snapshot)),
+            patch("app.analysis.stock_analyzer.yfinance_client.get_stock_info", new=AsyncMock(side_effect=_timeout_info)),
+        ):
+            result = await stock_analyzer.get_cached_stock_detail("005930.KS", refresh_quote=True)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["current_price"], 70100)
+        self.assertEqual(result["change_pct"], -0.4)
+
     def test_build_public_stock_summary_uses_fallback_without_sell_side_copy(self):
         summary = stock_analyzer._build_public_stock_summary(
             llm_result={

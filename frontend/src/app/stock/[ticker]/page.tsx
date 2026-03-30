@@ -11,6 +11,7 @@ import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import MetricValueCard from "@/components/MetricValueCard";
 import PivotLevelsCard from "@/components/PivotLevelsCard";
+import PublicAuditStrip from "@/components/PublicAuditStrip";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
@@ -25,6 +26,7 @@ import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import type { CompositeScore, ForecastDeltaResponse, PivotPoints, TechSummary } from "@/lib/api";
+import { buildPublicAuditSummary } from "@/lib/public-audit";
 import type { PricePoint, StockDetail } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
@@ -67,7 +69,7 @@ export default function StockPage() {
     setLoading(true);
     setError(null);
 
-    api.getStockDetail(decodedTicker)
+    api.getStockDetail(decodedTicker, { timeoutMs: 24000 })
       .then(setStock)
       .catch((err) => {
         console.error(err);
@@ -184,6 +186,9 @@ export default function StockPage() {
     { title: "지금 바로 사지 않는 이유", items: stock.public_summary.why_not_buy_now },
     { title: "무효화 조건", items: stock.public_summary.thesis_breakers },
   ].filter((section) => section.items.length > 0) : [];
+  const stockAuditSummary = buildPublicAuditSummary(stock, {
+    defaultSummary: "종목 상세는 최신 스냅샷과 공개 판단 요약을 기준으로 먼저 정리합니다.",
+  });
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -204,7 +209,15 @@ export default function StockPage() {
         </div>
       </div>
 
-      {stock.errors && stock.errors.length > 0 ? <WarningBanner codes={stock.errors} /> : null}
+      {(stock.generated_at || stock.partial || stock.fallback_reason || (stock.errors && stock.errors.length > 0)) ? (
+        <div className="card !p-4 space-y-3">
+          <PublicAuditStrip meta={stock} />
+          {stockAuditSummary ? (
+            <p className="text-sm leading-relaxed text-text-secondary">{stockAuditSummary}</p>
+          ) : null}
+          {stock.errors && stock.errors.length > 0 ? <WarningBanner codes={stock.errors} /> : null}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {overviewMetrics.map((item) => (

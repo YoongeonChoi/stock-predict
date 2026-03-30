@@ -1,7 +1,7 @@
 """Individual stock analysis: detailed report + buy/sell guide."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 
 import numpy as np
@@ -54,16 +54,39 @@ from app.utils.async_tools import gather_limited
 
 STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS = 8.0
 EVENT_CONTEXT_TIMEOUT_SECONDS = 8.0
+STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
+STOCK_DETAIL_CACHE_VERSION = "v9"
+STOCK_DETAIL_LATEST_CACHE_VERSION = "latest-v9"
+
+
+def _stock_detail_cache_key(ticker: str, prices: list[dict]) -> str:
+    return f"stock_detail:{STOCK_DETAIL_CACHE_VERSION}:{ticker}:{_latest_price_stamp(prices)}"
+
+
+def _stock_detail_latest_cache_key(ticker: str) -> str:
+    return f"stock_detail:{STOCK_DETAIL_LATEST_CACHE_VERSION}:{ticker}"
+
+
+async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
+    cached = await cache.get(_stock_detail_latest_cache_key(ticker))
+    if not cached:
+        return None
+    if not refresh_quote:
+        return dict(cached)
+    return await _refresh_cached_stock_detail(dict(cached), ticker)
 
 
 async def analyze_stock(ticker: str) -> dict:
     settings = get_settings()
     country_code = _detect_country(ticker)
+    cached_latest = await get_cached_stock_detail(ticker, refresh_quote=True)
+    if cached_latest:
+        return cached_latest
     prices_full, market_prices_full = await asyncio.gather(
         yfinance_client.get_price_history(ticker, period="2y"),
         yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="2y"),
     )
-    cache_key = f"stock_detail:v8:{ticker}:{_latest_price_stamp(prices_full)}"
+    cache_key = _stock_detail_cache_key(ticker, prices_full)
     cached = await cache.get(cache_key)
     if cached:
         return await _refresh_cached_stock_detail(cached, ticker)
@@ -313,6 +336,9 @@ async def analyze_stock(ticker: str) -> dict:
     result["composite_score"] = composite.model_dump()
     result["llm_available"] = not llm_failed
     result["errors"] = []
+    result["generated_at"] = datetime.now(timezone.utc).isoformat()
+    result["partial"] = False
+    result["fallback_reason"] = None
 
     if llm_failed:
         result["errors"].append(llm_result.get("error_code", "SP-4005"))
@@ -333,12 +359,19 @@ async def analyze_stock(ticker: str) -> dict:
         result["historical_pattern_warning"] = historical_error
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
+    await cache.set(_stock_detail_latest_cache_key(ticker), result, settings.cache_ttl_report)
     return result
 
 
 async def _refresh_cached_stock_detail(cached: dict, ticker: str) -> dict:
-    info = await yfinance_client.get_stock_info(ticker)
     refreshed = dict(cached)
+    try:
+        info = await asyncio.wait_for(
+            yfinance_client.get_stock_info(ticker),
+            timeout=STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return refreshed
     current_price = float(info.get("current_price") or refreshed.get("current_price") or 0.0)
     prev_close = float(info.get("prev_close") or current_price)
     refreshed["current_price"] = round(current_price, 2)
@@ -663,8 +696,8 @@ def _build_public_confidence_note(*, next_day_forecast, trade_plan) -> str:
 
 def _latest_price_stamp(prices: list[dict]) -> str:
     if not prices:
-        return datetime.now().date().isoformat()
-    return str(prices[-1].get("date") or datetime.now().date().isoformat())
+        return datetime.now(timezone.utc).date().isoformat()
+    return str(prices[-1].get("date") or datetime.now(timezone.utc).date().isoformat())
 
 
 def _calc_technicals(prices: list[dict]) -> TechnicalIndicators:

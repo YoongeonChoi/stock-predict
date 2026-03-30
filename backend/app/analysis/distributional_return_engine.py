@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import blake2b
 from math import exp, log, sqrt
 
@@ -269,7 +269,7 @@ async def build_structured_event_context(
         return heuristic
 
     weighted_items: list[tuple[float, dict[str, float | str]]] = []
-    reference_dt = _parse_date(reference_date) or datetime.now()
+    reference_dt = _parse_date(reference_date) or datetime.now(timezone.utc)
     for item in candidate_items:
         structured = next((entry for entry in llm_items if str(entry.get("id")) == item["id"]), None)
         if not structured:
@@ -1321,11 +1321,14 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
     text = str(value).strip().replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except ValueError:
-        for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        for fmt, usable_length in (("%Y-%m-%d", 10), ("%Y%m%d", 8)):
             try:
-                return datetime.strptime(text[: len(fmt.replace('%', ''))], fmt)
+                return datetime.strptime(text[:usable_length], fmt).replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
     return None
