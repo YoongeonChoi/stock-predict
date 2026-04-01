@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
-import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import { WarningBanner } from "@/components/ErrorBanner";
 import ForecastDeltaCard from "@/components/ForecastDeltaCard";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import MetricValueCard from "@/components/MetricValueCard";
 import PivotLevelsCard from "@/components/PivotLevelsCard";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
@@ -79,27 +80,47 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     setChartData([]);
     setLoading(!initialData);
 
-    const shouldRefreshDetail = !initialData || Boolean(initialData.partial);
-    if (shouldRefreshDetail) {
-      api.getStockDetail(normalizedTicker, { timeoutMs: 32000, preferFull: true })
-        .then((next) => {
-          if (cancelled) return;
-          setStock(next);
-          setError(null);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          console.error(err);
-          if (!initialData) {
-            setError(toError(err));
-          }
-        })
-        .finally(() => {
-          if (cancelled) return;
-          if (!initialData) {
-            setLoading(false);
-          }
-        });
+    const upgradeToFull = async () => {
+      try {
+        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 24000, preferFull: true });
+        if (cancelled) return;
+        setStock(next);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error(err);
+        if (!initialData) {
+          setError(toError(err));
+        }
+      }
+    };
+
+    const loadQuickSnapshot = async () => {
+      try {
+        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 18000, preferFull: false });
+        if (cancelled) return;
+        setStock(next);
+        setError(null);
+        if (next.partial) {
+          void upgradeToFull();
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error(err);
+        setError(toError(err));
+      } finally {
+        if (cancelled) return;
+        setLoading(false);
+      }
+    };
+
+    if (!initialData) {
+      void loadQuickSnapshot();
+    } else {
+      setLoading(false);
+      if (initialData.partial) {
+        void upgradeToFull();
+      }
     }
 
     api.getTechSummary(normalizedTicker)
@@ -161,10 +182,13 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-8 bg-border rounded w-64" />
-        <div className="h-72 bg-border rounded" />
-        <div className="h-48 bg-border rounded" />
+      <div className="max-w-5xl mx-auto space-y-4">
+        <WorkspaceLoadingCard
+          eyebrow="종목 상세 준비"
+          title="빠른 종목 스냅샷을 먼저 불러오고 있습니다"
+          message="티커 유효성, 최근 가격 흐름, 기본 판단 요약부터 먼저 준비한 뒤 차트와 보조 지표를 이어서 붙입니다."
+          lines={4}
+        />
       </div>
     );
   }
@@ -173,12 +197,28 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     return (
       <div className="max-w-5xl mx-auto space-y-4">
         <Link href="/" className="text-text-secondary hover:text-text">&larr; 홈으로</Link>
-        <ErrorBanner error={error} onRetry={() => window.location.reload()} />
+        <WorkspaceStateCard
+          eyebrow="종목 상세 지연"
+          title="빠른 종목 스냅샷을 아직 붙이지 못했습니다"
+          message={`${error.message} 잠시 후 다시 시도하면 quick 스냅샷부터 다시 연결합니다.`}
+          tone="warning"
+          actionLabel="다시 시도"
+          onAction={() => window.location.reload()}
+        />
       </div>
     );
   }
 
-  if (!stock) return <div className="text-text-secondary">종목 정보를 찾을 수 없습니다.</div>;
+  if (!stock) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="종목 없음"
+        title="종목 정보를 찾지 못했습니다"
+        message="티커를 다시 확인하거나 검색창에서 종목명을 다시 찾아 주세요."
+        tone="warning"
+      />
+    );
+  }
 
   const priceKey = stock.country_code;
   const bsg = stock.buy_sell_guide;

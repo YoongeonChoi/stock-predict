@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+import time
 
 from app.data import cache
 from app.database import db
@@ -12,6 +13,57 @@ log = logging.getLogger("stock_predict.briefing")
 BRIEFING_RADAR_TIMEOUT_SECONDS = 8
 BRIEFING_CACHE_TTL_SECONDS = 300
 BRIEFING_CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
+
+
+def _build_briefing_request_trace(
+    *,
+    started_at: float,
+    request_phase: str,
+    cache_state: str,
+    timeout_budget_ms: int | None,
+    fallback_reason: str | None,
+    served_state: str,
+    upstream_source: str,
+) -> dict:
+    return {
+        "request_phase": request_phase,
+        "cache_state": cache_state,
+        "cold_start_suspected": cache_state == "miss",
+        "upstream_source": upstream_source,
+        "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+        "timeout_budget_ms": timeout_budget_ms,
+        "fallback_reason": fallback_reason,
+        "served_state": served_state,
+    }
+
+
+def _annotate_briefing_response(
+    payload: dict,
+    *,
+    started_at: float,
+    request_phase: str,
+    cache_state: str,
+    fallback_tier: str,
+    timeout_budget_ms: int | None,
+    upstream_source: str,
+    fallback_reason: str | None = None,
+    served_state: str | None = None,
+) -> dict:
+    response = dict(payload)
+    effective_fallback_reason = fallback_reason if fallback_reason is not None else response.get("fallback_reason")
+    if effective_fallback_reason:
+        response["fallback_reason"] = effective_fallback_reason
+    response["fallback_tier"] = fallback_tier
+    response["request_trace"] = _build_briefing_request_trace(
+        started_at=started_at,
+        request_phase=request_phase,
+        cache_state=cache_state,
+        timeout_budget_ms=timeout_budget_ms,
+        fallback_reason=effective_fallback_reason,
+        served_state=served_state or ("partial" if response.get("partial") else "fresh"),
+        upstream_source=upstream_source,
+    )
+    return response
 
 
 def _event_score(event: dict) -> tuple:
@@ -145,11 +197,20 @@ async def _load_briefing_radar(country_code: str) -> dict:
 
 
 async def get_daily_briefing() -> dict:
+    started_at = time.perf_counter()
     today = datetime.now().date().isoformat()
     cache_key = f"daily_briefing:v1:{today}"
-    cached = await cache.get(cache_key)
+    cached, cache_source = await cache.get_with_source(cache_key)
     if cached:
-        return cached
+        return _annotate_briefing_response(
+            cached,
+            started_at=started_at,
+            request_phase="quick",
+            cache_state=cache_source,
+            fallback_tier="cached",
+            timeout_budget_ms=0,
+            upstream_source="daily_briefing_cache",
+        )
 
     sessions_task = market_session_service.get_market_sessions()
     radar_tasks = [_load_briefing_radar(code) for code in ("KR",)]
@@ -216,16 +277,25 @@ async def get_daily_briefing() -> dict:
         "priorities": _build_priority_lines(sessions_data["sessions"], radar_map, archive_status),
     }
     await cache.set(cache_key, response, BRIEFING_CACHE_TTL_SECONDS)
-    return response
+    return _annotate_briefing_response(
+        response,
+        started_at=started_at,
+        request_phase="quick",
+        cache_state="miss",
+        fallback_tier="quick" if partial else "full",
+        timeout_budget_ms=BRIEFING_RADAR_TIMEOUT_SECONDS * 1000,
+        upstream_source="daily_briefing_build",
+    )
 
 
 async def get_daily_briefing_fallback(note: str) -> dict:
+    started_at = time.perf_counter()
     now = datetime.now()
     sessions_data = await market_session_service.get_market_sessions()
     upcoming_events = await _upcoming_events()
     today = now.date().isoformat()
     archive_status = await db.research_report_status(today)
-    return {
+    return _annotate_briefing_response({
         "generated_at": now.isoformat(),
         "partial": True,
         "fallback_reason": "briefing_timeout",
@@ -253,4 +323,12 @@ async def get_daily_briefing_fallback(note: str) -> dict:
             "브리핑 전체 계산이 길어져 지금은 핵심 일정과 세션 상태를 먼저 보여줍니다.",
             "레이더 후보는 같은 화면을 다시 열거나 잠시 뒤 새로고침하면 quick 스냅샷부터 다시 붙습니다.",
         ],
-    }
+    },
+        started_at=started_at,
+        request_phase="quick",
+        cache_state="miss",
+        fallback_tier="degraded",
+        timeout_budget_ms=None,
+        upstream_source="daily_briefing_fallback",
+        served_state="degraded",
+    )

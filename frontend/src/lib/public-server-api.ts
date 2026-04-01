@@ -54,7 +54,7 @@ export function getPublicMarketIndicators() {
 }
 
 export function getPublicDailyBriefing() {
-  return getPublicJson<DailyBriefingResponse>("/api/briefing/daily", 60);
+  return getPublicJson<DailyBriefingResponse>("/api/briefing/daily", 60, 16000);
 }
 
 export function getPublicCountryReport(code = "KR") {

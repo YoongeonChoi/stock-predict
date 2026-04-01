@@ -83,9 +83,23 @@ async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -
     return await _refresh_cached_stock_detail(dict(cached), ticker)
 
 
+async def get_cached_stock_detail_with_source(ticker: str, *, refresh_quote: bool = False) -> tuple[dict | None, str]:
+    cached, cache_source = await cache.get_with_source(_stock_detail_latest_cache_key(ticker))
+    if not cached:
+        return None, "miss"
+    if not refresh_quote:
+        return dict(cached), cache_source
+    return await _refresh_cached_stock_detail(dict(cached), ticker), cache_source
+
+
 async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
     cached = await cache.get(_stock_detail_quick_cache_key(ticker))
     return dict(cached) if cached else None
+
+
+async def get_cached_quick_stock_detail_with_source(ticker: str) -> tuple[dict | None, str]:
+    cached, cache_source = await cache.get_with_source(_stock_detail_quick_cache_key(ticker))
+    return (dict(cached) if cached else None), cache_source
 
 
 async def build_quick_stock_detail(ticker: str) -> dict | None:

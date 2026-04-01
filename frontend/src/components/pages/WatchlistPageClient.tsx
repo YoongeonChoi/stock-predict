@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api, isAuthRequiredError } from "@/lib/api";
 import type { TickerResolution } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type { OpportunityRadarResponse, WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -22,24 +23,31 @@ interface WatchlistPageClientProps {
 export default function WatchlistPageClient({ demoData = null }: WatchlistPageClientProps) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
 
-  const load = async () => {
+  const load = async (showFailureToast = false) => {
     if (!session) {
       setItems([]);
+      setLoadError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
       setItems(await api.getWatchlist());
+      setLoadError(null);
     } catch (error) {
       console.error(error);
       if (!isAuthRequiredError(error)) {
-        toast("관심종목을 불러오지 못했습니다.", "error");
+        const message = getUserFacingErrorMessage(error, "관심종목을 불러오지 못했습니다.");
+        setLoadError(message);
+        if (showFailureToast) {
+          toast(message, "error");
+        }
       }
     } finally {
       setLoading(false);
@@ -73,7 +81,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
       toast(`${saved.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
       setTicker("");
       setResolution(null);
-      load();
+      void load(true);
     } catch {
       toast("워치리스트 추가에 실패했습니다.", "error");
     }
@@ -83,7 +91,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     try {
       await api.removeWatchlist(value);
       toast(`${value} 종목을 워치리스트에서 제거했습니다.`, "success");
-      load();
+      void load(true);
     } catch {
       toast("워치리스트 삭제에 실패했습니다.", "error");
     }
@@ -195,6 +203,20 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
               className="min-h-[220px]"
             />
           </div>
+        ) : loadError && items.length === 0 ? (
+          <div className="px-5 py-5">
+            <WorkspaceStateCard
+              eyebrow="관심종목 지연"
+              title="저장된 관심종목 목록을 아직 불러오지 못했습니다"
+              message={loadError}
+              tone="warning"
+              className="min-h-[220px]"
+              actionLabel="관심종목 다시 불러오기"
+              onAction={() => {
+                void load(true);
+              }}
+            />
+          </div>
         ) : items.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
@@ -206,6 +228,19 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
           </div>
         ) : (
           <div className="space-y-2 px-5 py-5">
+            {loadError ? (
+              <WorkspaceStateCard
+                eyebrow="부분 재동기화 지연"
+                title="이전 관심종목 목록을 먼저 보여주고 있습니다"
+                message={loadError}
+                tone="warning"
+                actionLabel="관심종목 다시 불러오기"
+                onAction={() => {
+                  void load(true);
+                }}
+                aside={<span className="info-chip">마지막 성공 목록 유지</span>}
+              />
+            ) : null}
             {items.map((item) => (
               <div key={item.ticker} className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

@@ -1,4 +1,5 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import type { RequestTrace } from "@/lib/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 export const AUTH_REQUIRED_EVENT = "stockpredict:auth-required";
@@ -1129,6 +1130,30 @@ export interface SystemDiagnostics {
       fitted_at?: string | null;
     }[];
   } | null;
+  route_stability?: {
+    route: string;
+    total_requests: number;
+    success_count: number;
+    error_count: number;
+    degraded_count: number;
+    fallback_served_count: number;
+    stale_served_count: number;
+    cold_start_count: number;
+    cold_failure_count: number;
+    first_usable_p50_ms?: number | null;
+    first_usable_p95_ms?: number | null;
+    degraded_rate: number;
+    fallback_served_rate: number;
+    stale_served_rate: number;
+    cold_failure_rate: number;
+    phase_counts: Record<string, number>;
+    cache_counts: Record<string, number>;
+    last_fallback_reason?: string | null;
+    last_upstream_source?: string | null;
+    last_served_state?: string | null;
+    last_elapsed_ms?: number | null;
+    last_updated_at?: string | null;
+  }[] | null;
   prediction_accuracy?: PredictionAccuracyStats | null;
   prediction_accuracy_error?: string | null;
   research_archive?: ResearchArchiveStatus | null;
@@ -1272,6 +1297,8 @@ export interface DailyBriefingResponse {
   generated_at: string;
   partial?: boolean;
   fallback_reason?: string | null;
+  fallback_tier?: string | null;
+  request_trace?: RequestTrace | null;
   sessions: MarketSessionItem[];
   market_view: DailyBriefingMarketView[];
   focus_cards: DailyBriefingFocusCard[];

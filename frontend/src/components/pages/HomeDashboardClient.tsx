@@ -21,7 +21,7 @@ import type { CountryListItem, CountryReport, MacroClaim, OpportunityRadarRespon
 import { changeColor, formatPct } from "@/lib/utils";
 
 const COUNTRY_FLAGS: Record<string, string> = { KR: "🇰🇷" };
-const BRIEFING_TIMEOUT_MS = 9_000;
+const BRIEFING_TIMEOUT_MS = 16_000;
 const WORKSPACE_TIMEOUT_MS = 22_000;
 const HOME_RADAR_LIMIT = 12;
 
@@ -153,7 +153,6 @@ export default function HomeDashboardClient({
       setBriefing(result);
     } catch (error) {
       console.error(error);
-      setBriefing(null);
       setBriefingError(
         describeLoadError(error, "브리핑 계산이 길어져 오늘의 포커스를 아직 표시하지 못했습니다."),
       );
@@ -192,7 +191,6 @@ export default function HomeDashboardClient({
       } catch (error) {
         console.error(error);
         syncIfCurrent(() => {
-          setHeatmapData(null);
           setHeatmapError(
             describeLoadError(error, "히트맵 계산이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."),
           );
@@ -212,7 +210,6 @@ export default function HomeDashboardClient({
       } catch (error) {
         console.error(error);
         syncIfCurrent(() => {
-          setMovers(null);
           setMoversError(
             describeLoadError(error, "상승·하락 상위 집계가 지연되고 있습니다. 잠시 후 다시 시도해 주세요."),
           );
@@ -232,7 +229,6 @@ export default function HomeDashboardClient({
       } catch (error) {
         console.error(error);
         syncIfCurrent(() => {
-          setRadarData(null);
           setRadarError(
             describeLoadError(error, "강한 셋업 계산이 길어져 이번에는 목록을 비워 두었습니다."),
           );
@@ -252,7 +248,6 @@ export default function HomeDashboardClient({
       } catch (error) {
         console.error(error);
         syncIfCurrent(() => {
-          setCountryReport(null);
           setReportError(
             describeLoadError(error, "시장 요약 리포트 계산이 길어져 이번에는 요약만 표시합니다."),
           );

@@ -239,6 +239,7 @@ async def get_diagnostics() -> dict:
         ],
         "confidence_calibration_profiles": calibration_profiles,
         "learned_fusion_status": learned_fusion_status,
+        "route_stability": runtime_state.get("route_stability", []),
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,
         "research_archive": research_archive,

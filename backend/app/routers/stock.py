@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 import logging
+import time
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
@@ -13,9 +14,12 @@ from app.analysis.stock_analyzer import (
     analyze_stock,
     build_quick_stock_detail,
     get_cached_quick_stock_detail,
+    get_cached_quick_stock_detail_with_source,
     get_cached_stock_detail,
+    get_cached_stock_detail_with_source,
 )
 from app.data import yfinance_client, cache
+from app.runtime import record_route_observation
 from app.services import archive_service, ticker_resolver_service, forecast_monitor_service
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
 
@@ -24,6 +28,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 STOCK_DETAIL_TIMEOUT_SECONDS = 12.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 24.0
+STOCK_DETAIL_INLINE_UPGRADE_TIMEOUT_SECONDS = 6.0
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 
 
@@ -41,6 +46,71 @@ def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallbac
     partial["fallback_reason"] = fallback_reason
     partial["generated_at"] = partial.get("generated_at") or datetime.now(timezone.utc).isoformat()
     return partial
+
+
+def _build_stock_request_trace(
+    *,
+    request_phase: str,
+    cache_state: str,
+    elapsed_ms: int,
+    timeout_budget_ms: int | None,
+    fallback_reason: str | None,
+    served_state: str,
+    upstream_source: str,
+) -> dict:
+    return {
+        "request_phase": request_phase,
+        "cache_state": cache_state,
+        "cold_start_suspected": cache_state == "miss",
+        "upstream_source": upstream_source,
+        "elapsed_ms": elapsed_ms,
+        "timeout_budget_ms": timeout_budget_ms,
+        "fallback_reason": fallback_reason,
+        "served_state": served_state,
+    }
+
+
+def _annotate_stock_detail_response(
+    payload: dict,
+    *,
+    started_at: float,
+    request_phase: str,
+    cache_state: str,
+    fallback_tier: str,
+    timeout_budget_ms: int | None,
+    upstream_source: str,
+    fallback_reason: str | None = None,
+) -> dict:
+    response = dict(payload)
+    response["generated_at"] = response.get("generated_at") or datetime.now(timezone.utc).isoformat()
+    effective_fallback_reason = fallback_reason if fallback_reason is not None else response.get("fallback_reason")
+    if effective_fallback_reason:
+        response["fallback_reason"] = effective_fallback_reason
+    response["fallback_tier"] = fallback_tier
+    response["request_trace"] = _build_stock_request_trace(
+        request_phase=request_phase,
+        cache_state=cache_state,
+        elapsed_ms=int((time.perf_counter() - started_at) * 1000),
+        timeout_budget_ms=timeout_budget_ms,
+        fallback_reason=effective_fallback_reason,
+        served_state=_infer_stock_served_state(response),
+        upstream_source=upstream_source,
+    )
+    return response
+
+
+def _record_stock_detail_route(payload: dict | None, *, success: bool = True) -> dict | None:
+    if payload:
+        record_route_observation("stock_detail", payload.get("request_trace"), success=success)
+    return payload
+
+
+def _infer_stock_served_state(payload: dict) -> str:
+    if payload.get("partial"):
+        if payload.get("errors"):
+            return "degraded"
+        return "partial"
+    return "fresh"
 
 
 async def _archive_stock_report(detail: dict, ticker: str) -> None:
@@ -76,73 +146,186 @@ async def get_stock_detail(
     ticker: str,
     prefer_full: bool = Query(default=False, description="partial snapshot 이후 full detail 업그레이드를 우선 시도합니다."),
 ):
+    started_at = time.perf_counter()
     ticker = _resolve_kr_ticker(ticker)
-    cached = await get_cached_stock_detail(ticker, refresh_quote=False)
+    cached, cache_source = await get_cached_stock_detail_with_source(ticker, refresh_quote=False)
     if cached:
-        return cached
+        return _record_stock_detail_route(_annotate_stock_detail_response(
+            cached,
+            started_at=started_at,
+            request_phase="full",
+            cache_state=cache_source,
+            fallback_tier="full",
+            timeout_budget_ms=0,
+            upstream_source="stock_detail_cache",
+        ))
 
-    cached_quick = await get_cached_quick_stock_detail(ticker)
+    cached_quick, quick_cache_source = await get_cached_quick_stock_detail_with_source(ticker)
     quick_fallback = cached_quick
-    if cached_quick and not prefer_full:
-        _schedule_stock_detail_refresh(ticker)
-        return _build_partial_stock_detail(
-            cached_quick,
-            error_code=None,
+
+    async def _serve_quick_snapshot(
+        snapshot: dict,
+        *,
+        cache_state: str,
+        timeout_budget_ms: int | None,
+        error_code: str | None = None,
+        upstream_source: str,
+    ) -> dict:
+        if not prefer_full and settings.effective_stock_detail_background_refresh:
+            _schedule_stock_detail_refresh(ticker)
+        return _record_stock_detail_route(_annotate_stock_detail_response(
+            _build_partial_stock_detail(
+                snapshot,
+                error_code=error_code,
+                fallback_reason="stock_quick_detail",
+            ),
+            started_at=started_at,
+            request_phase="quick",
+            cache_state=cache_state,
+            fallback_tier="cached_quick" if cache_state != "miss" else "quick",
+            timeout_budget_ms=timeout_budget_ms,
+            upstream_source=upstream_source,
             fallback_reason="stock_quick_detail",
+        ))
+
+    async def _try_inline_full_upgrade(*, timeout_seconds: float, cache_state: str, fallback_snapshot: dict) -> dict:
+        try:
+            detail = await asyncio.wait_for(analyze_stock(ticker), timeout=timeout_seconds)
+            if settings.effective_stock_detail_background_refresh:
+                asyncio.create_task(_archive_stock_report(detail, ticker))
+            else:
+                await _archive_stock_report(detail, ticker)
+            return _record_stock_detail_route(_annotate_stock_detail_response(
+                detail,
+                started_at=started_at,
+                request_phase="full",
+                cache_state=cache_state,
+                fallback_tier="full",
+                timeout_budget_ms=int(timeout_seconds * 1000),
+                upstream_source="stock_detail_analysis",
+            ))
+        except asyncio.TimeoutError:
+            return await _serve_quick_snapshot(
+                fallback_snapshot,
+                cache_state=cache_state,
+                timeout_budget_ms=int(timeout_seconds * 1000),
+                error_code="SP-5018",
+                upstream_source="stock_detail_inline_upgrade_timeout",
+            )
+        except Exception:
+            return await _serve_quick_snapshot(
+                fallback_snapshot,
+                cache_state=cache_state,
+                timeout_budget_ms=int(timeout_seconds * 1000),
+                error_code="SP-3003",
+                upstream_source="stock_detail_inline_upgrade_failed",
+            )
+
+    if cached_quick:
+        if prefer_full:
+            return await _try_inline_full_upgrade(
+                timeout_seconds=STOCK_DETAIL_INLINE_UPGRADE_TIMEOUT_SECONDS,
+                cache_state=quick_cache_source,
+                fallback_snapshot=cached_quick,
+            )
+        return await _serve_quick_snapshot(
+            cached_quick,
+            cache_state=quick_cache_source,
+            timeout_budget_ms=STOCK_DETAIL_TIMEOUT_SECONDS * 1000,
+            upstream_source="stock_quick_cache",
         )
 
     try:
         if quick_fallback is None:
-            quick_fallback = await asyncio.wait_for(build_quick_stock_detail(ticker), timeout=STOCK_DETAIL_TIMEOUT_SECONDS)
-        if quick_fallback and not prefer_full:
-            _schedule_stock_detail_refresh(ticker)
-            return _build_partial_stock_detail(
+            quick_fallback = await asyncio.wait_for(
+                build_quick_stock_detail(ticker),
+                timeout=STOCK_DETAIL_TIMEOUT_SECONDS,
+            )
+        if quick_fallback:
+            return await _serve_quick_snapshot(
                 quick_fallback,
-                error_code=None,
-                fallback_reason="stock_quick_detail",
+                cache_state="miss",
+                timeout_budget_ms=int(STOCK_DETAIL_TIMEOUT_SECONDS * 1000),
+                upstream_source="stock_quick_build",
             )
         detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
         detail = await asyncio.wait_for(analyze_stock(ticker), timeout=detail_timeout)
     except asyncio.TimeoutError:
         cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
         if cached_quick:
-            if not prefer_full:
-                _schedule_stock_detail_refresh(ticker)
-            return _build_partial_stock_detail(
+            return await _serve_quick_snapshot(
                 cached_quick,
+                cache_state="miss",
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
                 error_code="SP-5018",
-                fallback_reason="stock_quick_detail",
+                upstream_source="stock_detail_timeout",
             )
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
-            return _build_partial_stock_detail(
-                cached,
-                error_code="SP-5018",
+            return _record_stock_detail_route(_annotate_stock_detail_response(
+                _build_partial_stock_detail(cached, error_code="SP-5018", fallback_reason="stock_cached_detail"),
+                started_at=started_at,
+                request_phase="full",
+                cache_state="miss",
+                fallback_tier="full",
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
+                upstream_source="stock_detail_cached_fallback",
                 fallback_reason="stock_cached_detail",
-            )
+            ))
         err = SP_5018(f"Stock detail timed out for {ticker}")
         err.log()
+        record_route_observation(
+            "stock_detail",
+            _build_stock_request_trace(
+                request_phase="full",
+                cache_state="miss",
+                elapsed_ms=int((time.perf_counter() - started_at) * 1000),
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
+                fallback_reason="stock_detail_timeout",
+                served_state="degraded",
+                upstream_source="stock_detail_timeout",
+            ),
+            success=False,
+        )
         return JSONResponse(status_code=504, content=err.to_dict())
     except Exception as e:
         cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
         if cached_quick:
-            if not prefer_full:
-                _schedule_stock_detail_refresh(ticker)
-            return _build_partial_stock_detail(
+            return await _serve_quick_snapshot(
                 cached_quick,
+                cache_state="miss",
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
                 error_code="SP-3003",
-                fallback_reason="stock_quick_detail",
+                upstream_source="stock_detail_failed_after_quick",
             )
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
-            return _build_partial_stock_detail(
-                cached,
-                error_code="SP-3003",
+            return _record_stock_detail_route(_annotate_stock_detail_response(
+                _build_partial_stock_detail(cached, error_code="SP-3003", fallback_reason="stock_cached_detail"),
+                started_at=started_at,
+                request_phase="full",
+                cache_state="miss",
+                fallback_tier="full",
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
+                upstream_source="stock_detail_cached_error_fallback",
                 fallback_reason="stock_cached_detail",
-            )
+            ))
         err = SP_3003(ticker)
         err.detail = str(e)[:200]
         err.log()
+        record_route_observation(
+            "stock_detail",
+            _build_stock_request_trace(
+                request_phase="full",
+                cache_state="miss",
+                elapsed_ms=int((time.perf_counter() - started_at) * 1000),
+                timeout_budget_ms=int((STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS) * 1000),
+                fallback_reason="stock_detail_error",
+                served_state="degraded",
+                upstream_source="stock_detail_error",
+            ),
+            success=False,
+        )
         return JSONResponse(status_code=500, content=err.to_dict())
 
     if settings.effective_stock_detail_background_refresh:
@@ -150,7 +333,15 @@ async def get_stock_detail(
     else:
         await _archive_stock_report(detail, ticker)
 
-    return detail
+    return _record_stock_detail_route(_annotate_stock_detail_response(
+        detail,
+        started_at=started_at,
+        request_phase="full",
+        cache_state="miss",
+        fallback_tier="full",
+        timeout_budget_ms=int(detail_timeout * 1000),
+        upstream_source="stock_detail_analysis",
+    ))
 
 
 @router.get("/stock/{ticker}/chart")
