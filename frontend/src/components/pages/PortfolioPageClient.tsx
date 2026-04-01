@@ -16,6 +16,12 @@ import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { ApiError, api } from "@/lib/api";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type {
   PortfolioConditionalRecommendationFilters,
   PortfolioConditionalRecommendationResponse,
@@ -47,6 +53,13 @@ const TICKER_GUIDE = {
     helper: "국내 종목은 숫자 6자리만 입력해도 표준 티커 형식으로 자동 해석합니다.",
   },
 } as const;
+
+const PORTFOLIO_PRIMARY_TIMEOUT_MS = 14_000;
+const PORTFOLIO_PANEL_TIMEOUT_MS = 12_000;
+
+function opportunityScoreLabel(setupLabel?: string) {
+  return setupLabel === "전수 1차 스캔" ? "1차 스캔 점수" : "레이더 점수";
+}
 
 interface HoldingFormState {
   ticker: string;
@@ -152,9 +165,13 @@ interface PortfolioPageClientProps {
 }
 
 export default function PortfolioPageClient({ demoData = null }: PortfolioPageClientProps) {
+  const routeKey = "/portfolio";
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
   const [portfolioLoadError, setPortfolioLoadError] = useState<string | null>(null);
+  const [eventRadarError, setEventRadarError] = useState<string | null>(null);
+  const [conditionalError, setConditionalError] = useState<string | null>(null);
+  const [optimalError, setOptimalError] = useState<string | null>(null);
   const [submittingHolding, setSubmittingHolding] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [formError, setFormError] = useState("");
@@ -185,13 +202,16 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
       return;
     }
     try {
-      const next = await api.getPortfolio();
+      const next = await api.getPortfolio({ timeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS });
       setData(next);
       setProfileForm(buildProfileForm(next.profile));
       setPortfolioLoadError(null);
+      reportHydrationRefetchSuccess(routeKey, "portfolio_workspace");
     } catch (error) {
       console.error(error);
-      setPortfolioLoadError(getUserFacingErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다."));
+      const message = getUserFacingErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다.");
+      setPortfolioLoadError(message);
+      reportPanelDegraded(routeKey, "portfolio_workspace", message);
       if (showFailureToast) {
         toast(getApiErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다."), "error");
       }
@@ -206,19 +226,40 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     setOptimalLoading(true);
     setEventRadarLoading(true);
     const [eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
-      api.getPortfolioEventRadar(14),
-      api.getPortfolioConditionalRecommendation(filters),
-      api.getPortfolioOptimalRecommendation(),
+      api.getPortfolioEventRadar(14, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
+      api.getPortfolioConditionalRecommendation(filters, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
+      api.getPortfolioOptimalRecommendation({ timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
     ]);
 
     if (eventResult.status === "fulfilled") {
       setEventRadar(eventResult.value);
+      setEventRadarError(null);
+      reportHydrationRefetchSuccess(routeKey, "event_radar");
+    } else {
+      console.error(eventResult.reason);
+      const message = getUserFacingErrorMessage(eventResult.reason, "이벤트 레이더를 다시 불러오지 못했습니다.");
+      setEventRadarError(message);
+      reportPanelDegraded(routeKey, "event_radar", message);
     }
     if (conditionalResult.status === "fulfilled") {
       setConditionalRecommendation(conditionalResult.value);
+      setConditionalError(null);
+      reportHydrationRefetchSuccess(routeKey, "conditional_recommendation");
+    } else {
+      console.error(conditionalResult.reason);
+      const message = getUserFacingErrorMessage(conditionalResult.reason, "조건 추천을 다시 불러오지 못했습니다.");
+      setConditionalError(message);
+      reportPanelDegraded(routeKey, "conditional_recommendation", message);
     }
     if (optimalResult.status === "fulfilled") {
       setOptimalRecommendation(optimalResult.value);
+      setOptimalError(null);
+      reportHydrationRefetchSuccess(routeKey, "optimal_recommendation");
+    } else {
+      console.error(optimalResult.reason);
+      const message = getUserFacingErrorMessage(optimalResult.reason, "최적 추천을 다시 불러오지 못했습니다.");
+      setOptimalError(message);
+      reportPanelDegraded(routeKey, "optimal_recommendation", message);
     }
 
     setConditionalLoading(false);
@@ -231,20 +272,25 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     }
 
     if (!session) {
+      reportInitialSsrSuccess(routeKey);
       setLoading(false);
       setConditionalLoading(false);
       setOptimalLoading(false);
       setEventRadarLoading(false);
+      setPortfolioLoadError(null);
+      setEventRadarError(null);
+      setConditionalError(null);
+      setOptimalError(null);
       return;
     }
 
     const loadWorkspace = async () => {
       setLoading(true);
       const [portfolioResult, eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
-        api.getPortfolio(),
-        api.getPortfolioEventRadar(14),
-        api.getPortfolioConditionalRecommendation(DEFAULT_RECOMMENDATION_FILTERS),
-        api.getPortfolioOptimalRecommendation(),
+        api.getPortfolio({ timeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS }),
+        api.getPortfolioEventRadar(14, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
+        api.getPortfolioConditionalRecommendation(DEFAULT_RECOMMENDATION_FILTERS, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
+        api.getPortfolioOptimalRecommendation({ timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
       ]);
 
       if (portfolioResult.status === "fulfilled") {
@@ -262,18 +308,30 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
       }
       if (eventResult.status === "fulfilled") {
         setEventRadar(eventResult.value);
+        setEventRadarError(null);
       } else {
         console.error(eventResult.reason);
+        setEventRadarError(
+          getUserFacingErrorMessage(eventResult.reason, "포트폴리오 이벤트 레이더를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+        );
       }
       if (conditionalResult.status === "fulfilled") {
         setConditionalRecommendation(conditionalResult.value);
+        setConditionalError(null);
       } else {
         console.error(conditionalResult.reason);
+        setConditionalError(
+          getUserFacingErrorMessage(conditionalResult.reason, "조건 추천을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+        );
       }
       if (optimalResult.status === "fulfilled") {
         setOptimalRecommendation(optimalResult.value);
+        setOptimalError(null);
       } else {
         console.error(optimalResult.reason);
+        setOptimalError(
+          getUserFacingErrorMessage(optimalResult.reason, "최적 추천을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+        );
       }
 
       setConditionalLoading(false);
@@ -284,6 +342,18 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
 
     loadWorkspace();
   }, [authLoading, session]);
+
+  useEffect(() => {
+    if (!loading && session && data) {
+      reportInitialSsrSuccess(routeKey);
+    }
+  }, [data, loading, routeKey, session]);
+
+  useEffect(() => {
+    if (!loading && session && portfolioLoadError && !data) {
+      reportErrorOnlyScreen(routeKey, portfolioLoadError);
+    }
+  }, [data, loading, portfolioLoadError, routeKey, session]);
 
   useEffect(() => {
     const trimmed = holdingForm.ticker.trim();
@@ -413,11 +483,14 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     setConditionalRunning(true);
     setConditionalLoading(true);
     try {
-      const response = await api.getPortfolioConditionalRecommendation(conditionalFilters);
+      const response = await api.getPortfolioConditionalRecommendation(conditionalFilters, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS });
       setConditionalRecommendation(response);
+      setConditionalError(null);
     } catch (error) {
       console.error(error);
-      toast(getApiErrorMessage(error, "조건 추천을 계산하지 못했습니다."), "error");
+      const message = getApiErrorMessage(error, "조건 추천을 계산하지 못했습니다.");
+      setConditionalError(message);
+      toast(message, "error");
     } finally {
       setConditionalRunning(false);
       setConditionalLoading(false);
@@ -473,7 +546,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                         <div className={changeColor(item.change_pct ?? 0)}>{formatPct(item.change_pct)}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                        <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(item.setup_label)}</div>
                         <div className="font-semibold text-text">{item.opportunity_score?.toFixed(1) ?? "대기"}</div>
                       </div>
                       <div>
@@ -579,12 +652,59 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             ) : null}
           </div>
         </section>
+        <section className="space-y-5">
+          <div className="section-heading">
+            <div>
+              <h2 className="section-title">추천</h2>
+              <p className="section-copy">계정 자산 요약이 늦어져도 추천 패널은 가능한 범위 안에서 따로 확인할 수 있습니다.</p>
+            </div>
+            <Link href="/lab" className="action-chip-secondary">
+              검증 기준 보기
+            </Link>
+          </div>
+          <div className="workspace-grid-balanced">
+            <div className="min-w-0">
+              <PortfolioConditionalRecommendationPanel
+                data={conditionalRecommendation}
+                filters={conditionalFilters}
+                loading={conditionalLoading}
+                running={conditionalRunning}
+                errorMessage={conditionalError}
+                onRetry={() => void refreshSupportPanels(conditionalFilters)}
+                onChange={setConditionalFilters}
+                onRun={runConditionalRecommendation}
+              />
+            </div>
+            <div className="min-w-0">
+              <PortfolioOptimalRecommendationPanel
+                data={optimalRecommendation}
+                loading={optimalLoading}
+                errorMessage={optimalError}
+                onRetry={() => void refreshSupportPanels(conditionalFilters)}
+              />
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="page-shell">
+      {portfolioLoadError ? (
+        <WorkspaceStateCard
+          eyebrow="부분 업데이트"
+          title="자산 요약 최신 응답이 늦어지고 있습니다"
+          message={`${portfolioLoadError} 직전 포트폴리오 스냅샷은 유지한 채 다시 불러오기를 기다립니다.`}
+          tone="warning"
+          actionLabel="포트폴리오 다시 불러오기"
+          onAction={() => {
+            setLoading(true);
+            setPortfolioLoadError(null);
+            void loadPortfolio(true).finally(() => setLoading(false));
+          }}
+        />
+      ) : null}
       <section className="workspace-grid">
         <div className="card !p-5 space-y-5">
           <div className="section-heading">
@@ -816,6 +936,16 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
 
       {hasHoldings && data ? <PortfolioRiskPanel risk={data.risk} stressTest={data.stress_test} /> : null}
       {hasHoldings && data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
+      {hasHoldings && eventRadarError ? (
+        <WorkspaceStateCard
+          eyebrow="이벤트 레이더 지연"
+          title={eventRadar ? "포트폴리오 이벤트 레이더 최신 응답이 늦어지고 있습니다" : "포트폴리오 이벤트 레이더를 아직 불러오지 못했습니다"}
+          message={eventRadar ? `${eventRadarError} 직전 이벤트 레이더는 유지한 채 다시 불러오기를 기다립니다.` : eventRadarError}
+          tone="warning"
+          actionLabel="이벤트 레이더 다시 불러오기"
+          onAction={() => void refreshSupportPanels(conditionalFilters)}
+        />
+      ) : null}
       {hasHoldings && eventRadar && !eventRadarLoading ? <PortfolioEventRadar data={eventRadar} /> : null}
 
       <section className="space-y-5">
@@ -835,12 +965,19 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
               filters={conditionalFilters}
               loading={conditionalLoading}
               running={conditionalRunning}
+              errorMessage={conditionalError}
+              onRetry={() => void refreshSupportPanels(conditionalFilters)}
               onChange={setConditionalFilters}
               onRun={runConditionalRecommendation}
             />
           </div>
           <div className="min-w-0">
-            <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
+            <PortfolioOptimalRecommendationPanel
+              data={optimalRecommendation}
+              loading={optimalLoading}
+              errorMessage={optimalError}
+              onRetry={() => void refreshSupportPanels(conditionalFilters)}
+            />
           </div>
         </div>
       </section>

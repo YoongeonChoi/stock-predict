@@ -50,6 +50,22 @@ class ApiErrorContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("generated_at", response.json())
 
+    def test_diagnostics_route_supports_legacy_and_system_paths(self):
+        payload = {"status": "ok", "version": "2.52.10"}
+
+        with patch(
+            "app.routers.system.system_service.get_diagnostics",
+            new=AsyncMock(return_value=payload),
+        ):
+            with patched_client() as client:
+                legacy = client.get("/api/diagnostics")
+                namespaced = client.get("/api/system/diagnostics")
+
+        self.assertEqual(legacy.status_code, 200)
+        self.assertEqual(namespaced.status_code, 200)
+        self.assertEqual(legacy.json(), payload)
+        self.assertEqual(namespaced.json(), payload)
+
     def test_public_account_rate_limit_returns_structured_error_code(self):
         with patch(
             "app.routers.account.account_service.check_username_availability",

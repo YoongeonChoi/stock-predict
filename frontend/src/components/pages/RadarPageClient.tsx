@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
@@ -10,6 +10,12 @@ import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/Workspace
 import { api } from "@/lib/api";
 import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type { OpportunityRadarResponse } from "@/lib/types";
 
 function toError(error: unknown): Error {
@@ -40,6 +46,11 @@ interface RadarPageClientProps {
 }
 
 export default function RadarPageClient({ initialData = null }: RadarPageClientProps) {
+  const routeKey = "/radar";
+  const reportedInitialRef = useRef(false);
+  const reportedErrorOnlyRef = useRef(false);
+  const reportedHydrationRef = useRef(false);
+  const reportedDegradedRef = useRef(false);
   const [market, setMarket] = useState<typeof MARKETS[number]>("KR");
   const [data, setData] = useState<RadarSnapshot | null>(initialData);
   const [lastUsableSnapshot, setLastUsableSnapshot] = useState<RadarSnapshot | null>(
@@ -54,6 +65,16 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
       setLastUsableSnapshot(data);
     }
   }, [data]);
+
+  useEffect(() => {
+    if (reportedInitialRef.current) {
+      return;
+    }
+    if (initialData || data) {
+      reportedInitialRef.current = true;
+      reportInitialSsrSuccess(routeKey, "radar_shell");
+    }
+  }, [data, initialData, routeKey]);
 
   useEffect(() => {
     if (reloadToken === 0 && market === "KR" && isUsableRadarSnapshot(initialData)) {
@@ -71,6 +92,27 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
       .catch((caught) => setError(toError(caught)))
       .finally(() => setLoading(false));
   }, [initialData, market, reloadToken]);
+
+  useEffect(() => {
+    if (!reportedHydrationRef.current && !loading && data) {
+      reportedHydrationRef.current = true;
+      reportHydrationRefetchSuccess(routeKey, isUsableRadarSnapshot(data) ? "radar_quick" : "radar_placeholder");
+    }
+    if (!reportedDegradedRef.current && !loading && error) {
+      reportedDegradedRef.current = true;
+      reportPanelDegraded(routeKey, "radar_board", error.message);
+    }
+  }, [data, error, loading, routeKey]);
+
+  useEffect(() => {
+    if (reportedErrorOnlyRef.current) {
+      return;
+    }
+    if (!loading && !data && !lastUsableSnapshot && !isPlaceholderRadarSnapshot(data) && error) {
+      reportedErrorOnlyRef.current = true;
+      reportErrorOnlyScreen(routeKey, "radar");
+    }
+  }, [data, error, lastUsableSnapshot, loading, routeKey]);
 
   const retryLoad = () => setReloadToken((value) => value + 1);
   const visibleData = isUsableRadarSnapshot(data) ? data : lastUsableSnapshot;

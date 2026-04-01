@@ -1,19 +1,48 @@
+import time
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from app.auth import AuthenticatedUser, get_current_user
 from app.services import watchlist_service
 from app.errors import SP_5003
+from app.services import route_stability_service
+from app.utils import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["watchlist"])
 
 
 @router.get("/watchlist")
 async def get_watchlist(current_user: AuthenticatedUser = Depends(get_current_user)):
+    started_at = time.perf_counter()
     try:
-        return await watchlist_service.get_watchlist(current_user.id)
+        payload = await watchlist_service.get_watchlist(current_user.id)
+        route_stability_service.record_route_trace(
+            "watchlist",
+            build_route_trace(
+                route_key="watchlist",
+                request_phase="full",
+                cache_state="miss",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                upstream_source="watchlist_service",
+                payload=payload,
+            ),
+        )
+        return payload
     except Exception as e:
         err = SP_5003(f"list: {e}")
         err.log()
+        route_stability_service.record_route_trace(
+            "watchlist",
+            build_route_trace(
+                route_key="watchlist",
+                request_phase="full",
+                cache_state="miss",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                upstream_source="watchlist_service",
+                fallback_reason="watchlist_error",
+                served_state="degraded",
+            ),
+        )
         return JSONResponse(status_code=500, content=err.to_dict())
 
 

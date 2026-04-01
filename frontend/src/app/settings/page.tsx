@@ -9,6 +9,12 @@ import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/Workspace
 import { api, apiPath } from "@/lib/api";
 import { FRONTEND_APP_VERSION } from "@/lib/app-meta";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type { MarketSessionsResponse, ResearchArchiveStatus, SystemDiagnostics } from "@/lib/api";
 
 const REGION_LABELS: Record<string, string> = {
@@ -21,6 +27,7 @@ const REGION_LABELS: Record<string, string> = {
 const SETTINGS_TIMEOUT_MS = 15_000;
 
 export default function SettingsPage() {
+  const routeKey = "/settings";
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
   const [marketSessions, setMarketSessions] = useState<MarketSessionsResponse | null>(null);
   const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(null);
@@ -44,29 +51,32 @@ export default function SettingsPage() {
 
     if (diagResult.status === "fulfilled") {
       setDiagnostics(diagResult.value);
+      reportHydrationRefetchSuccess(routeKey, "diagnostics");
     } else {
       console.error(diagResult.reason);
-      setDiagnosticsError(
-        getUserFacingErrorMessage(diagResult.reason, "시스템 진단 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-      );
+      const message = getUserFacingErrorMessage(diagResult.reason, "시스템 진단 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setDiagnosticsError(message);
+      reportPanelDegraded(routeKey, "diagnostics", message);
     }
 
     if (sessionsResult.status === "fulfilled") {
       setMarketSessions(sessionsResult.value);
+      reportHydrationRefetchSuccess(routeKey, "market_sessions");
     } else {
       console.error(sessionsResult.reason);
-      setMarketSessionsError(
-        getUserFacingErrorMessage(sessionsResult.reason, "시장 세션 요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-      );
+      const message = getUserFacingErrorMessage(sessionsResult.reason, "시장 세션 요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setMarketSessionsError(message);
+      reportPanelDegraded(routeKey, "market_sessions", message);
     }
 
     if (researchResult.status === "fulfilled") {
       setResearchStatus(researchResult.value);
+      reportHydrationRefetchSuccess(routeKey, "research_archive_status");
     } else {
       console.error(researchResult.reason);
-      setResearchError(
-        getUserFacingErrorMessage(researchResult.reason, "기관 리서치 동기화 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-      );
+      const message = getUserFacingErrorMessage(researchResult.reason, "기관 리서치 동기화 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setResearchError(message);
+      reportPanelDegraded(routeKey, "research_archive_status", message);
     }
 
     setLoading(false);
@@ -75,6 +85,18 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!loading && (diagnostics || marketSessions || researchStatus)) {
+      reportInitialSsrSuccess(routeKey);
+    }
+  }, [diagnostics, loading, marketSessions, researchStatus, routeKey]);
+
+  useEffect(() => {
+    if (!loading && !diagnostics && !marketSessions && !researchStatus && (diagnosticsError || marketSessionsError || researchError)) {
+      reportErrorOnlyScreen(routeKey, diagnosticsError || marketSessionsError || researchError || "settings error");
+    }
+  }, [diagnostics, diagnosticsError, loading, marketSessions, marketSessionsError, researchError, researchStatus, routeKey]);
 
   const refreshResearchArchive = async () => {
     setRefreshing(true);

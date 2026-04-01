@@ -5,6 +5,7 @@ import type { Session, User } from "@supabase/supabase-js";
 
 import { AUTH_REQUIRED_EVENT, api, isAuthRequiredError, type AccountProfile, type AuthRequiredEventDetail } from "@/lib/api";
 import { extractAccountProfileFromUser } from "@/lib/account";
+import { reportSessionRecoveryAttempt, reportSessionRecoveryFailed } from "@/lib/route-observability";
 import { getSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase-browser";
 
 interface AuthContextValue {
@@ -80,7 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const reconcileSession = async () => {
     const client = getSupabaseBrowserClient();
+    const currentRoute = typeof window !== "undefined" ? window.location.pathname : "/unknown";
     if (!client) {
+      reportSessionRecoveryFailed(currentRoute, "Supabase 브라우저 클라이언트를 찾지 못했습니다.");
       clearAuthState();
       return;
     }
@@ -91,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     authRecoveryRef.current = (async () => {
+      reportSessionRecoveryAttempt(currentRoute);
       try {
         const {
           data: { session: currentSession },
@@ -98,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } = await client.auth.getSession();
 
         if (sessionError || !currentSession?.refresh_token) {
+          reportSessionRecoveryFailed(currentRoute, sessionError?.message || "refresh_token이 없습니다.");
           clearAuthState();
           return;
         }
@@ -108,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } = await client.auth.refreshSession();
 
         if (refreshError || !refreshedData.session?.user) {
+          reportSessionRecoveryFailed(currentRoute, refreshError?.message || "세션 갱신에 실패했습니다.");
           clearAuthState();
           return;
         }
@@ -116,7 +122,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(refreshedData.session.user);
         setLoading(false);
         await loadProfileForSession(refreshedData.session);
-      } catch {
+      } catch (error) {
+        reportSessionRecoveryFailed(
+          currentRoute,
+          error instanceof Error ? error.message : "세션 재검증 중 예외가 발생했습니다.",
+        );
         clearAuthState();
       } finally {
         authRecoveryRef.current = null;

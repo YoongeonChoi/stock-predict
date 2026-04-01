@@ -1,25 +1,16 @@
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-
-const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
-export const AUTH_REQUIRED_EVENT = "stockpredict:auth-required";
-
-export function apiPath(path: string): string {
-  return API ? `${API}${path}` : path;
-}
-
-export interface ApiErrorInfo {
-  error_code: string;
-  message: string;
-  detail?: string;
-}
-
-export interface RequestOptions extends RequestInit {
-  timeoutMs?: number;
-}
-
-export interface StockDetailRequestOptions extends RequestOptions {
-  preferFull?: boolean;
-}
+import { apiPath, del, get, post, put, request } from "@/lib/api/client";
+import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
+export { apiPath };
+export {
+  AUTH_REQUIRED_EVENT,
+  ApiError,
+  ApiTimeoutError,
+  getApiRetryAfterSeconds,
+  isApiErrorCode,
+  isAuthRequiredError,
+} from "@/lib/api/errors";
+export type { ApiErrorInfo, AuthRequiredEventDetail } from "@/lib/api/errors";
+export type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
 
 export interface AccountProfile {
   user_id: string;
@@ -79,187 +70,6 @@ export interface UsernameAvailabilityResponse {
   message: string;
 }
 
-export interface AuthRequiredEventDetail {
-  path: string;
-  status: number;
-  errorCode: string;
-  message: string;
-  detail: string;
-  occurredAt: number;
-}
-
-export class ApiError extends Error {
-  status: number;
-  errorCode: string;
-  detail: string;
-  retryAfterSeconds: number | null;
-
-  constructor(status: number, info: ApiErrorInfo, headers?: Headers) {
-    super(info.message);
-    this.status = status;
-    this.errorCode = info.error_code || `HTTP-${status}`;
-    this.detail = info.detail || "";
-    const retryAfterHeader = headers?.get("Retry-After") || headers?.get("retry-after") || "";
-    const retryAfterSeconds = Number.parseInt(retryAfterHeader, 10);
-    this.retryAfterSeconds = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : null;
-  }
-}
-
-export class ApiTimeoutError extends Error {
-  path: string;
-  timeoutMs: number;
-
-  constructor(path: string, timeoutMs: number) {
-    super(`${Math.round(timeoutMs / 1000)}초 안에 응답이 오지 않았습니다.`);
-    this.name = "ApiTimeoutError";
-    this.path = path;
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-export function isApiErrorCode(error: unknown, code: string): error is ApiError {
-  return error instanceof ApiError && error.errorCode === code;
-}
-
-export function getApiRetryAfterSeconds(error: unknown): number | null {
-  if (!(error instanceof ApiError)) {
-    return null;
-  }
-  if (error.retryAfterSeconds) {
-    return error.retryAfterSeconds;
-  }
-  const match = `${error.detail} ${error.message}`.match(/(\d+)초\s*후/);
-  if (!match) {
-    return null;
-  }
-  const seconds = Number.parseInt(match[1] ?? "", 10);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
-}
-
-export function isAuthRequiredError(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP-6014");
-}
-
-function emitAuthRequired(detail: AuthRequiredEventDetail) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.dispatchEvent(new CustomEvent<AuthRequiredEventDetail>(AUTH_REQUIRED_EVENT, { detail }));
-}
-
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  const client = getSupabaseBrowserClient();
-  if (!client) {
-    return {};
-  }
-  try {
-    const {
-      data: { session },
-    } = await client.auth.getSession();
-    if (!session?.access_token) {
-      return {};
-    }
-    return {
-      Authorization: `Bearer ${session.access_token}`,
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
-  const { timeoutMs = 0, ...requestInit } = init;
-  const authHeaders = await getAuthHeaders();
-  const headers = new Headers(requestInit.headers || {});
-  Object.entries(authHeaders).forEach(([key, value]) => {
-    if (!headers.has(key)) {
-      headers.set(key, value);
-    }
-  });
-
-  const controller = new AbortController();
-  if (requestInit.signal) {
-    if (requestInit.signal.aborted) {
-      controller.abort();
-    } else {
-      requestInit.signal.addEventListener("abort", () => controller.abort(), { once: true });
-    }
-  }
-
-  let timedOut = false;
-  const timeoutHandle = timeoutMs > 0
-    ? globalThis.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs)
-    : null;
-
-  let res: Response;
-  try {
-    res = await fetch(apiPath(path), {
-      ...requestInit,
-      headers,
-      cache: requestInit.cache ?? "no-store",
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (timeoutHandle != null) {
-      globalThis.clearTimeout(timeoutHandle);
-    }
-    if (timedOut && error instanceof Error && error.name === "AbortError") {
-      throw new ApiTimeoutError(path, timeoutMs);
-    }
-    throw error;
-  }
-  if (timeoutHandle != null) {
-    globalThis.clearTimeout(timeoutHandle);
-  }
-  if (!res.ok) {
-    let info: ApiErrorInfo;
-    try {
-      info = await res.json();
-    } catch {
-      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
-    }
-    const error = new ApiError(res.status, info, res.headers);
-    if (isAuthRequiredError(error)) {
-      emitAuthRequired({
-        path,
-        status: error.status,
-        errorCode: error.errorCode,
-        message: error.message,
-        detail: error.detail,
-        occurredAt: Date.now(),
-      });
-    }
-    throw error;
-  }
-  return res.json();
-}
-
-async function get<T>(path: string, init: RequestOptions = {}): Promise<T> {
-  return request<T>(path, init);
-}
-
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-
-async function put<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-
-async function del<T>(path: string): Promise<T> {
-  return request<T>(path, { method: "DELETE" });
-}
 
 export interface CompositeScoreItem {
   name: string;
@@ -1090,6 +900,45 @@ export interface ForecastModelSummary {
   notes: string[];
 }
 
+export interface RouteStabilitySummaryRow {
+  route: string;
+  total: number;
+  p50_elapsed_ms: number;
+  p95_elapsed_ms: number;
+  fallback_served_rate: number;
+  partial_rate: number;
+  stale_rate: number;
+  degraded_rate: number;
+  cold_start_suspected_rate: number;
+  request_phase_mix: Record<string, number>;
+  cache_state_mix: Record<string, number>;
+}
+
+export interface RouteStabilityFirstUsableMetrics {
+  tracked_routes: number;
+  total_requests: number;
+  p50_elapsed_ms: number;
+  p95_elapsed_ms: number;
+  fallback_served_rate: number;
+  stale_served_rate: number;
+  first_request_cold_failure_rate: number;
+  blank_screen_rate: number;
+  error_only_screen_rate: number;
+}
+
+export interface RouteStabilityFailureSummary {
+  tracked: boolean;
+  total: number;
+  failure_count: number;
+  failure_rate: number;
+  by_route: {
+    route: string;
+    total: number;
+    failure_count: number;
+    failure_rate: number;
+  }[];
+}
+
 export interface SystemDiagnostics {
   status: "ok" | "degraded" | "starting";
   version: string;
@@ -1133,6 +982,10 @@ export interface SystemDiagnostics {
   prediction_accuracy_error?: string | null;
   research_archive?: ResearchArchiveStatus | null;
   research_archive_error?: string | null;
+  route_stability_summary?: RouteStabilitySummaryRow[];
+  first_usable_metrics?: RouteStabilityFirstUsableMetrics | null;
+  hydration_failure_summary?: RouteStabilityFailureSummary | null;
+  session_recovery_summary?: RouteStabilityFailureSummary | null;
 }
 
 export interface CalendarMajorEvent {
@@ -1379,7 +1232,7 @@ export const api = {
     get<{ data: import("./types").PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${encodeURIComponent(ticker)}/technical-summary`),
   getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${encodeURIComponent(ticker)}/pivot-points`),
-  getWatchlist: () => get<import("./types").WatchlistItem[]>("/api/watchlist"),
+  getWatchlist: (options?: RequestOptions) => get<import("./types").WatchlistItem[]>("/api/watchlist", options),
   addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
@@ -1398,7 +1251,7 @@ export const api = {
   refreshResearchArchive: () => post("/api/archive/research/refresh"),
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
-  getDiagnostics: (options?: RequestOptions) => get<SystemDiagnostics>("/api/system/diagnostics", options),
+  getDiagnostics: (options?: RequestOptions) => get<SystemDiagnostics>("/api/diagnostics", options),
   getDailyBriefing: (options?: RequestOptions) => get<DailyBriefingResponse>("/api/briefing/daily", options),
   getMarketSessions: (options?: RequestOptions) => get<MarketSessionsResponse>("/api/market/sessions", options),
   getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
@@ -1414,8 +1267,8 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return get<ScreenerResponse>(`/api/screener?${qs}`, options);
   },
-  getPortfolio: () => get<PortfolioData>("/api/portfolio"),
-  getPortfolioProfile: () => get<PortfolioProfile>("/api/portfolio/profile"),
+  getPortfolio: (options?: RequestOptions) => get<PortfolioData>("/api/portfolio", options),
+  getPortfolioProfile: (options?: RequestOptions) => get<PortfolioProfile>("/api/portfolio/profile", options),
   updatePortfolioProfile: (data: PortfolioProfile) => put<PortfolioProfile>("/api/portfolio/profile", data),
   getPortfolioConditionalRecommendation: (params: {
     country_code?: string;
@@ -1425,7 +1278,7 @@ export const api = {
     min_up_probability?: number;
     exclude_holdings?: boolean;
     watchlist_only?: boolean;
-  }) => {
+  }, options?: RequestOptions) => {
     const search = new URLSearchParams();
     if (params.country_code) search.set("country_code", params.country_code);
     if (params.sector) search.set("sector", params.sector);
@@ -1434,10 +1287,10 @@ export const api = {
     if (params.min_up_probability != null) search.set("min_up_probability", String(params.min_up_probability));
     if (params.exclude_holdings != null) search.set("exclude_holdings", String(params.exclude_holdings));
     if (params.watchlist_only != null) search.set("watchlist_only", String(params.watchlist_only));
-    return get<PortfolioConditionalRecommendationResponse>(`/api/portfolio/recommendations/conditional?${search.toString()}`);
+    return get<PortfolioConditionalRecommendationResponse>(`/api/portfolio/recommendations/conditional?${search.toString()}`, options);
   },
-  getPortfolioOptimalRecommendation: () => get<PortfolioOptimalRecommendationResponse>("/api/portfolio/recommendations/optimal"),
-  getPortfolioEventRadar: (days = 14) => get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`),
+  getPortfolioOptimalRecommendation: (options?: RequestOptions) => get<PortfolioOptimalRecommendationResponse>("/api/portfolio/recommendations/optimal", options),
+  getPortfolioEventRadar: (days = 14, options?: RequestOptions) => get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`, options),
   getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
     get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
   addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>

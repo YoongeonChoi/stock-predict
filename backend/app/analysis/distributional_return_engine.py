@@ -2,12 +2,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from hashlib import blake2b
 from math import exp, log, sqrt
 
 import numpy as np
 import pandas as pd
 
+from app.analysis.distributional.macro_features import (
+    compress_fundamentals as _compress_fundamentals,
+    compress_macro as _compress_macro,
+    flow_signal_score as _flow_signal_score,
+)
+from app.analysis.distributional.price_encoder import (
+    encode_price_block as _encode_price_block,
+    garman_klass_vol as _garman_klass_vol,
+    horizon_returns as _horizon_returns,
+    log_return as _log_return,
+    proxy_vwap_gap as _proxy_vwap_gap,
+    return_series as _return_series,
+    to_frame as _to_frame,
+    window_log_volume_z as _window_log_volume_z,
+    window_realized_vol as _window_realized_vol,
+)
+from app.analysis.distributional.shared import (
+    clip as _clip,
+    mean_available as _mean_available,
+    parse_date as _parse_date,
+    sigmoid as _sigmoid,
+    softmax as _softmax,
+    stable_seed as _stable_seed,
+)
 from app.analysis.learned_fusion import apply_learned_fusion, build_fusion_feature_map
 from app.analysis.llm_client import ask_json
 from app.analysis.stock_graph_context import build_stock_graph_context
@@ -365,7 +388,14 @@ def build_distributional_forecast(
         filings=filings,
         reference_date=str(prices["date"].iloc[-1]),
     )
-    price_block = _encode_price_block(prices, benchmark, macro, events, asset_type)
+    price_block = _encode_price_block(
+        prices=prices,
+        benchmark=benchmark,
+        macro=macro,
+        events=events,
+        asset_type=asset_type,
+        periods=PERIODS,
+    )
     fundamental = _compress_fundamentals(
         analyst_context=analyst_context or {},
         fundamental_context=fundamental_context or {},
@@ -570,178 +600,6 @@ def _coerce_event_features(
         reference_date=reference_date,
     )
 
-
-def _encode_price_block(
-    prices: pd.DataFrame,
-    benchmark: pd.DataFrame,
-    macro: dict,
-    events: EventFeatures,
-    asset_type: str,
-) -> dict:
-    close = prices["close"].astype(float)
-    returns = _return_series(close)
-    volume = prices["volume"].astype(float) if "volume" in prices else pd.Series(np.zeros(len(prices)))
-    benchmark_close = benchmark["close"].astype(float) if not benchmark.empty else pd.Series(dtype=float)
-    reference_price = float(close.iloc[-1])
-    long_vol = max(_window_realized_vol(returns, min(120, len(returns))), 0.008 if asset_type == "index" else 0.012)
-
-    period_rows: list[dict] = []
-    for window in PERIODS:
-        usable = min(window, len(close) - 1)
-        if usable < 12:
-            continue
-        momentum = _log_return(close, usable)
-        relative_strength = momentum - _log_return(benchmark_close, usable) if len(benchmark_close) > usable else 0.0
-        rv = _window_realized_vol(returns, usable)
-        gk = _garman_klass_vol(prices.tail(usable))
-        trend_gap = (reference_price / max(float(close.tail(usable).mean()), 1e-6)) - 1.0
-        vwap_gap = _proxy_vwap_gap(prices.tail(min(usable, 20)))
-        volume_z = _window_log_volume_z(volume, usable)
-        stress = (rv / max(long_vol, 1e-6)) - 1.0
-        score = (
-            _clip(momentum / 0.12) * 0.34
-            + _clip(relative_strength / 0.08) * 0.22
-            + _clip(trend_gap / 0.06) * 0.14
-            + _clip(vwap_gap / 0.03) * 0.08
-            + _clip(volume_z / 2.4) * 0.08
-            - _clip(stress / 1.3) * 0.10
-            - _clip((gk - rv) / max(rv, 1e-6) / 1.8) * 0.04
-        )
-        period_rows.append(
-            {
-                "window": usable,
-                "score": float(score),
-                "momentum": float(momentum),
-                "relative_strength": float(relative_strength),
-                "rv": float(rv),
-                "detail": (
-                    f"{usable}일 모멘텀 {momentum * 100:.2f}%, 상대강도 {relative_strength * 100:.2f}%, "
-                    f"실현변동성 {rv * 100:.2f}%"
-                ),
-            }
-        )
-
-    event_heat = abs(events.sentiment) + abs(events.surprise) + events.uncertainty
-    macro_persistence = float(macro["score"]) + float(macro["factors"].get("activity", 0.0)) * 0.4
-    logits = []
-    for row in period_rows:
-        window = row["window"]
-        logits.append(
-            abs(row["score"]) * 0.75
-            + (0.55 if window <= 60 else 0.0) * event_heat
-            + (0.35 if window >= 120 else -0.05) * macro_persistence
-            - (0.18 if window >= 120 and asset_type == "index" and event_heat > 1.0 else 0.0)
-        )
-    weights = _softmax(np.array(logits, dtype=float))
-    period_weights = {int(row["window"]): round(float(weight), 4) for row, weight in zip(period_rows, weights)}
-    fused_score = sum(row["score"] * float(weight) for row, weight in zip(period_rows, weights))
-    fused_vol = sum(row["rv"] * float(weight) for row, weight in zip(period_rows, weights))
-    return {
-        "period_rows": period_rows,
-        "period_weights": period_weights,
-        "fused_score": float(fused_score),
-        "fused_vol": float(fused_vol),
-        "long_vol": long_vol,
-    }
-
-
-def _compress_macro(ecos_snapshot: dict, kosis_snapshot: dict) -> dict:
-    merged = {**ecos_snapshot, **{f"kosis_{key}": value for key, value in kosis_snapshot.items()}}
-
-    def present(name: str, default: float = 0.0) -> float:
-        value = merged.get(name)
-        return float(value) if value is not None else default
-
-    monetary_inputs = [
-        _clip(-(present("base_rate", 2.75) - 2.75) / 1.25),
-        _clip(-(present("cpi_yoy", present("kosis_cpi", 2.2)) - 2.2) / 2.0),
-    ]
-    labor_inputs = [
-        _clip((present("kosis_employment", 61.5) - 61.5) / 3.0),
-        _clip(-(present("unemployment", 3.2) - 3.2) / 1.0),
-    ]
-    activity_inputs = [
-        _clip(present("export_growth", 0.0) / 12.0),
-        _clip(present("industrial_production", present("kosis_industrial_production", 0.0)) / 6.0),
-        _clip(present("gdp_growth", 0.0) / 4.0),
-    ]
-    demand_inputs = [
-        _clip((present("consumer_sentiment", 100.0) - 100.0) / 10.0),
-        _clip((present("housing_price_index", 100.0) - 100.0) / 12.0),
-    ]
-
-    factors = {
-        "monetary": _mean_available(monetary_inputs),
-        "labor": _mean_available(labor_inputs),
-        "activity": _mean_available(activity_inputs),
-        "demand": _mean_available(demand_inputs),
-    }
-    score = (
-        factors["monetary"] * 0.26
-        + factors["labor"] * 0.14
-        + factors["activity"] * 0.34
-        + factors["demand"] * 0.26
-    )
-    return {
-        "available": any(value is not None for value in merged.values()),
-        "factors": {key: round(value, 4) for key, value in factors.items()},
-        "score": round(float(score), 4),
-        "detail": (
-            f"통화 {factors['monetary']:.2f}, 노동 {factors['labor']:.2f}, "
-            f"실물 {factors['activity']:.2f}, 수요 {factors['demand']:.2f}"
-        ),
-    }
-
-
-def _compress_fundamentals(
-    *,
-    analyst_context: dict,
-    fundamental_context: dict,
-    current_price: float,
-) -> dict:
-    features: list[tuple[float, str]] = []
-    target_mean = analyst_context.get("target_mean") or fundamental_context.get("target_mean")
-    if target_mean and current_price > 0:
-        target_gap = (float(target_mean) / current_price) - 1.0
-        features.append((_clip(target_gap / 0.2), f"목표가 괴리 {target_gap * 100:.1f}%"))
-
-    buy = float(analyst_context.get("buy") or 0.0)
-    hold = float(analyst_context.get("hold") or 0.0)
-    sell = float(analyst_context.get("sell") or 0.0)
-    total = buy + hold + sell
-    if total > 0:
-        features.append((_clip((buy - sell) / total), f"매수 {buy:.0f} / 보유 {hold:.0f} / 매도 {sell:.0f}"))
-
-    pe_ratio = fundamental_context.get("pe_ratio")
-    if pe_ratio:
-        features.append((_clip((18.0 - float(pe_ratio)) / 18.0), f"P/E {float(pe_ratio):.1f}"))
-    pb_ratio = fundamental_context.get("pb_ratio")
-    if pb_ratio:
-        features.append((_clip((2.4 - float(pb_ratio)) / 2.0), f"P/B {float(pb_ratio):.1f}"))
-    roe = fundamental_context.get("return_on_equity") or fundamental_context.get("roe")
-    if roe:
-        features.append((_clip((float(roe) - 10.0) / 12.0), f"ROE {float(roe):.1f}%"))
-
-    if not features:
-        return {"available": False, "score": 0.0, "detail": "애널리스트/기본 펀더멘털 입력 부족"}
-
-    score = sum(item[0] for item in features) / len(features)
-    return {
-        "available": True,
-        "score": round(float(score), 4),
-        "detail": ", ".join(detail for _, detail in features[:4]),
-    }
-
-
-def _flow_signal_score(flow_signal: FlowSignal | None) -> tuple[float, str]:
-    if not flow_signal or not flow_signal.available:
-        return 0.0, "검증 가능한 수급 입력이 없어 수급 게이트를 닫았습니다."
-    foreign = float(flow_signal.foreign_net_buy or 0.0)
-    institutional = float(flow_signal.institutional_net_buy or 0.0)
-    retail = float(flow_signal.retail_net_buy or 0.0)
-    denominator = max(abs(foreign) + abs(institutional) + abs(retail), 1.0)
-    score = (foreign + institutional * 0.9 - retail * 0.35) / denominator
-    return _clip(score), f"외국인 {foreign:,.0f}, 기관 {institutional:,.0f}, 개인 {retail:,.0f}"
 
 
 def _build_gates(
@@ -1228,127 +1086,3 @@ def _aggregate_weighted_event_items(
         item_count=len(weighted_items),
         summary="",
     )
-
-
-def _to_frame(price_history: list[dict]) -> pd.DataFrame:
-    if not price_history:
-        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
-    frame = pd.DataFrame(price_history).copy()
-    if "date" not in frame:
-        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
-    for column in ("open", "high", "low", "close", "volume", "vwap"):
-        if column in frame:
-            frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        else:
-            frame[column] = np.nan if column == "vwap" else 0.0
-    return frame.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
-
-
-def _return_series(close: pd.Series) -> np.ndarray:
-    if close.empty:
-        return np.array([], dtype=float)
-    return np.log(close.astype(float) / close.astype(float).shift(1)).dropna().to_numpy(dtype=float)
-
-
-def _horizon_returns(close: pd.Series, horizon: int) -> np.ndarray:
-    if close.empty or len(close) <= horizon:
-        return np.array([], dtype=float)
-    return np.log(close.astype(float) / close.astype(float).shift(horizon)).dropna().to_numpy(dtype=float)
-
-
-def _window_realized_vol(returns: np.ndarray, window: int) -> float:
-    if len(returns) < 2:
-        return 0.0
-    clipped = returns[-window:] if len(returns) >= window else returns
-    return float(np.std(clipped, ddof=1))
-
-
-def _garman_klass_vol(frame: pd.DataFrame) -> float:
-    if frame.empty:
-        return 0.0
-    high = frame["high"].astype(float).replace(0, np.nan)
-    low = frame["low"].astype(float).replace(0, np.nan)
-    open_ = frame["open"].astype(float).replace(0, np.nan)
-    close = frame["close"].astype(float).replace(0, np.nan)
-    term = 0.5 * np.log(high / low) ** 2 - (2 * log(2) - 1) * np.log(close / open_) ** 2
-    term = term.replace([np.inf, -np.inf], np.nan).dropna()
-    if term.empty:
-        return 0.0
-    return float(np.sqrt(max(term.mean(), 0.0)))
-
-
-def _window_log_volume_z(volume: pd.Series, window: int) -> float:
-    if volume.empty or len(volume) < 5:
-        return 0.0
-    clipped = np.log(np.maximum(volume.tail(window).to_numpy(dtype=float), 1.0))
-    if len(clipped) < 2:
-        return 0.0
-    std = float(np.std(clipped, ddof=1))
-    if std <= 1e-8:
-        return 0.0
-    return float((clipped[-1] - float(np.mean(clipped))) / std)
-
-
-def _proxy_vwap_gap(frame: pd.DataFrame) -> float:
-    if frame.empty:
-        return 0.0
-    last = frame.iloc[-1]
-    proxy = float(last.get("vwap") or 0.0)
-    if proxy <= 0.0:
-        typical = ((frame["high"].astype(float) + frame["low"].astype(float) + frame["close"].astype(float)) / 3.0).tail(min(len(frame), 10))
-        proxy = float(typical.mean()) if not typical.empty else float(last["close"])
-    reference_price = float(last["close"])
-    return (reference_price - proxy) / max(reference_price, 1e-6)
-
-
-def _log_return(close: pd.Series, window: int) -> float:
-    if close.empty or len(close) <= 1:
-        return 0.0
-    usable = min(window, len(close) - 1)
-    start = float(close.iloc[-usable - 1])
-    end = float(close.iloc[-1])
-    if start <= 0 or end <= 0:
-        return 0.0
-    return float(log(end / start))
-
-
-def _mean_available(values: list[float]) -> float:
-    return float(sum(values) / len(values)) if values else 0.0
-
-
-def _parse_date(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    text = str(value).strip().replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(text)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except ValueError:
-        for fmt, usable_length in (("%Y-%m-%d", 10), ("%Y%m%d", 8)):
-            try:
-                return datetime.strptime(text[:usable_length], fmt).replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-    return None
-
-
-def _softmax(values: np.ndarray) -> np.ndarray:
-    if values.size == 0:
-        return values
-    shifted = values - np.max(values)
-    exp_values = np.exp(shifted)
-    return exp_values / np.sum(exp_values)
-
-
-def _sigmoid(value: float) -> float:
-    return 1.0 / (1.0 + exp(-value))
-
-
-def _stable_seed(text: str) -> int:
-    return int(blake2b(text.encode("utf-8"), digest_size=8).hexdigest(), 16) % (2 ** 32)
-
-
-def _clip(value: float, low: float = -1.0, high: float = 1.0) -> float:
-    return float(max(low, min(high, value)))

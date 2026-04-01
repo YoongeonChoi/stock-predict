@@ -10,6 +10,12 @@ import StockHeatmap from "@/components/charts/StockHeatmap";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type {
   DailyBriefingEvent,
   DailyBriefingFocusCard,
@@ -120,8 +126,13 @@ export default function HomeDashboardClient({
   initialRadar = null,
   initialCountryReport = null,
 }: HomeDashboardClientProps) {
+  const routeKey = "/";
   const initializedRef = useRef(false);
   const workspaceRequestIdRef = useRef(0);
+  const reportedInitialRef = useRef(false);
+  const reportedErrorOnlyRef = useRef(false);
+  const reportedSuccessRef = useRef<Record<string, boolean>>({});
+  const reportedDegradedRef = useRef<Record<string, boolean>>({});
   const [countries, setCountries] = useState<CountryListItem[]>(initialCountries);
   const [indicators, setIndicators] = useState<MarketIndicator[]>(initialIndicators);
   const [briefing, setBriefing] = useState<DailyBriefingResponse | null>(initialBriefing);
@@ -310,6 +321,96 @@ export default function HomeDashboardClient({
     initialIndicators.length,
     initialMovers,
     initialRadar,
+  ]);
+
+  useEffect(() => {
+    if (reportedInitialRef.current) {
+      return;
+    }
+    if (countries.length > 0 || indicators.length > 0 || briefing || heatmapData || movers || radarData || countryReport) {
+      reportedInitialRef.current = true;
+      reportInitialSsrSuccess(routeKey, "home_shell");
+    }
+  }, [briefing, countries.length, countryReport, heatmapData, indicators.length, movers, radarData, routeKey]);
+
+  useEffect(() => {
+    if (briefing && !briefingLoading && !reportedSuccessRef.current.briefing) {
+      reportedSuccessRef.current.briefing = true;
+      reportHydrationRefetchSuccess(routeKey, "briefing");
+    }
+    if (briefingError && !briefingLoading && !reportedDegradedRef.current.briefing) {
+      reportedDegradedRef.current.briefing = true;
+      reportPanelDegraded(routeKey, "briefing", briefingError);
+    }
+  }, [briefing, briefingError, briefingLoading, routeKey]);
+
+  useEffect(() => {
+    if (heatmapData && !heatmapLoading && !reportedSuccessRef.current.heatmap) {
+      reportedSuccessRef.current.heatmap = true;
+      reportHydrationRefetchSuccess(routeKey, "heatmap");
+    }
+    if (heatmapError && !heatmapLoading && !reportedDegradedRef.current.heatmap) {
+      reportedDegradedRef.current.heatmap = true;
+      reportPanelDegraded(routeKey, "heatmap", heatmapError);
+    }
+  }, [heatmapData, heatmapError, heatmapLoading, routeKey]);
+
+  useEffect(() => {
+    if (movers && !moversLoading && !reportedSuccessRef.current.movers) {
+      reportedSuccessRef.current.movers = true;
+      reportHydrationRefetchSuccess(routeKey, "movers");
+    }
+    if (moversError && !moversLoading && !reportedDegradedRef.current.movers) {
+      reportedDegradedRef.current.movers = true;
+      reportPanelDegraded(routeKey, "movers", moversError);
+    }
+  }, [movers, moversError, moversLoading, routeKey]);
+
+  useEffect(() => {
+    if (radarData && !radarLoading && !reportedSuccessRef.current.radar) {
+      reportedSuccessRef.current.radar = true;
+      reportHydrationRefetchSuccess(routeKey, "radar");
+    }
+    if (radarError && !radarLoading && !reportedDegradedRef.current.radar) {
+      reportedDegradedRef.current.radar = true;
+      reportPanelDegraded(routeKey, "radar", radarError);
+    }
+  }, [radarData, radarError, radarLoading, routeKey]);
+
+  useEffect(() => {
+    if (countryReport && !reportLoading && !reportedSuccessRef.current.report) {
+      reportedSuccessRef.current.report = true;
+      reportHydrationRefetchSuccess(routeKey, "country_report");
+    }
+    if (reportError && !reportLoading && !reportedDegradedRef.current.report) {
+      reportedDegradedRef.current.report = true;
+      reportPanelDegraded(routeKey, "country_report", reportError);
+    }
+  }, [countryReport, reportError, reportLoading, routeKey]);
+
+  useEffect(() => {
+    if (reportedErrorOnlyRef.current) {
+      return;
+    }
+    const hasVisiblePanels = Boolean(briefing || heatmapData || movers || radarData || countryReport);
+    const hasOnlyErrors = Boolean(briefingError || heatmapError || moversError || radarError || reportError);
+    if (!loading && !hasVisiblePanels && hasOnlyErrors) {
+      reportedErrorOnlyRef.current = true;
+      reportErrorOnlyScreen(routeKey, "home_workspace");
+    }
+  }, [
+    briefing,
+    briefingError,
+    countryReport,
+    heatmapData,
+    heatmapError,
+    loading,
+    movers,
+    moversError,
+    radarData,
+    radarError,
+    reportError,
+    routeKey,
   ]);
 
   const selectedCountryItem = useMemo(

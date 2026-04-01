@@ -43,6 +43,13 @@ function executionBiasTone(bias?: string) {
   return "text-text-secondary bg-border/40";
 }
 
+function opportunityScoreLabel(data: OpportunityRadarResponse, setupLabel: string) {
+  if (data.detailed_scanned_count <= 0 || setupLabel === "전수 1차 스캔") {
+    return "1차 스캔 점수";
+  }
+  return "레이더 점수";
+}
+
 function priceRange(low?: number | null, high?: number | null, key = "KR") {
   if (low == null && high == null) return "미정";
   if (low != null && high != null) return `${formatPrice(low, key)} - ${formatPrice(high, key)}`;
@@ -145,7 +152,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="text-lg font-bold">{item.opportunity_score.toFixed(1)}</div>
-                    <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                    <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(data, item.setup_label)}</div>
                   </div>
                 </div>
 
@@ -296,7 +303,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold">{item.opportunity_score.toFixed(1)}</div>
-                  <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                  <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(data, item.setup_label)}</div>
                 </div>
               </div>
 

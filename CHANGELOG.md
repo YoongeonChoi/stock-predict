@@ -2,6 +2,20 @@
 
 All notable changes to this project are tracked here.
 
+## v2.53.0 - 2026-04-02
+
+- 전체 워크스페이스 안정성 리팩터링의 첫 단계를 반영했습니다. 백엔드는 `route_trace`와 `route_stability_service`를 추가해 `request_phase`, `cache_state`, `served_state`, `fallback_reason`, cold-start 의심 여부를 공통 규칙으로 기록하고, `/api/diagnostics`에 route 안정성 요약과 first usable / hydration / session recovery 지표를 additive로 노출합니다.
+- `market_service`, `portfolio_service`, `distributional_return_engine`는 기존 import 계약을 깨지 않으면서 thin facade 구조로 정리하기 시작했습니다. `backend/app/services/market/*`, `backend/app/services/portfolio/*`, `backend/app/analysis/distributional/*` 패키지로 순수 helper와 validation/summary/encoder 로직을 분리해 quick/full/fallback 책임이 큰 파일 한 곳에 뭉치지 않게 바꿨습니다.
+- 프론트는 `frontend/src/lib/api/` 아래에 request/auth/error 코어를 분리하고, `/`, `/radar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/settings`에서 SSR 성공, hydration refetch 성공/timeout, panel degrade, session recovery failure를 공통 방식으로 기록합니다. 그래서 “HTML은 200인데 hydration 뒤 blank/error-only로 무너지는” 회귀를 settings diagnostics와 browser smoke에서 더 빨리 볼 수 있습니다.
+- route 안정성 기준에 맞춰 홈과 레이더도 독립 패널 단위로 계측하고, stock detail quick/full, portfolio/watchlist panel isolation, diagnostics UI까지 같은 언어로 묶었습니다. 이 패스는 UI 재디자인이 아니라 shell/quick/full과 세션/패널 실패를 서로 독립적으로 다루는 구조 정리에 집중합니다.
+
+## v2.52.11 - 2026-04-02
+
+- KR 레이더의 `quick quote-only` 점수식이 상단 급등 종목에서 너무 빨리 `90.0` 상한에 닿아 카드가 같은 점수로 평탄해지던 문제를 조정했습니다. 이제 quick 후보는 `변동률 + 상대 순위`를 함께 반영하되 상한을 낮춰, 1차 스캔 상태에서도 상위 후보 간 점수 차이가 유지됩니다.
+- `get_cached_market_opportunities()`는 이제 `detailed_scanned_count > 0`인 실제 정밀 snapshot만 `cached full`로 승격합니다. 그래서 quote-only 결과가 full cache처럼 보이며 `/radar`에서 정밀 계산이 끝난 것처럼 읽히는 혼선을 줄였습니다.
+- background full refresh는 최근 usable quick 후보를 seed로 재사용해 상위 종목 정밀 스캔을 다시 시도합니다. 응답은 계속 quick로 먼저 살리되, 뒤에서는 이미 확보된 후보를 바로 분석하게 바꿔 full snapshot이 올라올 가능성을 높였습니다.
+- 레이더/포트폴리오/관심종목 UI에서도 `전수 1차 스캔` 후보는 `레이더 점수` 대신 `1차 스캔 점수`로 표시하도록 정리했습니다. 그래서 quick quote-only 후보를 정밀 레이더 점수처럼 오해하기 어렵게 맞췄습니다.
+
 ## v2.52.10 - 2026-03-30
 
 - 개별 종목 상세 quick fallback의 후속 처리 방식을 Render 저메모리 운영 환경에 맞게 다시 정리했습니다. 이제 `/api/stock/{ticker}/detail`이 quick partial을 반환한 뒤 무거운 full 분석을 무조건 background task로 떼어놓지 않고, memory-safe 모드에서는 브라우저의 후속 `prefer_full=true` 요청 안에서만 bounded full refresh를 시도합니다.

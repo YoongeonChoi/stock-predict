@@ -11,6 +11,13 @@ import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api, isAuthRequiredError } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type { TickerResolution } from "@/lib/api";
 import type { OpportunityRadarResponse, WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
@@ -19,27 +26,43 @@ interface WatchlistPageClientProps {
   demoData?: OpportunityRadarResponse | null;
 }
 
+function opportunityScoreLabel(setupLabel?: string) {
+  return setupLabel === "전수 1차 스캔" ? "1차 스캔 점수" : "레이더 점수";
+}
+
 export default function WatchlistPageClient({ demoData = null }: WatchlistPageClientProps) {
+  const routeKey = "/watchlist";
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
+  const [reportedPreview, setReportedPreview] = useState(false);
+  const [reportedErrorOnly, setReportedErrorOnly] = useState(false);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
 
-  const load = async () => {
+  const load = async (showFailureToast = false) => {
     if (!session) {
       setItems([]);
+      setLoadError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      setItems(await api.getWatchlist());
+      setItems(await api.getWatchlist({ timeoutMs: 12000 }));
+      setLoadError(null);
+      reportHydrationRefetchSuccess(routeKey, "watchlist_items");
     } catch (error) {
       console.error(error);
       if (!isAuthRequiredError(error)) {
-        toast("관심종목을 불러오지 못했습니다.", "error");
+        const message = getUserFacingErrorMessage(error, "관심종목 목록을 다시 불러오지 못했습니다.");
+        setLoadError(message);
+        reportPanelDegraded(routeKey, "watchlist_items", message);
+        if (showFailureToast) {
+          toast(message, "error");
+        }
       }
     } finally {
       setLoading(false);
@@ -52,6 +75,20 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     }
     load();
   }, [authLoading, session]);
+
+  useEffect(() => {
+    if (!authLoading && !session && !reportedPreview) {
+      reportInitialSsrSuccess(routeKey);
+      setReportedPreview(true);
+    }
+  }, [authLoading, reportedPreview, routeKey, session]);
+
+  useEffect(() => {
+    if (!reportedErrorOnly && !loading && !!session && !!loadError && items.length === 0) {
+      reportErrorOnlyScreen(routeKey, loadError);
+      setReportedErrorOnly(true);
+    }
+  }, [items.length, loadError, loading, reportedErrorOnly, routeKey, session]);
 
   useEffect(() => {
     const trimmed = ticker.trim();
@@ -73,7 +110,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
       toast(`${saved.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
       setTicker("");
       setResolution(null);
-      load();
+      load(true);
     } catch {
       toast("워치리스트 추가에 실패했습니다.", "error");
     }
@@ -83,7 +120,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     try {
       await api.removeWatchlist(value);
       toast(`${value} 종목을 워치리스트에서 제거했습니다.`, "success");
-      load();
+      load(true);
     } catch {
       toast("워치리스트 삭제에 실패했습니다.", "error");
     }
@@ -115,7 +152,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                     <div className="text-right">
                       <div className="font-mono text-text">{formatPrice(item.current_price, item.country_code)}</div>
                       <div className={`mt-1 text-sm ${changeColor(item.change_pct ?? 0)}`}>{formatPct(item.change_pct)}</div>
-                      <div className="mt-2 text-xs text-text-secondary">레이더 점수 {item.opportunity_score?.toFixed(1) ?? "대기"}</div>
+                      <div className="mt-2 text-xs text-text-secondary">{opportunityScoreLabel(item.setup_label)} {item.opportunity_score?.toFixed(1) ?? "대기"}</div>
                     </div>
                   </div>
                 </div>
@@ -195,6 +232,17 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
               className="min-h-[220px]"
             />
           </div>
+        ) : loadError && items.length === 0 ? (
+          <div className="px-5 py-5">
+            <WorkspaceStateCard
+              eyebrow="관심종목 지연"
+              title="관심종목 목록을 아직 불러오지 못했습니다"
+              message={loadError}
+              tone="warning"
+              actionLabel="목록 다시 불러오기"
+              onAction={() => void load(true)}
+            />
+          </div>
         ) : items.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
@@ -206,6 +254,16 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
           </div>
         ) : (
           <div className="space-y-2 px-5 py-5">
+            {loadError ? (
+              <WorkspaceStateCard
+                eyebrow="부분 업데이트"
+                title="관심종목 목록 일부가 늦어지고 있습니다"
+                message={`${loadError} 기존에 확인하던 종목은 유지한 채 다시 불러오기를 기다립니다.`}
+                tone="warning"
+                actionLabel="목록 다시 불러오기"
+                onAction={() => void load(true)}
+              />
+            ) : null}
             {items.map((item) => (
               <div key={item.ticker} className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

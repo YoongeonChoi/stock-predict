@@ -2,7 +2,7 @@
 
 투자 판단과 포트폴리오 운영을 한 흐름으로 연결한 분석 워크스페이스입니다. 이 프로젝트는 단순 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증`을 한 제품 안에서 이어 주는 것을 목표로 합니다. 숫자 예측은 확률모형이 담당하고, `OpenAI / GPT-4o`는 뉴스·공시 구조화와 서술형 요약 보조에만 사용합니다.
 
-현재 릴리즈: `v2.52.10`
+현재 릴리즈: `v2.53.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 - 프론트: [https://yoongeon.xyz](https://yoongeon.xyz)
@@ -94,7 +94,7 @@ flowchart LR
 |---|---|---|---|---|
 | `/` | 시장 브리핑, 핵심 수치, 오늘의 포커스, 히트맵, 강한 셋업, 뉴스 | 처음 들어온 사용자, 시장 체크 사용자 | 공개 | server-first SSR, 일부 패널은 `partial` 허용 |
 | `/auth` | 이메일 회원가입, 로그인, 재설정 | 신규/기존 사용자 | 공개 | 가입 필수값: 아이디, 이메일, 이름, 전화번호, 생년월일, 비밀번호 |
-| `/radar` | Opportunity Radar, 시장 국면, 실행 우선 후보 | 빠른 후보 탐색 사용자 | 공개 | KR 중심, `quick/full` 2단계 구조 |
+| `/radar` | Opportunity Radar, 시장 국면, 실행 우선 후보 | 빠른 후보 탐색 사용자 | 공개 | KR 중심, `quick/full` 2단계 구조, `quick/cached_quick`에서는 `1차 스캔 점수`를 먼저 표시 |
 | `/screener` | 조건 기반 종목 필터링 | 조건 검색 사용자 | 공개 | 최초 진입은 `seed_preview`, 직접 실행 후 `full_scan` |
 | `/compare` | 종목 2~4개 비교 | 비교 분석 사용자 | 공개 | 비교 대상이 늘수록 dense layout |
 | `/stock/[ticker]` | 개별 종목 공개 판단 요약, 확률 구조, 상세 가이드 | 종목 깊이 보기 사용자 | 공개 | `quick snapshot -> prefer_full` 업그레이드 |
@@ -782,6 +782,7 @@ selection
 - `calibration_json` 안에 calibration snapshot 저장
 - `fusion_features`, `graph_context`, `fusion_metadata`도 nested block으로 함께 저장
 - `/lab`과 `system diagnostics`는 이 기록을 다시 읽어 learned fusion / calibration 상태를 보여 줌
+- `/api/diagnostics`와 `/settings`는 여기에 더해 route 안정성 요약, first usable latency, hydration failure, session recovery failure까지 함께 모아 공개/로그인 화면의 체감 안정성을 추적함
 
 더 자세한 계층도는 [ARCHITECTURE.md](ARCHITECTURE.md)를 참고해 주세요.
 

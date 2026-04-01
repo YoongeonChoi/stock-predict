@@ -12,6 +12,7 @@ from app.services import (
     confidence_calibration_service,
     learned_fusion_profile_service,
     research_archive_service,
+    route_stability_service,
 )
 from app.version import APP_VERSION
 
@@ -89,6 +90,37 @@ async def get_diagnostics() -> dict:
         learned_fusion_status = _build_learned_fusion_status()
     except Exception:
         learned_fusion_status = None
+    try:
+        route_stability_summary = route_stability_service.get_route_stability_summary()
+    except Exception:
+        route_stability_summary = {
+            "routes": [],
+            "first_usable_metrics": {
+                "tracked_routes": 0,
+                "total_requests": 0,
+                "p50_elapsed_ms": 0.0,
+                "p95_elapsed_ms": 0.0,
+                "fallback_served_rate": 0.0,
+                "stale_served_rate": 0.0,
+                "first_request_cold_failure_rate": 0.0,
+                "blank_screen_rate": 0.0,
+                "error_only_screen_rate": 0.0,
+            },
+            "hydration_failure_summary": {
+                "tracked": False,
+                "total": 0,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "by_route": [],
+            },
+            "session_recovery_summary": {
+                "tracked": False,
+                "total": 0,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "by_route": [],
+            },
+        }
 
     data_sources = [
         _source(
@@ -239,6 +271,10 @@ async def get_diagnostics() -> dict:
         ],
         "confidence_calibration_profiles": calibration_profiles,
         "learned_fusion_status": learned_fusion_status,
+        "route_stability_summary": route_stability_summary["routes"],
+        "first_usable_metrics": route_stability_summary["first_usable_metrics"],
+        "hydration_failure_summary": route_stability_summary["hydration_failure_summary"],
+        "session_recovery_summary": route_stability_summary["session_recovery_summary"],
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,
         "research_archive": research_archive,

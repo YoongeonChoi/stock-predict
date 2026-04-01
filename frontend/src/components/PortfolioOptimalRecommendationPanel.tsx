@@ -6,9 +6,11 @@ import type { PortfolioOptimalRecommendationResponse } from "@/lib/api";
 interface Props {
   data: PortfolioOptimalRecommendationResponse | null;
   loading: boolean;
+  errorMessage?: string | null;
+  onRetry?: () => void;
 }
 
-export default function PortfolioOptimalRecommendationPanel({ data, loading }: Props) {
+export default function PortfolioOptimalRecommendationPanel({ data, loading, errorMessage = null, onRetry }: Props) {
   return (
     <PortfolioRecommendationPanel
       title="최적 추천"
@@ -20,6 +22,8 @@ export default function PortfolioOptimalRecommendationPanel({ data, loading }: P
       notes={data?.notes}
       marketView={data?.market_view}
       emptyMessage="지금은 신규 자금을 급하게 배분하기보다 기존 포지션 관리가 우선으로 보입니다. 더 강한 셋업이 쌓일 때까지 관망하는 편이 낫습니다."
+      errorMessage={errorMessage}
+      onRetry={onRetry}
     />
   );
 }

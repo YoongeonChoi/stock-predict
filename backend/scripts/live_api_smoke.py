@@ -55,6 +55,7 @@ CHECKS = [
     ApiCheck("GET", "/api/screener?country=KR&limit=20"),
     ApiCheck("GET", "/api/portfolio", expected_status=401, expected_error_code="SP-6014"),
     ApiCheck("GET", "/api/portfolio/ideal?refresh=false&history_limit=10"),
+    ApiCheck("GET", "/api/diagnostics"),
     ApiCheck("GET", "/api/system/diagnostics"),
     ApiCheck("GET", "/api/research/predictions?limit_recent=20&refresh=false"),
     ApiCheck("POST", "/api/portfolio/holdings", expected_status=401, expected_error_code="SP-6014", json_body={"ticker": "AAPL"}),

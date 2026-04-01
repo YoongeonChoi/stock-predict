@@ -17,158 +17,32 @@ from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
 from app.scoring.selection import regime_alignment_score, score_selection_candidate
 from app.services import market_service, ticker_resolver_service
+from app.services.portfolio.crud import (
+    default_portfolio_profile as _default_portfolio_profile,
+    invalidate_portfolio_cache,
+    portfolio_cache_key as _portfolio_cache_key,
+)
 from app.services.portfolio_optimizer import (
     attach_candidate_return_series,
     build_horizon_snapshot,
     optimize_portfolio_weights,
+)
+from app.services.portfolio.summary import (
+    build_asset_summary as _build_asset_summary,
+    execution_mix as _execution_mix,
+)
+from app.services.portfolio.validation import (
+    normalize_country_code as _normalize_country_code,
+    normalize_kr_portfolio_ticker as _normalize_kr_portfolio_ticker,
+    normalize_portfolio_ticker,
+    validate_portfolio_holding_input,
+    validate_portfolio_profile_input,
 )
 from app.utils.async_tools import gather_limited
 
 
 def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
-
-
-def _normalize_country_code(country_code: str | None) -> str:
-    return ticker_resolver_service.normalize_country_code(country_code)
-
-
-def _normalize_kr_portfolio_ticker(raw_ticker: str) -> str:
-    return ticker_resolver_service.resolve_ticker(raw_ticker, "KR")["ticker"]
-
-
-def normalize_portfolio_ticker(ticker: str, country_code: str = "KR") -> str:
-    resolution = ticker_resolver_service.resolve_ticker(ticker, country_code)
-    return resolution["ticker"]
-
-
-def validate_portfolio_holding_input(
-    ticker: str,
-    buy_price: float,
-    quantity: float,
-    buy_date: str,
-    country_code: str = "KR",
-) -> dict[str, str | float]:
-    normalized_country = _normalize_country_code(country_code)
-    if normalized_country not in COUNTRY_REGISTRY:
-        raise ValueError("지원하지 않는 국가 코드입니다. 한국(KR)만 지원합니다.")
-
-    resolution = ticker_resolver_service.resolve_ticker(ticker, normalized_country)
-    normalized_ticker = resolution["ticker"]
-    if not normalized_ticker:
-        raise ValueError("티커를 입력해 주세요.")
-
-    try:
-        parsed_buy_price = float(buy_price)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("매수가는 0보다 큰 숫자로 입력해 주세요.") from exc
-    if parsed_buy_price <= 0:
-        raise ValueError("매수가는 0보다 큰 숫자로 입력해 주세요.")
-
-    try:
-        parsed_quantity = float(quantity)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("수량은 0보다 큰 숫자로 입력해 주세요.") from exc
-    if parsed_quantity <= 0:
-        raise ValueError("수량은 0보다 큰 숫자로 입력해 주세요.")
-
-    normalized_buy_date = str(buy_date or "").strip()[:10]
-    try:
-        datetime.fromisoformat(normalized_buy_date)
-    except ValueError as exc:
-        raise ValueError("매수일은 YYYY-MM-DD 형식으로 입력해 주세요.") from exc
-
-    return {
-        "ticker": normalized_ticker,
-        "buy_price": parsed_buy_price,
-        "quantity": parsed_quantity,
-        "buy_date": normalized_buy_date,
-        "country_code": resolution["country_code"],
-    }
-
-
-def validate_portfolio_profile_input(
-    total_assets: float,
-    cash_balance: float,
-    monthly_budget: float,
-) -> dict[str, float]:
-    try:
-        parsed_total_assets = float(total_assets)
-        parsed_cash_balance = float(cash_balance)
-        parsed_monthly_budget = float(monthly_budget)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("총자산, 예수금, 월 추가 자금은 숫자로 입력해 주세요.") from exc
-
-    if parsed_total_assets < 0:
-        raise ValueError("총자산은 0 이상으로 입력해 주세요.")
-    if parsed_cash_balance < 0:
-        raise ValueError("예수금은 0 이상으로 입력해 주세요.")
-    if parsed_monthly_budget < 0:
-        raise ValueError("월 추가 자금은 0 이상으로 입력해 주세요.")
-
-    return {
-        "total_assets": parsed_total_assets,
-        "cash_balance": parsed_cash_balance,
-        "monthly_budget": parsed_monthly_budget,
-    }
-
-
-def _default_portfolio_profile() -> dict[str, float | None]:
-    return {
-        "total_assets": 0.0,
-        "cash_balance": 0.0,
-        "monthly_budget": 0.0,
-        "updated_at": None,
-    }
-
-
-def _portfolio_cache_key(user_id: str) -> str:
-    return f"portfolio_overview:v8:{user_id}"
-
-
-async def invalidate_portfolio_cache(user_id: str | None = None) -> None:
-    if user_id:
-        await cache.invalidate(f"%:{user_id}")
-    await cache.invalidate("portfolio_overview:%")
-
-
-def _build_asset_summary(
-    *,
-    profile: dict,
-    total_invested: float,
-    total_current: float,
-    total_pnl: float,
-    holding_count: int,
-) -> dict[str, float | int]:
-    tracked_total_assets = float(profile.get("total_assets") or 0.0)
-    cash_balance = float(profile.get("cash_balance") or 0.0)
-    monthly_budget = float(profile.get("monthly_budget") or 0.0)
-
-    total_assets = max(tracked_total_assets, total_current + cash_balance)
-    other_assets = max(total_assets - total_current - cash_balance, 0.0)
-    total_pnl_pct = (total_pnl / total_invested * 100.0) if total_invested else 0.0
-    stock_ratio_pct = (total_current / total_assets * 100.0) if total_assets else 0.0
-    cash_ratio_pct = (cash_balance / total_assets * 100.0) if total_assets else 0.0
-    other_assets_ratio_pct = (other_assets / total_assets * 100.0) if total_assets else 0.0
-    asset_gap = tracked_total_assets - (total_current + cash_balance)
-
-    return {
-        "total_invested": round(total_invested, 2),
-        "total_current": round(total_current, 2),
-        "total_pnl": round(total_pnl, 2),
-        "total_pnl_pct": round(total_pnl_pct, 2),
-        "holding_count": holding_count,
-        "total_assets": round(total_assets, 2),
-        "cash_balance": round(cash_balance, 2),
-        "other_assets": round(other_assets, 2),
-        "stock_ratio_pct": round(stock_ratio_pct, 2),
-        "cash_ratio_pct": round(cash_ratio_pct, 2),
-        "other_assets_ratio_pct": round(other_assets_ratio_pct, 2),
-        "monthly_budget": round(monthly_budget, 2),
-        "deployable_cash": round(cash_balance + monthly_budget, 2),
-        "asset_gap": round(asset_gap, 2),
-        "unrealized_pnl_pct_of_assets": round((total_pnl / total_assets * 100.0) if total_assets else 0.0, 2),
-    }
 
 
 def _daily_returns(price_history: list[dict]) -> list[tuple[str, float]]:
@@ -245,29 +119,6 @@ def _scenario_snapshot(forecast) -> dict[str, float | None]:
         "bear_probability": bear.probability if bear else None,
     }
 
-
-def _execution_mix(holdings: list[dict]) -> list[dict]:
-    ordering = [
-        "press_long",
-        "lean_long",
-        "stay_selective",
-        "reduce_risk",
-        "capital_preservation",
-    ]
-    grouped: dict[str, dict] = {}
-    for holding in holdings:
-        bias = holding.get("execution_bias") or "stay_selective"
-        bucket = grouped.setdefault(bias, {"bias": bias, "count": 0, "weight": 0.0})
-        bucket["count"] += 1
-        bucket["weight"] += float(holding.get("weight_pct") or 0.0)
-
-    results = []
-    for bias in ordering:
-        if bias in grouped:
-            item = grouped[bias]
-            item["weight"] = round(item["weight"], 2)
-            results.append(item)
-    return results
 
 
 def _action_queue(holdings: list[dict]) -> list[dict]:

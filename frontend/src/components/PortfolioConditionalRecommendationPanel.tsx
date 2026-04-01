@@ -12,6 +12,8 @@ interface Props {
   filters: PortfolioConditionalRecommendationFilters;
   loading: boolean;
   running: boolean;
+  errorMessage?: string | null;
+  onRetry?: () => void;
   onChange: (next: PortfolioConditionalRecommendationFilters) => void;
   onRun: () => void;
 }
@@ -21,6 +23,8 @@ export default function PortfolioConditionalRecommendationPanel({
   filters,
   loading,
   running,
+  errorMessage = null,
+  onRetry,
   onChange,
   onRun,
 }: Props) {
@@ -141,6 +145,8 @@ export default function PortfolioConditionalRecommendationPanel({
       marketView={data?.market_view}
       controls={controls}
       emptyMessage="현재 조건을 만족하는 추천 후보가 아직 충분하지 않습니다. 국가나 섹터를 넓히거나 최소 상승 확률을 조금 낮춰 다시 실행해 보세요."
+      errorMessage={errorMessage}
+      onRetry={onRetry}
     />
   );
 }

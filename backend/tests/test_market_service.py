@@ -35,6 +35,71 @@ async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
 
 
 class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_quote_only_scores_preserve_spread_for_hot_kr_names(self):
+        market_regime = MarketRegime(
+            label="중립",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=50.0,
+            conviction=38.0,
+            summary="중립 장세",
+            playbook=[],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
+        )
+
+        items = market_service._build_quote_only_opportunities(
+            ranked_quotes=[
+                {"sector": "IT", "ticker": "A.KS", "current_price": 100.0, "change_pct": 14.09},
+                {"sector": "IT", "ticker": "B.KS", "current_price": 99.0, "change_pct": 13.40},
+                {"sector": "IT", "ticker": "C.KS", "current_price": 98.0, "change_pct": 11.39},
+            ],
+            country_code="KR",
+            market_regime=market_regime,
+            limit=3,
+        )
+
+        scores = [item.opportunity_score for item in items]
+        self.assertGreater(scores[0], scores[1])
+        self.assertGreater(scores[1], scores[2])
+        self.assertLessEqual(scores[0], 86.0)
+
+    def test_build_seeded_quote_screen_from_quick_payload_restores_ranked_candidates(self):
+        payload = {
+            "universe_size": 2729,
+            "total_scanned": 72,
+            "quote_available_count": 72,
+            "universe_source": "krx_listing",
+            "universe_note": "cached quick",
+            "opportunities": [
+                {
+                    "ticker": "047810.KS",
+                    "sector": "항공기/우주선 및 부품 제조업",
+                    "current_price": 187900.0,
+                    "change_pct": 14.09,
+                },
+                {
+                    "ticker": "005930.KS",
+                    "sector": "통신 및 방송 장비 제조업",
+                    "current_price": 189600.0,
+                    "change_pct": 13.40,
+                },
+            ],
+        }
+
+        result = market_service._build_seeded_quote_screen_from_quick_payload(payload, candidate_limit=4)
+
+        self.assertIsNotNone(result)
+        selection, quote_screen = result
+        self.assertEqual(selection.source, "krx_listing")
+        self.assertIn("seed로 정밀 후보 계산", selection.note)
+        self.assertEqual(quote_screen["universe_size"], 2729)
+        self.assertEqual(quote_screen["quote_available_count"], 72)
+        self.assertEqual(len(quote_screen["ranked"]), 2)
+        self.assertEqual(quote_screen["ranked"][0]["ticker"], "047810.KS")
+
     def test_sample_universe_pairs_round_robins_across_sectors(self):
         pairs = market_service._sample_universe_pairs(
             {
@@ -583,6 +648,41 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["fallback_tier"], "full")
         self.assertEqual(result["quote_available_count"], 84)
+
+    async def test_get_cached_market_opportunities_ignores_quote_only_full_snapshot(self):
+        cached_payload = {
+            "country_code": "KR",
+            "snapshot_id": "KR:full:20260329T120500",
+            "generated_at": "2026-03-29T12:05:00",
+            "fallback_tier": "full",
+            "market_regime": {
+                "label": "KR",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 40.0,
+                "summary": "cached",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 210,
+            "total_scanned": 72,
+            "quote_available_count": 72,
+            "detailed_scanned_count": 0,
+            "actionable_count": 8,
+            "bullish_count": 5,
+            "universe_source": "krx_listing",
+            "universe_note": "cached quick-like full",
+            "opportunities": [{"ticker": "005930.KS", "current_price": 70100.0, "change_pct": 4.1}],
+        }
+
+        with patch("app.services.market_service.cache.get", new=AsyncMock(return_value=cached_payload)):
+            result = await market_service.get_cached_market_opportunities("KR", limit=12)
+
+        self.assertIsNone(result)
 
     async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_before_dynamic_fetch(self):
         with (

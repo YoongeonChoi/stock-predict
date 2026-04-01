@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import WorkspaceStateCard from "@/components/WorkspaceStateCard";
 import type {
   PortfolioRecommendationBudget,
   PortfolioRecommendationItem,
@@ -22,6 +23,9 @@ interface Props {
   marketView?: PortfolioRecommendationMarketView[];
   controls?: ReactNode;
   emptyMessage: string;
+  errorMessage?: string | null;
+  errorActionLabel?: string;
+  onRetry?: () => void;
 }
 
 function expectedReturn20d(item: PortfolioRecommendationItem | PortfolioRecommendationSummary) {
@@ -186,6 +190,9 @@ export default function PortfolioRecommendationPanel({
   marketView = [],
   controls,
   emptyMessage,
+  errorMessage = null,
+  errorActionLabel = "다시 불러오기",
+  onRetry,
 }: Props) {
   return (
     <div className="card min-w-0 !p-0 overflow-hidden">
@@ -275,6 +282,17 @@ export default function PortfolioRecommendationPanel({
           </div>
         ) : null}
 
+        {!loading && errorMessage ? (
+          <WorkspaceStateCard
+            eyebrow={recommendations.length > 0 ? "부분 업데이트" : "추천 패널 지연"}
+            title={recommendations.length > 0 ? `${title} 최신 계산이 늦어지고 있습니다` : `${title} 패널을 아직 불러오지 못했습니다`}
+            message={recommendations.length > 0 ? `${errorMessage} 직전 계산 결과는 유지한 채 다시 불러오기를 기다립니다.` : errorMessage}
+            tone="warning"
+            actionLabel={onRetry ? errorActionLabel : undefined}
+            onAction={onRetry}
+          />
+        ) : null}
+
         {!loading && recommendations.length > 0 ? (
           <div className="space-y-3">
             {recommendations.map((item) => (
@@ -283,7 +301,7 @@ export default function PortfolioRecommendationPanel({
           </div>
         ) : null}
 
-        {!loading && recommendations.length === 0 ? (
+        {!loading && !errorMessage && recommendations.length === 0 ? (
           <div className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-6 text-sm text-text-secondary">
             {emptyMessage}
           </div>

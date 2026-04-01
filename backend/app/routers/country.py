@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
@@ -10,9 +11,10 @@ from app.analysis.forecast_engine import forecast_index
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.runtime import get_or_create_background_job
-from app.services import archive_service, export_service, market_service
+from app.services import archive_service, export_service, market_service, route_stability_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
+from app.utils import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
@@ -856,6 +858,7 @@ async def get_market_movers(code: str):
 
 @router.get("/market/opportunities/{code}")
 async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20)):
+    started_at = time.perf_counter()
     code = code.upper()
     if code not in COUNTRY_REGISTRY:
         err = SP_6001(code)
@@ -864,17 +867,42 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
 
     cached_full = await market_service.get_cached_market_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_full):
+        route_stability_service.record_route_trace(
+            "market_opportunities",
+            build_route_trace(
+                route_key="market_opportunities",
+                request_phase="full",
+                cache_state="sqlite_hit",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
+                upstream_source="market_service",
+                payload=cached_full,
+            ),
+        )
         return cached_full
 
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
-        return _with_opportunity_partial(
+        payload = _with_opportunity_partial(
             cached_quick,
             fallback_reason="opportunity_cached_quick_response",
             note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             fallback_tier="cached_quick",
         )
+        route_stability_service.record_route_trace(
+            "market_opportunities",
+            build_route_trace(
+                route_key="market_opportunities",
+                request_phase="quick",
+                cache_state="sqlite_hit",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
+                upstream_source="market_service",
+                payload=payload,
+            ),
+        )
+        return payload
 
     quick_label = f"Opportunity quick fallback for {code}"
     quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
@@ -888,11 +916,24 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         )
         if _is_usable_opportunity_payload(quick_response):
             _spawn_opportunity_refresh(code, limit)
-            return _with_opportunity_partial(
+            payload = _with_opportunity_partial(
                 quick_response,
                 fallback_reason="opportunity_quick_response",
                 note="이번 응답에서는 1차 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             )
+            route_stability_service.record_route_trace(
+                "market_opportunities",
+                build_route_trace(
+                    route_key="market_opportunities",
+                    request_phase="quick",
+                    cache_state="miss",
+                    elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                    timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
+                    upstream_source="market_service",
+                    payload=payload,
+                ),
+            )
+            return payload
     except asyncio.TimeoutError:
         logging.warning("opportunity quick fetch timed out for %s", code)
     except Exception as quick_exc:
@@ -901,15 +942,28 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
-        return _with_opportunity_partial(
+        payload = _with_opportunity_partial(
             cached_quick,
             fallback_reason="opportunity_cached_quick_response",
             note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             fallback_tier="cached_quick",
         )
+        route_stability_service.record_route_trace(
+            "market_opportunities",
+            build_route_trace(
+                route_key="market_opportunities",
+                request_phase="quick",
+                cache_state="sqlite_hit",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
+                upstream_source="market_service",
+                payload=payload,
+            ),
+        )
+        return payload
 
     _spawn_opportunity_refresh(code, limit)
-    return _with_opportunity_partial(
+    payload = _with_opportunity_partial(
         market_service.build_market_opportunities_placeholder(
             code,
             note=(
@@ -919,3 +973,17 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         ),
         fallback_reason="opportunity_placeholder_response",
     )
+    route_stability_service.record_route_trace(
+        "market_opportunities",
+        build_route_trace(
+            route_key="market_opportunities",
+            request_phase="shell",
+            cache_state="miss",
+            elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+            timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
+            upstream_source="market_service",
+            payload=payload,
+            served_state="degraded",
+        ),
+    )
+    return payload

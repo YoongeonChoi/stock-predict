@@ -129,6 +129,8 @@ class UnicodePDF(FPDF):
         txt = _sanitize_for_pdf(txt)
         if not self._unicode_ready:
             txt = _sanitize_for_latin(txt)
+        kwargs.setdefault("new_x", "LMARGIN")
+        kwargs.setdefault("new_y", "NEXT")
         self.multi_cell(w, h, txt, **kwargs)
 
 

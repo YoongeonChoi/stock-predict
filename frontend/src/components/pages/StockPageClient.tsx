@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -24,9 +24,16 @@ import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
-import { api } from "@/lib/api";
+import { api, ApiTimeoutError } from "@/lib/api";
 import type { CompositeScore, ForecastDeltaResponse, PivotPoints, TechSummary } from "@/lib/api";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportHydrationRefetchTimeout,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type { PricePoint, StockDetail } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
@@ -54,8 +61,11 @@ interface StockPageClientProps {
 }
 
 export default function StockPageClient({ initialTicker, initialData = null }: StockPageClientProps) {
+  const routeKey = "/stock/[ticker]";
   const router = useRouter();
   const normalizedTicker = useMemo(() => decodeURIComponent(initialTicker), [initialTicker]);
+  const initialReportedRef = useRef(false);
+  const errorOnlyReportedRef = useRef(false);
   const [stock, setStock] = useState<StockDetail | null>(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<Error | null>(null);
@@ -79,49 +89,125 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     setChartData([]);
     setLoading(!initialData);
 
-    const shouldRefreshDetail = !initialData || Boolean(initialData.partial);
-    if (shouldRefreshDetail) {
-      api.getStockDetail(normalizedTicker, { timeoutMs: 32000, preferFull: true })
-        .then((next) => {
-          if (cancelled) return;
-          setStock(next);
-          setError(null);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          console.error(err);
-          if (!initialData) {
-            setError(toError(err));
-          }
-        })
-        .finally(() => {
-          if (cancelled) return;
-          if (!initialData) {
-            setLoading(false);
-          }
+    const loadQuickDetail = async (): Promise<StockDetail | null> => {
+      try {
+        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 12000, preferFull: false });
+        if (cancelled) return null;
+        setStock(next);
+        setError(null);
+        reportHydrationRefetchSuccess(routeKey, "stock_detail_quick");
+        return next;
+      } catch (err) {
+        if (cancelled) return null;
+        console.error(err);
+        if (err instanceof ApiTimeoutError) {
+          reportHydrationRefetchTimeout(routeKey, "stock_detail_quick", 12000);
+        } else {
+          reportPanelDegraded(routeKey, "stock_detail_quick", toError(err).message);
+        }
+        if (!initialData) {
+          setError(toError(err));
+        }
+        return null;
+      } finally {
+        if (!cancelled && !initialData) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const upgradeToFullDetail = async () => {
+      try {
+        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 14000, preferFull: true });
+        if (cancelled) return;
+        setStock((current) => {
+          if (!current) return next;
+          if (!current.partial && next.partial) return current;
+          return next;
         });
-    }
+        setError(null);
+        reportHydrationRefetchSuccess(routeKey, "stock_detail_full");
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          if (err instanceof ApiTimeoutError) {
+            reportHydrationRefetchTimeout(routeKey, "stock_detail_full", 14000);
+          } else {
+            reportPanelDegraded(routeKey, "stock_detail_full", toError(err).message);
+          }
+        }
+      }
+    };
+
+    const startDetailFlow = async () => {
+      if (!initialData) {
+        const quick = await loadQuickDetail();
+        if (quick?.partial) {
+          void upgradeToFullDetail();
+        }
+        return;
+      }
+
+      setLoading(false);
+      if (initialData.partial) {
+        void upgradeToFullDetail();
+      }
+    };
+
+    void startDetailFlow();
 
     api.getTechSummary(normalizedTicker)
       .then((next) => {
-        if (!cancelled) setTechSummary(next);
+        if (!cancelled) {
+          setTechSummary(next);
+          reportHydrationRefetchSuccess(routeKey, "technical_summary");
+        }
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        reportPanelDegraded(routeKey, "technical_summary", toError(error).message);
+      });
     api.getPivotPoints(normalizedTicker)
       .then((next) => {
-        if (!cancelled) setPivotPoints(next);
+        if (!cancelled) {
+          setPivotPoints(next);
+          reportHydrationRefetchSuccess(routeKey, "pivot_points");
+        }
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        reportPanelDegraded(routeKey, "pivot_points", toError(error).message);
+      });
     api.getStockForecastDelta(normalizedTicker)
       .then((next) => {
-        if (!cancelled) setForecastDelta(next);
+        if (!cancelled) {
+          setForecastDelta(next);
+          reportHydrationRefetchSuccess(routeKey, "forecast_delta");
+        }
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        reportPanelDegraded(routeKey, "forecast_delta", toError(error).message);
+      });
 
     return () => {
       cancelled = true;
     };
   }, [initialData, normalizedTicker]);
+
+  useEffect(() => {
+    if (!initialReportedRef.current && (initialData || stock)) {
+      reportInitialSsrSuccess(routeKey);
+      initialReportedRef.current = true;
+    }
+  }, [initialData, routeKey, stock]);
+
+  useEffect(() => {
+    if (!errorOnlyReportedRef.current && !loading && !stock && error) {
+      reportErrorOnlyScreen(routeKey, error.message);
+      errorOnlyReportedRef.current = true;
+    }
+  }, [error, loading, routeKey, stock]);
 
   const changeChartPeriod = async (period: string) => {
     if (!normalizedTicker) return;
