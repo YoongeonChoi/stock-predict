@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.53.1 - 2026-04-04
+
+- `/api/country/KR/report`가 실데이터에서 `NaN` 또는 `Infinity`를 포함할 때 `SP-9999` 500으로 떨어지던 운영 오류를 수정했습니다. 국가 리포트 응답은 이제 비정상 float를 `null`로 정리한 뒤 JSON으로 반환합니다.
+- settings 계정 패널의 프로필 저장 흐름을 `useAccountProfileSection` 훅으로 분리해 프로필 draft, 아이디 중복 확인, 저장 오류 처리를 페이지 렌더 로직과 분리했습니다.
+- `frontend/src/lib/api.ts`를 계속 얇게 유지하도록 `market`, `portfolio` 도메인 클라이언트를 추가로 분리했고, browser smoke의 calendar 계약도 현재 운영 UI 문구와 맞췄습니다.
+
 ## v2.53.0 - 2026-04-02
 
 - 전체 워크스페이스 안정성 리팩터링의 첫 단계를 반영했습니다. 백엔드는 `route_trace`와 `route_stability_service`를 추가해 `request_phase`, `cache_state`, `served_state`, `fallback_reason`, cold-start 의심 여부를 공통 규칙으로 기록하고, `/api/diagnostics`에 route 안정성 요약과 first usable / hydration / session recovery 지표를 additive로 노출합니다.
