@@ -13,7 +13,12 @@ class DiagnosticsEvent(BaseModel):
     event: str
     status: str = "ok"
     panel: str | None = None
+    panel_key: str | None = None
     detail: str | None = None
+    failure_class: str | None = None
+    operation_kind: str | None = None
+    dependency_key: str | None = None
+    recovered: bool | None = None
     timeout_ms: int | None = None
     occurred_at: str | None = None
 
@@ -38,7 +43,12 @@ async def diagnostics_event(body: DiagnosticsEvent):
             event=body.event,
             status=body.status,
             panel=body.panel,
+            panel_key=body.panel_key,
             detail=body.detail,
+            failure_class=body.failure_class,
+            operation_kind=body.operation_kind or "public-read",
+            dependency_key=body.dependency_key,
+            recovered=body.recovered,
             timeout_ms=body.timeout_ms,
             occurred_at=body.occurred_at,
         )
