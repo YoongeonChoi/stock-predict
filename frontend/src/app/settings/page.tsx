@@ -1,21 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import AccountSettingsPanel from "@/components/settings/AccountSettingsPanel";
 import MarketSessionPanel from "@/components/MarketSessionPanel";
 import SystemStatusCard from "@/components/SystemStatusCard";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
-import { api, apiPath } from "@/lib/api";
+import { apiPath } from "@/lib/api";
 import { FRONTEND_APP_VERSION } from "@/lib/app-meta";
-import { getUserFacingErrorMessage } from "@/lib/request-state";
-import {
-  reportErrorOnlyScreen,
-  reportHydrationRefetchSuccess,
-  reportInitialSsrSuccess,
-  reportPanelDegraded,
-} from "@/lib/route-observability";
-import type { MarketSessionsResponse, ResearchArchiveStatus, SystemDiagnostics } from "@/lib/api";
+import { useSettingsPageLoader } from "@/app/settings/useSettingsPageLoader";
 
 const REGION_LABELS: Record<string, string> = {
   KR: "한국",
@@ -27,93 +18,18 @@ const REGION_LABELS: Record<string, string> = {
 const SETTINGS_TIMEOUT_MS = 15_000;
 
 export default function SettingsPage() {
-  const routeKey = "/settings";
-  const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
-  const [marketSessions, setMarketSessions] = useState<MarketSessionsResponse | null>(null);
-  const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
-  const [marketSessionsError, setMarketSessionsError] = useState<string | null>(null);
-  const [researchError, setResearchError] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setDiagnosticsError(null);
-    setMarketSessionsError(null);
-    setResearchError(null);
-
-    const [diagResult, sessionsResult, researchResult] = await Promise.allSettled([
-      api.getDiagnostics({ timeoutMs: SETTINGS_TIMEOUT_MS }),
-      api.getMarketSessions({ timeoutMs: SETTINGS_TIMEOUT_MS }),
-      api.getResearchArchiveStatus(true, { timeoutMs: SETTINGS_TIMEOUT_MS }),
-    ]);
-
-    if (diagResult.status === "fulfilled") {
-      setDiagnostics(diagResult.value);
-      reportHydrationRefetchSuccess(routeKey, "diagnostics");
-    } else {
-      console.error(diagResult.reason);
-      const message = getUserFacingErrorMessage(diagResult.reason, "시스템 진단 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      setDiagnosticsError(message);
-      reportPanelDegraded(routeKey, "diagnostics", message);
-    }
-
-    if (sessionsResult.status === "fulfilled") {
-      setMarketSessions(sessionsResult.value);
-      reportHydrationRefetchSuccess(routeKey, "market_sessions");
-    } else {
-      console.error(sessionsResult.reason);
-      const message = getUserFacingErrorMessage(sessionsResult.reason, "시장 세션 요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      setMarketSessionsError(message);
-      reportPanelDegraded(routeKey, "market_sessions", message);
-    }
-
-    if (researchResult.status === "fulfilled") {
-      setResearchStatus(researchResult.value);
-      reportHydrationRefetchSuccess(routeKey, "research_archive_status");
-    } else {
-      console.error(researchResult.reason);
-      const message = getUserFacingErrorMessage(researchResult.reason, "기관 리서치 동기화 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      setResearchError(message);
-      reportPanelDegraded(routeKey, "research_archive_status", message);
-    }
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  useEffect(() => {
-    if (!loading && (diagnostics || marketSessions || researchStatus)) {
-      reportInitialSsrSuccess(routeKey);
-    }
-  }, [diagnostics, loading, marketSessions, researchStatus, routeKey]);
-
-  useEffect(() => {
-    if (!loading && !diagnostics && !marketSessions && !researchStatus && (diagnosticsError || marketSessionsError || researchError)) {
-      reportErrorOnlyScreen(routeKey, diagnosticsError || marketSessionsError || researchError || "settings error");
-    }
-  }, [diagnostics, diagnosticsError, loading, marketSessions, marketSessionsError, researchError, researchStatus, routeKey]);
-
-  const refreshResearchArchive = async () => {
-    setRefreshing(true);
-    setResearchError(null);
-    try {
-      await api.refreshResearchArchive();
-      const research = await api.getResearchArchiveStatus(true, { timeoutMs: SETTINGS_TIMEOUT_MS });
-      setResearchStatus(research);
-    } catch (err) {
-      console.error(err);
-      setResearchError(
-        getUserFacingErrorMessage(err, "기관 리서치 상태를 새로고침하지 못했습니다. 잠시 후 다시 시도해 주세요."),
-      );
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  const {
+    diagnostics,
+    marketSessions,
+    researchStatus,
+    loading,
+    refreshing,
+    diagnosticsError,
+    marketSessionsError,
+    researchError,
+    load,
+    refreshResearchArchive,
+  } = useSettingsPageLoader({ timeoutMs: SETTINGS_TIMEOUT_MS });
 
   const delayedSections = [
     diagnosticsError ? "시스템 진단" : null,
