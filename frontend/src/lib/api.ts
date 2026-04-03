@@ -1,5 +1,7 @@
 import { apiPath, del, get, post, put, request } from "@/lib/api/client";
+import { accountApi } from "@/lib/api/account";
 import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
+import { systemApi } from "@/lib/api/system";
 export { apiPath };
 export {
   AUTH_REQUIRED_EVENT,
@@ -1209,23 +1211,7 @@ export interface ForecastDeltaResponse {
 }
 
 export const api = {
-  getMyAccountProfile: () => get<AccountProfile>("/api/account/me"),
-  updateMyAccountProfile: (payload: AccountProfileUpdateRequest) =>
-    request<AccountProfile>("/api/account/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  deleteMyAccount: (payload: AccountDeleteRequest) =>
-    request<AccountDeleteResponse>("/api/account/me", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  validateSignup: (payload: SignUpValidationRequest) =>
-    post<SignUpValidationResponse>("/api/account/signup/validate", payload),
-  checkUsernameAvailability: (username: string) =>
-    get<UsernameAvailabilityResponse>(`/api/account/username-availability?username=${encodeURIComponent(username)}`),
+  ...accountApi,
   getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
   getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
   getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),
@@ -1258,14 +1244,9 @@ export const api = {
     qs.set("auto_refresh", String(autoRefresh));
     return get<ResearchArchiveEntry[]>(`/api/archive/research?${qs.toString()}`);
   },
-  getResearchArchiveStatus: (refreshIfMissing = false, options?: RequestOptions) =>
-    get<ResearchArchiveStatus>(`/api/archive/research/status?refresh_if_missing=${refreshIfMissing}`, options),
-  refreshResearchArchive: () => post("/api/archive/research/refresh"),
+  ...systemApi,
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
-  getDiagnostics: (options?: RequestOptions) => get<SystemDiagnostics>("/api/diagnostics", options),
-  getDailyBriefing: (options?: RequestOptions) => get<DailyBriefingResponse>("/api/briefing/daily", options),
-  getMarketSessions: (options?: RequestOptions) => get<MarketSessionsResponse>("/api/market/sessions", options),
   getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
     get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`, options),
   getCalendar: (code: string, year?: number, month?: number, options?: RequestOptions) => {
