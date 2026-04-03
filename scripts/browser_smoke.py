@@ -11,19 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
+from route_contracts import DEFAULT_FORBIDDEN_TEXTS, iter_browser_route_contracts
+
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "output" / "browser-smoke"
 DEFAULT_LOCAL_BASE = "http://127.0.0.1:3000"
 NETWORK_ERROR_MARKERS = (
-    "원격 서버에 연결할 수 없습니다.",
-    "사이트에 연결할 수 없음",
     "ERR_CONNECTION_REFUSED",
     "ERR_CONNECTION_TIMED_OUT",
-)
-FORBIDDEN_TEXT_MARKERS = (
-    "Failed to fetch",
-    "32초 안에 응답이 오지 않았습니다.",
+    "This site can’t be reached",
+    "This site can't be reached",
 )
 DEFAULT_BROWSER_CANDIDATES = (
     os.getenv("EDGE_PATH", ""),
@@ -41,26 +39,29 @@ class BrowserCheck:
     path: str
     required_texts: tuple[str, ...] = ()
     any_of_texts: tuple[str, ...] = ()
+    forbidden_texts: tuple[str, ...] = DEFAULT_FORBIDDEN_TEXTS
 
 
-CHECKS = (
-    BrowserCheck("home", "/", required_texts=("대시보드",)),
-    BrowserCheck("radar", "/radar", required_texts=("기회 레이더",)),
-    BrowserCheck("stock", "/stock/003670.KS", any_of_texts=("PearlAbyss", "판단 요약", "일부 데이터가 제한적으로 제공됩니다")),
-    BrowserCheck("portfolio", "/portfolio", required_texts=("포트폴리오",)),
-    BrowserCheck("watchlist", "/watchlist", required_texts=("관심종목",)),
-    BrowserCheck("settings", "/settings", any_of_texts=("설정 및 시스템", "로그인", "이메일로 로그인")),
+CHECKS = tuple(
+    BrowserCheck(
+        name=contract.key,
+        path=contract.route,
+        required_texts=contract.smoke.required_texts or contract.required_visible_state,
+        any_of_texts=contract.smoke.any_of_texts or contract.optional_upgrade_state,
+        forbidden_texts=contract.smoke.forbidden_texts or DEFAULT_FORBIDDEN_TEXTS,
+    )
+    for contract in iter_browser_route_contracts()
 )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="브라우저 기준 first usable smoke 점검")
-    parser.add_argument("--base-url", default=DEFAULT_LOCAL_BASE, help="점검할 프론트 기본 URL")
-    parser.add_argument("--browser", default="", help="사용할 브라우저 실행 파일 경로")
-    parser.add_argument("--attempts", type=int, default=5, help="각 route 재시도 횟수")
-    parser.add_argument("--retry-delay", type=float, default=2.0, help="재시도 간격(초)")
-    parser.add_argument("--virtual-time-budget-ms", type=int, default=12000, help="브라우저 가상 시간 예산(ms)")
-    parser.add_argument("--output-dir", default=str(OUTPUT_DIR), help="HTML/스크린샷 저장 위치")
+    parser = argparse.ArgumentParser(description="Browser first-usable smoke")
+    parser.add_argument("--base-url", default=DEFAULT_LOCAL_BASE, help="Base URL for browser smoke")
+    parser.add_argument("--browser", default="", help="Path to Edge or Chrome executable")
+    parser.add_argument("--attempts", type=int, default=5, help="Attempts per route")
+    parser.add_argument("--retry-delay", type=float, default=2.0, help="Retry delay in seconds")
+    parser.add_argument("--virtual-time-budget-ms", type=int, default=12000, help="Headless browser virtual time budget")
+    parser.add_argument("--output-dir", default=str(OUTPUT_DIR), help="Directory for HTML and screenshots")
     return parser.parse_args(argv)
 
 
@@ -77,7 +78,7 @@ def resolve_browser(candidate: str) -> str:
         path = Path(candidate)
         if path.exists():
             return str(path)
-        raise SystemExit(f"브라우저 실행 파일을 찾을 수 없습니다: {candidate}")
+        raise SystemExit(f"Browser executable not found: {candidate}")
 
     for raw in DEFAULT_BROWSER_CANDIDATES:
         if not raw:
@@ -86,11 +87,18 @@ def resolve_browser(candidate: str) -> str:
         if path.exists():
             return str(path)
 
-    raise SystemExit("Edge 또는 Chrome 실행 파일을 찾을 수 없습니다. --browser 옵션으로 직접 지정해 주세요.")
+    raise SystemExit("Could not find an Edge or Chrome executable. Pass --browser explicitly.")
 
 
 def sanitize_name(url: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", url).strip("-")
+
+
+def decode_browser_output(raw: bytes) -> str:
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace")
 
 
 def dump_dom(browser: str, url: str, virtual_time_budget_ms: int) -> str:
@@ -108,11 +116,11 @@ def dump_dom(browser: str, url: str, virtual_time_budget_ms: int) -> str:
             "--dump-dom",
             url,
         ]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, capture_output=True, check=False)
         if completed.returncode != 0:
-            stderr = " ".join(completed.stderr.split())
+            stderr = " ".join(decode_browser_output(completed.stderr).split())
             raise RuntimeError(f"browser dump-dom failed: {stderr or completed.returncode}")
-        return completed.stdout
+        return decode_browser_output(completed.stdout)
 
 
 def save_screenshot(browser: str, url: str, destination: Path, virtual_time_budget_ms: int) -> None:
@@ -130,7 +138,7 @@ def save_screenshot(browser: str, url: str, destination: Path, virtual_time_budg
             f"--screenshot={destination}",
             url,
         ]
-        subprocess.run(command, capture_output=True, text=True, check=False)
+        subprocess.run(command, capture_output=True, check=False)
 
 
 def collapse_text(html: str) -> str:
@@ -148,7 +156,7 @@ def evaluate_check(check: BrowserCheck, html: str) -> tuple[bool, str]:
     if is_browser_error_page(html, text):
         return False, "browser error page"
 
-    forbidden_hits = [marker for marker in FORBIDDEN_TEXT_MARKERS if marker in text]
+    forbidden_hits = [marker for marker in check.forbidden_texts if marker in text]
     if forbidden_hits:
         return False, f"forbidden text {forbidden_hits}"
 
@@ -232,12 +240,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[FAIL] {check.name:12} {url} -> {detail}")
 
     if failures:
-        print("\n[browser-smoke] 실패 항목:")
+        print("\n[browser-smoke] failures detected:")
         for failure in failures:
             print(f"- {failure}")
         return 1
 
-    print("\n[browser-smoke] 모든 브라우저 점검 통과")
+    print("\n[browser-smoke] all checks passed")
     return 0
 
 
