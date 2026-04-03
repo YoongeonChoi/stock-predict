@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, call, patch
 from app.models.forecast import ForecastScenario, NextDayForecast
 from app.models.market import MarketRegime, TradePlan
 from app.models.stock import BuySellGuide, TechnicalIndicators
+from app.services.portfolio.holdings import build_holding_write_payload
 from app.services import portfolio_service, research_service
 
 
@@ -45,6 +46,23 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(kr["ticker"], "196170.KQ")
         self.assertEqual(samsung["ticker"], "005930.KS")
+
+    async def test_build_holding_write_payload_falls_back_to_ticker_when_name_lookup_fails(self):
+        payload = await build_holding_write_payload(
+            "005930",
+            70000,
+            3,
+            "2026-03-24",
+            "KR",
+            stock_info_loader=AsyncMock(side_effect=RuntimeError("lookup failed")),
+        )
+
+        self.assertEqual(payload["ticker"], "005930.KS")
+        self.assertEqual(payload["name"], "005930.KS")
+        self.assertEqual(payload["country_code"], "KR")
+        self.assertEqual(payload["buy_price"], 70000.0)
+        self.assertEqual(payload["quantity"], 3.0)
+        self.assertEqual(payload["buy_date"], "2026-03-24")
 
     async def test_portfolio_add_holding_saves_normalized_ticker(self):
         db_add = AsyncMock()

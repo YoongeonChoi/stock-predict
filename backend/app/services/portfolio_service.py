@@ -22,6 +22,7 @@ from app.services.portfolio.crud import (
     invalidate_portfolio_cache,
     portfolio_cache_key as _portfolio_cache_key,
 )
+from app.services.portfolio.holdings import build_holding_write_payload
 from app.services.portfolio_optimizer import (
     attach_candidate_return_series,
     build_horizon_snapshot,
@@ -1456,29 +1457,29 @@ async def get_portfolio(user_id: str):
 
 
 async def add_holding(user_id: str, ticker: str, buy_price: float, quantity: float, buy_date: str, country_code: str = "KR"):
-    payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
-    normalized_ticker = str(payload["ticker"])
-    normalized_country = str(payload["country_code"])
-    try:
-        info = await yfinance_client.get_stock_info(normalized_ticker)
-        name = info.get("name", normalized_ticker)
-    except Exception:
-        name = normalized_ticker
+    payload = await build_holding_write_payload(
+        ticker,
+        buy_price,
+        quantity,
+        buy_date,
+        country_code,
+        stock_info_loader=yfinance_client.get_stock_info,
+    )
     await supabase_client.portfolio_add(
         user_id,
-        normalized_ticker,
-        name,
-        normalized_country,
-        float(payload["buy_price"]),
-        float(payload["quantity"]),
-        str(payload["buy_date"]),
+        payload["ticker"],
+        payload["name"],
+        payload["country_code"],
+        payload["buy_price"],
+        payload["quantity"],
+        payload["buy_date"],
     )
     await invalidate_portfolio_cache(user_id)
     return {
-        "ticker": normalized_ticker,
-        "name": name,
-        "country_code": normalized_country,
-        "buy_date": str(payload["buy_date"]),
+        "ticker": payload["ticker"],
+        "name": payload["name"],
+        "country_code": payload["country_code"],
+        "buy_date": payload["buy_date"],
     }
 
 
@@ -1491,30 +1492,30 @@ async def update_holding(
     buy_date: str,
     country_code: str = "KR",
 ):
-    payload = validate_portfolio_holding_input(ticker, buy_price, quantity, buy_date, country_code)
-    normalized_ticker = str(payload["ticker"])
-    normalized_country = str(payload["country_code"])
-    try:
-        info = await yfinance_client.get_stock_info(normalized_ticker)
-        name = info.get("name", normalized_ticker)
-    except Exception:
-        name = normalized_ticker
+    payload = await build_holding_write_payload(
+        ticker,
+        buy_price,
+        quantity,
+        buy_date,
+        country_code,
+        stock_info_loader=yfinance_client.get_stock_info,
+    )
     await supabase_client.portfolio_update(
         user_id,
         holding_id,
-        normalized_ticker,
-        name,
-        normalized_country,
-        float(payload["buy_price"]),
-        float(payload["quantity"]),
-        str(payload["buy_date"]),
+        payload["ticker"],
+        payload["name"],
+        payload["country_code"],
+        payload["buy_price"],
+        payload["quantity"],
+        payload["buy_date"],
     )
     await invalidate_portfolio_cache(user_id)
     return {
-        "ticker": normalized_ticker,
-        "name": name,
-        "country_code": normalized_country,
-        "buy_date": str(payload["buy_date"]),
+        "ticker": payload["ticker"],
+        "name": payload["name"],
+        "country_code": payload["country_code"],
+        "buy_date": payload["buy_date"],
     }
 
 
