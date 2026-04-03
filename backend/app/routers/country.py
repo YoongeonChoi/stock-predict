@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import math
 import time
+from typing import Any
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from app.models.country import COUNTRY_REGISTRY
 from app.data import kr_market_quote_client, yfinance_client
@@ -36,6 +39,25 @@ HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
 HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): _sanitize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, set):
+        return [_sanitize_json_value(item) for item in value]
+    return value
+
+
+def _build_country_success_response(payload: dict) -> JSONResponse:
+    encoded = jsonable_encoder(payload)
+    return JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -695,7 +717,7 @@ async def get_country_report(code: str):
         except Exception as e:
             SP_5002(str(e)[:100]).log()
 
-    return report
+    return _build_country_success_response(report)
 
 
 @router.get("/country/{code}/heatmap")

@@ -156,6 +156,34 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["losers"][0]["ticker"], "000660.KS")
         representative_loader.assert_awaited_once()
 
+    async def test_country_report_sanitizes_non_finite_floats(self):
+        report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "score": {"total": float("nan")},
+            "market_summary": "summary",
+            "macro_claims": [],
+            "key_news": [],
+            "institutional_analysis": {"policy_institutions": [], "sell_side": [], "policy_sellside_aligned": False, "consensus_count": 0, "consensus_summary": ""},
+            "top_stocks": [],
+            "fear_greed": {"value": float("inf"), "label": "neutral", "summary": ""},
+            "forecast": {"index_ticker": "KS11", "index_name": "KOSPI", "current_price": 1.0, "fair_value": float("-inf"), "scenarios": [], "confidence_note": ""},
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": float("nan")}},
+            "generated_at": "2026-04-04T00:00:00",
+        }
+
+        with (
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, False))),
+            patch("app.routers.country.archive_service.save_report", new=AsyncMock()),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertIsNone(payload["score"]["total"])
+        self.assertIsNone(payload["fear_greed"]["value"])
+        self.assertIsNone(payload["forecast"]["fair_value"])
+        self.assertIsNone(payload["market_data"]["KOSPI"]["change_pct"])
+
 
 if __name__ == "__main__":
     unittest.main()
