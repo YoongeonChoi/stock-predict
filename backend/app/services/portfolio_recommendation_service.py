@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime
 import asyncio
 import hashlib
@@ -9,6 +8,7 @@ import json
 from app.data import cache
 from app.data.universe_data import GICS_SECTORS
 from app.data.supabase_client import supabase_client
+from app.services.portfolio.recommendations import build_recommendation_context_maps
 from app.services.portfolio_optimizer import attach_candidate_return_series
 from app.services import market_service, portfolio_service
 from app.utils.async_tools import gather_limited
@@ -86,13 +86,6 @@ def _budget_for_style(
         "max_country_weight_pct": 100.0 if country_locked else preset["max_country_weight_pct"],
         "max_sector_weight_pct": 100.0 if sector_locked else preset["max_sector_weight_pct"],
     }
-
-
-def _exposure_map(holdings: list[dict], field: str) -> dict[str, float]:
-    grouped: dict[str, float] = defaultdict(float)
-    for holding in holdings:
-        grouped[str(holding.get(field) or "Other")] += float(holding.get("weight_pct") or 0.0)
-    return {key: round(value, 2) for key, value in grouped.items()}
 
 
 def _auto_style_from_risk(risk: dict) -> str:
@@ -420,18 +413,11 @@ async def get_conditional_recommendations(
         user_id=user_id,
         watchlist_rows_seed=watchlist_rows_for_state,
     )
-    watchlist_keys = {
-        f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
-        for row in watchlist_rows
-        if row.get("ticker")
-    }
-    holding_lookup = {
-        f"{item.get('country_code', 'KR')}:{item.get('ticker')}": item
-        for item in holdings
-        if item.get("ticker")
-    }
-    country_exposure = _exposure_map(holdings, "country_code")
-    sector_exposure = _exposure_map(holdings, "sector")
+    context_maps = build_recommendation_context_maps(holdings, watchlist_rows)
+    watchlist_keys = context_maps["watchlist_keys"]
+    holding_lookup = context_maps["holding_lookup"]
+    country_exposure = context_maps["country_exposure"]
+    sector_exposure = context_maps["sector_exposure"]
 
     filtered_candidates: list[dict] = []
     for opportunity in radar_items:
@@ -539,18 +525,11 @@ async def get_optimal_recommendation(user_id: str) -> dict:
         portfolio_snapshot=portfolio,
         watchlist_rows_seed=watchlist_rows,
     )
-    watchlist_keys = {
-        f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
-        for row in watchlist_rows
-        if row.get("ticker")
-    }
-    holding_lookup = {
-        f"{item.get('country_code', 'KR')}:{item.get('ticker')}": item
-        for item in holdings
-        if item.get("ticker")
-    }
-    country_exposure = _exposure_map(holdings, "country_code")
-    sector_exposure = _exposure_map(holdings, "sector")
+    context_maps = build_recommendation_context_maps(holdings, watchlist_rows)
+    watchlist_keys = context_maps["watchlist_keys"]
+    holding_lookup = context_maps["holding_lookup"]
+    country_exposure = context_maps["country_exposure"]
+    sector_exposure = context_maps["sector_exposure"]
 
     candidates: list[dict] = []
     for opportunity in radar_items:
