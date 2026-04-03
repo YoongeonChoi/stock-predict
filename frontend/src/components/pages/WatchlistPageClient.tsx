@@ -10,17 +10,11 @@ import PublicAuditStrip from "@/components/PublicAuditStrip";
 import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
-import { api, isAuthRequiredError } from "@/lib/api";
-import { getUserFacingErrorMessage } from "@/lib/request-state";
-import {
-  reportErrorOnlyScreen,
-  reportHydrationRefetchSuccess,
-  reportInitialSsrSuccess,
-  reportPanelDegraded,
-} from "@/lib/route-observability";
+import { api } from "@/lib/api";
 import type { TickerResolution } from "@/lib/api";
 import type { OpportunityRadarResponse, WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
+import { useWatchlistWorkspace } from "@/components/pages/useWatchlistWorkspace";
 
 interface WatchlistPageClientProps {
   demoData?: OpportunityRadarResponse | null;
@@ -31,64 +25,24 @@ function opportunityScoreLabel(setupLabel?: string) {
 }
 
 export default function WatchlistPageClient({ demoData = null }: WatchlistPageClientProps) {
-  const routeKey = "/watchlist";
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("");
   const [resolution, setResolution] = useState<TickerResolution | null>(null);
-  const [reportedPreview, setReportedPreview] = useState(false);
-  const [reportedErrorOnly, setReportedErrorOnly] = useState(false);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
-
-  const load = async (showFailureToast = false) => {
-    if (!session) {
-      setItems([]);
-      setLoadError(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      setItems(await api.getWatchlist({ timeoutMs: 12000 }));
-      setLoadError(null);
-      reportHydrationRefetchSuccess(routeKey, "watchlist_items");
-    } catch (error) {
-      console.error(error);
-      if (!isAuthRequiredError(error)) {
-        const message = getUserFacingErrorMessage(error, "관심종목 목록을 다시 불러오지 못했습니다.");
-        setLoadError(message);
-        reportPanelDegraded(routeKey, "watchlist_items", message);
-        if (showFailureToast) {
-          toast(message, "error");
-        }
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-    load();
-  }, [authLoading, session]);
-
-  useEffect(() => {
-    if (!authLoading && !session && !reportedPreview) {
-      reportInitialSsrSuccess(routeKey);
-      setReportedPreview(true);
-    }
-  }, [authLoading, reportedPreview, routeKey, session]);
-
-  useEffect(() => {
-    if (!reportedErrorOnly && !loading && !!session && !!loadError && items.length === 0) {
-      reportErrorOnlyScreen(routeKey, loadError);
-      setReportedErrorOnly(true);
-    }
-  }, [items.length, loadError, loading, reportedErrorOnly, routeKey, session]);
+  const { load } = useWatchlistWorkspace({
+    hasSession: Boolean(session),
+    authLoading,
+    items,
+    loading,
+    loadError,
+    setItems,
+    setLoading,
+    setLoadError,
+    toast,
+  });
 
   useEffect(() => {
     const trimmed = ticker.trim();
