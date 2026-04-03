@@ -1,5 +1,6 @@
 import { apiPath, del, get, post, put, request } from "@/lib/api/client";
 import { accountApi } from "@/lib/api/account";
+import { marketApi } from "@/lib/api/market";
 import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
 import { systemApi } from "@/lib/api/system";
 export { apiPath };
@@ -1212,15 +1213,7 @@ export interface ForecastDeltaResponse {
 
 export const api = {
   ...accountApi,
-  getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
-  getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
-  getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),
-  getHeatmap: (code: string, options?: RequestOptions) => get<HeatmapData>(`/api/country/${code}/heatmap`, options),
-  getCountryReport: (code: string, options?: RequestOptions) => get<import("./types").CountryReport>(`/api/country/${code}/report`, options),
-  getCountryForecast: (code: string) => get<import("./types").IndexForecast>(`/api/country/${code}/forecast`),
-  getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
-  getSectorReport: (code: string, sectorId: string) =>
-    get<import("./types").SectorReport>(`/api/country/${code}/sector/${sectorId}/report`),
+  ...marketApi,
   getStockDetail: (ticker: string, options: StockDetailRequestOptions = {}) => {
     const { preferFull = false, ...requestOptions } = options;
     const query = preferFull ? "?prefer_full=true" : "";
@@ -1247,19 +1240,6 @@ export const api = {
   ...systemApi,
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
-  getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
-    get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`, options),
-  getCalendar: (code: string, year?: number, month?: number, options?: RequestOptions) => {
-    const qs = new URLSearchParams();
-    if (year) qs.set("year", String(year));
-    if (month) qs.set("month", String(month));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return get<CalendarResponse>(`/api/calendar/${code}${suffix}`, options);
-  },
-  getScreener: (params: Record<string, string>, options?: RequestOptions) => {
-    const qs = new URLSearchParams(params).toString();
-    return get<ScreenerResponse>(`/api/screener?${qs}`, options);
-  },
   getPortfolio: (options?: RequestOptions) => get<PortfolioData>("/api/portfolio", options),
   getPortfolioProfile: (options?: RequestOptions) => get<PortfolioProfile>("/api/portfolio/profile", options),
   updatePortfolioProfile: (data: PortfolioProfile) => put<PortfolioProfile>("/api/portfolio/profile", data),
@@ -1291,7 +1271,6 @@ export const api = {
   updatePortfolioHolding: (id: number, data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
     put<PortfolioHoldingCreateResponse>(`/api/portfolio/holdings/${id}`, data),
   removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
-  getMarketMovers: (code: string, options?: RequestOptions) => get<MarketMovers>(`/api/market/movers/${code}`, options),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
   resolveTicker: (query: string, countryCode = "KR") =>
     get<TickerResolution>(`/api/ticker/resolve?query=${encodeURIComponent(query)}&country_code=${countryCode}`),
