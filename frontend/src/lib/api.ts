@@ -911,7 +911,10 @@ export interface RouteStabilitySummaryRow {
   degraded_rate: number;
   cold_start_suspected_rate: number;
   request_phase_mix: Record<string, number>;
+  operation_kind_mix: Record<string, number>;
   cache_state_mix: Record<string, number>;
+  failure_class_mix: Record<string, number>;
+  recovered_failure_rate: number;
 }
 
 export interface RouteStabilityFirstUsableMetrics {
@@ -937,6 +940,14 @@ export interface RouteStabilityFailureSummary {
     failure_count: number;
     failure_rate: number;
   }[];
+}
+
+export interface RouteStabilityFailureClassSummary {
+  tracked: boolean;
+  total: number;
+  by_class: Record<string, number>;
+  recovered_count: number;
+  recovered_rate: number;
 }
 
 export interface SystemDiagnostics {
@@ -986,6 +997,7 @@ export interface SystemDiagnostics {
   first_usable_metrics?: RouteStabilityFirstUsableMetrics | null;
   hydration_failure_summary?: RouteStabilityFailureSummary | null;
   session_recovery_summary?: RouteStabilityFailureSummary | null;
+  failure_class_summary?: RouteStabilityFailureClassSummary | null;
 }
 
 export interface CalendarMajorEvent {
