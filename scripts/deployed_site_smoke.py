@@ -12,39 +12,40 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.route_contracts import ApiSmokeCheck, RouteContract, iter_deployed_api_smoke_checks, iter_deployed_frontend_route_contracts
+
+
 RETRYABLE_STATUSES = {502, 503, 504}
 
 
 @dataclass(frozen=True)
-class HttpCheck:
-    name: str
+class FrontendRouteCheck:
+    contract: RouteContract
     base: str
-    path: str
-    expected_status: int
-    expect_json: bool = False
-    expected_error_code: str | None = None
-    contains_text: str | None = None
+    expected_status: int = 200
     timeout: int = 45
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="운영 배포 사이트 스모크 점검")
+    parser = argparse.ArgumentParser(description="Check deployed frontend and API health")
     parser.add_argument(
         "--frontend-url",
         default=os.getenv("STOCK_PREDICT_FRONTEND_URL", "https://www.yoongeon.xyz"),
-        help="운영 프론트엔드 기본 URL",
+        help="Base URL for the deployed frontend",
     )
     parser.add_argument(
         "--api-url",
         default=os.getenv("STOCK_PREDICT_API_URL", "https://api.yoongeon.xyz"),
-        help="운영 백엔드 기본 URL",
+        help="Base URL for the deployed API",
     )
     parser.add_argument(
         "--expected-version",
         default="",
-        help="지정하면 /api/health 응답의 version과 일치하는지 확인합니다.",
+        help="Expected backend version returned by /api/health",
     )
     return parser.parse_args(argv)
 
@@ -59,10 +60,16 @@ def fetch(url: str, timeout: int = 30) -> tuple[int, str, dict[str, str]]:
         body = exc.read().decode("utf-8", errors="replace")
         return exc.code, body, dict(exc.headers.items())
     except URLError as exc:
-        raise RuntimeError(f"{url} 연결 실패: {exc}") from exc
+        raise RuntimeError(f"{url} connection failed: {exc}") from exc
 
 
-def fetch_with_retry(url: str, *, attempts: int = 3, timeout: int = 30, retry_delay: float = 4.0) -> tuple[int, str, dict[str, str]]:
+def fetch_with_retry(
+    url: str,
+    *,
+    attempts: int = 3,
+    timeout: int = 30,
+    retry_delay: float = 4.0,
+) -> tuple[int, str, dict[str, str]]:
     last_error: Exception | None = None
     last_response: tuple[int, str, dict[str, str]] | None = None
 
@@ -72,13 +79,13 @@ def fetch_with_retry(url: str, *, attempts: int = 3, timeout: int = 30, retry_de
             status = response[0]
             if status not in RETRYABLE_STATUSES or attempt >= attempts:
                 return response
-            print(f"[retry] {url} -> {status}, {attempt}/{attempts} 재시도 대기")
+            print(f"[retry] {url} -> {status}, attempt {attempt}/{attempts}")
             last_response = response
         except Exception as exc:
             last_error = exc
             if attempt >= attempts:
                 raise
-            print(f"[retry] {url} -> {exc}, {attempt}/{attempts} 재시도 대기")
+            print(f"[retry] {url} -> {exc}, attempt {attempt}/{attempts}")
 
         time.sleep(retry_delay * attempt)
 
@@ -86,12 +93,39 @@ def fetch_with_retry(url: str, *, attempts: int = 3, timeout: int = 30, retry_de
         return last_response
     if last_error is not None:
         raise last_error
-    raise RuntimeError(f"{url} 응답을 확인할 수 없습니다.")
+    raise RuntimeError(f"{url} returned no usable response")
 
 
 def preview(text: str, limit: int = 180) -> str:
-    compact = " ".join(text.split())
-    return compact[:limit]
+    return " ".join(text.split())[:limit]
+
+
+def build_api_checks(api_url: str) -> list[tuple[ApiSmokeCheck, str]]:
+    return [
+        (check, urljoin(f"{api_url}/", check.path.lstrip("/")))
+        for check in iter_deployed_api_smoke_checks()
+    ]
+
+
+def build_frontend_checks(frontend_url: str) -> list[tuple[FrontendRouteCheck, str]]:
+    return [
+        (
+            FrontendRouteCheck(contract=contract, base=frontend_url),
+            urljoin(f"{frontend_url}/", contract.route.lstrip("/")),
+        )
+        for contract in iter_deployed_frontend_route_contracts()
+    ]
+
+
+def validate_frontend_html(check: FrontendRouteCheck, body: str) -> str | None:
+    if "<html" not in body:
+        return "missing <html in response body"
+
+    forbidden_hits = [text for text in check.contract.smoke.forbidden_texts if text in body]
+    if forbidden_hits:
+        return f"forbidden text {forbidden_hits}"
+
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,127 +133,86 @@ def main(argv: list[str] | None = None) -> int:
     frontend_url = args.frontend_url.rstrip("/")
     api_url = args.api_url.rstrip("/")
 
-    checks = [
-        HttpCheck("health", api_url, "/api/health", expected_status=200, expect_json=True),
-        HttpCheck("countries", api_url, "/api/countries", expected_status=200, expect_json=True),
-        HttpCheck(
-            "watchlist-auth",
-            api_url,
-            "/api/watchlist",
-            expected_status=401,
-            expect_json=True,
-            expected_error_code="SP-6014",
-        ),
-        HttpCheck("market-indicators", api_url, "/api/market/indicators", expected_status=200, expect_json=True),
-        HttpCheck("briefing", api_url, "/api/briefing/daily", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("country-report", api_url, "/api/country/KR/report", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("diagnostics", api_url, "/api/diagnostics", expected_status=200, expect_json=True, timeout=45),
-        HttpCheck("market-heatmap", api_url, "/api/country/KR/heatmap", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("market-opportunities", api_url, "/api/market/opportunities/KR?limit=8", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("screener", api_url, "/api/screener?country=KR&limit=20", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("calendar", api_url, "/api/calendar/KR", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("prediction-lab", api_url, "/api/research/predictions?limit_recent=20&refresh=false", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("stock-detail", api_url, "/api/stock/003670/detail", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("stock-detail-full", api_url, "/api/stock/003670/detail?prefer_full=true", expected_status=200, expect_json=True, timeout=60),
-        HttpCheck("health-post-stock", api_url, "/api/health", expected_status=200, expect_json=True, timeout=45),
-        HttpCheck("frontend-home", frontend_url, "/", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-radar", frontend_url, "/radar", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-screener", frontend_url, "/screener", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-calendar", frontend_url, "/calendar", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-archive", frontend_url, "/archive", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-lab", frontend_url, "/lab", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-stock", frontend_url, "/stock/003670.KS", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-portfolio", frontend_url, "/portfolio", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-watchlist", frontend_url, "/watchlist", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-auth", frontend_url, "/auth", expected_status=200, contains_text="<html"),
-        HttpCheck("frontend-settings", frontend_url, "/settings", expected_status=200, contains_text="<html"),
-    ]
-
     failures: list[str] = []
     health_payload: dict[str, Any] | None = None
 
-    print("[deployed-smoke] 운영 사이트 확인 시작")
+    print("[deployed-smoke] starting deployed smoke")
     print(f"[deployed-smoke] frontend={frontend_url}")
     print(f"[deployed-smoke] api={api_url}")
 
-    for check in checks:
-        url = urljoin(f"{check.base}/", check.path.lstrip("/"))
+    for check, url in build_api_checks(api_url):
         try:
             status, body, _headers = fetch_with_retry(url, attempts=3, timeout=check.timeout)
         except Exception as exc:
             failures.append(f"{check.name}: {exc}")
-            print(f"[FAIL] {check.name:18} {url} -> {exc}")
+            print(f"[FAIL] {check.name:24} {url} -> {exc}")
+            continue
+
+        if status != check.expected_status:
+            failures.append(f"{check.name}: expected {check.expected_status}, got {status} ({preview(body)})")
+            print(f"[FAIL] {check.name:24} {url} -> {status} ({preview(body)})")
+            continue
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            failures.append(f"{check.name}: invalid JSON ({preview(body)})")
+            print(f"[FAIL] {check.name:24} {url} -> invalid JSON")
+            continue
+
+        if check.name == "health" and isinstance(payload, dict):
+            health_payload = payload
+
+        if check.expected_error_code and (
+            not isinstance(payload, dict) or payload.get("error_code") != check.expected_error_code
+        ):
+            failures.append(f"{check.name}: expected error_code {check.expected_error_code}, got {payload}")
+            print(f"[FAIL] {check.name:24} {url} -> missing error_code {check.expected_error_code}")
+            continue
+
+        print(f"[OK]   {check.name:24} {url} -> {status}")
+
+    for check, url in build_frontend_checks(frontend_url):
+        try:
+            status, body, _headers = fetch_with_retry(url, attempts=3, timeout=check.timeout)
+        except Exception as exc:
+            failures.append(f"frontend-{check.contract.key}: {exc}")
+            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {exc}")
             continue
 
         if status != check.expected_status:
             failures.append(
-                f"{check.name}: expected {check.expected_status}, got {status} ({preview(body)})"
+                f"frontend-{check.contract.key}: expected {check.expected_status}, got {status} ({preview(body)})"
             )
-            print(f"[FAIL] {check.name:18} {url} -> {status} ({preview(body)})")
+            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {status} ({preview(body)})")
             continue
 
-        if check.expect_json:
-            try:
-                payload = json.loads(body)
-            except json.JSONDecodeError:
-                failures.append(f"{check.name}: JSON 응답이 아닙니다. ({preview(body)})")
-                print(f"[FAIL] {check.name:18} {url} -> invalid JSON")
-                continue
-
-            if check.name == "health" and isinstance(payload, dict):
-                health_payload = payload
-
-            if check.expected_error_code and (
-                not isinstance(payload, dict) or payload.get("error_code") != check.expected_error_code
-            ):
-                failures.append(
-                    f"{check.name}: expected error_code {check.expected_error_code}, got {payload}"
-                )
-                print(f"[FAIL] {check.name:18} {url} -> missing error_code {check.expected_error_code}")
-                continue
-
-        if check.contains_text and check.contains_text not in body:
-            failures.append(f"{check.name}: expected body to include {check.contains_text!r}")
-            print(f"[FAIL] {check.name:18} {url} -> missing text {check.contains_text!r}")
+        validation_error = validate_frontend_html(check, body)
+        if validation_error:
+            failures.append(f"frontend-{check.contract.key}: {validation_error}")
+            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {validation_error}")
             continue
 
-        if check.name in {"frontend-home", "frontend-radar", "frontend-stock"}:
-            for forbidden in ("Failed to fetch", "32초 안에 응답이 오지 않았습니다."):
-                if forbidden in body:
-                    failures.append(f"{check.name}: forbidden text {forbidden!r}")
-                    print(f"[FAIL] {check.name:18} {url} -> forbidden text {forbidden!r}")
-                    break
-            else:
-                print(f"[OK]   {check.name:18} {url} -> {status}")
-                continue
-            continue
-
-        print(f"[OK]   {check.name:18} {url} -> {status}")
+        print(f"[OK]   frontend-{check.contract.key:15} {url} -> {status}")
 
     if args.expected_version and health_payload:
         current_version = str(health_payload.get("version", ""))
         if current_version != args.expected_version:
-            failures.append(
-                f"health version mismatch: expected {args.expected_version}, got {current_version}"
-            )
-            print(
-                f"[FAIL] health-version      expected {args.expected_version}, got {current_version}"
-            )
+            failures.append(f"health version mismatch: expected {args.expected_version}, got {current_version}")
+            print(f"[FAIL] health-version            expected {args.expected_version}, got {current_version}")
         else:
-            print(f"[OK]   health-version      {current_version}")
+            print(f"[OK]   health-version            {current_version}")
 
     if health_payload:
-        print(
-            f"[info] 배포 health version={health_payload.get('version')} status={health_payload.get('status')}"
-        )
+        print(f"[info] deployed health version={health_payload.get('version')} status={health_payload.get('status')}")
 
     if failures:
-        print("\n[deployed-smoke] 실패 항목:")
+        print("\n[deployed-smoke] failures detected:")
         for failure in failures:
             print(f"- {failure}")
         return 1
 
-    print("\n[deployed-smoke] 모든 운영 사이트 점검 통과")
+    print("\n[deployed-smoke] all deployed checks passed")
     return 0
 
 
