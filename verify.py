@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.request
 from urllib.parse import urlparse
+
 from dev_runtime import (
     ROOT,
     display_path,
@@ -13,6 +14,7 @@ from dev_runtime import (
     frontend_build_command,
     frontend_typecheck_command,
 )
+from scripts.route_contracts import iter_browser_route_paths
 
 
 def run_step(label: str, command: list[str], cwd) -> None:
@@ -23,12 +25,13 @@ def run_step(label: str, command: list[str], cwd) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stock Predict 검증 런처")
-    parser.add_argument("--skip-frontend", action="store_true", help="프론트 검증을 건너뜁니다.")
-    parser.add_argument("--live-api-smoke", action="store_true", help="주요 API를 실호출 기준으로 점검합니다.")
-    parser.add_argument("--deployed-site-smoke", action="store_true", help="운영 Vercel/Render URL을 직접 호출해 배포 상태를 점검합니다.")
-    parser.add_argument("--browser-smoke", action="store_true", help="실제 브라우저 기준으로 주요 first usable 화면을 점검합니다.")
-    parser.add_argument("--browser-smoke-url", default="", help="브라우저 smoke 대상 URL. 기본값은 로컬 http://127.0.0.1:3000 입니다.")
+    parser = argparse.ArgumentParser(description="Stock Predict verification runner")
+    parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend build and typecheck")
+    parser.add_argument("--live-api-smoke", action="store_true", help="Run local API smoke checks")
+    parser.add_argument("--deployed-site-smoke", action="store_true", help="Run deployed frontend and API smoke checks")
+    parser.add_argument("--browser-smoke", action="store_true", help="Run browser first-usable smoke checks")
+    parser.add_argument("--browser-smoke-url", default="", help="Override the browser smoke base URL")
+    parser.add_argument("--auth-write-smoke", action="store_true", help="Run reversible authenticated write smoke checks")
     return parser.parse_args(argv)
 
 
@@ -40,14 +43,7 @@ def is_local_browser_target(url: str) -> bool:
 
 
 def warm_browser_routes(base_url: str) -> None:
-    targets = (
-        "/",
-        "/radar",
-        "/portfolio",
-        "/watchlist",
-        "/settings",
-        "/stock/003670.KS",
-    )
+    targets = tuple(iter_browser_route_paths())
     for path in targets:
         url = base_url.rstrip("/") + path
         for attempt in range(1, 4):
@@ -68,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     typecheck_command = frontend_typecheck_command()
 
     if not python_path:
-        raise SystemExit("가상환경 Python을 찾을 수 없습니다.")
+        raise SystemExit("Could not find the project virtualenv Python.")
 
     run_step("Launcher check", [python_path, str(ROOT / "start.py"), "--check"], ROOT)
     run_step("Backend compileall", [python_path, "-m", "compileall", "app"], ROOT / "backend")
@@ -125,15 +121,22 @@ def main(argv: list[str] | None = None) -> int:
             ROOT,
         )
 
+    if args.auth_write_smoke:
+        run_step(
+            "Reversible auth write smoke",
+            [python_path, str(ROOT / "scripts" / "reversible_auth_smoke.py")],
+            ROOT,
+        )
+
     if not args.skip_frontend:
         if not build_command:
-            raise SystemExit("프론트 build 명령을 만들 수 없습니다.")
+            raise SystemExit("Could not build the frontend build command.")
         if not typecheck_command:
-            raise SystemExit("프론트 typecheck 명령을 만들 수 없습니다.")
+            raise SystemExit("Could not build the frontend typecheck command.")
         run_step("Frontend build", build_command, ROOT / "frontend")
         run_step("Frontend typecheck", typecheck_command, ROOT / "frontend")
 
-    print("[done] 검증 완료", flush=True)
+    print("[done] verification complete", flush=True)
     return 0
 
 
