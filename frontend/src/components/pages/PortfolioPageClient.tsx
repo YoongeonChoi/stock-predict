@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -15,13 +15,6 @@ import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { ApiError, api } from "@/lib/api";
-import { getUserFacingErrorMessage } from "@/lib/request-state";
-import {
-  reportErrorOnlyScreen,
-  reportHydrationRefetchSuccess,
-  reportInitialSsrSuccess,
-  reportPanelDegraded,
-} from "@/lib/route-observability";
 import type {
   PortfolioConditionalRecommendationFilters,
   PortfolioConditionalRecommendationResponse,
@@ -34,6 +27,7 @@ import type {
 } from "@/lib/api";
 import type { OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
+import { usePortfolioWorkspaceLoader } from "@/components/pages/usePortfolioWorkspaceLoader";
 
 const COLORS = ["#2563eb", "#0f172a", "#f59e0b", "#0ea5e9", "#22c55e", "#64748b", "#14b8a6", "#e11d48"];
 const DEFAULT_RECOMMENDATION_FILTERS: PortfolioConditionalRecommendationFilters = {
@@ -165,7 +159,6 @@ interface PortfolioPageClientProps {
 }
 
 export default function PortfolioPageClient({ demoData = null }: PortfolioPageClientProps) {
-  const routeKey = "/portfolio";
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
   const [portfolioLoadError, setPortfolioLoadError] = useState<string | null>(null);
@@ -190,170 +183,44 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const [eventRadarLoading, setEventRadarLoading] = useState(true);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
+  const hasSession = Boolean(session);
 
   const activeGuide = TICKER_GUIDE[holdingForm.countryCode as keyof typeof TICKER_GUIDE] ?? TICKER_GUIDE.KR;
   const summary = data?.summary;
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
   const mixedCountries = useMemo(() => false, []);
   const demoPreviewItems = (demoData?.opportunities || []).slice(0, 2);
+  const handlePortfolioLoaded = useCallback((next: PortfolioData) => {
+    setData(next);
+    setProfileForm(buildProfileForm(next.profile));
+  }, []);
 
-  const loadPortfolio = async (showFailureToast = false) => {
-    if (!session) {
-      return;
-    }
-    try {
-      const next = await api.getPortfolio({ timeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS });
-      setData(next);
-      setProfileForm(buildProfileForm(next.profile));
-      setPortfolioLoadError(null);
-      reportHydrationRefetchSuccess(routeKey, "portfolio_workspace");
-    } catch (error) {
-      console.error(error);
-      const message = getUserFacingErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다.");
-      setPortfolioLoadError(message);
-      reportPanelDegraded(routeKey, "portfolio_workspace", message);
-      if (showFailureToast) {
-        toast(getApiErrorMessage(error, "포트폴리오를 다시 불러오지 못했습니다."), "error");
-      }
-    }
-  };
-
-  const refreshSupportPanels = async (filters: PortfolioConditionalRecommendationFilters = conditionalFilters) => {
-    if (!session) {
-      return;
-    }
-    setConditionalLoading(true);
-    setOptimalLoading(true);
-    setEventRadarLoading(true);
-    const [eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
-      api.getPortfolioEventRadar(14, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-      api.getPortfolioConditionalRecommendation(filters, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-      api.getPortfolioOptimalRecommendation({ timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-    ]);
-
-    if (eventResult.status === "fulfilled") {
-      setEventRadar(eventResult.value);
-      setEventRadarError(null);
-      reportHydrationRefetchSuccess(routeKey, "event_radar");
-    } else {
-      console.error(eventResult.reason);
-      const message = getUserFacingErrorMessage(eventResult.reason, "이벤트 레이더를 다시 불러오지 못했습니다.");
-      setEventRadarError(message);
-      reportPanelDegraded(routeKey, "event_radar", message);
-    }
-    if (conditionalResult.status === "fulfilled") {
-      setConditionalRecommendation(conditionalResult.value);
-      setConditionalError(null);
-      reportHydrationRefetchSuccess(routeKey, "conditional_recommendation");
-    } else {
-      console.error(conditionalResult.reason);
-      const message = getUserFacingErrorMessage(conditionalResult.reason, "조건 추천을 다시 불러오지 못했습니다.");
-      setConditionalError(message);
-      reportPanelDegraded(routeKey, "conditional_recommendation", message);
-    }
-    if (optimalResult.status === "fulfilled") {
-      setOptimalRecommendation(optimalResult.value);
-      setOptimalError(null);
-      reportHydrationRefetchSuccess(routeKey, "optimal_recommendation");
-    } else {
-      console.error(optimalResult.reason);
-      const message = getUserFacingErrorMessage(optimalResult.reason, "최적 추천을 다시 불러오지 못했습니다.");
-      setOptimalError(message);
-      reportPanelDegraded(routeKey, "optimal_recommendation", message);
-    }
-
-    setConditionalLoading(false);
-    setOptimalLoading(false);
-    setEventRadarLoading(false);
-  };
-  useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-
-    if (!session) {
-      reportInitialSsrSuccess(routeKey);
-      setLoading(false);
-      setConditionalLoading(false);
-      setOptimalLoading(false);
-      setEventRadarLoading(false);
-      setPortfolioLoadError(null);
-      setEventRadarError(null);
-      setConditionalError(null);
-      setOptimalError(null);
-      return;
-    }
-
-    const loadWorkspace = async () => {
-      setLoading(true);
-      const [portfolioResult, eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
-        api.getPortfolio({ timeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS }),
-        api.getPortfolioEventRadar(14, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-        api.getPortfolioConditionalRecommendation(DEFAULT_RECOMMENDATION_FILTERS, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-        api.getPortfolioOptimalRecommendation({ timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS }),
-      ]);
-
-      if (portfolioResult.status === "fulfilled") {
-        setData(portfolioResult.value);
-        setProfileForm(buildProfileForm(portfolioResult.value.profile));
-        setPortfolioLoadError(null);
-      } else {
-        console.error(portfolioResult.reason);
-        setPortfolioLoadError(
-          getUserFacingErrorMessage(
-            portfolioResult.reason,
-            "포트폴리오를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
-          ),
-        );
-      }
-      if (eventResult.status === "fulfilled") {
-        setEventRadar(eventResult.value);
-        setEventRadarError(null);
-      } else {
-        console.error(eventResult.reason);
-        setEventRadarError(
-          getUserFacingErrorMessage(eventResult.reason, "포트폴리오 이벤트 레이더를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-        );
-      }
-      if (conditionalResult.status === "fulfilled") {
-        setConditionalRecommendation(conditionalResult.value);
-        setConditionalError(null);
-      } else {
-        console.error(conditionalResult.reason);
-        setConditionalError(
-          getUserFacingErrorMessage(conditionalResult.reason, "조건 추천을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-        );
-      }
-      if (optimalResult.status === "fulfilled") {
-        setOptimalRecommendation(optimalResult.value);
-        setOptimalError(null);
-      } else {
-        console.error(optimalResult.reason);
-        setOptimalError(
-          getUserFacingErrorMessage(optimalResult.reason, "최적 추천을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
-        );
-      }
-
-      setConditionalLoading(false);
-      setOptimalLoading(false);
-      setEventRadarLoading(false);
-      setLoading(false);
-    };
-
-    loadWorkspace();
-  }, [authLoading, session]);
-
-  useEffect(() => {
-    if (!loading && session && data) {
-      reportInitialSsrSuccess(routeKey);
-    }
-  }, [data, loading, routeKey, session]);
-
-  useEffect(() => {
-    if (!loading && session && portfolioLoadError && !data) {
-      reportErrorOnlyScreen(routeKey, portfolioLoadError);
-    }
-  }, [data, loading, portfolioLoadError, routeKey, session]);
+  const { loadPortfolio, refreshSupportPanels } = usePortfolioWorkspaceLoader({
+    hasSession,
+    authLoading,
+    data,
+    loading,
+    portfolioLoadError,
+    conditionalFilters,
+    initialFilters: DEFAULT_RECOMMENDATION_FILTERS,
+    primaryTimeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS,
+    panelTimeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS,
+    onPortfolioLoaded: handlePortfolioLoaded,
+    setData,
+    setLoading,
+    setPortfolioLoadError,
+    setEventRadar,
+    setEventRadarError,
+    setConditionalRecommendation,
+    setConditionalError,
+    setOptimalRecommendation,
+    setOptimalError,
+    setConditionalLoading,
+    setOptimalLoading,
+    setEventRadarLoading,
+    toast,
+    formatApiErrorMessage: getApiErrorMessage,
+  });
 
   useEffect(() => {
     const trimmed = holdingForm.ticker.trim();
