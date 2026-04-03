@@ -143,6 +143,59 @@ def _with_opportunity_partial(
     return response
 
 
+def _record_market_opportunities_trace(
+    started_at: float,
+    *,
+    request_phase: str,
+    cache_state: str,
+    payload: dict,
+    served_state: str | None = None,
+) -> None:
+    timeout_budget_seconds = (
+        OPPORTUNITY_TIMEOUT_SECONDS if request_phase == "full" else OPPORTUNITY_QUICK_TIMEOUT_SECONDS
+    )
+    route_stability_service.record_route_trace(
+        "market_opportunities",
+        build_route_trace(
+            route_key="market_opportunities",
+            request_phase=request_phase,
+            cache_state=cache_state,
+            elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+            timeout_budget_ms=timeout_budget_seconds * 1000.0,
+            upstream_source="market_service",
+            payload=payload,
+            served_state=served_state,
+        ),
+    )
+
+
+def _build_traced_opportunity_partial(
+    started_at: float,
+    *,
+    payload: dict,
+    request_phase: str,
+    cache_state: str,
+    fallback_reason: str,
+    note: str | None = None,
+    fallback_tier: str | None = None,
+    served_state: str | None = None,
+) -> dict:
+    response = _with_opportunity_partial(
+        payload,
+        fallback_reason=fallback_reason,
+        note=note,
+        fallback_tier=fallback_tier,
+    )
+    _record_market_opportunities_trace(
+        started_at,
+        request_phase=request_phase,
+        cache_state=cache_state,
+        payload=response,
+        served_state=served_state,
+    )
+    return response
+
+
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
     if not payload:
         return False
@@ -867,40 +920,25 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
 
     cached_full = await market_service.get_cached_market_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_full):
-        route_stability_service.record_route_trace(
-            "market_opportunities",
-            build_route_trace(
-                route_key="market_opportunities",
-                request_phase="full",
-                cache_state="sqlite_hit",
-                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
-                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
-                upstream_source="market_service",
-                payload=cached_full,
-            ),
+        _record_market_opportunities_trace(
+            started_at,
+            request_phase="full",
+            cache_state="sqlite_hit",
+            payload=cached_full,
         )
         return cached_full
 
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
-        payload = _with_opportunity_partial(
-            cached_quick,
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=cached_quick,
+            request_phase="quick",
+            cache_state="sqlite_hit",
             fallback_reason="opportunity_cached_quick_response",
             note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             fallback_tier="cached_quick",
-        )
-        route_stability_service.record_route_trace(
-            "market_opportunities",
-            build_route_trace(
-                route_key="market_opportunities",
-                request_phase="quick",
-                cache_state="sqlite_hit",
-                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
-                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
-                upstream_source="market_service",
-                payload=payload,
-            ),
         )
         return payload
 
@@ -916,22 +954,13 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         )
         if _is_usable_opportunity_payload(quick_response):
             _spawn_opportunity_refresh(code, limit)
-            payload = _with_opportunity_partial(
-                quick_response,
+            payload = _build_traced_opportunity_partial(
+                started_at,
+                payload=quick_response,
+                request_phase="quick",
+                cache_state="miss",
                 fallback_reason="opportunity_quick_response",
                 note="이번 응답에서는 1차 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
-            )
-            route_stability_service.record_route_trace(
-                "market_opportunities",
-                build_route_trace(
-                    route_key="market_opportunities",
-                    request_phase="quick",
-                    cache_state="miss",
-                    elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
-                    timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
-                    upstream_source="market_service",
-                    payload=payload,
-                ),
             )
             return payload
     except asyncio.TimeoutError:
@@ -942,48 +971,30 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
-        payload = _with_opportunity_partial(
-            cached_quick,
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=cached_quick,
+            request_phase="quick",
+            cache_state="sqlite_hit",
             fallback_reason="opportunity_cached_quick_response",
             note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
             fallback_tier="cached_quick",
         )
-        route_stability_service.record_route_trace(
-            "market_opportunities",
-            build_route_trace(
-                route_key="market_opportunities",
-                request_phase="quick",
-                cache_state="sqlite_hit",
-                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
-                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
-                upstream_source="market_service",
-                payload=payload,
-            ),
-        )
         return payload
 
     _spawn_opportunity_refresh(code, limit)
-    payload = _with_opportunity_partial(
-        market_service.build_market_opportunities_placeholder(
+    payload = _build_traced_opportunity_partial(
+        started_at,
+        payload=market_service.build_market_opportunities_placeholder(
             code,
             note=(
                 f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
                 "정밀 후보 계산은 백그라운드에서 계속 시도하고, 다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
             ),
         ),
+        request_phase="shell",
+        cache_state="miss",
         fallback_reason="opportunity_placeholder_response",
-    )
-    route_stability_service.record_route_trace(
-        "market_opportunities",
-        build_route_trace(
-            route_key="market_opportunities",
-            request_phase="shell",
-            cache_state="miss",
-            elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
-            timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000.0,
-            upstream_source="market_service",
-            payload=payload,
-            served_state="degraded",
-        ),
+        served_state="degraded",
     )
     return payload

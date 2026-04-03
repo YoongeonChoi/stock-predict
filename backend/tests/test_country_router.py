@@ -1,7 +1,7 @@
 import asyncio
 import json
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.routers import country
 from app.runtime import reset_runtime_state
@@ -47,6 +47,39 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["partial"])
         self.assertEqual(response["fallback_reason"], "opportunity_quick_response")
         await asyncio.wait_for(refresh_started.wait(), timeout=0.2)
+
+    async def test_market_opportunities_uses_cached_quick_snapshot_with_trace(self):
+        quick_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": None,
+            "universe_size": 201,
+            "total_scanned": 201,
+            "quote_available_count": 180,
+            "detailed_scanned_count": 0,
+            "actionable_count": 6,
+            "bullish_count": 4,
+            "universe_source": "fallback",
+            "universe_note": "cached quick payload",
+            "opportunities": [{"ticker": "005930.KS", "action": "accumulate"}],
+        }
+
+        with (
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=quick_payload)),
+            patch("app.routers.country._spawn_opportunity_refresh", new=MagicMock()) as spawn_refresh,
+            patch("app.routers.country.route_stability_service.record_route_trace") as record_trace,
+        ):
+            response = await country.get_market_opportunities("KR", limit=12)
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "opportunity_cached_quick_response")
+        self.assertEqual(response["fallback_tier"], "cached_quick")
+        spawn_refresh.assert_called_once_with("KR", 12)
+        record_trace.assert_called_once()
+        self.assertEqual(record_trace.call_args.args[0], "market_opportunities")
+        self.assertEqual(record_trace.call_args.args[1]["request_phase"], "quick")
+        self.assertEqual(record_trace.call_args.args[1]["cache_state"], "sqlite_hit")
 
     async def test_spawn_opportunity_refresh_reuses_existing_background_job(self):
         first_started = asyncio.Event()
