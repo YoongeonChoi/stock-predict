@@ -240,6 +240,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "kr_bulk_snapshot_only")
         bulk_quotes.assert_awaited_once_with(["005930.KS"], skip_full_market_fallback=True)
 
     def test_screener_default_kr_path_uses_bulk_quotes(self):

@@ -218,6 +218,13 @@ def _sort_screened_results(results: list[dict], *, sort_by: str, sort_dir: str, 
     return results[:limit]
 
 
+def _with_screener_partial(payload: dict, *, fallback_reason: str) -> dict:
+    response = dict(payload)
+    response["partial"] = True
+    response["fallback_reason"] = fallback_reason
+    return response
+
+
 def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
     async def _warm() -> None:
         try:
@@ -314,13 +321,14 @@ async def _build_snapshot_fallback(
             country=country,
             skip_full_market_fallback=True,
         ))[:limit]
-        return {
-            "results": results,
-            "total": len(results),
-            "sectors": list(universe.keys()),
-            "partial": True,
-            "fallback_reason": "kr_bulk_snapshot_only",
-        }
+        return _with_screener_partial(
+            {
+                "results": results,
+                "total": len(results),
+                "sectors": list(universe.keys()),
+            },
+            fallback_reason="kr_bulk_snapshot_only",
+        )
 
     async def _snapshot_only(ticker: str):
         try:
@@ -341,13 +349,14 @@ async def _build_snapshot_fallback(
 
     snapshots = await gather_limited(selected, _snapshot_only, limit=SCREENER_CONCURRENCY)
     results = [item for item in snapshots if not isinstance(item, Exception) and item is not None][:limit]
-    return {
-        "results": results,
-        "total": len(results),
-        "sectors": list(universe.keys()),
-        "partial": True,
-        "fallback_reason": "snapshot_only",
-    }
+    return _with_screener_partial(
+        {
+            "results": results,
+            "total": len(results),
+            "sectors": list(universe.keys()),
+        },
+        fallback_reason="snapshot_only",
+    )
 
 
 @router.get("/screener")
@@ -626,8 +635,10 @@ async def screen_stocks(
                 "sectors": list(current_universe.keys()),
             }
             if partial:
-                response["partial"] = True
-                response["fallback_reason"] = fallback_reason or "kr_bulk_snapshot_warming"
+                return _with_screener_partial(
+                    response,
+                    fallback_reason=fallback_reason or "kr_bulk_snapshot_warming",
+                )
             return response
 
         if needs_enrichment:
@@ -670,18 +681,19 @@ async def screen_stocks(
                     change_pct_max=change_pct_max,
                 )
                 if filtered_representative_results:
-                    response = {
-                        "results": _sort_screened_results(
-                            filtered_representative_results,
-                            sort_by=sort_by,
-                            sort_dir=sort_dir,
-                            limit=limit,
-                        ),
-                        "total": len(filtered_representative_results[:limit]),
-                        "sectors": list(current_universe.keys()),
-                        "partial": True,
-                        "fallback_reason": "kr_representative_snapshot_warming",
-                    }
+                    response = _with_screener_partial(
+                        {
+                            "results": _sort_screened_results(
+                                filtered_representative_results,
+                                sort_by=sort_by,
+                                sort_dir=sort_dir,
+                                limit=limit,
+                            ),
+                            "total": len(filtered_representative_results[:limit]),
+                            "sectors": list(current_universe.keys()),
+                        },
+                        fallback_reason="kr_representative_snapshot_warming",
+                    )
                     _spawn_screener_cache_warmup(cache_key, _build_response)
                     return response
                 response = await asyncio.wait_for(
