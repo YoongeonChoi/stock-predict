@@ -11,6 +11,32 @@ from app.utils import build_route_trace
 router = APIRouter(prefix="/api", tags=["watchlist"])
 
 
+def _record_watchlist_write_trace(
+    *,
+    action: str,
+    started_at: float,
+    served_state: str = "fresh",
+    fallback_reason: str | None = None,
+    failure_class: str | None = None,
+):
+    route_stability_service.record_route_trace(
+        "watchlist",
+        build_route_trace(
+            route_key="watchlist",
+            request_phase="full",
+            cache_state="miss",
+            elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+            upstream_source=f"watchlist_service:{action}",
+            served_state=served_state,
+            fallback_reason=fallback_reason,
+            operation_kind="auth-write",
+            failure_class=failure_class,
+            panel_key="watchlist_mutation",
+            dependency_key="supabase",
+        ),
+    )
+
+
 @router.get("/watchlist")
 async def get_watchlist(current_user: AuthenticatedUser = Depends(get_current_user)):
     started_at = time.perf_counter()
@@ -52,21 +78,39 @@ async def add_watchlist(
     country_code: str = "KR",
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
+    started_at = time.perf_counter()
     try:
         resolution = await watchlist_service.add_to_watchlist(current_user.id, ticker, country_code)
+        _record_watchlist_write_trace(action="add", started_at=started_at)
         return {"status": "added", "ticker": resolution["ticker"], "country_code": resolution["country_code"], "note": resolution["note"]}
     except Exception as e:
         err = SP_5003(f"add({ticker}): {e}")
         err.log()
+        _record_watchlist_write_trace(
+            action="add",
+            started_at=started_at,
+            served_state="degraded",
+            fallback_reason="watchlist_write_error",
+            failure_class="write_failed",
+        )
         return JSONResponse(status_code=500, content=err.to_dict())
 
 
 @router.delete("/watchlist/{ticker}")
 async def remove_watchlist(ticker: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    started_at = time.perf_counter()
     try:
         await watchlist_service.remove_from_watchlist(current_user.id, ticker)
+        _record_watchlist_write_trace(action="remove", started_at=started_at)
         return {"status": "removed", "ticker": ticker}
     except Exception as e:
         err = SP_5003(f"remove({ticker}): {e}")
         err.log()
+        _record_watchlist_write_trace(
+            action="remove",
+            started_at=started_at,
+            served_state="degraded",
+            fallback_reason="watchlist_write_error",
+            failure_class="write_failed",
+        )
         return JSONResponse(status_code=500, content=err.to_dict())
