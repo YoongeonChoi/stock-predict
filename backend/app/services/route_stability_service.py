@@ -28,7 +28,12 @@ def record_frontend_event(
     event: str,
     status: str = "ok",
     panel: str | None = None,
+    panel_key: str | None = None,
     detail: str | None = None,
+    failure_class: str | None = None,
+    operation_kind: str = "public-read",
+    dependency_key: str | None = None,
+    recovered: bool | None = None,
     timeout_ms: int | None = None,
     occurred_at: str | None = None,
 ) -> None:
@@ -38,7 +43,12 @@ def record_frontend_event(
             "event": event,
             "status": status,
             "panel": panel,
+            "panel_key": panel_key or panel,
             "detail": detail,
+            "failure_class": failure_class,
+            "operation_kind": operation_kind,
+            "dependency_key": dependency_key,
+            "recovered": recovered,
             "timeout_ms": timeout_ms,
             "occurred_at": occurred_at,
         }
@@ -61,9 +71,28 @@ def _rate(count: int, total: int) -> float:
     return round(count / total, 4)
 
 
-def _phase_mix(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
-    counts = Counter(str(row.get(key) or "unknown") for row in rows)
+def _value_mix(rows: list[dict[str, Any]], key: str, *, include_unknown: bool) -> dict[str, int]:
+    if include_unknown:
+        counts = Counter(str(row.get(key) or "unknown") for row in rows)
+    else:
+        counts = Counter(str(row.get(key)) for row in rows if row.get(key))
     return dict(sorted(counts.items()))
+
+
+def _infer_frontend_failure_class(row: dict[str, Any]) -> str | None:
+    explicit = row.get("failure_class")
+    if explicit:
+        return str(explicit)
+
+    event = str(row.get("event") or "")
+    mapping = {
+        "blank_screen": "shell_blocked",
+        "error_only_screen": "shell_blocked",
+        "hydration_refetch_timeout": "quick_timeout",
+        "panel_degraded": "panel_fetch_failed",
+        "session_recovery_failed": "session_recovery_failed",
+    }
+    return mapping.get(event)
 
 
 def get_route_stability_summary() -> dict[str, Any]:
@@ -75,17 +104,27 @@ def get_route_stability_summary() -> dict[str, Any]:
     degraded_count = 0
     cold_count = 0
     total_count = 0
+    failure_class_counts: Counter[str] = Counter()
+    failure_event_total = 0
+    recovered_failure_count = 0
 
     for route_key, queue in sorted(_route_traces.items()):
         rows = list(queue)
         if not rows:
             continue
+
         elapsed_values = [float(row.get("elapsed_ms") or 0.0) for row in rows]
         served_states = Counter(str(row.get("served_state") or "fresh") for row in rows)
-        request_phase_mix = _phase_mix(rows, "request_phase")
-        cache_state_mix = _phase_mix(rows, "cache_state")
+        request_phase_mix = _value_mix(rows, "request_phase", include_unknown=True)
+        operation_kind_mix = _value_mix(rows, "operation_kind", include_unknown=True)
+        cache_state_mix = _value_mix(rows, "cache_state", include_unknown=True)
+        failure_class_mix = _value_mix(rows, "failure_class", include_unknown=False)
         fallback_served = sum(1 for row in rows if row.get("fallback_reason"))
         cold_suspected = sum(1 for row in rows if bool(row.get("cold_start_suspected")))
+        route_failure_count = sum(failure_class_mix.values())
+        route_recovered_count = sum(
+            1 for row in rows if row.get("failure_class") and bool(row.get("recovered"))
+        )
 
         total = len(rows)
         total_count += total
@@ -95,6 +134,9 @@ def get_route_stability_summary() -> dict[str, Any]:
         partial_count += served_states.get("partial", 0)
         degraded_count += served_states.get("degraded", 0)
         cold_count += cold_suspected
+        failure_class_counts.update(failure_class_mix)
+        failure_event_total += route_failure_count
+        recovered_failure_count += route_recovered_count
 
         route_rows.append(
             {
@@ -108,7 +150,10 @@ def get_route_stability_summary() -> dict[str, Any]:
                 "degraded_rate": _rate(served_states.get("degraded", 0), total),
                 "cold_start_suspected_rate": _rate(cold_suspected, total),
                 "request_phase_mix": request_phase_mix,
+                "operation_kind_mix": operation_kind_mix,
                 "cache_state_mix": cache_state_mix,
+                "failure_class_mix": failure_class_mix,
+                "recovered_failure_rate": _rate(route_recovered_count, route_failure_count),
             }
         )
 
@@ -125,16 +170,21 @@ def get_route_stability_summary() -> dict[str, Any]:
         rows = list(queue)
         if not rows:
             continue
+
         hydration_total = sum(1 for row in rows if str(row.get("event", "")).startswith("hydration_"))
-        hydration_failed = sum(
-            1
-            for row in rows
-            if row.get("event") in {"hydration_refetch_timeout", "panel_degraded"}
-        )
+        hydration_failed = sum(1 for row in rows if row.get("event") in {"hydration_refetch_timeout", "panel_degraded"})
         session_total = sum(1 for row in rows if row.get("event") == "session_recovery_attempt")
         session_failed = sum(1 for row in rows if row.get("event") == "session_recovery_failed")
         blank_count = sum(1 for row in rows if row.get("event") == "blank_screen")
         error_only_count = sum(1 for row in rows if row.get("event") == "error_only_screen")
+        frontend_failure_mix = Counter(
+            failure_class
+            for row in rows
+            if (failure_class := _infer_frontend_failure_class(row))
+        )
+        frontend_recovered_count = sum(
+            1 for row in rows if _infer_frontend_failure_class(row) and bool(row.get("recovered"))
+        )
 
         hydration_events += hydration_total
         hydration_failures += hydration_failed
@@ -142,6 +192,9 @@ def get_route_stability_summary() -> dict[str, Any]:
         session_failures += session_failed
         blank_events += blank_count
         error_only_events += error_only_count
+        failure_class_counts.update(frontend_failure_mix)
+        failure_event_total += sum(frontend_failure_mix.values())
+        recovered_failure_count += frontend_recovered_count
 
         if hydration_total or hydration_failed:
             hydration_by_route.append(
@@ -189,5 +242,11 @@ def get_route_stability_summary() -> dict[str, Any]:
             "failure_rate": _rate(session_failures, session_events),
             "by_route": session_by_route,
         },
+        "failure_class_summary": {
+            "tracked": bool(_route_traces or _frontend_events),
+            "total": failure_event_total,
+            "by_class": dict(sorted(failure_class_counts.items())),
+            "recovered_count": recovered_failure_count,
+            "recovered_rate": _rate(recovered_failure_count, failure_event_total),
+        },
     }
-
