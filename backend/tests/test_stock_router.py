@@ -150,6 +150,30 @@ class StockRouterTests(unittest.TestCase):
         analyze_stock.assert_awaited()
         schedule_refresh.assert_not_called()
 
+    def test_stock_detail_prefer_full_records_full_trace_when_cached_quick_upgrades_successfully(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+        full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)
+        full_snapshot["generated_at"] = "2026-03-30T08:15:00+00:00"
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(return_value=full_snapshot)),
+            patch("app.routers.stock._record_stock_detail_trace") as record_trace,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["partial"])
+        self.assertIsNone(payload["fallback_reason"])
+        record_trace.assert_called_once()
+        self.assertEqual(record_trace.call_args.kwargs["request_phase"], "full")
+        self.assertEqual(record_trace.call_args.kwargs["cache_state"], "sqlite_hit")
+
     def test_stock_detail_prefer_full_returns_fresh_quick_partial_without_waiting_for_full(self):
         quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
 

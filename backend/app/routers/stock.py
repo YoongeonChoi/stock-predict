@@ -94,6 +94,36 @@ def _build_stock_success_response(payload: dict) -> JSONResponse:
     return JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
 
 
+def _stock_detail_upgrade_timeout_seconds() -> float:
+    return min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS)
+
+
+def _build_traced_partial_stock_detail(
+    started_at: float,
+    *,
+    cached: dict,
+    cache_state: str,
+    timeout_budget_seconds: float,
+    error_code: str | None,
+    fallback_reason: str,
+    served_state: str | None = None,
+) -> dict:
+    partial_payload = _build_partial_stock_detail(
+        cached,
+        error_code=error_code,
+        fallback_reason=fallback_reason,
+    )
+    _record_stock_detail_trace(
+        started_at,
+        request_phase="quick" if fallback_reason == "stock_quick_detail" else "full",
+        cache_state=cache_state,
+        timeout_budget_seconds=timeout_budget_seconds,
+        payload=partial_payload,
+        served_state=served_state,
+    )
+    return partial_payload
+
+
 async def _finalize_stock_detail_response(detail: dict, ticker: str, *, prefer_full: bool, cache_state: str) -> JSONResponse:
     if settings.effective_stock_detail_background_refresh:
         asyncio.create_task(_archive_stock_report(detail, ticker))
@@ -137,6 +167,87 @@ def _schedule_stock_detail_refresh(ticker: str) -> bool:
     return True
 
 
+async def _serve_quick_stock_detail(
+    started_at: float,
+    *,
+    ticker: str,
+    prefer_full: bool,
+    quick_snapshot: dict,
+    cache_state: str,
+    source_label: str,
+) -> JSONResponse:
+    if prefer_full:
+        upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
+        try:
+            detail = await asyncio.wait_for(
+                analyze_stock(ticker),
+                timeout=upgrade_timeout,
+            )
+            _record_stock_detail_trace(
+                started_at,
+                request_phase="full",
+                cache_state=cache_state,
+                timeout_budget_seconds=upgrade_timeout,
+                payload=detail,
+            )
+            return await _finalize_stock_detail_response(
+                detail,
+                ticker,
+                prefer_full=prefer_full,
+                cache_state=cache_state,
+            )
+        except asyncio.TimeoutError:
+            partial_payload = _build_traced_partial_stock_detail(
+                started_at,
+                cached=quick_snapshot,
+                cache_state=cache_state,
+                timeout_budget_seconds=upgrade_timeout,
+                error_code="SP-5018",
+                fallback_reason="stock_quick_detail",
+            )
+            logger.info(
+                "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s fallback_reason=stock_quick_detail",
+                ticker,
+                cache_state,
+                prefer_full,
+            )
+            return _build_stock_success_response(partial_payload)
+        except Exception as exc:
+            partial_payload = _build_traced_partial_stock_detail(
+                started_at,
+                cached=quick_snapshot,
+                cache_state=cache_state,
+                timeout_budget_seconds=upgrade_timeout,
+                error_code="SP-3003",
+                fallback_reason="stock_quick_detail",
+            )
+            logger.warning(
+                "stock detail degraded to %s after full upgrade failure | ticker=%s prefer_full=%s detail=%s",
+                source_label,
+                ticker,
+                prefer_full,
+                str(exc)[:200],
+            )
+            return _build_stock_success_response(partial_payload)
+
+    _schedule_stock_detail_refresh(ticker)
+    partial_payload = _build_traced_partial_stock_detail(
+        started_at,
+        cached=quick_snapshot,
+        cache_state=cache_state,
+        timeout_budget_seconds=STOCK_DETAIL_TIMEOUT_SECONDS,
+        error_code=None,
+        fallback_reason="stock_quick_detail",
+    )
+    logger.info(
+        "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s",
+        ticker,
+        cache_state,
+        prefer_full,
+    )
+    return _build_stock_success_response(partial_payload)
+
+
 @router.get("/stock/{ticker}/detail")
 async def get_stock_detail(
     ticker: str,
@@ -163,77 +274,14 @@ async def get_stock_detail(
     cached_quick = await get_cached_quick_stock_detail(ticker)
     quick_fallback = cached_quick
     if cached_quick:
-        if prefer_full:
-            try:
-                detail = await asyncio.wait_for(
-                    analyze_stock(ticker),
-                    timeout=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                )
-                return await _finalize_stock_detail_response(
-                    detail,
-                    ticker,
-                    prefer_full=prefer_full,
-                    cache_state="sqlite_hit",
-                )
-            except asyncio.TimeoutError:
-                partial_payload = _build_partial_stock_detail(
-                    cached_quick,
-                    error_code="SP-5018",
-                    fallback_reason="stock_quick_detail",
-                )
-                _record_stock_detail_trace(
-                    started_at,
-                    request_phase="quick",
-                    cache_state="sqlite_hit",
-                    timeout_budget_seconds=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                    payload=partial_payload,
-                )
-                logger.info(
-                    "stock detail served | ticker=%s request_phase=quick cache_state=sqlite_hit served_state=partial prefer_full=%s fallback_reason=stock_quick_detail",
-                    ticker,
-                    prefer_full,
-                )
-                return _build_stock_success_response(partial_payload)
-            except Exception as exc:
-                partial_payload = _build_partial_stock_detail(
-                    cached_quick,
-                    error_code="SP-3003",
-                    fallback_reason="stock_quick_detail",
-                )
-                _record_stock_detail_trace(
-                    started_at,
-                    request_phase="quick",
-                    cache_state="sqlite_hit",
-                    timeout_budget_seconds=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                    payload=partial_payload,
-                )
-                logger.warning(
-                    "stock detail degraded to cached quick snapshot after full upgrade failure | ticker=%s prefer_full=%s detail=%s",
-                    ticker,
-                    prefer_full,
-                    str(exc)[:200],
-                )
-                return _build_stock_success_response(partial_payload)
-        else:
-            _schedule_stock_detail_refresh(ticker)
-        partial_payload = _build_partial_stock_detail(
-            cached_quick,
-            error_code=None,
-            fallback_reason="stock_quick_detail",
-        )
-        _record_stock_detail_trace(
+        return await _serve_quick_stock_detail(
             started_at,
-            request_phase="quick",
+            ticker=ticker,
+            prefer_full=prefer_full,
+            quick_snapshot=cached_quick,
             cache_state="sqlite_hit",
-            timeout_budget_seconds=STOCK_DETAIL_TIMEOUT_SECONDS,
-            payload=partial_payload,
+            source_label="cached quick snapshot",
         )
-        logger.info(
-            "stock detail served | ticker=%s request_phase=quick cache_state=sqlite_hit served_state=partial prefer_full=%s",
-            ticker,
-            prefer_full,
-        )
-        return _build_stock_success_response(partial_payload)
 
     detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
     try:
@@ -243,94 +291,27 @@ async def get_stock_detail(
                 timeout=STOCK_DETAIL_TIMEOUT_SECONDS,
             )
         if quick_fallback:
-            if prefer_full:
-                try:
-                    detail = await asyncio.wait_for(
-                        analyze_stock(ticker),
-                        timeout=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                    )
-                    return await _finalize_stock_detail_response(
-                        detail,
-                        ticker,
-                        prefer_full=prefer_full,
-                        cache_state="miss",
-                    )
-                except asyncio.TimeoutError:
-                    partial_payload = _build_partial_stock_detail(
-                        quick_fallback,
-                        error_code="SP-5018",
-                        fallback_reason="stock_quick_detail",
-                    )
-                    _record_stock_detail_trace(
-                        started_at,
-                        request_phase="quick",
-                        cache_state="miss",
-                        timeout_budget_seconds=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                        payload=partial_payload,
-                    )
-                    logger.info(
-                        "stock detail served | ticker=%s request_phase=quick cache_state=miss served_state=partial prefer_full=%s fallback_reason=stock_quick_detail",
-                        ticker,
-                        prefer_full,
-                    )
-                    return _build_stock_success_response(partial_payload)
-                except Exception as exc:
-                    partial_payload = _build_partial_stock_detail(
-                        quick_fallback,
-                        error_code="SP-3003",
-                        fallback_reason="stock_quick_detail",
-                    )
-                    _record_stock_detail_trace(
-                        started_at,
-                        request_phase="quick",
-                        cache_state="miss",
-                        timeout_budget_seconds=min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS),
-                        payload=partial_payload,
-                    )
-                    logger.warning(
-                        "stock detail degraded to fresh quick snapshot after full upgrade failure | ticker=%s prefer_full=%s detail=%s",
-                        ticker,
-                        prefer_full,
-                        str(exc)[:200],
-                    )
-                    return _build_stock_success_response(partial_payload)
-            else:
-                _schedule_stock_detail_refresh(ticker)
-            partial_payload = _build_partial_stock_detail(
-                quick_fallback,
-                error_code=None,
-                fallback_reason="stock_quick_detail",
-            )
-            _record_stock_detail_trace(
+            return await _serve_quick_stock_detail(
                 started_at,
-                request_phase="quick",
+                ticker=ticker,
+                prefer_full=prefer_full,
+                quick_snapshot=quick_fallback,
                 cache_state="miss",
-                timeout_budget_seconds=STOCK_DETAIL_TIMEOUT_SECONDS,
-                payload=partial_payload,
+                source_label="fresh quick snapshot",
             )
-            logger.info(
-                "stock detail served | ticker=%s request_phase=quick cache_state=miss served_state=partial prefer_full=%s",
-                ticker,
-                prefer_full,
-            )
-            return _build_stock_success_response(partial_payload)
         detail = await asyncio.wait_for(analyze_stock(ticker), timeout=detail_timeout)
     except asyncio.TimeoutError:
         cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
-            partial_payload = _build_partial_stock_detail(
-                cached_quick,
-                error_code="SP-5018",
-                fallback_reason="stock_quick_detail",
-            )
-            _record_stock_detail_trace(
+            partial_payload = _build_traced_partial_stock_detail(
                 started_at,
-                request_phase="quick",
+                cached=cached_quick,
                 cache_state="sqlite_hit",
                 timeout_budget_seconds=detail_timeout,
-                payload=partial_payload,
+                error_code="SP-5018",
+                fallback_reason="stock_quick_detail",
             )
             logger.info(
                 "stock detail served | ticker=%s request_phase=quick cache_state=sqlite_hit served_state=partial prefer_full=%s fallback_reason=stock_quick_detail",
@@ -340,17 +321,13 @@ async def get_stock_detail(
             return _build_stock_success_response(partial_payload)
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
-            partial_payload = _build_partial_stock_detail(
-                cached,
-                error_code="SP-5018",
-                fallback_reason="stock_cached_detail",
-            )
-            _record_stock_detail_trace(
+            partial_payload = _build_traced_partial_stock_detail(
                 started_at,
-                request_phase="full",
+                cached=cached,
                 cache_state="sqlite_hit",
                 timeout_budget_seconds=detail_timeout,
-                payload=partial_payload,
+                error_code="SP-5018",
+                fallback_reason="stock_cached_detail",
                 served_state="stale",
             )
             logger.info(
@@ -375,17 +352,13 @@ async def get_stock_detail(
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
-            partial_payload = _build_partial_stock_detail(
-                cached_quick,
-                error_code="SP-3003",
-                fallback_reason="stock_quick_detail",
-            )
-            _record_stock_detail_trace(
+            partial_payload = _build_traced_partial_stock_detail(
                 started_at,
-                request_phase="quick",
+                cached=cached_quick,
                 cache_state="sqlite_hit" if quick_fallback is None else "miss",
                 timeout_budget_seconds=detail_timeout if "detail_timeout" in locals() else STOCK_DETAIL_TIMEOUT_SECONDS,
-                payload=partial_payload,
+                error_code="SP-3003",
+                fallback_reason="stock_quick_detail",
             )
             logger.warning(
                 "stock detail degraded to quick snapshot | ticker=%s prefer_full=%s detail=%s",
@@ -396,17 +369,13 @@ async def get_stock_detail(
             return _build_stock_success_response(partial_payload)
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
-            partial_payload = _build_partial_stock_detail(
-                cached,
-                error_code="SP-3003",
-                fallback_reason="stock_cached_detail",
-            )
-            _record_stock_detail_trace(
+            partial_payload = _build_traced_partial_stock_detail(
                 started_at,
-                request_phase="full",
+                cached=cached,
                 cache_state="sqlite_hit",
                 timeout_budget_seconds=detail_timeout if "detail_timeout" in locals() else STOCK_DETAIL_TIMEOUT_SECONDS,
-                payload=partial_payload,
+                error_code="SP-3003",
+                fallback_reason="stock_cached_detail",
                 served_state="stale",
             )
             logger.warning(
