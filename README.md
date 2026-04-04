@@ -8,12 +8,20 @@
 
 투자 판단과 포트폴리오 운영을 한 흐름으로 연결한 분석 워크스페이스입니다. 이 프로젝트는 단순 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증`을 한 제품 안에서 이어 주는 것을 목표로 합니다. 숫자 예측은 확률모형이 담당하고, `OpenAI / GPT-4o`는 뉴스·공시 구조화와 서술형 요약 보조에만 사용합니다.
 
-현재 릴리즈: `v2.54.0`
+현재 릴리즈: `v2.54.1`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 - 프론트: [https://yoongeon.xyz](https://yoongeon.xyz)
 - 백엔드 API: [https://api.yoongeon.xyz](https://api.yoongeon.xyz)
 - 운영 스택: `Vercel + Render + Supabase + Cloudflare`
+
+## v2.54.1 화면 안정화 패치
+
+- `/watchlist`에서 legacy 예측 이력 payload가 섞여 들어올 때 목록 전체가 `"list" object has no attribute "get"`로 무너지던 문제를 고쳤습니다.
+- 대시보드의 지수/보조지표 fallback이 `0`, `₩0`, `$0`처럼 실제 값으로 보이던 경로를 줄였습니다. 확보된 숫자가 없을 때는 지연 안내를 먼저 보여줍니다.
+- 히트맵 partial fallback은 더 이상 전부 초록색 `+0.00%` 보드처럼 보이지 않고, 실시간 등락률 분포가 늦을 때는 중립 톤으로 먼저 렌더합니다.
+- `기회 레이더`는 usable 후보가 있는 상황에서 generic fallback 문구가 국면 카드와 후보 카드에 중복으로 새어 나오지 않게 정리했습니다.
+- `/portfolio`는 모델 포트폴리오 계산 한 부분이 늦어져도 자산 요약과 보유 종목 workspace를 먼저 유지하고, 해당 패널만 degraded fallback으로 내려갑니다.
 
 ## v2.54.0 심화 추적 관심종목
 

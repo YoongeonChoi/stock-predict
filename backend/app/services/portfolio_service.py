@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from collections import defaultdict
 from datetime import datetime
@@ -40,6 +41,8 @@ from app.services.portfolio.validation import (
     validate_portfolio_profile_input,
 )
 from app.utils.async_tools import gather_limited
+
+logger = logging.getLogger(__name__)
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -1444,14 +1447,22 @@ async def get_portfolio(user_id: str):
         },
         "stress_test": stress_test,
     }
-    response["model_portfolio"] = await _build_model_portfolio(
-        user_id=user_id,
-        holdings=enriched,
-        risk=response["risk"],
-        country_context=country_context,
-        country_weights=country_weights,
-        risk_off_weight=risk_off_weight,
-    )
+    try:
+        response["model_portfolio"] = await _build_model_portfolio(
+            user_id=user_id,
+            holdings=enriched,
+            risk=response["risk"],
+            country_context=country_context,
+            country_weights=country_weights,
+            risk_off_weight=risk_off_weight,
+        )
+    except Exception as exc:
+        logger.warning("portfolio model portfolio fallback for %s: %s", user_id, exc)
+        response["model_portfolio"] = _portfolio_model_defaults(
+            "모델 포트폴리오 계산이 지연돼 자산 요약과 보유 종목을 먼저 보여주고 있습니다."
+        )
+        response["partial"] = True
+        response["fallback_reason"] = "portfolio_model_portfolio_unavailable"
     await cache.set(cache_key, response, 90)
     return response
 

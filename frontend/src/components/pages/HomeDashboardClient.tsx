@@ -42,6 +42,19 @@ interface MarketIndicator {
   price: number;
   change_pct: number;
 }
+
+function hasUsableNumericValue(value: number | null | undefined) {
+  return Number.isFinite(value) && Math.abs(value ?? 0) > 0.0001;
+}
+
+function hasUsableIndicator(indicator: MarketIndicator) {
+  return hasUsableNumericValue(indicator.price);
+}
+
+function hasUsableIndexValue(index: { price?: number | null; current_price?: number | null }) {
+  return hasUsableNumericValue(index.price ?? index.current_price ?? null);
+}
+
 function statusTone(stance?: string) {
   if (stance === "risk_on") return "bg-emerald-500/12 text-emerald-500";
   if (stance === "risk_off") return "bg-rose-500/12 text-rose-500";
@@ -280,6 +293,16 @@ export default function HomeDashboardClient({
       ? "선택한 시장의 상태를 불러오는 중입니다."
       : reportError || (briefingLoading ? "브리핑을 불러오는 중입니다." : briefingError || "선택한 시장 요약이 아직 없습니다."));
   const macroClaims = countryReport?.macro_claims?.slice(0, 4) ?? [];
+  const usableIndices = useMemo(
+    () => selectedCountryItem?.indices.filter((index) => hasUsableIndexValue(index)) ?? [],
+    [selectedCountryItem],
+  );
+  const hasDelayedIndices = (selectedCountryItem?.indices.length ?? 0) > 0 && usableIndices.length === 0;
+  const visibleIndicators = useMemo(
+    () => indicators.filter((indicator) => hasUsableIndicator(indicator)).slice(0, 4),
+    [indicators],
+  );
+  const hasDelayedIndicators = indicators.length > 0 && visibleIndicators.length === 0;
   const dashboardAuditMeta = useMemo<PublicAuditFields | null>(() => ({
     snapshot_id: radarData?.snapshot_id || null,
     generated_at: countryReport?.generated_at || radarData?.generated_at || briefing?.generated_at || null,
@@ -391,7 +414,7 @@ export default function HomeDashboardClient({
             ) : null}
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-              {selectedCountryItem?.indices.map((index) => (
+              {usableIndices.map((index) => (
                 <div key={index.ticker} className="metric-card">
                   <div className="text-xs text-text-secondary">{index.name}</div>
                   <div className="mt-2 text-lg font-semibold text-text">{(index.price ?? index.current_price ?? 0).toLocaleString()}</div>
@@ -410,10 +433,15 @@ export default function HomeDashboardClient({
                 </div>
               ) : null}
             </div>
+            {hasDelayedIndices ? (
+              <div className="mt-3 rounded-2xl border border-border/70 bg-surface/45 px-4 py-3 text-sm text-text-secondary">
+                대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
+              </div>
+            ) : null}
 
-            {indicators.length > 0 ? (
+            {visibleIndicators.length > 0 ? (
               <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                {indicators.slice(0, 4).map((indicator) => (
+                {visibleIndicators.map((indicator) => (
                   <div key={indicator.name} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
                     <div className="text-[11px] text-text-secondary">{indicator.name}</div>
                     <div className="mt-2 text-sm font-semibold text-text">{indicatorLabel(indicator)}</div>
@@ -422,6 +450,11 @@ export default function HomeDashboardClient({
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {hasDelayedIndicators ? (
+              <div className="mt-3 rounded-2xl border border-border/70 bg-surface/45 px-4 py-3 text-sm text-text-secondary">
+                환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
               </div>
             ) : null}
           </div>

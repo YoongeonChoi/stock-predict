@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.54.1 - 2026-04-04
+
+- `/watchlist`가 legacy 예측 이력 list payload를 받을 때 preview 집계가 `.get()` 호출로 죽으며 목록 전체가 실패하던 문제를 수정했습니다. 이력 payload는 이제 dict/list 두 형태를 모두 흡수하고, 관련 회귀 테스트도 추가했습니다.
+- 대시보드 지수/보조지표 fallback은 더 이상 `0`, `₩0`, `$0` 같은 숫자를 실제 값처럼 보여주지 않습니다. usable 값이 없는 경우에는 지연 안내를 먼저 보여주고, 확보된 수치만 카드로 렌더합니다.
+- 히트맵 partial fallback은 zero-change snapshot을 전부 초록색 보드로 칠하지 않고 중립 톤으로 렌더하도록 바꿨습니다. 그래서 실시간 등락률 분포 지연이 상승장처럼 오해되는 문제를 줄였습니다.
+- `기회 레이더`의 운영성 fallback 문구를 상단 안내 한 줄로 모으고, usable 후보 카드에서는 generic fallback copy를 제거했습니다. 실제 경고와 실행 포인트가 운영 메시지에 묻히지 않도록 정리했습니다.
+- `/portfolio`는 모델 포트폴리오 서브계산이 실패해도 계정 자산 요약과 보유 종목 workspace를 그대로 유지하고, `model_portfolio`만 degraded fallback으로 내려가도록 fail-open 경로를 추가했습니다.
+
 ## v2.54.0 - 2026-04-04
 
 - 관심종목 row를 확장해 `tracking_enabled`, `tracking_started_at`, `tracking_updated_at`를 같은 lifecycle 안에서 관리하도록 정리하고, 별도 tracking table 없이 심화 추적 on/off를 저장하도록 바꿨습니다.

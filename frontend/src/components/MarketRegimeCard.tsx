@@ -7,6 +7,22 @@ interface Props {
   title?: string;
 }
 
+const OPERATIONAL_FALLBACK_PATTERNS = [
+  "1차 시세 스캔 후보",
+  "시세 스냅샷",
+  "fresh quick",
+  "사용 가능한 후보",
+  "정밀 시장 국면 계산",
+  "정밀 국면 계산",
+  "대표 후보",
+  "다시 열어",
+];
+
+function isOperationalFallbackCopy(text?: string | null) {
+  if (!text) return false;
+  return OPERATIONAL_FALLBACK_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
 function tone(status: string) {
   if (["risk_on", "bullish", "strong", "uptrend"].includes(status)) return "text-positive bg-positive/10";
   if (["risk_off", "bearish", "weak", "downtrend", "high"].includes(status)) return "text-negative bg-negative/10";
@@ -32,6 +48,12 @@ function label(status: string) {
 }
 
 export default function MarketRegimeCard({ regime, title = "시장 국면" }: Props) {
+  const playbook = regime.playbook.filter((item) => !isOperationalFallbackCopy(item));
+  const warnings = regime.warnings.filter((item) => !isOperationalFallbackCopy(item));
+  const hasOperationalFallback =
+    regime.playbook.some((item) => isOperationalFallbackCopy(item))
+    || regime.warnings.some((item) => isOperationalFallbackCopy(item));
+
   return (
     <div className="card !p-5 space-y-5">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_220px] xl:items-start">
@@ -58,14 +80,25 @@ export default function MarketRegimeCard({ regime, title = "시장 국면" }: Pr
       <div className="workspace-grid-balanced">
         <div className="workspace-panel-tight">
           <div className="text-xs font-medium text-text-secondary mb-2">실행 플레이북</div>
-          <div className="space-y-2">
-            {regime.playbook.map((item) => <div key={item} className="rounded-lg border border-border px-3 py-2 text-sm">{item}</div>)}
-          </div>
-          {regime.warnings.length > 0 ? (
+          {playbook.length > 0 ? (
+            <div className="space-y-2">
+              {playbook.map((item) => <div key={item} className="rounded-lg border border-border px-3 py-2 text-sm">{item}</div>)}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border px-3 py-2 text-sm text-text-secondary">
+              이번 응답에서는 확보된 후보와 핵심 지표를 먼저 읽고, 정밀 플레이북은 회복 시 다시 이어집니다.
+            </div>
+          )}
+          {hasOperationalFallback ? (
+            <div className="mt-4 rounded-lg border border-border/70 bg-surface/60 px-3 py-2 text-sm text-text-secondary">
+              정밀 국면 해석이 지연돼 운영성 안내는 한 줄로만 줄이고, 실제 후보 신호를 우선 표시했습니다.
+            </div>
+          ) : null}
+          {warnings.length > 0 ? (
             <div className="mt-4">
               <div className="text-xs font-medium text-text-secondary mb-2">경고 신호</div>
               <div className="space-y-2">
-                {regime.warnings.map((item) => <div key={item} className="rounded-lg bg-negative/10 text-sm px-3 py-2 text-negative">{item}</div>)}
+                {warnings.map((item) => <div key={item} className="rounded-lg bg-negative/10 text-sm px-3 py-2 text-negative">{item}</div>)}
               </div>
             </div>
           ) : null}

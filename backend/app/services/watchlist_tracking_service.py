@@ -20,6 +20,31 @@ def _direction_label(direction: str | None) -> str:
     return {"up": "상승", "down": "하락", "flat": "보합"}.get(str(direction or ""), "없음")
 
 
+def _coerce_history_payload(history_payload: Any) -> dict[str, Any]:
+    if isinstance(history_payload, dict):
+        history = history_payload.get("history")
+        summary = history_payload.get("summary") if isinstance(history_payload.get("summary"), dict) else {}
+        return {
+            "generated_at": history_payload.get("generated_at"),
+            "ticker": history_payload.get("ticker"),
+            "summary": summary,
+            "history": history if isinstance(history, list) else [],
+        }
+    if isinstance(history_payload, list):
+        return {
+            "generated_at": None,
+            "ticker": None,
+            "summary": {},
+            "history": [item for item in history_payload if isinstance(item, dict)],
+        }
+    return {
+        "generated_at": None,
+        "ticker": None,
+        "summary": {},
+        "history": [],
+    }
+
+
 def _panel_state(available: bool, *, inactive: bool = False) -> str:
     if inactive:
         return "inactive"
@@ -27,9 +52,10 @@ def _panel_state(available: bool, *, inactive: bool = False) -> str:
 
 
 def _history_preview(history_payload: dict[str, Any]) -> dict[str, Any]:
-    history = history_payload.get("history") or []
+    normalized_payload = _coerce_history_payload(history_payload)
+    history = normalized_payload.get("history") or []
     latest = history[0] if history else None
-    summary = history_payload.get("summary") or {}
+    summary = normalized_payload.get("summary") or {}
     return {
         "last_prediction_at": latest.get("created_at") if latest else None,
         "last_outlook_label": summary.get("current_direction_label") or (latest.get("direction_label") if latest else None),
@@ -38,7 +64,8 @@ def _history_preview(history_payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_realized_accuracy_summary(history_payload: dict[str, Any]) -> dict[str, Any]:
-    history = history_payload.get("history") or []
+    normalized_payload = _coerce_history_payload(history_payload)
+    history = normalized_payload.get("history") or []
     evaluated = [item for item in history if item.get("direction_hit") is not None]
     if not history:
         return {
@@ -123,8 +150,9 @@ def _build_latest_snapshot(
     stock_detail: dict[str, Any] | None,
     history_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    history = history_payload.get("history") or []
-    history_summary = history_payload.get("summary") or {}
+    normalized_payload = _coerce_history_payload(history_payload)
+    history = normalized_payload.get("history") or []
+    history_summary = normalized_payload.get("summary") or {}
     latest_history = history[0] if history else {}
     forecast = (stock_detail or {}).get("next_day_forecast") or {}
     free_kr = (stock_detail or {}).get("free_kr_forecast") or {}
@@ -161,7 +189,7 @@ def _build_latest_snapshot(
         "confidence": forecast.get("confidence") or horizon.get("confidence") or latest_history.get("confidence"),
         "confidence_note": forecast.get("confidence_note") or context_summary.get("confidence_note"),
         "summary": ((stock_detail or {}).get("public_summary") or {}).get("summary"),
-        "generated_at": (stock_detail or {}).get("generated_at") or history_payload.get("generated_at"),
+        "generated_at": (stock_detail or {}).get("generated_at") or normalized_payload.get("generated_at"),
         "last_prediction_at": latest_history.get("created_at"),
     }
 

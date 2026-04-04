@@ -12,6 +12,22 @@ interface Props {
   embedded?: boolean;
 }
 
+const OPERATIONAL_FALLBACK_PATTERNS = [
+  "1차 시세 스캔 후보",
+  "시세 스냅샷",
+  "fresh quick",
+  "사용 가능한 후보",
+  "정밀 시장 국면 계산",
+  "정밀 국면 계산",
+  "대표 후보",
+  "다시 열어",
+];
+
+function isOperationalFallbackCopy(text?: string | null) {
+  if (!text) return false;
+  return OPERATIONAL_FALLBACK_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
 function actionTone(action: string) {
   if (action === "accumulate" || action === "breakout_watch") return "text-positive bg-positive/10";
   if (action === "reduce_risk" || action === "avoid") return "text-negative bg-negative/10";
@@ -75,6 +91,10 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
     data.detailed_scanned_count > 0
       ? `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
       : `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+  const operationalFallbackNote =
+    data.partial && hasItems
+      ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
+      : null;
 
   if (compact) {
     return (
@@ -128,6 +148,11 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             </div>
           </div>
           <PublicAuditStrip meta={data} />
+          {operationalFallbackNote ? (
+            <div className="rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
+              {operationalFallbackNote}
+            </div>
+          ) : null}
           {quoteCoverageNote ? (
             <p className="text-xs text-text-secondary">{quoteCoverageNote}</p>
           ) : null}
@@ -217,9 +242,9 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   {item.thesis[0] || "핵심 메모가 아직 없습니다."}
                 </div>
 
-                {item.risk_flags.length > 0 ? (
+                {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag)) ? (
                   <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
-                    {item.risk_flags[0]}
+                    {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag))}
                   </div>
                 ) : null}
               </Link>
@@ -283,6 +308,11 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
         </div>
       </div>
       <PublicAuditStrip meta={data} className="mb-4" />
+      {operationalFallbackNote ? (
+        <div className="mb-4 rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
+          {operationalFallbackNote}
+        </div>
+      ) : null}
 
       {hasItems ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -396,10 +426,12 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   </div>
                 ))}
               </div>
-              {item.execution_note ? <div className="mt-3 text-xs text-text-secondary">{item.execution_note}</div> : null}
-              {item.risk_flags.length > 0 ? (
+              {item.execution_note && !isOperationalFallbackCopy(item.execution_note) ? (
+                <div className="mt-3 text-xs text-text-secondary">{item.execution_note}</div>
+              ) : null}
+              {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag)) ? (
                 <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
-                  {item.risk_flags[0]}
+                  {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag))}
                 </div>
               ) : null}
             </Link>

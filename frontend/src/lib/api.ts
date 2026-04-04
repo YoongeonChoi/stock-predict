@@ -115,6 +115,9 @@ export interface HeatmapSector {
 
 export interface HeatmapData {
   children: HeatmapSector[];
+  partial?: boolean;
+  fallback_reason?: string | null;
+  generated_at?: string | null;
 }
 
 export interface TechSignalItem {

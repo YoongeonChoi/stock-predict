@@ -774,3 +774,167 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(defensive_holding["execution_bias"], "capital_preservation")
         self.assertLessEqual(defensive_holding["target_weight_pct"], defensive_holding["current_weight_pct"])
         self.assertTrue(result["model_portfolio"]["rebalance_actions"])
+
+    async def test_portfolio_keeps_workspace_when_model_portfolio_fails(self):
+        index_forecast = NextDayForecast(
+            target_date="2026-03-30",
+            reference_date="2026-03-27",
+            reference_price=3000.0,
+            direction="flat",
+            up_probability=52.0,
+            predicted_open=3001.0,
+            predicted_close=3006.0,
+            predicted_high=3015.0,
+            predicted_low=2988.0,
+            predicted_return_pct=0.2,
+            confidence=64.0,
+            scenarios=[
+                ForecastScenario(name="Bull", price=3020.0, probability=28.0, description=""),
+                ForecastScenario(name="Base", price=3006.0, probability=46.0, description=""),
+                ForecastScenario(name="Bear", price=2980.0, probability=26.0, description=""),
+            ],
+            risk_flags=[],
+            execution_bias="lean_long",
+            execution_note="시장 전반은 중립에 가깝습니다.",
+        )
+        stock_forecast = NextDayForecast(
+            target_date="2026-03-30",
+            reference_date="2026-03-27",
+            reference_price=101.0,
+            direction="up",
+            up_probability=58.0,
+            predicted_open=101.4,
+            predicted_close=103.1,
+            predicted_high=104.0,
+            predicted_low=99.8,
+            predicted_return_pct=2.1,
+            confidence=68.0,
+            scenarios=[
+                ForecastScenario(name="Bull", price=105.0, probability=32.0, description=""),
+                ForecastScenario(name="Base", price=103.1, probability=43.0, description=""),
+                ForecastScenario(name="Bear", price=99.6, probability=25.0, description=""),
+            ],
+            risk_flags=["거래량 회복은 더 확인이 필요합니다."],
+            execution_bias="lean_long",
+            execution_note="무리한 추격보다 눌림 확인이 유리합니다.",
+        )
+        market_regime = MarketRegime(
+            label="Neutral",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=51.0,
+            conviction=58.0,
+            summary="Balanced tape.",
+            playbook=["Wait for cleaner confirmation."],
+            warnings=[],
+        )
+        trade_plan = TradePlan(
+            setup_label="Constructive Pullback",
+            action="wait_pullback",
+            conviction=63.0,
+            stop_loss=97.0,
+            take_profit_1=104.0,
+            take_profit_2=107.0,
+            thesis=["단기 반등 여지는 있지만 진입은 확인 후가 좋습니다."],
+            invalidation="지지 이탈 시 보수적으로 다시 계산합니다.",
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=98.0,
+            buy_zone_high=101.0,
+            fair_value=104.0,
+            sell_zone_low=108.0,
+            sell_zone_high=111.0,
+            risk_reward_ratio=1.4,
+            confidence_grade="B",
+            methodology=[],
+            summary="",
+        )
+        technical = TechnicalIndicators(
+            ma_20=[],
+            ma_60=[],
+            rsi_14=[],
+            macd=[],
+            macd_signal=[],
+            macd_hist=[],
+            dates=[],
+        )
+
+        with (
+            patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.portfolio_service.supabase_client.portfolio_profile_get",
+                new=AsyncMock(
+                    return_value={
+                        "total_assets": 10000.0,
+                        "cash_balance": 2000.0,
+                        "monthly_budget": 500.0,
+                        "updated_at": 123.0,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.portfolio_service.supabase_client.portfolio_list",
+                new=AsyncMock(
+                    return_value=[
+                        {
+                            "id": 1,
+                            "ticker": "005930",
+                            "name": "Samsung Electronics",
+                            "country_code": "KR",
+                            "buy_price": 100.0,
+                            "quantity": 12.0,
+                            "buy_date": "2026-03-01",
+                        }
+                    ]
+                ),
+            ),
+            patch("app.services.portfolio_service.supabase_client.watchlist_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_service.ecos_client.get_kr_economic_snapshot", new=AsyncMock(return_value={})),
+            patch("app.services.portfolio_service.kosis_client.get_kr_macro_snapshot", new=AsyncMock(return_value={})),
+            patch(
+                "app.services.portfolio_service.yfinance_client.get_price_history",
+                new=AsyncMock(side_effect=[_sample_price_history(), _sample_price_history()]),
+            ),
+            patch(
+                "app.services.portfolio_service.yfinance_client.get_stock_info",
+                new=AsyncMock(return_value={"current_price": 101.0, "name": "Test Corp", "sector": "Tech"}),
+            ),
+            patch("app.services.portfolio_service.yfinance_client.get_analyst_ratings", new=AsyncMock(return_value={})),
+            patch("app.services.portfolio_service.forecast_next_day", side_effect=[index_forecast, stock_forecast]),
+            patch("app.services.portfolio_service.build_market_regime", return_value=market_regime),
+            patch("app.services.portfolio_service.build_quick_buy_sell", return_value=buy_sell),
+            patch("app.services.portfolio_service._calc_technicals", return_value=technical),
+            patch("app.services.portfolio_service.build_trade_plan", return_value=trade_plan),
+            patch("app.services.portfolio_service._annualized_volatility", return_value=18.5),
+            patch("app.services.portfolio_service._max_drawdown", return_value=7.4),
+            patch("app.services.portfolio_service._beta", return_value=0.96),
+            patch(
+                "app.services.portfolio_service.market_service.get_market_opportunities",
+                new=AsyncMock(
+                    return_value={
+                        "country_code": "KR",
+                        "generated_at": "2026-03-29T08:00:00",
+                        "market_regime": market_regime.model_dump(),
+                        "total_scanned": 0,
+                        "actionable_count": 0,
+                        "bullish_count": 0,
+                        "opportunities": [],
+                    }
+                ),
+            ),
+            patch(
+                "app.services.portfolio_service._build_model_portfolio",
+                new=AsyncMock(side_effect=RuntimeError("optimizer unavailable")),
+            ),
+        ):
+            result = await portfolio_service.get_portfolio("user-123")
+
+        self.assertEqual(result["summary"]["holding_count"], 1)
+        self.assertTrue(result["holdings"])
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "portfolio_model_portfolio_unavailable")
+        self.assertEqual(result["model_portfolio"]["recommended_holdings"], [])
+        self.assertTrue(result["model_portfolio"]["notes"])

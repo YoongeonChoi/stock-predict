@@ -5,6 +5,27 @@ from app.services import watchlist_tracking_service
 
 
 class WatchlistTrackingServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_tracking_preview_accepts_legacy_history_list_payload(self):
+        with patch(
+            "app.services.watchlist_tracking_service.forecast_monitor_service.get_stock_forecast_delta",
+            new=AsyncMock(
+                return_value=[
+                    {
+                        "target_date": "2026-04-07",
+                        "direction": "up",
+                        "direction_label": "상승",
+                        "confidence": 58.3,
+                        "created_at": "2026-04-04T00:00:00",
+                    }
+                ]
+            ),
+        ):
+            preview = await watchlist_tracking_service.get_tracking_preview("005930.KS")
+
+        self.assertEqual(preview["last_outlook_label"], "상승")
+        self.assertEqual(preview["last_confidence"], 58.3)
+        self.assertEqual(preview["last_prediction_at"], "2026-04-04T00:00:00")
+
     async def test_get_tracking_detail_returns_inactive_onboarding_payload(self):
         with (
             patch(
