@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.55.2 - 2026-04-05
+
+- `/api/research/predictions`와 예측 연구실 기본 조회가 `refresh=false`여도 만기 도달한 pending 예측 로그를 짧은 background refresh로 먼저 재평가하도록 바꿨습니다. 이 경로는 cache miss 기준에서만 제한적으로 돌고, 만기 표본이 있으면 연구실 통계를 더 빨리 실측값으로 승격합니다.
+- 연구실 인사이트와 액션 큐에 `저장된 로그는 있지만 아직 실측 평가가 끝난 표본이 없는 상태`를 별도 안내하도록 보강했습니다. 이제 `stored_predictions`, `pending_predictions`, `total_predictions=0` 조합이 단순 bootstrapping 메시지로 묻히지 않습니다.
+- `archive_service.refresh_prediction_accuracy()`는 평가 요약을 반환하고, 실제로 새 표본을 평가한 경우에만 empirical calibration refresh를 이어 실행합니다. 덕분에 연구실 기본 조회와 운영 startup에서 불필요한 무거운 재보정을 줄였습니다.
+- Render 메모리 세이프 startup에서도 `prediction_accuracy_refresh`만은 제한된 timeout과 작은 limit로 실행되도록 조정했습니다. `learned_fusion`, `research archive sync`, `market opportunity prewarm` 같은 더 무거운 작업은 계속 건너뜁니다.
+- Render 배포 설정에서 연구실 DB 경로를 `/tmp` 대신 앱 경로로 옮기고, startup prediction accuracy refresh를 다시 활성화했습니다. free 플랜의 장기 영속성 한계는 남아 있지만, sleep 이후나 짧은 재시작 뒤에도 표본이 비어 보이는 시간을 줄였습니다.
+
 ## v2.55.1 - 2026-04-04
 
 - 모바일 고정 상단 바 오프셋을 본문 열 기준으로 다시 맞춰, 첫 진입 시 검색 헤더와 페이지 첫 카드가 상단 UI 아래로 겹쳐 보이던 문제를 수정했습니다.

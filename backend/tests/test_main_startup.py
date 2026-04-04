@@ -410,6 +410,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
             patch.object(app_settings, "startup_learned_fusion_refresh", True),
             patch.object(app_settings, "startup_prediction_accuracy_refresh", True),
+            patch.object(app_settings, "startup_prediction_accuracy_refresh_on_render", True),
             patch.object(app_settings, "startup_research_archive_sync", True),
             patch.object(app_settings, "startup_market_opportunity_prewarm", True),
             patch.object(app_settings, "startup_market_opportunity_prewarm_timeout", 180),
@@ -431,9 +432,9 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             "Render 메모리 세이프 startup 프로필",
             tasks["learned_fusion_profile_refresh"]["detail"],
         )
-        self.assertIn(
-            "Render 메모리 세이프 startup 프로필",
+        self.assertEqual(
             tasks["prediction_accuracy_refresh"]["detail"],
+            "Prediction accuracy refresh completed.",
         )
         self.assertIn(
             "Render 메모리 세이프 startup 프로필",
@@ -444,7 +445,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             tasks["market_opportunity_prewarm"]["detail"],
         )
         fusion_refresh.assert_not_called()
-        accuracy_refresh.assert_not_called()
+        accuracy_refresh.assert_awaited_once_with(limit=25)
         research_sync.assert_not_called()
         radar_prewarm.assert_not_called()
 

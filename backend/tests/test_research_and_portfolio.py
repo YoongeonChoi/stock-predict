@@ -539,6 +539,94 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["failure_patterns"], [])
         self.assertEqual(result["review_queue"], [])
 
+    async def test_prediction_lab_auto_refreshes_due_records_on_default_load(self):
+        refresh_accuracy = AsyncMock(
+            return_value={
+                "checked_at": "2026-04-05T09:00:00",
+                "due_pending_count": 1,
+                "evaluated_count": 1,
+                "unmatched_count": 0,
+                "error_count": 0,
+                "calibration_refreshed": True,
+            }
+        )
+
+        with (
+            patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.research_service.cache.set", new=AsyncMock()),
+            patch("app.services.research_service.archive_service.refresh_prediction_accuracy", new=refresh_accuracy),
+            patch(
+                "app.services.research_service.db.prediction_stats",
+                new=AsyncMock(
+                    side_effect=[
+                        {"stored_predictions": 2, "pending_predictions": 0, "total_predictions": 1, "within_range": 1, "within_range_rate": 1.0, "direction_hits": 1, "direction_accuracy": 1.0, "avg_error_pct": 0.8, "avg_confidence": 62.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                    ]
+                ),
+            ),
+            patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_confidence_buckets", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
+            patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+        ):
+            result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
+
+        refresh_accuracy.assert_awaited_once_with(limit=research_service.PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT)
+        self.assertFalse(result["partial"])
+        self.assertEqual(result["accuracy"]["total_predictions"], 1)
+
+    async def test_prediction_lab_explains_pending_samples_before_first_evaluation(self):
+        with (
+            patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.research_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.research_service.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(
+                    return_value={
+                        "checked_at": "2026-04-05T09:00:00",
+                        "due_pending_count": 0,
+                        "evaluated_count": 0,
+                        "unmatched_count": 0,
+                        "error_count": 0,
+                        "calibration_refreshed": False,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_stats",
+                new=AsyncMock(
+                    side_effect=[
+                        {"stored_predictions": 1, "pending_predictions": 1, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 30.9},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                    ]
+                ),
+            ),
+            patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_confidence_buckets", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
+            patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+        ):
+            result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
+
+        self.assertEqual(result["accuracy"]["stored_predictions"], 1)
+        self.assertEqual(result["accuracy"]["pending_predictions"], 1)
+        self.assertTrue(any("예측 로그 1건은 저장됐지만" in line for line in result["insights"]))
+        self.assertEqual(result["action_queue"][0]["title"], "실측 평가 대기 표본 확인")
+
     async def test_portfolio_empty_snapshot(self):
         with (
             patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),

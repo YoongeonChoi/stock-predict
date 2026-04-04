@@ -61,7 +61,6 @@ class StartupTaskDefinition:
 def _startup_skip_detail(*, name: str, configured_detail: str) -> str:
     if settings.startup_memory_safe_mode and name in {
         "learned_fusion_profile_refresh",
-        "prediction_accuracy_refresh",
         "research_archive_sync",
         "market_opportunity_prewarm",
     }:
@@ -195,8 +194,10 @@ async def lifespan(app: FastAPI):
                 running_detail="Refreshing stored next-day prediction accuracy in background.",
                 success_detail="Prediction accuracy refresh completed.",
                 failure_prefix="Prediction accuracy refresh failed during startup",
-                timeout_seconds=settings.startup_prediction_accuracy_refresh_timeout,
-                job=lambda: archive_service.refresh_prediction_accuracy(limit=100),
+                timeout_seconds=settings.effective_startup_prediction_accuracy_refresh_timeout,
+                job=lambda: archive_service.refresh_prediction_accuracy(
+                    limit=settings.effective_startup_prediction_accuracy_refresh_limit
+                ),
             )
         )
     else:

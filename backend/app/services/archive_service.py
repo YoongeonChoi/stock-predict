@@ -160,16 +160,21 @@ async def get_report(report_id: int) -> dict | None:
     return row
 
 
-async def refresh_prediction_accuracy(limit: int = 200):
+async def refresh_prediction_accuracy(limit: int = 200) -> dict:
     pending = await db.prediction_pending(datetime.now().date().isoformat(), limit=limit)
+    evaluated_count = 0
+    unmatched_count = 0
+    error_count = 0
     for record in pending:
         try:
             prices = await yfinance_client.get_price_history(record["symbol"], period="1y")
         except Exception:
+            error_count += 1
             continue
 
         matched = next((row for row in prices if row.get("date") == record["target_date"]), None)
         if not matched:
+            unmatched_count += 1
             continue
 
         await db.prediction_update_actual(
@@ -178,10 +183,23 @@ async def refresh_prediction_accuracy(limit: int = 200):
             actual_low=matched.get("low"),
             actual_high=matched.get("high"),
         )
+        evaluated_count += 1
 
-    from app.services import confidence_calibration_service
+    calibration_refreshed = False
+    if evaluated_count > 0:
+        from app.services import confidence_calibration_service
 
-    await confidence_calibration_service.refresh_empirical_profiles()
+        await confidence_calibration_service.refresh_empirical_profiles()
+        calibration_refreshed = True
+
+    return {
+        "checked_at": datetime.now().isoformat(),
+        "due_pending_count": len(pending),
+        "evaluated_count": evaluated_count,
+        "unmatched_count": unmatched_count,
+        "error_count": error_count,
+        "calibration_refreshed": calibration_refreshed,
+    }
 
 
 def _build_accuracy_payload(

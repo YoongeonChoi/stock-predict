@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     startup_prediction_accuracy_refresh: bool = True
     startup_prediction_accuracy_refresh_timeout: int = 20
+    startup_prediction_accuracy_refresh_on_render: bool = True
     startup_research_archive_sync: bool = True
     startup_research_archive_sync_timeout: int = 35
     startup_learned_fusion_refresh: bool = True
@@ -110,8 +111,23 @@ class Settings(BaseSettings):
     @property
     def effective_startup_prediction_accuracy_refresh(self) -> bool:
         if self.startup_memory_safe_mode:
-            return False
+            return (
+                self.startup_prediction_accuracy_refresh
+                and self.startup_prediction_accuracy_refresh_on_render
+            )
         return self.startup_prediction_accuracy_refresh
+
+    @property
+    def effective_startup_prediction_accuracy_refresh_timeout(self) -> int:
+        if self.startup_memory_safe_mode:
+            return min(self.startup_prediction_accuracy_refresh_timeout, 8)
+        return self.startup_prediction_accuracy_refresh_timeout
+
+    @property
+    def effective_startup_prediction_accuracy_refresh_limit(self) -> int:
+        if self.startup_memory_safe_mode:
+            return 25
+        return 100
 
     @property
     def effective_startup_learned_fusion_refresh(self) -> bool:

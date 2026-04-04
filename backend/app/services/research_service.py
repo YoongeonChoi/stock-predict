@@ -20,6 +20,8 @@ PREDICTION_LAB_WAIT_TIMEOUT_SECONDS = 2.5
 PREDICTION_LAB_BUILD_TIMEOUT_SECONDS = 8.0
 PREDICTION_LAB_STATS_TIMEOUT_SECONDS = 2.0
 PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS = 8.0
+PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS = 3.0
+PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT = 25
 PREDICTION_LAB_RECENT_TIMEOUT_SECONDS = 1.5
 PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS = 1.5
 
@@ -300,12 +302,19 @@ def _build_insights(
     fusion_status_summary: dict,
 ) -> list[str]:
     insights: list[str] = []
+    stored_predictions = int(accuracy.get("stored_predictions", 0) or 0)
+    pending_predictions = int(accuracy.get("pending_predictions", 0) or 0)
     total_predictions = int(accuracy.get("total_predictions", 0) or 0)
     direction_accuracy = float(accuracy.get("direction_accuracy", 0.0) or 0.0) * 100.0
     within_range_rate = float(accuracy.get("within_range_rate", 0.0) or 0.0) * 100.0
     avg_error_pct = float(accuracy.get("avg_error_pct", 0.0) or 0.0)
 
     if total_predictions == 0:
+        if stored_predictions > 0 and pending_predictions > 0:
+            return [
+                f"예측 로그 {stored_predictions}건은 저장됐지만, 아직 실측 평가가 끝난 표본은 없습니다. "
+                f"현재 대기 중인 {pending_predictions}건은 목표일이 지나면 연구실에서 다시 검증합니다."
+            ]
         return ["검증 완료 표본이 아직 많지 않아 예측 연구실은 실측 로그를 더 쌓는 단계에 있습니다."]
 
     insights.append(
@@ -374,8 +383,23 @@ def _build_action_queue(
     recent_records: list[dict],
 ) -> list[dict]:
     actions: list[dict] = []
+    stored_predictions = int(accuracy.get("stored_predictions") or 0)
+    pending_predictions = int(accuracy.get("pending_predictions") or 0)
+    total_predictions = int(accuracy.get("total_predictions") or 0)
     empirical_by_type = {row["prediction_type"]: row for row in empirical_calibration}
     fusion_by_type = {row["prediction_type"]: row for row in fusion_profiles}
+
+    if total_predictions == 0 and stored_predictions > 0 and pending_predictions > 0:
+        actions.append(
+            {
+                "key": "next_day:pending-evaluation",
+                "severity": "medium",
+                "title": "실측 평가 대기 표본 확인",
+                "detail": f"저장된 예측 로그 {stored_predictions}건 중 {pending_predictions}건이 아직 목표일 평가 대기 상태입니다.",
+                "metric_label": "평가 대기",
+                "metric_value": f"{pending_predictions}건",
+            }
+        )
 
     for row in horizon_accuracy:
         prediction_type = row["prediction_type"]
@@ -482,7 +506,6 @@ def _build_action_queue(
             }
         )
 
-    total_predictions = int(accuracy.get("total_predictions") or 0)
     if not actions and total_predictions > 0:
         actions.append(
             {
@@ -645,6 +668,21 @@ async def _safe_prediction_stats(prediction_type: str) -> dict:
         return _zero_prediction_stats()
 
 
+async def _refresh_prediction_lab_accuracy(refresh: bool) -> str | None:
+    limit = 200 if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT
+    timeout = PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS
+    try:
+        await asyncio.wait_for(
+            archive_service.refresh_prediction_accuracy(limit=limit),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        return "prediction_accuracy_refresh_timeout"
+    except Exception:
+        return "prediction_accuracy_refresh_error"
+    return None
+
+
 async def _build_prediction_lab_fallback(
     *,
     limit_recent: int,
@@ -734,11 +772,7 @@ async def _build_prediction_lab_fallback(
 
 
 async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dict:
-    if refresh:
-        await asyncio.wait_for(
-            archive_service.refresh_prediction_accuracy(limit=200),
-            timeout=PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS,
-        )
+    refresh_reason = await _refresh_prediction_lab_accuracy(refresh)
 
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
@@ -779,6 +813,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
     partial_reasons = [
         reason
         for reason in (
+            refresh_reason,
             accuracy_reason,
             stats_5d_reason,
             stats_20d_reason,
@@ -884,7 +919,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v6:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v7:{limit_recent}:{int(refresh)}"
 
     async def _fetch_prediction_lab():
         try:
