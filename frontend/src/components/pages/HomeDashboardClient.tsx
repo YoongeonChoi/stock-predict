@@ -274,6 +274,7 @@ export default function HomeDashboardClient({
   const topNews = countryReport?.key_news.slice(0, 4) ?? [];
   const topStocks = countryReport?.top_stocks.slice(0, 5) ?? [];
   const radarHasItems = (radarData?.opportunities.length ?? 0) > 0;
+  const moversHasItems = (movers?.gainers.length ?? 0) > 0 || (movers?.losers.length ?? 0) > 0;
   const retryCurrentWorkspace = () => {
     void loadCountryWorkspace(selectedCountry);
   };
@@ -569,7 +570,7 @@ export default function HomeDashboardClient({
                 className="min-h-[240px]"
               />
             </div>
-          ) : movers ? (
+          ) : movers && moversHasItems ? (
             <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <h3 className="text-sm font-semibold text-positive">상승 상위</h3>

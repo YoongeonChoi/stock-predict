@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.54.2 - 2026-04-04
+
+- `/api/country/KR/report`가 라이브 계산을 끝내지 못하는 구간에도 최신 아카이브 리포트를 stale-but-usable fallback으로 되살려, 대시보드의 핵심 뉴스, 상위 종목, 오늘 포커스가 한 번에 비는 현상을 줄였습니다.
+- `/api/country/KR/heatmap`은 대표 종목 quote 또는 마지막 정상 스냅샷을 우선 재사용하도록 보강해, partial fallback이 all-gray 또는 `+0.00%` 기준 화면처럼 보이는 문제를 줄였습니다.
+- `/api/market/movers/KR`는 representative quote fallback과 last-success cache를 추가해, 무료 티어 워밍업이나 짧은 타임아웃 뒤에도 상승/하락 상위 패널이 완전히 비지 않도록 조정했습니다.
+- 홈 대시보드 movers 패널은 빈 gainers/losers 배열만 도착한 partial 응답을 정상 패널로 렌더하지 않고, 지연 상태 카드로 정리해 오해를 줄였습니다.
+
 ## v2.54.1 - 2026-04-04
 
 - `/watchlist`가 legacy 예측 이력 list payload를 받을 때 preview 집계가 `.get()` 호출로 죽으며 목록 전체가 실패하던 문제를 수정했습니다. 이력 payload는 이제 dict/list 두 형태를 모두 흡수하고, 관련 회귀 테스트도 추가했습니다.

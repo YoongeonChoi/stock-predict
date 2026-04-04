@@ -18,6 +18,7 @@ from app.services import archive_service, export_service, market_service, route_
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
 from app.utils import build_route_trace
+from app.utils.market_calendar import market_session_cache_token
 
 router = APIRouter(prefix="/api", tags=["country"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
@@ -34,6 +35,9 @@ MARKET_MOVERS_CACHE_TTL_SECONDS = 300
 MARKET_INDICATORS_TIMEOUT_SECONDS = 5
 MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 2.0
 MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
+HEATMAP_LAST_SUCCESS_TTL_SECONDS = 3600
+MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS = 1800
+MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS = 1800
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
@@ -101,10 +105,102 @@ async def _build_heatmap_payload(code: str) -> dict:
     return {"children": sectors}
 
 
+def _heatmap_has_tiles(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(isinstance(sector, dict) and sector.get("children") for sector in payload.get("children") or [])
+
+
+def _market_movers_has_items(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return bool(payload.get("gainers") or payload.get("losers"))
+
+
+def _market_indicators_have_values(payload: list[dict] | None) -> bool:
+    if not isinstance(payload, list):
+        return False
+    return any(abs(float(item.get("price") or 0.0)) > 0.0001 for item in payload if isinstance(item, dict))
+
+
+async def _load_cached_kr_representative_quotes(
+    *,
+    limit: int = MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT,
+    pages_per_market: int = 1,
+) -> dict[str, dict]:
+    from app.data import cache as data_cache
+
+    session_token = market_session_cache_token(country_code="KR")
+    cache_key = f"kr_market_quotes:representative:{max(1, int(pages_per_market))}:{session_token}"
+    cached = await data_cache.get(cache_key)
+    if not isinstance(cached, dict):
+        return {}
+
+    limited: dict[str, dict] = {}
+    for ticker, quote in cached.items():
+        if not isinstance(quote, dict):
+            continue
+        limited[ticker] = quote
+        if len(limited) >= max(1, int(limit)):
+            break
+    return limited
+
+
+def _build_heatmap_children_from_quotes(universe: dict[str, list[str]], quotes: dict[str, dict]) -> list[dict]:
+    sectors: list[dict] = []
+    for sector_name, tickers in universe.items():
+        children: list[dict] = []
+        for ticker in tickers:
+            quote = quotes.get(ticker)
+            if not isinstance(quote, dict):
+                continue
+            size = float(quote.get("market_cap") or quote.get("current_price") or 0.0)
+            if size <= 0:
+                continue
+            children.append(
+                {
+                    "name": str(quote.get("ticker") or ticker).split(".")[0],
+                    "ticker": quote.get("ticker") or ticker,
+                    "fullName": quote.get("name") or ticker,
+                    "size": round(size, 2),
+                    "change": round(float(quote.get("change_pct") or 0.0), 2),
+                }
+            )
+            if len(children) >= HEATMAP_CHILDREN_PER_SECTOR:
+                break
+        if children:
+            children.sort(key=lambda item: float(item.get("size") or 0.0), reverse=True)
+            sectors.append({"name": sector_name, "children": children})
+    return sectors
+
+
 async def _build_heatmap_fallback(code: str) -> dict:
     from app.data.universe_data import get_universe
 
     universe = await get_universe(code)
+    if code == "KR":
+        representative_quotes = await _load_cached_kr_representative_quotes()
+        if not representative_quotes:
+            try:
+                representative_quotes = await asyncio.wait_for(
+                    kr_market_quote_client.get_kr_representative_quotes(
+                        limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+                    ),
+                    timeout=2.5,
+                )
+            except Exception as exc:
+                logging.warning("heatmap representative fallback failed for %s: %s", code, exc)
+                representative_quotes = {}
+
+        sectors_from_quotes = _build_heatmap_children_from_quotes(universe, representative_quotes)
+        if sectors_from_quotes:
+            return {
+                "children": sectors_from_quotes,
+                "partial": True,
+                "fallback_reason": "live_snapshot_timeout",
+                "generated_at": datetime.now().isoformat(),
+            }
+
     max_sector_size = max((len(tickers) for tickers in universe.values()), default=1)
     sectors = []
     for sector_name, tickers in universe.items():
@@ -388,7 +484,45 @@ async def _build_market_movers_payload(code: str) -> dict:
     }
 
 
-def _build_market_movers_fallback(*, reason: str) -> dict:
+def _build_market_movers_from_quotes(quotes: dict[str, dict]) -> dict:
+    stocks = [
+        {
+            "ticker": quote.get("ticker") or ticker,
+            "name": quote.get("name") or ticker,
+            "price": round(float(quote.get("current_price") or quote.get("price") or 0.0), 2),
+            "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+        }
+        for ticker, quote in quotes.items()
+        if isinstance(quote, dict)
+    ]
+    stocks.sort(key=lambda item: item["change_pct"], reverse=True)
+    return {
+        "gainers": stocks[:5],
+        "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
+    }
+
+
+async def _build_market_movers_fallback(code: str, *, reason: str) -> dict:
+    if code == "KR":
+        representative_quotes = await _load_cached_kr_representative_quotes()
+        if not representative_quotes:
+            try:
+                representative_quotes = await asyncio.wait_for(
+                    kr_market_quote_client.get_kr_representative_quotes(
+                        limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+                    ),
+                    timeout=2.5,
+                )
+            except Exception as exc:
+                logging.warning("market movers representative fallback failed for %s: %s", code, exc)
+                representative_quotes = {}
+        if representative_quotes:
+            payload = _build_market_movers_from_quotes(representative_quotes)
+            payload["partial"] = True
+            payload["fallback_reason"] = reason
+            payload["generated_at"] = datetime.now().isoformat()
+            return payload
+
     return {
         "gainers": [],
         "losers": [],
@@ -432,6 +566,23 @@ def _build_market_indicators_fallback() -> list[dict]:
         {"name": "Oil (WTI)", "price": 0, "change_pct": 0},
         {"name": "Bitcoin", "price": 0, "change_pct": 0},
     ]
+
+
+async def _load_latest_archived_country_report(code: str) -> dict | None:
+    try:
+        archived_reports = await archive_service.list_reports("country", code, limit=1)
+        if not archived_reports:
+            return None
+        latest = archived_reports[0]
+        report_id = int(latest.get("id") or 0)
+        if report_id <= 0:
+            return None
+        archived = await archive_service.get_report(report_id)
+        payload = archived.get("report_json") if isinstance(archived, dict) else None
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        logging.warning("latest archived country report load failed for %s: %s", code, exc, exc_info=True)
+        return None
 
 
 async def _build_country_report_fallback(
@@ -505,6 +656,27 @@ async def _build_country_report_fallback(
         quick_opportunities = list(quick_response.get("opportunities") or [])
     except Exception as exc:
         logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
+
+    archived_report = await _load_latest_archived_country_report(code)
+    if archived_report:
+        response = dict(archived_report)
+        existing_summary = str(response.get("market_summary") or "").strip()
+        fallback_lead = f"{country.name_local} 실시간 리포트 계산이 지연돼 최근 정상 리포트를 먼저 보여주고 있습니다."
+        response["market_summary"] = " ".join(
+            part for part in [fallback_lead, detail.strip(), existing_summary] if part
+        ).strip()
+        response["market_data"] = market_data or response.get("market_data") or {}
+        if quick_opportunities and not response.get("top_stocks"):
+            response["top_stocks"] = _build_top_stock_refs(quick_opportunities)
+        errors = list(response.get("errors") or [])
+        if error_code not in errors:
+            errors.append(error_code)
+        response["errors"] = errors
+        response["llm_available"] = False
+        response["partial"] = True
+        response["fallback_reason"] = reason
+        response["generated_at"] = datetime.now().isoformat()
+        return response
 
     market_summary = (
         f"{country.name_local} 정밀 시장 리포트 생성이 길어져 1차 시장 스냅샷을 먼저 제공합니다. "
@@ -731,13 +903,34 @@ async def get_heatmap(code: str):
 
     from app.data import cache as data_cache
     cache_key = f"heatmap:v3:{code}"
+    last_success_key = f"heatmap:last_success:{code}"
 
     async def _fetch_heatmap():
         try:
-            return await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+            payload = await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+            if _heatmap_has_tiles(payload):
+                await data_cache.set(last_success_key, payload, HEATMAP_LAST_SUCCESS_TTL_SECONDS)
+            return payload
         except asyncio.TimeoutError:
             err = SP_5018(f"Heatmap for {code} exceeded {HEATMAP_TIMEOUT_SECONDS} seconds.")
             err.log("warning")
+            cached_success = await data_cache.get(last_success_key)
+            if _heatmap_has_tiles(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "heatmap_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_heatmap_fallback(code)
+        except Exception as exc:
+            logging.warning("heatmap failed for %s: %s", code, exc, exc_info=True)
+            cached_success = await data_cache.get(last_success_key)
+            if _heatmap_has_tiles(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "heatmap_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
             return await _build_heatmap_fallback(code)
 
     return await data_cache.get_or_fetch(
@@ -826,26 +1019,42 @@ async def get_market_indicators():
     """Korean market indicators for the dashboard."""
     from app.data import cache as data_cache
     cache_key = "market_indicators:v2"
+    last_success_key = "market_indicators:last_success"
 
     async def _fetch_indicators():
         try:
-            return await asyncio.wait_for(
+            payload = await asyncio.wait_for(
                 _build_market_indicators_payload(),
                 timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
             )
+            if _market_indicators_have_values(payload):
+                await data_cache.set(last_success_key, payload, MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS)
+            return payload
         except asyncio.TimeoutError:
             logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
+            cached_success = await data_cache.get(last_success_key)
+            if _market_indicators_have_values(cached_success):
+                return cached_success
             return _build_market_indicators_fallback()
         except Exception as exc:
             logging.warning("market indicators failed: %s", exc, exc_info=True)
+            cached_success = await data_cache.get(last_success_key)
+            if _market_indicators_have_values(cached_success):
+                return cached_success
             return _build_market_indicators_fallback()
+
+    async def _timeout_indicator_fallback():
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
 
     return await data_cache.get_or_fetch(
         cache_key,
         _fetch_indicators,
         ttl=MARKET_INDICATORS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS,
-        timeout_fallback=_build_market_indicators_fallback,
+        timeout_fallback=_timeout_indicator_fallback,
     )
 
 
@@ -906,6 +1115,7 @@ async def get_market_movers(code: str):
     from app.data import cache as data_cache
 
     cache_key = f"movers:v2:{code}"
+    last_success_key = f"movers:last_success:{code}"
 
     async def _fetch_movers():
         try:
@@ -914,20 +1124,36 @@ async def get_market_movers(code: str):
                 timeout=MARKET_MOVERS_TIMEOUT_SECONDS,
             )
             payload["generated_at"] = datetime.now().isoformat()
+            if _market_movers_has_items(payload):
+                await data_cache.set(last_success_key, payload, MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS)
             return payload
         except asyncio.TimeoutError:
             logging.warning("market movers timed out for %s after %ss", code, MARKET_MOVERS_TIMEOUT_SECONDS)
-            return _build_market_movers_fallback(reason="market_movers_timeout")
+            cached_success = await data_cache.get(last_success_key)
+            if _market_movers_has_items(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "market_movers_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_market_movers_fallback(code, reason="market_movers_timeout")
         except Exception as exc:
             logging.warning("market movers failed for %s: %s", code, exc, exc_info=True)
-            return _build_market_movers_fallback(reason="market_movers_error")
+            cached_success = await data_cache.get(last_success_key)
+            if _market_movers_has_items(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "market_movers_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_market_movers_fallback(code, reason="market_movers_error")
 
     return await data_cache.get_or_fetch(
         cache_key,
         _fetch_movers,
         ttl=MARKET_MOVERS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_MOVERS_WAIT_TIMEOUT_SECONDS,
-        timeout_fallback=lambda: _build_market_movers_fallback(reason="market_movers_wait_timeout"),
+        timeout_fallback=lambda: _build_market_movers_fallback(code, reason="market_movers_wait_timeout"),
     )
 
 

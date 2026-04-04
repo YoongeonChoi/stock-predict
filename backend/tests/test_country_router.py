@@ -156,6 +156,67 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["losers"][0]["ticker"], "000660.KS")
         representative_loader.assert_awaited_once()
 
+    async def test_heatmap_fallback_prefers_representative_quotes(self):
+        representative_quotes = {
+            "005930.KS": {
+                "ticker": "005930.KS",
+                "name": "Samsung Electronics",
+                "current_price": 71200.0,
+                "change_pct": 2.4,
+                "market_cap": 420000000000.0,
+            },
+            "000660.KS": {
+                "ticker": "000660.KS",
+                "name": "SK hynix",
+                "current_price": 182000.0,
+                "change_pct": -1.2,
+                "market_cap": 130000000000.0,
+            },
+        }
+
+        with (
+            patch("app.data.universe_data.get_universe", new=AsyncMock(return_value={"Information Technology": ["005930.KS", "000660.KS"]})),
+            patch("app.routers.country._load_cached_kr_representative_quotes", new=AsyncMock(return_value=representative_quotes)),
+        ):
+            response = await country._build_heatmap_fallback("KR")
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "live_snapshot_timeout")
+        self.assertEqual(response["children"][0]["children"][0]["ticker"], "005930.KS")
+        self.assertNotEqual(response["children"][0]["children"][0]["change"], 0.0)
+
+    async def test_country_report_fallback_uses_latest_archived_report(self):
+        archived_report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "market_summary": "이전 정상 리포트입니다.",
+            "key_news": [{"title": "테스트 기사", "source": "연합뉴스", "url": "https://example.com", "published": "2026-04-04"}],
+            "top_stocks": [{"ticker": "005930.KS", "name": "삼성전자", "score": 78.5, "change_pct": 1.4, "reason": "실적 회복 기대"}],
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": 0.4}},
+            "errors": [],
+        }
+
+        with (
+            patch("app.routers.country.archive_service.list_reports", new=AsyncMock(return_value=[{"id": 7}])),
+            patch("app.routers.country.archive_service.get_report", new=AsyncMock(return_value={"report_json": archived_report})),
+            patch("app.data.cache.get", new=AsyncMock(return_value=[{"code": "KR", "indices": [{"price": 2550.0, "change_pct": 0.8}]}])),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(return_value={"opportunities": []})),
+        ):
+            response = await country._build_country_report_fallback(
+                "KR",
+                reason="country_report_timeout",
+                error_code="SP-5018",
+                detail="실시간 계산이 지연되고 있습니다.",
+            )
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "country_report_timeout")
+        self.assertEqual(response["key_news"][0]["title"], "테스트 기사")
+        self.assertIn("최근 정상 리포트", response["market_summary"])
+        self.assertEqual(response["market_data"]["KOSPI"]["price"], 2550.0)
+        self.assertIn("SP-5018", response["errors"])
+
     async def test_country_report_sanitizes_non_finite_floats(self):
         report = {
             "country": {"code": "KR", "name": "Korea", "name_local": "한국"},

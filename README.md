@@ -8,12 +8,19 @@
 
 투자 판단과 포트폴리오 운영을 한 흐름으로 연결한 분석 워크스페이스입니다. 이 프로젝트는 단순 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증`을 한 제품 안에서 이어 주는 것을 목표로 합니다. 숫자 예측은 확률모형이 담당하고, `OpenAI / GPT-4o`는 뉴스·공시 구조화와 서술형 요약 보조에만 사용합니다.
 
-현재 릴리즈: `v2.54.1`
+현재 릴리즈: `v2.54.2`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 - 프론트: [https://yoongeon.xyz](https://yoongeon.xyz)
 - 백엔드 API: [https://api.yoongeon.xyz](https://api.yoongeon.xyz)
 - 운영 스택: `Vercel + Render + Supabase + Cloudflare`
+
+## v2.54.2 대시보드 fallback 안정화
+
+- `/api/country/KR/report`가 실시간 집계를 끝내지 못해도 최신 아카이브 리포트를 먼저 되살려, 상하위 종목·핵심 뉴스·오늘 포커스가 전부 비어 보이는 상태를 줄였습니다.
+- `/api/country/KR/heatmap`과 `/api/market/movers/KR`는 대표 종목 quote 또는 마지막 정상 스냅샷을 우선 재사용해, all-gray 히트맵이나 빈 상승/하락 패널로 남지 않도록 보강했습니다.
+- 대시보드의 movers 패널은 빈 배열만 받은 partial 응답을 정상 데이터처럼 그리지 않고, 지연 상태 카드로 자연스럽게 내리도록 표시 조건을 조정했습니다.
+- Render free 워밍업이나 외부 소스 지연이 겹칠 때도 `가짜 0값`보다 `마지막 정상값 / 대표 표본 / 지연 안내`를 우선 보여주도록 fallback 우선순위를 다시 정리했습니다.
 
 ## v2.54.1 화면 안정화 패치
 
