@@ -49,6 +49,7 @@ export function useWatchlistWorkspace({
       setLoading(false);
       return;
     }
+
     setLoading(true);
     try {
       setItems(await api.getWatchlist({ timeoutMs: WATCHLIST_TIMEOUT_MS }));
@@ -57,7 +58,10 @@ export function useWatchlistWorkspace({
     } catch (error) {
       console.error(error);
       if (!isAuthRequiredError(error)) {
-        const message = getUserFacingErrorMessage(error, "관심종목 목록을 다시 불러오지 못했습니다.");
+        const message = getUserFacingErrorMessage(
+          error,
+          "관심종목 목록을 다시 불러오지 못했습니다.",
+        );
         setLoadError(message);
         reportPanelDegraded(ROUTE_KEY, "watchlist_items", message);
         if (showFailureToast) {

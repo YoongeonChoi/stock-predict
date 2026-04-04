@@ -1212,6 +1212,83 @@ export interface ForecastDeltaResponse {
   history: ForecastDeltaHistoryItem[];
 }
 
+export type WatchlistTrackingState = "active" | "inactive";
+
+export interface WatchlistTrackingSnapshot {
+  available: boolean;
+  ticker: string;
+  name: string;
+  country_code: string;
+  current_price?: number | null;
+  target_date?: string | null;
+  predicted_close?: number | null;
+  predicted_low?: number | null;
+  predicted_high?: number | null;
+  direction?: string | null;
+  direction_label: string;
+  up_probability?: number | null;
+  confidence?: number | null;
+  confidence_note?: string | null;
+  summary?: string | null;
+  generated_at?: string | null;
+  last_prediction_at?: string | null;
+}
+
+export interface WatchlistTrackingAccuracySummary {
+  available: boolean;
+  sample_count: number;
+  evaluated_count: number;
+  direction_hit_rate?: number | null;
+  average_absolute_error_pct?: number | null;
+  message: string;
+}
+
+export interface WatchlistCurrentContextSummary {
+  available: boolean;
+  summary: string;
+  setup_label?: string | null;
+  action?: string | null;
+  market_regime_label?: string | null;
+  confidence_note?: string | null;
+  key_risks: string[];
+  key_catalysts: string[];
+}
+
+export interface WatchlistTrackingDetailResponse {
+  watchlist_meta: {
+    id: number;
+    ticker: string;
+    country_code: string;
+    added_at?: string | null;
+    tracking_enabled: boolean;
+    tracking_started_at?: string | null;
+    tracking_updated_at?: string | null;
+    name?: string | null;
+    current_price?: number | null;
+    last_prediction_at?: string | null;
+    last_outlook_label?: string | null;
+    last_confidence?: number | null;
+  };
+  tracking_state: WatchlistTrackingState;
+  latest_snapshot: WatchlistTrackingSnapshot;
+  prediction_change_summary: ForecastDeltaResponse["summary"];
+  prediction_history: ForecastDeltaHistoryItem[];
+  realized_accuracy_summary: WatchlistTrackingAccuracySummary;
+  current_context_summary: WatchlistCurrentContextSummary;
+  partial?: boolean;
+  fallback_reason?: string | null;
+  panel_states: Record<string, string>;
+}
+
+export interface WatchlistTrackingToggleResponse {
+  status: "tracking_enabled" | "tracking_disabled";
+  ticker: string;
+  country_code: string;
+  tracking_enabled: boolean;
+  tracking_started_at?: string | null;
+  tracking_updated_at?: string | null;
+}
+
 export const api = {
   ...accountApi,
   ...marketApi,
@@ -1228,6 +1305,15 @@ export const api = {
   getWatchlist: (options?: RequestOptions) => get<import("./types").WatchlistItem[]>("/api/watchlist", options),
   addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
+  enableWatchlistTracking: (ticker: string, countryCode = "KR") =>
+    post<WatchlistTrackingToggleResponse>(`/api/watchlist/${encodeURIComponent(ticker)}/tracking?country_code=${encodeURIComponent(countryCode)}`),
+  disableWatchlistTracking: (ticker: string, countryCode = "KR") =>
+    del<WatchlistTrackingToggleResponse>(`/api/watchlist/${encodeURIComponent(ticker)}/tracking?country_code=${encodeURIComponent(countryCode)}`),
+  getWatchlistTrackingDetail: (ticker: string, countryCode = "KR", options?: RequestOptions) =>
+    get<WatchlistTrackingDetailResponse>(
+      `/api/watchlist/${encodeURIComponent(ticker)}/tracking-detail?country_code=${encodeURIComponent(countryCode)}`,
+      options,
+    ),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),

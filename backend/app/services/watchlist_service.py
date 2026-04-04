@@ -4,6 +4,7 @@ from app.data import yfinance_client
 from app.data.supabase_client import supabase_client
 from app.scoring.stock_scorer import score_stock
 from app.services import portfolio_service, ticker_resolver_service
+from app.services import watchlist_tracking_service
 
 
 async def get_watchlist(user_id: str) -> list[dict]:
@@ -28,6 +29,7 @@ async def get_watchlist(user_id: str) -> list[dict]:
             price = info.get("current_price", 0)
             prev = info.get("prev_close", price)
             chg = ((price - prev) / prev * 100) if prev else 0
+            tracking_preview = await watchlist_tracking_service.get_tracking_preview(ticker)
             enriched.append({
                 **item,
                 "name": info.get("name", ticker),
@@ -35,8 +37,10 @@ async def get_watchlist(user_id: str) -> list[dict]:
                 "change_pct": round(chg, 2),
                 "score_total": round(qs.total, 1),
                 "resolution_note": resolution["note"],
+                **tracking_preview,
             })
         except Exception:
+            tracking_preview = await watchlist_tracking_service.get_tracking_preview(ticker)
             enriched.append({
                 **item,
                 "ticker": ticker,
@@ -46,6 +50,7 @@ async def get_watchlist(user_id: str) -> list[dict]:
                 "change_pct": 0,
                 "score_total": 0,
                 "resolution_note": resolution["note"],
+                **tracking_preview,
             })
     return enriched
 

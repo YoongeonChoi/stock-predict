@@ -596,4 +596,10 @@ export interface WatchlistItem {
   change_pct?: number;
   score_total?: number;
   resolution_note?: string;
+  tracking_enabled?: boolean;
+  tracking_started_at?: string | null;
+  tracking_updated_at?: string | null;
+  last_prediction_at?: string | null;
+  last_outlook_label?: string | null;
+  last_confidence?: number | null;
 }

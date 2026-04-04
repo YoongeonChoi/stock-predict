@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -26,9 +26,11 @@ import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
-import type { StockDetail } from "@/lib/types";
+import type { StockDetail, WatchlistItem } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 import { useStockDetailFlow } from "@/components/pages/useStockDetailFlow";
+
+const WATCHLIST_STATUS_TIMEOUT_MS = 6_000;
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -56,6 +58,8 @@ interface StockPageClientProps {
 export default function StockPageClient({ initialTicker, initialData = null }: StockPageClientProps) {
   const router = useRouter();
   const [chartType, setChartType] = useState<"line" | "candle">("line");
+  const [watchlistEntry, setWatchlistEntry] = useState<WatchlistItem | null>(null);
+  const [watchlistSyncing, setWatchlistSyncing] = useState(false);
   const { toast } = useToast();
   const { session } = useAuth();
   const {
@@ -74,6 +78,35 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     initialData,
   });
 
+  const refreshWatchlistEntry = async (tickerValue: string) => {
+    if (!session) {
+      setWatchlistEntry(null);
+      return;
+    }
+
+    setWatchlistSyncing(true);
+    try {
+      const entries = await api.getWatchlist({ timeoutMs: WATCHLIST_STATUS_TIMEOUT_MS });
+      setWatchlistEntry(
+        entries.find((item) => item.ticker.toUpperCase() === tickerValue.toUpperCase()) ?? null,
+      );
+    } catch (error) {
+      console.error(error);
+      setWatchlistEntry(null);
+    } finally {
+      setWatchlistSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!stock?.ticker || !session) {
+      setWatchlistEntry(null);
+      setWatchlistSyncing(false);
+      return;
+    }
+    void refreshWatchlistEntry(stock.ticker);
+  }, [session, stock?.ticker]);
+
   const addToWatchlist = async () => {
     if (!stock) {
       return;
@@ -85,10 +118,45 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     }
     try {
       await api.addWatchlist(stock.ticker, stock.country_code);
+      await refreshWatchlistEntry(stock.ticker);
       toast(`${stock.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
     } catch (error) {
       console.error(error);
       toast("워치리스트 추가에 실패했습니다.", "error");
+    }
+  };
+
+  const handleTrackingAction = async () => {
+    if (!stock) {
+      return;
+    }
+
+    if (!session) {
+      toast("관심종목과 심화 추적은 로그인 후 사용할 수 있습니다.", "info");
+      router.push(`/auth?next=${encodeURIComponent(`/stock/${stock.ticker}`)}`);
+      return;
+    }
+
+    if (!watchlistEntry) {
+      await addToWatchlist();
+      return;
+    }
+
+    if (watchlistEntry.tracking_enabled) {
+      router.push(`/watchlist/${encodeURIComponent(stock.ticker)}`);
+      return;
+    }
+
+    try {
+      setWatchlistSyncing(true);
+      await api.enableWatchlistTracking(stock.ticker, stock.country_code);
+      toast(`${stock.ticker} 심화 추적을 시작했습니다.`, "success");
+      await refreshWatchlistEntry(stock.ticker);
+      router.push(`/watchlist/${encodeURIComponent(stock.ticker)}`);
+    } catch (error) {
+      console.error(error);
+      toast("심화 추적 시작에 실패했습니다.", "error");
+      setWatchlistSyncing(false);
     }
   };
 
@@ -168,6 +236,13 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
   const stockAuditSummary = buildPublicAuditSummary(stock, {
     defaultSummary: "종목 상세는 최신 스냅샷과 공개 판단 요약을 기준으로 먼저 정리합니다.",
   });
+  const watchlistActionLabel = watchlistSyncing
+    ? "관심종목 확인 중"
+    : watchlistEntry?.tracking_enabled
+      ? "심화 추적 보기"
+      : watchlistEntry
+        ? "심화 추적 시작"
+        : "관심종목 추가";
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -197,6 +272,33 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           {stock.errors && stock.errors.length > 0 ? <WarningBanner codes={stock.errors} /> : null}
         </div>
       ) : null}
+
+      <div className="card !p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="font-semibold">관심종목 · 심화 추적</h2>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              종목을 먼저 관심종목에 저장하고, 필요한 경우 심화 추적으로 올려 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.
+            </p>
+          </div>
+          <button
+            onClick={handleTrackingAction}
+            disabled={watchlistSyncing}
+            className="action-chip-primary disabled:cursor-wait disabled:opacity-60"
+          >
+            {watchlistActionLabel}
+          </button>
+        </div>
+        <div className="text-sm text-text-secondary">
+          {!session
+            ? "로그인 후 관심종목과 심화 추적을 계정별로 저장할 수 있습니다."
+            : watchlistEntry?.tracking_enabled
+              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 이어서 확인할 수 있습니다."
+              : watchlistEntry
+                ? "이미 관심종목에 들어 있습니다. 심화 추적을 시작하면 최근 예측 변화와 적중 기록이 추가됩니다."
+                : "아직 관심종목에 없는 종목입니다. 먼저 저장한 뒤 심화 추적으로 이어갈 수 있습니다."}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {overviewMetrics.map((item) => (

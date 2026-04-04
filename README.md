@@ -8,12 +8,38 @@
 
 투자 판단과 포트폴리오 운영을 한 흐름으로 연결한 분석 워크스페이스입니다. 이 프로젝트는 단순 종목 조회 앱이 아니라 `시장 탐색 -> 종목 해석 -> 포트폴리오 운영 -> 예측 검증`을 한 제품 안에서 이어 주는 것을 목표로 합니다. 숫자 예측은 확률모형이 담당하고, `OpenAI / GPT-4o`는 뉴스·공시 구조화와 서술형 요약 보조에만 사용합니다.
 
-현재 릴리즈: `v2.53.2`
+현재 릴리즈: `v2.54.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 - 프론트: [https://yoongeon.xyz](https://yoongeon.xyz)
 - 백엔드 API: [https://api.yoongeon.xyz](https://api.yoongeon.xyz)
 - 운영 스택: `Vercel + Render + Supabase + Cloudflare`
+
+## v2.54.0 심화 추적 관심종목
+
+- `/watchlist`에서 관심종목을 저장한 뒤 `심화 추적 시작/중지`를 바로 켤 수 있습니다.
+- 추적 중인 종목은 목록 상단으로 올라오고, 최근 예측 라벨·신뢰도·기록 시각 preview를 함께 보여줍니다.
+- 새 상세 화면 `/watchlist/[ticker]`는 공개 stock shell을 먼저 보여준 뒤, 로그인 후에는 최근 예측 변화, 적중 기록, 현재 판단 근거를 이어서 불러옵니다.
+- `/stock/[ticker]`에서도 관심종목 상태를 확인해 `관심종목 추가`, `심화 추적 시작`, `심화 추적 보기` 흐름으로 이어집니다.
+
+### 이번에 추가된 API
+
+- `POST /api/watchlist/{ticker}/tracking`
+- `DELETE /api/watchlist/{ticker}/tracking`
+- `GET /api/watchlist/{ticker}/tracking-detail`
+
+### 저장 구조 메모
+
+- Supabase `watchlist` row에 아래 컬럼을 추가해 사용합니다.
+  - `tracking_enabled`
+  - `tracking_started_at`
+  - `tracking_updated_at`
+- 기존 관심종목 add/remove lifecycle 안에서 추적 on/off를 함께 관리합니다.
+
+### 새 에러 코드
+
+- `SP-6017`
+  - 관심종목에 없는 종목으로 심화 추적 toggle 또는 tracking detail을 요청했을 때 반환합니다.
 
 처음 보는 분은 이 README의 앞쪽 3개 섹션만 읽어도 “무엇을 위한 프로젝트인지 / 어떻게 작동하는지 / 지금 무엇을 할 수 있는지”를 이해할 수 있도록 구성했습니다. 더 깊은 계약과 내부 규칙은 README 안에서 개요만 설명하고, 세부 사양은 [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), [AI_CONTEXT.md](AI_CONTEXT.md), [DESIGN_BIBLE.md](DESIGN_BIBLE.md), [AGENTS.md](AGENTS.md)로 이어집니다.
 
@@ -107,7 +133,8 @@ flowchart LR
 | `/country/[code]` | 국가 리포트, macro claims, 시장 요약 | 시장 해석 사용자 | 공개 | 숫자 근거와 자유 서술 분리 |
 | `/country/[code]/sector/[id]` | 섹터 리포트와 구성 종목 | 섹터 해석 사용자 | 공개 | 국가 선택 맥락에 종속 |
 | `/portfolio` | 자산 기준, 보유 종목, 추천, 이상적 포트폴리오 | 로그인 사용자 | 로그인 우선, 로그아웃 preview | 익명 first paint는 demo preview 카드로 시작 |
-| `/watchlist` | 관심종목 저장/관리 | 로그인 사용자 | 로그인 우선, 로그아웃 preview | user-specific API는 세션 확인 뒤에만 호출 |
+| `/watchlist` | 관심종목 저장/관리, 심화 추적 토글, tracked-first preview | 로그인 사용자 | 로그인 우선, 로그아웃 preview | user-specific API는 세션 확인 뒤에만 호출 |
+| `/watchlist/[ticker]` | 심화 추적 상세, 최근 예측 변화, 적중 기록, 현재 판단 근거 | 로그인 사용자 | 공개 shell + 로그인 후 심화 데이터 | 관심종목 미포함 종목은 `SP-6017`, tracking off는 온보딩 상태 |
 | `/calendar` | 월간 일정, upcoming events, 체크포인트 | 경제 일정 추적 사용자 | 공개 | 일부 공급이 막혀도 월간 핵심 일정은 유지 |
 | `/archive` | 기관 리서치, 내부 분석 리포트 | 리서치 재열람 사용자 | 공개 | 카드 요약은 `summary_plain`만 렌더 |
 | `/lab` | 예측 실측 성과, calibration, learned fusion 상태 | 모델 검증 사용자 | 공개 | 표본 부족 시 bootstrapping 상태를 솔직하게 표시 |

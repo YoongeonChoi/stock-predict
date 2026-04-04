@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.54.0 - 2026-04-04
+
+- 관심종목 row를 확장해 `tracking_enabled`, `tracking_started_at`, `tracking_updated_at`를 같은 lifecycle 안에서 관리하도록 정리하고, 별도 tracking table 없이 심화 추적 on/off를 저장하도록 바꿨습니다.
+- `/watchlist`에 `전체 / 추적 중` 필터, tracked-first 정렬, `심화 추적 시작/중지`, `상세 보기` 흐름을 추가했습니다. 추적 중인 종목은 최근 예측 라벨과 신뢰도 preview를 바로 보여줍니다.
+- 새 상세 화면 `/watchlist/[ticker]`를 추가했습니다. 이 화면은 공개 stock shell을 먼저 렌더하고, 로그인 후에는 관심종목 membership을 확인한 뒤 최근 예측 변화, 적중 기록, 현재 판단 근거를 이어서 불러옵니다.
+- 보호 API `POST /api/watchlist/{ticker}/tracking`, `DELETE /api/watchlist/{ticker}/tracking`, `GET /api/watchlist/{ticker}/tracking-detail`를 추가했습니다. 관심종목에 없는 종목으로 심화 추적을 요청하면 새 에러 코드 `SP-6017`을 반환합니다.
+- `/stock/[ticker]`에서 관심종목 여부를 확인해 심화 추적 시작/보기로 연결되는 진입 패널을 추가했고, 기존 공개 stock detail 분석과 watchlist 상세 흐름이 자연스럽게 이어지도록 정리했습니다.
+
 ## v2.53.2 - 2026-04-04
 
 - 전 화면 반응형 정리를 위해 `frontend/src/app/globals.css`에 semantic `clamp()` typography / spacing / control 토큰을 추가하고, 버튼·입력·패널·테이블 래퍼를 `ui-button-*`, `ui-input`, `ui-panel*`, `ui-table-shell` 공용 primitive로 다시 묶었습니다.

@@ -188,6 +188,11 @@ SP_6016 = lambda d="": AppError(
     "Too many public account requests",
     d or "Wait briefly, then retry the username or signup validation request.",
 )
+SP_6017 = lambda d="": AppError(
+    "SP-6017",
+    "Watchlist item not found",
+    d or "Add the ticker to your watchlist before opening deep tracking.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors
