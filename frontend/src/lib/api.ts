@@ -757,6 +757,8 @@ export interface PredictionRecentRecord {
   scope: string;
   symbol: string;
   country_code?: string | null;
+  prediction_type?: string;
+  prediction_label?: string;
   target_date: string;
   reference_date?: string | null;
   reference_price: number;
@@ -773,6 +775,47 @@ export interface PredictionRecentRecord {
   model_version: string;
   created_at: number;
   evaluated_at?: number | null;
+}
+
+export interface PredictionLabActionItem {
+  key: string;
+  severity: "high" | "medium" | "info";
+  title: string;
+  detail: string;
+  metric_label?: string | null;
+  metric_value?: string | null;
+}
+
+export interface PredictionLabFailurePattern {
+  key: string;
+  title: string;
+  detail: string;
+  count: number;
+  avg_error_pct: number;
+  avg_confidence: number;
+  example_symbol?: string | null;
+  severity: "high" | "medium" | "info";
+}
+
+export interface PredictionLabReviewItem {
+  id: number;
+  prediction_type: string;
+  prediction_label: string;
+  scope: string;
+  symbol: string;
+  country_code?: string | null;
+  target_date: string;
+  direction: "up" | "down" | "flat";
+  direction_hit?: boolean | null;
+  within_range?: boolean | null;
+  abs_error_pct?: number | null;
+  confidence: number;
+  fusion_method: string;
+  graph_context_used: boolean;
+  graph_coverage?: number | null;
+  review_kind: string;
+  review_summary: string;
+  stock_path?: string | null;
 }
 
 export interface PredictionLabResponse {
@@ -881,6 +924,9 @@ export interface PredictionLabResponse {
     graph_context_used?: boolean;
     graph_coverage?: number;
   })[];
+  action_queue: PredictionLabActionItem[];
+  failure_patterns: PredictionLabFailurePattern[];
+  review_queue: PredictionLabReviewItem[];
   insights: string[];
 }
 

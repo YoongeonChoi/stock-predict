@@ -16,6 +16,7 @@ from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, y
 from app.data.universe_data import (
     UNIVERSE,
     UniverseSelection,
+    fetch_krx_listing_universe,
     resolve_opportunity_universe,
     resolve_universe,
 )
@@ -63,6 +64,22 @@ QUICK_OPPORTUNITY_CACHE_TTL_SECONDS = 300
 QUOTE_SCREEN_CACHE_WAIT_TIMEOUT_SECONDS = 1.6
 FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 3.0
 QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 2.5
+QUICK_KRX_LISTING_FETCH_TIMEOUT_SECONDS = 2.5
+
+
+def _has_full_quote_screen_coverage(
+    payload: dict | None,
+    *,
+    expected_universe_size: int | None = None,
+) -> bool:
+    if not payload:
+        return False
+    total_scanned = int(payload.get("total_scanned") or 0)
+    quote_available_count = int(payload.get("quote_available_count") or 0)
+    universe_size = int(expected_universe_size or payload.get("universe_size") or 0)
+    if total_scanned <= 0 or quote_available_count <= 0 or universe_size <= 0:
+        return False
+    return total_scanned >= universe_size
 
 
 def _can_reuse_quick_seed_payload(quick_seed_payload: dict | None, universe_selection) -> bool:
@@ -76,7 +93,12 @@ def _can_reuse_quick_seed_payload(quick_seed_payload: dict | None, universe_sele
     cached_size = int(quick_seed_payload.get("universe_size") or 0)
     if expected_size <= 0 or cached_size <= 0:
         return False
-    return expected_size == cached_size
+    if expected_size != cached_size:
+        return False
+    return _has_full_quote_screen_coverage(
+        quick_seed_payload,
+        expected_universe_size=expected_size,
+    )
 
 
 
@@ -271,7 +293,7 @@ async def _build_kr_representative_quote_only_opportunities(
 
 
 def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
-    return f"opportunity_radar_quick:v2:{country_code.upper()}:{int(limit)}"
+    return f"opportunity_radar_quick:v3:{country_code.upper()}:{int(limit)}"
 
 
 def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> dict:
@@ -327,7 +349,7 @@ def _full_opportunity_cache_key(
     *,
     max_candidates: int | None = None,
 ) -> str:
-    return f"opportunity_radar:v16:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
+    return f"opportunity_radar:v17:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
 
 
 async def _build_quote_screen(
@@ -453,6 +475,16 @@ async def _resolve_quick_opportunity_universe(country_code: str):
                     source="krx_listing",
                     note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 백그라운드에서 이어집니다.",
                 )
+        try:
+            fetched = await asyncio.wait_for(
+                fetch_krx_listing_universe(country_code),
+                timeout=QUICK_KRX_LISTING_FETCH_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            fetched = None
+        if fetched and getattr(fetched, "sectors", None):
+            return fetched
+
         fallback_sectors = {
             sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
             for sector, tickers in UNIVERSE.get(country_code, {}).items()
@@ -1151,9 +1183,23 @@ async def get_cached_market_opportunities(
     opportunities = list(cached.get("opportunities") or [])
     quote_available_count = int(cached.get("quote_available_count") or 0)
     detailed_scanned_count = int(cached.get("detailed_scanned_count") or 0)
-    if quote_available_count <= 0 or not opportunities or detailed_scanned_count <= 0:
+    if quote_available_count <= 0 or not opportunities:
         return None
-    return cached
+    if detailed_scanned_count > 0:
+        return cached
+    if not _has_full_quote_screen_coverage(cached):
+        return None
+
+    normalized = dict(cached)
+    normalized.setdefault("partial", True)
+    normalized.setdefault("fallback_reason", "opportunity_quote_only_full")
+    full_scan_note = "전종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+    existing_note = str(normalized.get("universe_note") or "").strip()
+    if full_scan_note not in existing_note:
+        normalized["universe_note"] = " ".join(
+            part for part in [existing_note, full_scan_note] if part
+        ).strip()
+    return normalized
 
 
 def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:

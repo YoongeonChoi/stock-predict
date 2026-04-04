@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { PredictionLabResponse } from "@/lib/api";
 import { changeColor } from "@/lib/utils";
 import {
@@ -59,6 +60,25 @@ function realizedDirectionLabel(actualClose?: number | null, referencePrice?: nu
   return "보합";
 }
 
+function severityLabel(severity: string) {
+  if (severity === "high") return "우선";
+  if (severity === "medium") return "주의";
+  return "정보";
+}
+
+function severityTone(severity: string) {
+  if (severity === "high") return "bg-rose-50 text-rose-600 border-rose-200";
+  if (severity === "medium") return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-sky-50 text-sky-700 border-sky-200";
+}
+
+function reviewKindLabel(kind: string) {
+  if (kind === "miss") return "미스 복기";
+  if (kind === "direction-hit") return "밴드 점검";
+  if (kind === "clean-hit") return "정상 적중";
+  return "평가 대기";
+}
+
 export default function PredictionLabDashboard({ data }: Props) {
   const accuracy = data.accuracy;
   const trendData = data.recent_trend.map((row) => ({
@@ -73,6 +93,9 @@ export default function PredictionLabDashboard({ data }: Props) {
   const fusionProfileByType = new Map(fusionProfiles.map((row) => [row.prediction_type, row]));
   const graphSummary = data.graph_context_summary;
   const fusionStatus = data.fusion_status_summary;
+  const actionQueue = data.action_queue ?? [];
+  const failurePatterns = data.failure_patterns ?? [];
+  const reviewQueue = data.review_queue ?? [];
   const recentFailures = data.recent_records
     .filter((row) => row.direction_hit === false || row.within_range === false)
     .slice(0, 5);
@@ -122,6 +145,33 @@ export default function PredictionLabDashboard({ data }: Props) {
             <p className="text-sm text-text-secondary mt-1">실제 저장된 예측과 실현 종가를 바탕으로 자동 생성한 진단 메모입니다.</p>
           </div>
           <div className="space-y-2">
+            {actionQueue.length === 0 ? (
+              <div className="rounded-xl border border-border/70 bg-surface/60 px-3 py-3 text-sm text-text-secondary">
+                아직 우선순위를 매길 만큼 충분한 검증 신호가 쌓이지 않았습니다. 아래 진단 메모와 horizon별 지표를 함께 보면서 표본이 더 쌓이기를 기다려 주세요.
+              </div>
+            ) : (
+              actionQueue.map((item) => (
+                <div key={item.key} className="rounded-xl border border-border/70 bg-surface/60 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{item.title}</div>
+                      <div className="mt-1 text-sm text-text-secondary">{item.detail}</div>
+                    </div>
+                    <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${severityTone(item.severity)}`}>
+                      {severityLabel(item.severity)}
+                    </span>
+                  </div>
+                  {item.metric_label && item.metric_value ? (
+                    <div className="mt-2 text-xs text-text-secondary">
+                      {item.metric_label} · {item.metric_value}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="border-t border-border/70 pt-4 space-y-2">
+            <div className="text-xs font-semibold text-text-secondary">자동 진단 메모</div>
             {data.insights.map((insight) => (
               <div key={insight} className="rounded-xl border border-border/70 bg-surface/60 px-3 py-2 text-sm">
                 {insight}
@@ -394,6 +444,91 @@ export default function PredictionLabDashboard({ data }: Props) {
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[0.92fr_1.08fr] gap-5">
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">반복되는 실패 패턴</h2>
+            <p className="text-sm text-text-secondary mt-1">최근 미스 기록을 묶어서 어디에서 자주 흔들리는지 먼저 보여줍니다.</p>
+          </div>
+          {failurePatterns.length === 0 ? (
+            <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
+              아직 반복 패턴으로 묶일 만큼 최근 실패 표본이 충분하지 않습니다. 새 검증 로그가 더 쌓이면 이 영역이 자동으로 채워집니다.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {failurePatterns.map((pattern) => (
+                <div key={pattern.key} className="rounded-xl border border-border/70 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{pattern.title}</div>
+                      <div className="mt-1 text-sm text-text-secondary">{pattern.detail}</div>
+                    </div>
+                    <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${severityTone(pattern.severity)}`}>
+                      {severityLabel(pattern.severity)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3 text-xs text-text-secondary">
+                    <div>발생 {pattern.count}건</div>
+                    <div>평균 오차 {pattern.avg_error_pct.toFixed(2)}%</div>
+                    <div>평균 신뢰도 {pattern.avg_confidence.toFixed(1)}</div>
+                  </div>
+                  {pattern.example_symbol ? (
+                    <div className="mt-2 text-xs text-text-secondary">예시 심볼 · {pattern.example_symbol}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card !p-4 space-y-3">
+          <div>
+            <h2 className="font-semibold text-base">리뷰 큐</h2>
+            <p className="text-sm text-text-secondary mt-1">바로 복기할 예측을 우선순위대로 정리해 상세 화면으로 이어서 볼 수 있게 했습니다.</p>
+          </div>
+          {reviewQueue.length === 0 ? (
+            <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
+              아직 우선 복기할 최근 예측이 충분하지 않습니다. 새 실측 로그가 들어오면 여기서 바로 추적할 수 있습니다.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {reviewQueue.map((item) => (
+                <div key={`review-${item.id}`} className="rounded-xl border border-border/70 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{item.symbol}</span>
+                        <span className="text-xs text-text-secondary">{item.prediction_label}</span>
+                        <span className="rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-text-secondary">
+                          {reviewKindLabel(item.review_kind)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-sm text-text-secondary">{item.review_summary}</div>
+                    </div>
+                    {item.stock_path ? (
+                      <Link href={item.stock_path} className="text-xs font-medium text-primary hover:underline">
+                        상세 보기
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-4 text-xs text-text-secondary">
+                    <div>
+                      목표일 · {item.target_date}
+                      {item.country_code ? ` · ${item.country_code}` : ""}
+                    </div>
+                    <div>신뢰도 · {item.confidence.toFixed(1)}</div>
+                    <div>Fusion · {methodLabel(item.fusion_method)}</div>
+                    <div>
+                      Graph · {item.graph_context_used ? `${(Number(item.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

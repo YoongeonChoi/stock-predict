@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.55.0 - 2026-04-04
+
+- `/lab` 예측 연구실에 `지금 볼 것` 액션 큐를 추가해, horizon별 표본 부족, calibration gap, graph coverage 저하, 고신뢰 미스 같은 신호를 우선순위로 정리해 보여줍니다.
+- 최근 실측 로그를 묶어 `반복되는 실패 패턴`을 새로 노출하고, 어떤 종류의 미스가 반복되는지와 평균 오차/신뢰도를 한 번에 읽을 수 있게 했습니다.
+- `리뷰 큐`를 추가해 최근 예측 중 먼저 복기할 항목을 정렬하고, stock scope 항목은 `/stock/[ticker]` 상세 화면으로 바로 이어지게 했습니다.
+- prediction lab 응답에 `action_queue`, `failure_patterns`, `review_queue`, `prediction_type`, `prediction_label`을 additive로 확장하고, 관련 회귀 테스트와 프론트 타입을 함께 맞췄습니다.
+
 ## v2.54.2 - 2026-04-04
 
 - `/api/country/KR/report`가 라이브 계산을 끝내지 못하는 구간에도 최신 아카이브 리포트를 stale-but-usable fallback으로 되살려, 대시보드의 핵심 뉴스, 상위 종목, 오늘 포커스가 한 번에 비는 현상을 줄였습니다.

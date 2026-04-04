@@ -100,10 +100,12 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(quote_screen["ranked"]), 2)
         self.assertEqual(quote_screen["ranked"][0]["ticker"], "047810.KS")
 
-    def test_can_reuse_quick_seed_payload_requires_matching_source_and_size(self):
+    def test_can_reuse_quick_seed_payload_requires_matching_source_size_and_coverage(self):
         payload = {
             "universe_source": "krx_listing",
             "universe_size": 2729,
+            "total_scanned": 72,
+            "quote_available_count": 72,
         }
         selection = SimpleNamespace(
             sectors={"Information Technology": ["005930.KS", "000660.KS"]},
@@ -120,6 +122,20 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
+
+        tickers = [f"{index:06d}.KS" for index in range(2729)]
+        selection = SimpleNamespace(
+            sectors={"Information Technology": tickers},
+            source="krx_listing",
+            note="test universe",
+        )
+
+        self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
+
+        payload["total_scanned"] = 2729
+        payload["quote_available_count"] = 130
+
+        self.assertTrue(market_service._can_reuse_quick_seed_payload(payload, selection))
 
     def test_sample_universe_pairs_round_robins_across_sectors(self):
         pairs = market_service._sample_universe_pairs(
@@ -670,7 +686,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["fallback_tier"], "full")
         self.assertEqual(result["quote_available_count"], 84)
 
-    async def test_get_cached_market_opportunities_ignores_quote_only_full_snapshot(self):
+    async def test_get_cached_market_opportunities_ignores_partially_scanned_quote_only_full_snapshot(self):
         cached_payload = {
             "country_code": "KR",
             "snapshot_id": "KR:full:20260329T120500",
@@ -705,9 +721,67 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
 
-    async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_before_dynamic_fetch(self):
+    async def test_get_cached_market_opportunities_returns_full_quote_only_snapshot_when_scan_finished(self):
+        cached_payload = {
+            "country_code": "KR",
+            "snapshot_id": "KR:full:20260329T120500",
+            "generated_at": "2026-03-29T12:05:00",
+            "fallback_tier": "full",
+            "market_regime": {
+                "label": "KR",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 40.0,
+                "summary": "cached",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 210,
+            "total_scanned": 210,
+            "quote_available_count": 72,
+            "detailed_scanned_count": 0,
+            "actionable_count": 8,
+            "bullish_count": 5,
+            "universe_source": "krx_listing",
+            "universe_note": "cached quote-only full",
+            "opportunities": [{"ticker": "005930.KS", "current_price": 70100.0, "change_pct": 4.1}],
+        }
+
+        with patch("app.services.market_service.cache.get", new=AsyncMock(return_value=cached_payload)):
+            result = await market_service.get_cached_market_opportunities("KR", limit=12)
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "opportunity_quote_only_full")
+        self.assertIn("전종목 1차 스캔 결과", result["universe_note"])
+
+    async def test_resolve_quick_opportunity_universe_fetches_krx_listing_on_cache_miss(self):
+        fetched_selection = SimpleNamespace(
+            sectors={"Information Technology": ["005930.KS", "000660.KS", "035420.KS"]},
+            source="krx_listing",
+            note="fetched krx listing",
+        )
+
         with (
             patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
+            patch(
+                "app.services.market_service.fetch_krx_listing_universe",
+                new=AsyncMock(return_value=fetched_selection),
+            ),
+        ):
+            selection = await market_service._resolve_quick_opportunity_universe("KR")
+
+        self.assertEqual(selection.source, "krx_listing")
+        self.assertEqual(sum(len(v) for v in selection.sectors.values()), 3)
+
+    async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_when_krx_listing_fetch_fails(self):
+        with (
+            patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.market_service.fetch_krx_listing_universe", new=AsyncMock(return_value=None)),
             patch(
                 "app.services.market_service.resolve_universe",
                 new=AsyncMock(side_effect=AssertionError("quick KR fallback should not wait for resolve_universe")),

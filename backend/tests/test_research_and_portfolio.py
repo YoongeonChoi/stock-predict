@@ -451,7 +451,12 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["fusion_status_summary"]["active_model_version"], "dist-studentt-v3.3-lfgraph")
         self.assertEqual(result["breakdown"]["by_country"][0]["label"], "KR")
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
+        self.assertEqual(result["recent_records"][0]["prediction_type"], "next_day")
         self.assertEqual(result["recent_records"][0]["fusion_method"], "learned_blended_graph")
+        self.assertTrue(result["action_queue"])
+        self.assertEqual(result["failure_patterns"], [])
+        self.assertEqual(result["review_queue"][0]["symbol"], "005930.KS")
+        self.assertEqual(result["review_queue"][0]["review_kind"], "clean-hit")
         self.assertTrue(result["insights"])
 
     async def test_prediction_lab_uses_runtime_summary_when_recent_query_times_out(self):
@@ -530,6 +535,9 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["recent_records"], [])
         self.assertEqual(result["horizon_accuracy"][0]["current_method"], "learned_blended_graph")
         self.assertTrue(result["graph_context_summary"]["coverage_available"])
+        self.assertTrue(result["action_queue"])
+        self.assertEqual(result["failure_patterns"], [])
+        self.assertEqual(result["review_queue"], [])
 
     async def test_portfolio_empty_snapshot(self):
         with (

@@ -74,6 +74,7 @@ def _parse_calibration_json(raw_snapshot: str | dict | None) -> dict:
 def _normalize_recent(rows: list[dict]) -> list[dict]:
     records = []
     for row in rows:
+        prediction_type = str(row.get("prediction_type") or "next_day")
         actual_close = row.get("actual_close")
         reference_price = float(row.get("reference_price") or 0)
         predicted_close = float(row.get("predicted_close") or 0)
@@ -101,6 +102,8 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
         records.append(
             {
                 "id": row["id"],
+                "prediction_type": prediction_type,
+                "prediction_label": _prediction_label(prediction_type),
                 "scope": row["scope"],
                 "symbol": row["symbol"],
                 "country_code": row.get("country_code"),
@@ -353,6 +356,264 @@ def _build_insights(
     return insights[:6]
 
 
+def _severity_rank(level: str) -> int:
+    if level == "high":
+        return 0
+    if level == "medium":
+        return 1
+    return 2
+
+
+def _build_action_queue(
+    *,
+    accuracy: dict,
+    horizon_accuracy: list[dict],
+    empirical_calibration: list[dict],
+    fusion_profiles: list[dict],
+    graph_context_summary: dict,
+    recent_records: list[dict],
+) -> list[dict]:
+    actions: list[dict] = []
+    empirical_by_type = {row["prediction_type"]: row for row in empirical_calibration}
+    fusion_by_type = {row["prediction_type"]: row for row in fusion_profiles}
+
+    for row in horizon_accuracy:
+        prediction_type = row["prediction_type"]
+        label = row["label"]
+        total_predictions = int(row.get("total_predictions") or 0)
+        direction_accuracy = float(row.get("direction_accuracy") or 0.0) * 100.0
+        avg_error_pct = float(row.get("avg_error_pct") or 0.0)
+        profile = fusion_by_type.get(prediction_type) or {}
+        empirical = empirical_by_type.get(prediction_type) or {}
+        reliability_gap = float(empirical.get("max_reliability_gap") or 0.0)
+        prior_brier_delta = profile.get("prior_brier_delta")
+
+        if 0 < total_predictions < 30:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:sample",
+                    "severity": "medium",
+                    "title": f"{label} 검증 표본 축적 필요",
+                    "detail": f"{label} 검증 완료 표본이 {total_predictions}건이라 방향 적중과 보정 상태를 단정하기엔 아직 얕습니다.",
+                    "metric_label": "검증 표본",
+                    "metric_value": f"{total_predictions}건",
+                }
+            )
+
+        if reliability_gap >= 8.0:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:gap",
+                    "severity": "high",
+                    "title": f"{label} reliability gap 점검",
+                    "detail": f"{label} calibrator의 최대 gap이 {reliability_gap:.1f}%로 커서 confidence 해석이 흔들릴 수 있습니다.",
+                    "metric_label": "최대 gap",
+                    "metric_value": f"{reliability_gap:.1f}%",
+                }
+            )
+
+        if total_predictions >= 20 and prior_brier_delta is not None and float(prior_brier_delta) <= 0:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:fusion",
+                    "severity": "high",
+                    "title": f"{label} fusion 성능 재점검",
+                    "detail": f"{label} learned fusion이 prior 대비 Brier 개선을 만들지 못해 현재 조합 가중치 점검이 필요합니다.",
+                    "metric_label": "prior delta",
+                    "metric_value": f"{float(prior_brier_delta):.4f}",
+                }
+            )
+
+        if total_predictions >= 20 and direction_accuracy < 55.0 and avg_error_pct >= 2.5:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:accuracy",
+                    "severity": "medium",
+                    "title": f"{label} 방향/오차 동시 점검",
+                    "detail": f"{label}는 방향 적중 {direction_accuracy:.1f}%에 평균 오차 {avg_error_pct:.2f}%로 최근 안정성이 약합니다.",
+                    "metric_label": "방향 적중",
+                    "metric_value": f"{direction_accuracy:.1f}%",
+                }
+            )
+
+    if graph_context_summary.get("coverage_available"):
+        graph_used_rate = float(graph_context_summary.get("used_rate") or 0.0) * 100.0
+        avg_coverage = float(graph_context_summary.get("avg_coverage") or 0.0) * 100.0
+        if graph_used_rate < 40.0:
+            actions.append(
+                {
+                    "key": "graph:usage",
+                    "severity": "medium",
+                    "title": "Graph context 활용률 점검",
+                    "detail": f"최근 검증 로그에서 graph context 사용률이 {graph_used_rate:.1f}%로 낮아, 관계형 보강이 충분히 쓰이지 못하고 있습니다.",
+                    "metric_label": "활용률",
+                    "metric_value": f"{graph_used_rate:.1f}%",
+                }
+            )
+        elif avg_coverage < 35.0:
+            actions.append(
+                {
+                    "key": "graph:coverage",
+                    "severity": "medium",
+                    "title": "Graph context coverage 보강",
+                    "detail": f"graph context가 쓰이더라도 평균 coverage가 {avg_coverage:.1f}%라, peer/sector 관계 정보가 얕게 들어가고 있습니다.",
+                    "metric_label": "평균 coverage",
+                    "metric_value": f"{avg_coverage:.1f}%",
+                }
+            )
+
+    high_confidence_misses = [
+        record
+        for record in recent_records
+        if record.get("direction_hit") is False and float(record.get("confidence") or 0.0) >= 60.0
+    ]
+    if high_confidence_misses:
+        avg_error = sum(float(record.get("abs_error_pct") or 0.0) for record in high_confidence_misses) / max(
+            len(high_confidence_misses), 1
+        )
+        actions.append(
+            {
+                "key": "recent:high-confidence-miss",
+                "severity": "high",
+                "title": "고신뢰 미스 리뷰 필요",
+                "detail": f"최근 고신뢰 미스가 {len(high_confidence_misses)}건 있어 confidence 표시와 실제 적중률의 간극을 다시 확인해야 합니다.",
+                "metric_label": "평균 오차",
+                "metric_value": f"{avg_error:.2f}%",
+            }
+        )
+
+    total_predictions = int(accuracy.get("total_predictions") or 0)
+    if not actions and total_predictions > 0:
+        actions.append(
+            {
+                "key": "baseline:stable",
+                "severity": "info",
+                "title": "연구실 기본 점검 상태 유지",
+                "detail": "현재 공개 검증 지표에서는 즉시 손봐야 할 큰 붕괴 신호가 없으므로, 최근 miss review와 horizon별 추세를 계속 확인하면 됩니다.",
+                "metric_label": "검증 표본",
+                "metric_value": f"{total_predictions}건",
+            }
+        )
+
+    actions.sort(key=lambda item: (_severity_rank(item["severity"]), item["title"]))
+    return actions[:4]
+
+
+def _build_failure_patterns(recent_records: list[dict]) -> list[dict]:
+    misses = [record for record in recent_records if record.get("direction_hit") is False]
+    if not misses:
+        return []
+
+    patterns: list[dict] = []
+    pattern_defs = [
+        (
+            "high_confidence_miss",
+            "고신뢰 미스",
+            lambda row: float(row.get("confidence") or 0.0) >= 60.0,
+            "confidence가 높았는데도 방향이 빗나간 사례입니다.",
+        ),
+        (
+            "range_miss",
+            "밴드 이탈",
+            lambda row: row.get("within_range") is False,
+            "예측 밴드 밖으로 실제 종가가 벗어난 사례입니다.",
+        ),
+        (
+            "prior_only_miss",
+            "prior-only 미스",
+            lambda row: (row.get("fusion_method") or "prior_only") == "prior_only",
+            "fusion 보강 없이 prior backbone만으로 처리된 미스입니다.",
+        ),
+        (
+            "graph_unused_miss",
+            "graph 미사용 미스",
+            lambda row: not bool(row.get("graph_context_used")),
+            "graph context가 붙지 않은 상태에서 난 미스입니다.",
+        ),
+    ]
+
+    for key, title, predicate, detail in pattern_defs:
+        matched = [row for row in misses if predicate(row)]
+        if not matched:
+            continue
+        avg_error_pct = sum(float(row.get("abs_error_pct") or 0.0) for row in matched) / max(len(matched), 1)
+        patterns.append(
+            {
+                "key": key,
+                "title": title,
+                "detail": detail,
+                "count": len(matched),
+                "avg_error_pct": round(avg_error_pct, 2),
+                "avg_confidence": round(
+                    sum(float(row.get("confidence") or 0.0) for row in matched) / max(len(matched), 1),
+                    1,
+                ),
+                "example_symbol": matched[0].get("symbol"),
+                "severity": "high" if len(matched) >= 2 else "medium",
+            }
+        )
+
+    patterns.sort(key=lambda item: (-item["count"], -item["avg_error_pct"], _severity_rank(item["severity"])))
+    return patterns[:4]
+
+
+def _build_review_queue(recent_records: list[dict]) -> list[dict]:
+    if not recent_records:
+        return []
+
+    def _record_rank(row: dict) -> tuple[int, float, float]:
+        miss_priority = 0 if row.get("direction_hit") is False else 1 if row.get("direction_hit") is True else 2
+        confidence = float(row.get("confidence") or 0.0)
+        abs_error_pct = float(row.get("abs_error_pct") or 0.0)
+        return (miss_priority, -abs_error_pct, -confidence)
+
+    queue: list[dict] = []
+    for row in sorted(recent_records, key=_record_rank):
+        direction_hit = row.get("direction_hit")
+        within_range = row.get("within_range")
+        symbol = row.get("symbol")
+        prediction_label = _prediction_label(str(row.get("prediction_type") or "next_day"))
+        if direction_hit is False:
+            summary = (
+                f"{prediction_label} 예측에서 {symbol} 방향 판단이 빗나갔고, "
+                f"오차 {float(row.get('abs_error_pct') or 0.0):.2f}%를 기록했습니다."
+            )
+            review_kind = "miss"
+        elif direction_hit is True and within_range is True:
+            summary = f"{prediction_label} 예측에서 {symbol}은 방향과 밴드를 모두 맞췄습니다."
+            review_kind = "clean-hit"
+        elif direction_hit is True:
+            summary = f"{prediction_label} 예측에서 {symbol}은 방향은 맞췄지만 밴드는 벗어났습니다."
+            review_kind = "direction-hit"
+        else:
+            summary = f"{prediction_label} 예측에서 {symbol}은 아직 실제 종가 평가가 끝나지 않았습니다."
+            review_kind = "pending"
+
+        queue.append(
+            {
+                "id": row["id"],
+                "prediction_type": row.get("prediction_type") or "next_day",
+                "prediction_label": prediction_label,
+                "scope": row["scope"],
+                "symbol": symbol,
+                "country_code": row.get("country_code"),
+                "target_date": row["target_date"],
+                "direction": row["direction"],
+                "direction_hit": direction_hit,
+                "within_range": within_range,
+                "abs_error_pct": row.get("abs_error_pct"),
+                "confidence": row["confidence"],
+                "fusion_method": row.get("fusion_method") or "prior_only",
+                "graph_context_used": bool(row.get("graph_context_used")),
+                "graph_coverage": row.get("graph_coverage"),
+                "review_kind": review_kind,
+                "review_summary": summary,
+                "stock_path": f"/stock/{symbol}" if row.get("scope") == "stock" and symbol else None,
+            }
+        )
+    return queue[:6]
+
+
 def _zero_prediction_stats() -> dict:
     return {
         "stored_predictions": 0,
@@ -443,6 +704,16 @@ async def _build_prediction_lab_fallback(
         "calibration": [],
         "recent_trend": [],
         "recent_records": [],
+        "action_queue": _build_action_queue(
+            accuracy=accuracy,
+            horizon_accuracy=horizon_accuracy,
+            empirical_calibration=empirical_calibration,
+            fusion_profiles=fusion_profiles,
+            graph_context_summary=graph_context_summary,
+            recent_records=[],
+        ),
+        "failure_patterns": [],
+        "review_queue": [],
         "insights": _build_insights(
             accuracy,
             [],
@@ -587,6 +858,16 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         "calibration": calibration,
         "recent_trend": trend,
         "recent_records": recent_records,
+        "action_queue": _build_action_queue(
+            accuracy=accuracy,
+            horizon_accuracy=horizon_accuracy,
+            empirical_calibration=empirical_calibration,
+            fusion_profiles=fusion_profiles,
+            graph_context_summary=graph_context_summary,
+            recent_records=recent_records,
+        ),
+        "failure_patterns": _build_failure_patterns(recent_records),
+        "review_queue": _build_review_queue(recent_records),
         "insights": _build_insights(
             accuracy,
             by_country,
