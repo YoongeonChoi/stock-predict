@@ -627,66 +627,66 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           </div>
         </div>
 
-        <div className="card !p-5 space-y-4 h-fit xl:sticky xl:top-5">
+        <div className="card h-fit space-y-4 xl:sticky xl:top-5">
           <div>
             <h2 className="section-title">총자산 설정</h2>
           </div>
           <div className="space-y-3">
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">총자산</label>
-              <input value={profileForm.totalAssets} onChange={(e) => setProfileForm((prev) => ({ ...prev, totalAssets: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">총자산</label>
+              <input value={profileForm.totalAssets} onChange={(e) => setProfileForm((prev) => ({ ...prev, totalAssets: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">예수금</label>
-              <input value={profileForm.cashBalance} onChange={(e) => setProfileForm((prev) => ({ ...prev, cashBalance: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">예수금</label>
+              <input value={profileForm.cashBalance} onChange={(e) => setProfileForm((prev) => ({ ...prev, cashBalance: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">월 추가 자금</label>
-              <input value={profileForm.monthlyBudget} onChange={(e) => setProfileForm((prev) => ({ ...prev, monthlyBudget: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">월 추가 자금</label>
+              <input value={profileForm.monthlyBudget} onChange={(e) => setProfileForm((prev) => ({ ...prev, monthlyBudget: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
           </div>
-          {profileError ? <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">{profileError}</div> : null}
-          <button onClick={saveProfile} disabled={savingProfile} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+          {profileError ? <div className="rounded-[24px] border border-negative/20 bg-negative/5 px-4 py-3 text-[0.95rem] text-negative">{profileError}</div> : null}
+          <button onClick={saveProfile} disabled={savingProfile} className="ui-button-primary w-full">
             {savingProfile ? "자산 기준 저장 중..." : "자산 기준 저장"}
           </button>
         </div>
       </section>
-      <section className="card !p-5 space-y-5">
+      <section className="card space-y-5">
         <div className="section-heading">
           <div>
             <h2 className="section-title">보유 종목 관리</h2>
           </div>
-          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="action-chip-secondary">수정 취소</button> : null}
+          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="ui-button-secondary">수정 취소</button> : null}
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_180px_140px_180px_auto]">
           <div className="min-w-0">
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">티커</label>
-            <input value={holdingForm.ticker} onChange={(e) => setHoldingForm((prev) => ({ ...prev, ticker: e.target.value }))} placeholder={activeGuide.placeholder} className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">티커</label>
+            <input value={holdingForm.ticker} onChange={(e) => setHoldingForm((prev) => ({ ...prev, ticker: e.target.value }))} placeholder={activeGuide.placeholder} className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수가</label>
-            <input value={holdingForm.buyPrice} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyPrice: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">매수가</label>
+            <input value={holdingForm.buyPrice} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyPrice: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">수량</label>
-            <input value={holdingForm.quantity} onChange={(e) => setHoldingForm((prev) => ({ ...prev, quantity: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">수량</label>
+            <input value={holdingForm.quantity} onChange={(e) => setHoldingForm((prev) => ({ ...prev, quantity: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수일</label>
-            <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">매수일</label>
+            <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="ui-input" />
           </div>
           <div className="flex items-end">
-            <button onClick={submitHolding} disabled={submittingHolding} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+            <button onClick={submitHolding} disabled={submittingHolding} className="ui-button-primary w-full">
               {submittingHolding ? "저장 중..." : editingHoldingId != null ? "보유 종목 수정" : "보유 종목 추가"}
             </button>
           </div>
         </div>
 
-        <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-3 space-y-2">
+        <div className="ui-panel-muted space-y-2">
           <div className="text-xs text-text-secondary">{activeGuide.label}: {activeGuide.helper}</div>
           <TickerResolutionHint resolution={resolution} />
-          {formError ? <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">{formError}</div> : null}
+          {formError ? <div className="rounded-[22px] border border-negative/20 bg-negative/5 px-4 py-3 text-[0.95rem] text-negative">{formError}</div> : null}
         </div>
       </section>
 
@@ -695,7 +695,60 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           <h2 className="section-title">보유 종목</h2>
         </div>
         {hasHoldings ? (
-          <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
+          <>
+          <div className="space-y-3 px-4 py-4 md:hidden">
+            {data?.holdings.map((holding) => (
+              <article key={holding.id} className="ui-panel space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/stock/${holding.ticker}`} className="font-semibold text-text hover:text-accent">
+                      {holding.name}
+                    </Link>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{holding.ticker} · {holding.country_code} · {holding.sector}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">비중</div>
+                    <div className="mt-1 text-lg font-semibold text-text">{holding.weight_pct.toFixed(1)}%</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[0.9rem]">
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">매수 정보</div>
+                    <div className="mt-1 font-medium text-text">{formatPrice(holding.buy_price, holding.country_code)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{formatQuantity(holding.quantity)}주 · {holding.buy_date}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">평가</div>
+                    <div className="mt-1 font-medium text-text">{formatPrice(holding.current_price, holding.country_code)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">평가액 {formatAssetValue(holding.current_value)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">손익</div>
+                    <div className={`mt-1 font-semibold ${changeColor(holding.pnl)}`}>{holding.pnl >= 0 ? "+" : ""}{formatAssetValue(holding.pnl)}</div>
+                    <div className={`mt-1 text-[0.78rem] ${changeColor(holding.pnl_pct)}`}>{formatPct(holding.pnl_pct)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">리스크 / 확률</div>
+                    <div className="mt-1 font-medium text-text">{riskLevelLabel(holding.risk_level)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">상승 확률 {holding.up_probability != null ? `${holding.up_probability.toFixed(1)}%` : "없음"}</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">실행</div>
+                    <div className="mt-1 font-semibold text-text">{tradeActionLabel(holding.trade_action)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{holding.trade_setup || "설정된 셋업 없음"}</div>
+                  </div>
+                  <div className="ui-inline-actions">
+                    <button onClick={() => startEdit(holding)} className="ui-button-secondary">수정</button>
+                    <button onClick={() => removeHolding(holding.id)} className="ui-button-warning">삭제</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="hidden px-2 pb-2 pt-1 md:block md:px-3">
+            <div className="ui-table-shell">
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface/40 text-left text-text-secondary">
@@ -753,7 +806,9 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
+          </>
         ) : (
           <div className="px-5 py-12 text-center text-text-secondary">
             <p className="text-lg">아직 등록된 보유 종목이 없습니다.</p>

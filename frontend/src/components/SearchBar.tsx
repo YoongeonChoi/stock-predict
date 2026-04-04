@@ -55,20 +55,20 @@ export default function SearchBar() {
   };
 
   return (
-    <div ref={ref} className="relative w-full max-w-2xl">
+    <div ref={ref} className="relative w-full max-w-3xl">
       <div
         className={cn(
-          "flex items-center gap-3 rounded-[22px] border px-4 py-3 transition-all",
+          "flex min-h-[var(--control-height-lg)] items-center gap-3 rounded-[26px] border px-3.5 py-3 transition-all sm:px-4",
           focused || open
             ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(37,99,235,0.22)]"
-            : "border-border bg-surface"
+            : "border-border bg-surface/92"
         )}
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] bg-accent/10 text-accent">
           <Search size={18} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="hidden text-[10px] font-semibold uppercase tracking-[0.22em] text-text-secondary sm:block">
+          <div className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-text-secondary sm:block">
             빠른 종목 검색
           </div>
           <input
@@ -86,10 +86,10 @@ export default function SearchBar() {
               }
             }}
             placeholder="티커 또는 종목명 검색"
-            className="mt-0.5 w-full bg-transparent text-sm text-text outline-none placeholder:text-text-secondary"
+            className="mt-0.5 w-full bg-transparent text-[0.95rem] text-text outline-none placeholder:text-text-secondary"
           />
         </div>
-        <div className="hidden shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-text-secondary md:inline-flex">
+        <div className="hidden shrink-0 rounded-full border border-border px-3 py-1.5 text-[11px] text-text-secondary xl:inline-flex">
           Enter로 첫 결과 열기
         </div>
       </div>
@@ -101,8 +101,8 @@ export default function SearchBar() {
       )}
 
       {open && query.length > 0 && (
-        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[22px] border border-border bg-surface shadow-[0_20px_42px_-30px_rgba(15,23,42,0.24)]">
-          <div className="border-b border-border/70 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
+        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[24px] border border-border bg-surface shadow-[0_20px_42px_-30px_rgba(15,23,42,0.24)]">
+          <div className="border-b border-border/70 px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
             검색 결과
           </div>
 
@@ -112,11 +112,11 @@ export default function SearchBar() {
                 <button
                   key={r.ticker}
                   onClick={() => select(r.ticker)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-border/20"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-border/20"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-text">{r.ticker}</span>
+                      <span className="font-semibold text-text">{r.ticker}</span>
                       <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-text-secondary">
                         {r.country_code}
                       </span>
@@ -129,7 +129,7 @@ export default function SearchBar() {
               ))}
             </div>
           ) : (
-            <div className="px-4 py-5 text-sm text-text-secondary">
+            <div className="px-4 py-5 text-[0.95rem] text-text-secondary">
               일치하는 종목을 찾지 못했습니다. 티커나 종목명을 조금 더 구체적으로 입력해 보세요.
             </div>
           )}

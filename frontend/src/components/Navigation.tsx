@@ -71,13 +71,13 @@ export default function Navigation() {
   };
 
   const navLinks = (
-    <div className="space-y-6">
+    <div className="space-y-7">
       {NAV_GROUPS.map((group) => (
         <div key={group.title}>
-          <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
+          <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
             {group.title}
           </div>
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-2.5 space-y-2">
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
@@ -87,15 +87,15 @@ export default function Navigation() {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    "group flex items-start gap-3 rounded-2xl border px-3 py-3 transition-all",
+                    "group flex min-h-[var(--touch-target-min)] items-start gap-3 rounded-[24px] border px-3.5 py-3.5 transition-all",
                     active
                       ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(37,99,235,0.25)]"
-                      : "border-transparent text-text-secondary hover:border-border hover:bg-white/40 hover:text-text dark:hover:bg-slate-900/40",
+                      : "border-transparent text-text-secondary hover:border-border hover:bg-white/55 hover:text-text dark:hover:bg-slate-900/42",
                   )}
                 >
                   <span
                     className={cn(
-                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-colors",
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] border transition-colors",
                       active
                         ? "border-accent/20 bg-accent/15 text-accent"
                         : "border-border bg-surface/50 text-text-secondary group-hover:text-text",
@@ -105,13 +105,13 @@ export default function Navigation() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
-                      <span className={cn("text-sm font-medium", active ? "text-text" : "")}>{item.label}</span>
+                      <span className={cn("text-[0.95rem] font-semibold", active ? "text-text" : "")}>{item.label}</span>
                       <ChevronRight
                         size={16}
                         className={cn("transition-transform group-hover:translate-x-0.5", active ? "text-accent" : "text-text-secondary")}
                       />
                     </span>
-                    <span className="mt-1 block text-xs leading-5 text-text-secondary">{item.description}</span>
+                    <span className="mt-1 block text-[0.82rem] leading-5 text-text-secondary">{item.description}</span>
                   </span>
                 </Link>
               );
@@ -124,24 +124,27 @@ export default function Navigation() {
 
   return (
     <>
-      <aside className="hidden lg:flex lg:w-[300px] lg:shrink-0">
-        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/70 bg-surface px-4 py-6 shadow-[0_24px_48px_-42px_rgba(15,23,42,0.22)]">
-          <Link href="/" className="flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/70 px-4 py-3 transition-colors hover:border-accent/35">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/10 text-sm font-semibold text-accent">
+      <aside className="hidden lg:flex lg:w-[312px] lg:shrink-0 xl:w-[324px]">
+        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/70 bg-surface px-4 py-5 shadow-[0_24px_48px_-42px_rgba(15,23,42,0.22)] xl:px-5">
+          <Link href="/" className="flex items-center gap-3 rounded-[24px] border border-border/70 bg-surface/76 px-4 py-3.5 transition-colors hover:border-accent/35">
+            <span className="flex h-11 w-11 items-center justify-center rounded-[20px] bg-accent/10 text-sm font-semibold text-accent">
               SP
             </span>
-            <div className="min-w-0 text-base font-semibold tracking-tight text-text">Stock Predict</div>
+            <div className="min-w-0">
+              <div className="text-[1rem] font-semibold tracking-tight text-text">Stock Predict</div>
+              <div className="mt-0.5 text-[0.78rem] text-text-secondary">분석과 운영을 한 흐름으로 잇는 워크스페이스</div>
+            </div>
           </Link>
 
-          <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1.5">
             <nav>{navLinks}</nav>
           </div>
 
-          <div className="mt-6 card !p-4">
+          <div className="mt-6 ui-panel-muted">
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-text-secondary">테마</div>
             <button
               onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-              className="mt-3 flex w-full items-center justify-between rounded-2xl border border-border px-4 py-3 text-sm text-text transition-colors hover:border-accent/30 hover:bg-white/40 dark:hover:bg-slate-900/40"
+              className="ui-button-secondary mt-3 flex w-full items-center justify-between px-4"
             >
               <span className="flex items-center gap-3">
                 <span className="flex h-[17px] w-[17px] items-center justify-center">
@@ -155,14 +158,16 @@ export default function Navigation() {
         </div>
       </aside>
 
-      <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border/70 bg-surface px-4 py-3 shadow-[0_16px_34px_-30px_rgba(15,23,42,0.2)] lg:hidden">
-        <Link href="/" className="text-sm font-semibold tracking-tight text-text">
-          Stock Predict
+      <div className="fixed left-0 right-0 top-0 z-50 flex min-h-[68px] items-center justify-between border-b border-border/70 bg-surface/92 px-4 py-3 backdrop-blur-sm shadow-[0_16px_34px_-30px_rgba(15,23,42,0.2)] lg:hidden">
+        <Link href="/" className="min-w-0">
+          <div className="text-[0.98rem] font-semibold tracking-tight text-text">Stock Predict</div>
+          <div className="mt-0.5 text-[0.72rem] text-text-secondary">시장 탐색과 운영 흐름</div>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pl-3">
           <button
             onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border text-text-secondary"
+            className="flex h-11 w-11 items-center justify-center rounded-[20px] border border-border bg-surface/74 text-text-secondary"
+            aria-label={themeButtonLabel}
           >
             <span className="flex h-[17px] w-[17px] items-center justify-center">
               {isDarkMode ? <SunMedium size={17} /> : <MoonStar size={17} />}
@@ -170,7 +175,9 @@ export default function Navigation() {
           </button>
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border text-text"
+            className="flex h-11 w-11 items-center justify-center rounded-[20px] border border-border bg-surface/74 text-text"
+            aria-expanded={mobileOpen}
+            aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
           >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
@@ -184,17 +191,17 @@ export default function Navigation() {
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
           />
-          <div className="relative h-full max-w-[320px] border-r border-border/70 bg-surface px-4 pb-6 pt-[84px] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]">
-            <div className="card !p-4">
+          <div className="relative h-full max-w-[348px] border-r border-border/70 bg-surface px-4 pb-6 pt-[86px] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]">
+            <div className="ui-panel-muted">
               <div className="text-sm font-semibold text-text">메뉴</div>
-              <div className="mt-1 text-xs text-text-secondary">탐색, 운영, 리서치 흐름을 한 곳에서 이동합니다.</div>
+              <div className="mt-1 text-xs leading-6 text-text-secondary">탐색, 운영, 리서치 흐름을 한 곳에서 이동합니다.</div>
             </div>
             <nav className="mt-4">{navLinks}</nav>
           </div>
         </div>
       )}
 
-      <div className="h-14 shrink-0 lg:hidden" />
+      <div className="h-[68px] shrink-0 lg:hidden" />
     </>
   );
 }

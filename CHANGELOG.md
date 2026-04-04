@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.53.2 - 2026-04-04
+
+- 전 화면 반응형 정리를 위해 `frontend/src/app/globals.css`에 semantic `clamp()` typography / spacing / control 토큰을 추가하고, 버튼·입력·패널·테이블 래퍼를 `ui-button-*`, `ui-input`, `ui-panel*`, `ui-table-shell` 공용 primitive로 다시 묶었습니다.
+- `layout`, `Navigation`, `SearchBar`, `AuthStatus`를 같은 밀도 체계로 다시 정리해 모바일 드로어, 상단 검색, 계정 배지가 작은 화면에서도 겹치지 않도록 조정했습니다.
+- `/auth`, `/settings`, `/portfolio`, `/screener`의 line-panel, form, CTA 버튼을 공용 반응형 스타일로 옮기고, `portfolio`와 `screener`는 모바일 카드형 요약 + 데스크톱 테이블 혼합 정책으로 재구성했습니다.
+- `scripts/browser_smoke.py`에 다중 viewport 옵션을 추가해 `390x844`, `768x1024`, `1440x900` 같은 반응형 검증을 route smoke에 함께 태울 수 있게 했습니다.
+- `market_service`는 현재 유니버스 source/size와 맞는 경우에만 cached quick seed를 재사용하도록 좁혀, 큰 quick cache가 작은 mocked universe를 덮어써 `market_service` 회귀 테스트가 깨지던 문제를 함께 수정했습니다.
+
 ## v2.53.1 - 2026-04-04
 
 - `/api/country/KR/report`가 실데이터에서 `NaN` 또는 `Infinity`를 포함할 때 `SP-9999` 500으로 떨어지던 운영 오류를 수정했습니다. 국가 리포트 응답은 이제 비정상 float를 `null`로 정리한 뒤 JSON으로 반환합니다.

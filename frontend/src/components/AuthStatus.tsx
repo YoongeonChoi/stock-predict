@@ -37,23 +37,23 @@ export default function AuthStatus() {
 
   if (!configured) {
     return (
-      <div className="hidden rounded-2xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 md:block">
+      <div className="ui-panel-warning hidden px-3 py-2 text-xs text-amber-600 md:block">
         인증 설정을 확인해 주세요
       </div>
     );
   }
 
   if (loading) {
-    return <div className="hidden h-10 w-40 animate-pulse rounded-2xl bg-border/60 md:block" />;
+    return <div className="h-11 w-full animate-pulse rounded-[20px] bg-border/60 sm:w-48" />;
   }
 
   if (!user) {
     return (
-      <div className="flex shrink-0 items-center gap-2">
-        <Link href="/auth" className="action-chip-secondary">
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
+        <Link href="/auth" className="ui-button-secondary">
           로그인
         </Link>
-        <Link href="/auth?mode=signup" className="hidden rounded-2xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-soft transition-opacity hover:opacity-90 md:inline-flex">
+        <Link href="/auth?mode=signup" className="ui-button-primary">
           회원가입
         </Link>
       </div>
@@ -72,15 +72,15 @@ export default function AuthStatus() {
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
-      <div className="hidden rounded-2xl border border-border/70 bg-surface/70 px-3 py-2 text-sm text-text-secondary md:block">
+    <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
+      <div className="min-w-0 max-w-full rounded-full border border-border/70 bg-surface/74 px-3.5 py-2.5 text-[0.88rem] text-text-secondary">
         {buildIdentityLabel({
           username: profile?.username,
           fullName: profile?.full_name,
           email: user.email,
         })}
       </div>
-      <button onClick={handleSignOut} className="action-chip-secondary">
+      <button onClick={handleSignOut} className="ui-button-secondary">
         로그아웃
       </button>
     </div>

@@ -624,6 +624,14 @@ aside에 부적합한 내용:
 - `frontend/src/components/PageHeader.tsx`
 - `frontend/src/components/SearchBar.tsx`
 
+추가 반응형 기준:
+
+- `frontend/src/app/globals.css`의 semantic `clamp()` 토큰을 먼저 사용하고, 크기 값은 가능한 한 `--font-*`, `--space-*`, `--control-height-*`, `--radius-*` 조합으로 맞춘다
+- 버튼, 입력, 패널, 표 래퍼는 우선 `ui-button-*`, `ui-input`, `ui-select`, `ui-textarea`, `ui-panel*`, `ui-empty-frame`, `ui-table-shell` 공용 primitive 조합으로 해결한다
+- 모바일 상단은 검색, 계정 배지, drawer trigger가 겹치지 않는 2단 안전 레이아웃을 기본으로 본다
+- dense table은 한 방식으로 통일하지 않는다: `/compare`와 짧은 기술표는 가로 스크롤을 유지하고, `/portfolio`, `/screener`, `/lab`처럼 긴 목록은 모바일 카드형 요약 + 데스크톱 테이블 혼합 정책을 사용한다
+- 기본 viewport smoke는 `390x844`, `768x1024`, `1440x900`을 우선 확인하고, 버튼 텍스트 잘림·입력 helper/error 겹침·페이지 전체 가로 밀림이 있으면 완료로 보지 않는다
+
 규칙:
 
 - 새 페이지를 만들면 먼저 `PageHeader`와 공용 spacing 규칙에 맞춘다

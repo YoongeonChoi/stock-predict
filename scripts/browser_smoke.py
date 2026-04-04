@@ -31,6 +31,8 @@ DEFAULT_BROWSER_CANDIDATES = (
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 )
+DEFAULT_VIEWPORT = "1600x1200"
+RESPONSIVE_VIEWPORTS = ("360x800", "390x844", "768x1024", "1024x768", "1440x900")
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--retry-delay", type=float, default=2.0, help="Retry delay in seconds")
     parser.add_argument("--virtual-time-budget-ms", type=int, default=12000, help="Headless browser virtual time budget")
     parser.add_argument("--output-dir", default=str(OUTPUT_DIR), help="Directory for HTML and screenshots")
+    parser.add_argument("--viewport", action="append", default=[], help="Viewport in WIDTHxHEIGHT form. Repeat to test multiple.")
+    parser.add_argument("--viewport-matrix", action="store_true", help="Run the canonical responsive viewport matrix")
     return parser.parse_args(argv)
 
 
@@ -94,6 +98,26 @@ def sanitize_name(url: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", url).strip("-")
 
 
+def parse_viewport(raw: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(?P<width>\d{2,5})x(?P<height>\d{2,5})", raw.strip())
+    if not match:
+        raise SystemExit(f"Invalid viewport '{raw}'. Expected WIDTHxHEIGHT, for example 390x844.")
+    width = int(match.group("width"))
+    height = int(match.group("height"))
+    if width < 200 or height < 200:
+        raise SystemExit(f"Viewport '{raw}' is too small for browser smoke.")
+    return width, height
+
+
+def resolve_viewports(args: argparse.Namespace) -> tuple[tuple[int, int], ...]:
+    raw_viewports = list(args.viewport or [])
+    if args.viewport_matrix:
+        raw_viewports.extend(RESPONSIVE_VIEWPORTS)
+    if not raw_viewports:
+        raw_viewports = [DEFAULT_VIEWPORT]
+    return tuple(dict.fromkeys(parse_viewport(viewport) for viewport in raw_viewports))
+
+
 def decode_browser_output(raw: bytes) -> str:
     try:
         return raw.decode("utf-8")
@@ -101,8 +125,9 @@ def decode_browser_output(raw: bytes) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
-def dump_dom(browser: str, url: str, virtual_time_budget_ms: int) -> str:
+def dump_dom(browser: str, url: str, virtual_time_budget_ms: int, viewport: tuple[int, int]) -> str:
     with tempfile.TemporaryDirectory(prefix="stock-predict-browser-smoke-") as temp_dir:
+        width, height = viewport
         command = [
             browser,
             "--headless=new",
@@ -110,7 +135,7 @@ def dump_dom(browser: str, url: str, virtual_time_budget_ms: int) -> str:
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-networking",
-            "--window-size=1600,1200",
+            f"--window-size={width},{height}",
             f"--user-data-dir={temp_dir}",
             f"--virtual-time-budget={virtual_time_budget_ms}",
             "--dump-dom",
@@ -123,8 +148,9 @@ def dump_dom(browser: str, url: str, virtual_time_budget_ms: int) -> str:
         return decode_browser_output(completed.stdout)
 
 
-def save_screenshot(browser: str, url: str, destination: Path, virtual_time_budget_ms: int) -> None:
+def save_screenshot(browser: str, url: str, destination: Path, virtual_time_budget_ms: int, viewport: tuple[int, int]) -> None:
     with tempfile.TemporaryDirectory(prefix="stock-predict-browser-shot-") as temp_dir:
+        width, height = viewport
         command = [
             browser,
             "--headless=new",
@@ -132,7 +158,7 @@ def save_screenshot(browser: str, url: str, destination: Path, virtual_time_budg
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-networking",
-            "--window-size=1600,1200",
+            f"--window-size={width},{height}",
             f"--user-data-dir={temp_dir}",
             f"--virtual-time-budget={virtual_time_budget_ms}",
             f"--screenshot={destination}",
@@ -178,17 +204,19 @@ def run_check(
     retry_delay: float,
     virtual_time_budget_ms: int,
     output_dir: Path,
+    viewport: tuple[int, int],
 ) -> tuple[bool, str]:
     url = urljoin(base_url.rstrip("/") + "/", check.path.lstrip("/"))
-    html_path = output_dir / f"{sanitize_name(url)}.html"
-    screenshot_path = output_dir / f"{sanitize_name(url)}.png"
+    viewport_name = f"{viewport[0]}x{viewport[1]}"
+    html_path = output_dir / f"{sanitize_name(url)}-{viewport_name}.html"
+    screenshot_path = output_dir / f"{sanitize_name(url)}-{viewport_name}.png"
 
     last_reason = "unknown failure"
     last_html = ""
 
     for attempt in range(1, attempts + 1):
         try:
-            html = dump_dom(browser, url, virtual_time_budget_ms)
+            html = dump_dom(browser, url, virtual_time_budget_ms, viewport)
         except Exception as exc:
             last_reason = str(exc)
             html = ""
@@ -198,15 +226,15 @@ def run_check(
             last_html = html
             if success:
                 html_path.write_text(html, encoding="utf-8")
-                save_screenshot(browser, url, screenshot_path, virtual_time_budget_ms)
-                return True, f"screenshot {screenshot_path}"
+                save_screenshot(browser, url, screenshot_path, virtual_time_budget_ms, viewport)
+                return True, f"{viewport_name} screenshot {screenshot_path}"
 
         if attempt < attempts:
             time.sleep(retry_delay * attempt)
 
     if last_html:
         html_path.write_text(last_html, encoding="utf-8")
-    save_screenshot(browser, url, screenshot_path, virtual_time_budget_ms)
+    save_screenshot(browser, url, screenshot_path, virtual_time_budget_ms, viewport)
     return False, last_reason
 
 
@@ -216,28 +244,33 @@ def main(argv: list[str] | None = None) -> int:
     base_url = normalize_base_url(args.base_url)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    viewports = resolve_viewports(args)
 
     print(f"[browser-smoke] browser={browser}")
     print(f"[browser-smoke] base={base_url}")
+    print("[browser-smoke] viewports=" + ", ".join(f"{width}x{height}" for width, height in viewports))
 
     failures: list[str] = []
 
-    for check in CHECKS:
-        ok, detail = run_check(
-            browser=browser,
-            base_url=base_url,
-            check=check,
-            attempts=max(args.attempts, 1),
-            retry_delay=max(args.retry_delay, 0.5),
-            virtual_time_budget_ms=max(args.virtual_time_budget_ms, 2000),
-            output_dir=output_dir,
-        )
-        url = urljoin(base_url.rstrip("/") + "/", check.path.lstrip("/"))
-        if ok:
-            print(f"[OK]   {check.name:12} {url} -> {detail}")
-        else:
-            failures.append(f"{check.name}: {detail}")
-            print(f"[FAIL] {check.name:12} {url} -> {detail}")
+    for viewport in viewports:
+        viewport_label = f"{viewport[0]}x{viewport[1]}"
+        for check in CHECKS:
+            ok, detail = run_check(
+                browser=browser,
+                base_url=base_url,
+                check=check,
+                attempts=max(args.attempts, 1),
+                retry_delay=max(args.retry_delay, 0.5),
+                virtual_time_budget_ms=max(args.virtual_time_budget_ms, 2000),
+                output_dir=output_dir,
+                viewport=viewport,
+            )
+            url = urljoin(base_url.rstrip("/") + "/", check.path.lstrip("/"))
+            if ok:
+                print(f"[OK]   {check.name:12} [{viewport_label}] {url} -> {detail}")
+            else:
+                failures.append(f"{check.name}[{viewport_label}]: {detail}")
+                print(f"[FAIL] {check.name:12} [{viewport_label}] {url} -> {detail}")
 
     if failures:
         print("\n[browser-smoke] failures detected:")

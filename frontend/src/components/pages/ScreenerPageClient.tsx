@@ -209,7 +209,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
 
   return (
     <div className="page-shell">
-      <section className="card !p-5 space-y-5">
+      <section className="card space-y-5">
             <div className="section-heading gap-4">
           <div>
             <h1 className="section-title text-2xl">스크리너</h1>
@@ -227,7 +227,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
           </div>
         </div>
         <PublicAuditStrip meta={seedAudit} />
-        <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
+        <div className="ui-panel-muted text-[0.95rem] leading-6 text-text-secondary">
           {auditSummary}
         </div>
 
@@ -236,133 +236,133 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
             <button
               key={preset.label}
               onClick={() => applyPreset(preset.values)}
-              className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 text-left transition-colors hover:border-accent/35"
+              className="ui-panel text-left transition-colors hover:border-accent/35"
             >
               <div className="font-medium text-text">{preset.label}</div>
-              <div className="mt-2 text-sm leading-6 text-text-secondary">{preset.description}</div>
+              <div className="mt-2 text-[0.95rem] leading-6 text-text-secondary">{preset.description}</div>
             </button>
           ))}
         </div>
       </section>
 
-      <section className="card !p-5 space-y-5">
+      <section className="card space-y-5">
         <div className="section-heading gap-4">
           <div>
             <h2 className="section-title">조건 설정</h2>
             <p className="section-copy">필터는 4개 묶음으로 나누고, 한 번에 너무 많은 좌우 분산이 생기지 않도록 2열 중심으로 정리했습니다.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={resetFilters} className="action-chip-secondary">기본값으로 되돌리기</button>
-            <button onClick={() => runSearch()} className="action-chip-primary">조건 검색</button>
+          <div className="ui-inline-actions">
+            <button onClick={resetFilters} className="ui-button-secondary">기본값으로 되돌리기</button>
+            <button onClick={() => runSearch()} className="ui-button-primary">조건 검색</button>
           </div>
         </div>
 
         <div className="grid gap-4 2xl:grid-cols-2">
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">시장 / 규모</div>
+          <div className="ui-panel space-y-3">
+            <div className="ui-field-label">시장 / 규모</div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">국가</label>
-                <select value={filters.country} onChange={(e) => setFilters((prev) => ({ ...prev, country: e.target.value }))} className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm">
+                <label className="ui-field-label">국가</label>
+                <select value={filters.country} onChange={(e) => setFilters((prev) => ({ ...prev, country: e.target.value }))} className="ui-select">
                   <option value="KR">KR</option>
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">섹터</label>
-                <select value={filters.sector} onChange={(e) => setFilters((prev) => ({ ...prev, sector: e.target.value }))} className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm">
+                <label className="ui-field-label">섹터</label>
+                <select value={filters.sector} onChange={(e) => setFilters((prev) => ({ ...prev, sector: e.target.value }))} className="ui-select">
                   <option value="">전체 섹터</option>
                   {sectors.map((value) => <option key={value} value={value}>{value}</option>)}
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">시총 최소</label>
-                <input value={filters.marketCapMin} onChange={(e) => setFilters((prev) => ({ ...prev, marketCapMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">시총 최소</label>
+                <input value={filters.marketCapMin} onChange={(e) => setFilters((prev) => ({ ...prev, marketCapMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">시총 최대</label>
-                <input value={filters.marketCapMax} onChange={(e) => setFilters((prev) => ({ ...prev, marketCapMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">시총 최대</label>
+                <input value={filters.marketCapMax} onChange={(e) => setFilters((prev) => ({ ...prev, marketCapMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">가격 최소</label>
-                <input value={filters.priceMin} onChange={(e) => setFilters((prev) => ({ ...prev, priceMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">가격 최소</label>
+                <input value={filters.priceMin} onChange={(e) => setFilters((prev) => ({ ...prev, priceMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">가격 최대</label>
-                <input value={filters.priceMax} onChange={(e) => setFilters((prev) => ({ ...prev, priceMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">가격 최대</label>
+                <input value={filters.priceMax} onChange={(e) => setFilters((prev) => ({ ...prev, priceMax: e.target.value }))} type="number" className="ui-input" />
               </div>
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">밸류 / 배당</div>
+          <div className="ui-panel space-y-3">
+            <div className="ui-field-label">밸류 / 배당</div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최대 P/E</label>
-                <input value={filters.peMax} onChange={(e) => setFilters((prev) => ({ ...prev, peMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최대 P/E</label>
+                <input value={filters.peMax} onChange={(e) => setFilters((prev) => ({ ...prev, peMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최대 P/B</label>
-                <input value={filters.pbMax} onChange={(e) => setFilters((prev) => ({ ...prev, pbMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최대 P/B</label>
+                <input value={filters.pbMax} onChange={(e) => setFilters((prev) => ({ ...prev, pbMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 배당 %</label>
-                <input value={filters.dividendMin} onChange={(e) => setFilters((prev) => ({ ...prev, dividendMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 배당 %</label>
+                <input value={filters.dividendMin} onChange={(e) => setFilters((prev) => ({ ...prev, dividendMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최대 베타</label>
-                <input value={filters.betaMax} onChange={(e) => setFilters((prev) => ({ ...prev, betaMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최대 베타</label>
+                <input value={filters.betaMax} onChange={(e) => setFilters((prev) => ({ ...prev, betaMax: e.target.value }))} type="number" className="ui-input" />
               </div>
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">퀄리티 / 성장</div>
+          <div className="ui-panel space-y-3">
+            <div className="ui-field-label">퀄리티 / 성장</div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 매출 성장 %</label>
-                <input value={filters.revenueGrowthMin} onChange={(e) => setFilters((prev) => ({ ...prev, revenueGrowthMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 매출 성장 %</label>
+                <input value={filters.revenueGrowthMin} onChange={(e) => setFilters((prev) => ({ ...prev, revenueGrowthMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 ROE %</label>
-                <input value={filters.roeMin} onChange={(e) => setFilters((prev) => ({ ...prev, roeMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 ROE %</label>
+                <input value={filters.roeMin} onChange={(e) => setFilters((prev) => ({ ...prev, roeMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최대 부채비율</label>
-                <input value={filters.debtToEquityMax} onChange={(e) => setFilters((prev) => ({ ...prev, debtToEquityMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최대 부채비율</label>
+                <input value={filters.debtToEquityMax} onChange={(e) => setFilters((prev) => ({ ...prev, debtToEquityMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 평균 거래량</label>
-                <input value={filters.avgVolumeMin} onChange={(e) => setFilters((prev) => ({ ...prev, avgVolumeMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 평균 거래량</label>
+                <input value={filters.avgVolumeMin} onChange={(e) => setFilters((prev) => ({ ...prev, avgVolumeMin: e.target.value }))} type="number" className="ui-input" />
               </div>
-              <label className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-3 text-sm text-text-secondary md:col-span-2">
+              <label className="ui-panel-muted inline-flex items-center gap-2 px-4 py-3 text-[0.95rem] text-text-secondary md:col-span-2">
                 <input type="checkbox" checked={filters.profitableOnly} onChange={(e) => setFilters((prev) => ({ ...prev, profitableOnly: e.target.checked }))} />
                 흑자 기업만 보기
               </label>
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">모멘텀 / 리스크</div>
+          <div className="ui-panel space-y-3">
+            <div className="ui-field-label">모멘텀 / 리스크</div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 등락률 %</label>
-                <input value={filters.changePctMin} onChange={(e) => setFilters((prev) => ({ ...prev, changePctMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 등락률 %</label>
+                <input value={filters.changePctMin} onChange={(e) => setFilters((prev) => ({ ...prev, changePctMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최대 등락률 %</label>
-                <input value={filters.changePctMax} onChange={(e) => setFilters((prev) => ({ ...prev, changePctMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최대 등락률 %</label>
+                <input value={filters.changePctMax} onChange={(e) => setFilters((prev) => ({ ...prev, changePctMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">52주 고점 대비 최소 %</label>
-                <input value={filters.pctFrom52wHighMin} onChange={(e) => setFilters((prev) => ({ ...prev, pctFrom52wHighMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">52주 고점 대비 최소 %</label>
+                <input value={filters.pctFrom52wHighMin} onChange={(e) => setFilters((prev) => ({ ...prev, pctFrom52wHighMin: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div>
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">52주 고점 대비 최대 %</label>
-                <input value={filters.pctFrom52wHighMax} onChange={(e) => setFilters((prev) => ({ ...prev, pctFrom52wHighMax: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">52주 고점 대비 최대 %</label>
+                <input value={filters.pctFrom52wHighMax} onChange={(e) => setFilters((prev) => ({ ...prev, pctFrom52wHighMax: e.target.value }))} type="number" className="ui-input" />
               </div>
               <div className="md:col-span-2">
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">최소 종합 점수</label>
-                <input value={filters.scoreMin} onChange={(e) => setFilters((prev) => ({ ...prev, scoreMin: e.target.value }))} type="number" className="w-full rounded-2xl border border-border bg-surface/70 px-4 py-3 text-sm" />
+                <label className="ui-field-label">최소 종합 점수</label>
+                <input value={filters.scoreMin} onChange={(e) => setFilters((prev) => ({ ...prev, scoreMin: e.target.value }))} type="number" className="ui-input" />
               </div>
             </div>
           </div>
@@ -399,26 +399,82 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
               <h2 className="section-title">결과</h2>
               <p className="section-copy">정렬을 바꿔 후보의 성격을 빠르게 비교할 수 있습니다.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "score", sortDir: "desc" }))} className="action-chip-secondary">점수</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "roe", sortDir: "desc" }))} className="action-chip-secondary">ROE</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "dividend_yield", sortDir: "desc" }))} className="action-chip-secondary">배당</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "pct_from_52w_high", sortDir: "desc" }))} className="action-chip-secondary">고점 대비</button>
-              <button onClick={() => runSearch()} className="action-chip-primary">정렬 적용</button>
+            <div className="ui-inline-actions">
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "score", sortDir: "desc" }))} className="ui-button-secondary">점수</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "roe", sortDir: "desc" }))} className="ui-button-secondary">ROE</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "dividend_yield", sortDir: "desc" }))} className="ui-button-secondary">배당</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "pct_from_52w_high", sortDir: "desc" }))} className="ui-button-secondary">고점 대비</button>
+              <button onClick={() => runSearch()} className="ui-button-primary">정렬 적용</button>
             </div>
           </div>
         </div>
 
         {errorMessage ? (
-          <div className="mx-5 mt-5 rounded-[22px] border border-warning/35 bg-warning/8 px-4 py-4 text-sm text-text-secondary">
+          <div className="ui-panel-warning mx-5 mt-5 text-[0.95rem] text-text-secondary">
             <div>{errorMessage}</div>
-            <button onClick={() => runSearch()} className="mt-3 action-chip-secondary">
+            <button onClick={() => runSearch()} className="ui-button-secondary mt-3">
               다시 시도
             </button>
           </div>
         ) : null}
 
-        <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
+        <div className="space-y-3 px-4 pb-4 pt-4 md:hidden">
+          {loading ? (
+            <div className="ui-panel-muted text-center text-text-secondary">조건을 계산하는 중입니다.</div>
+          ) : results.length > 0 ? (
+            results.map((stock) => (
+              <article key={stock.ticker} className="ui-panel space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/stock/${encodeURIComponent(stock.ticker)}`} className="font-semibold text-text hover:text-accent">
+                      {stock.name}
+                    </Link>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{stock.ticker} · {stock.country_code} · {stock.sector}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[0.78rem] text-text-secondary">점수</div>
+                    <div className="text-lg font-semibold text-text">{stock.score?.toFixed(1) ?? "-"}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[0.9rem]">
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">현재가</div>
+                    <div className="mt-1 font-medium text-text">{formatPrice(stock.current_price, stock.country_code)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">등락률</div>
+                    <div className={`mt-1 font-semibold ${changeColor(stock.change_pct ?? 0)}`}>{formatPct(stock.change_pct ?? 0)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">시가총액</div>
+                    <div className="mt-1 font-medium text-text">{formatMarketCap(stock.market_cap)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">52주 고점 대비</div>
+                    <div className={`mt-1 font-medium ${changeColor(stock.pct_from_52w_high ?? 0)}`}>{stock.pct_from_52w_high != null ? `${stock.pct_from_52w_high.toFixed(1)}%` : "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">P/E · P/B</div>
+                    <div className="mt-1 font-medium text-text">{stock.pe_ratio?.toFixed(1) ?? "-"} / {stock.pb_ratio?.toFixed(1) ?? "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">배당 · ROE</div>
+                    <div className="mt-1 font-medium text-text">{stock.dividend_yield != null ? `${(stock.dividend_yield * 100).toFixed(1)}%` : "-"} / {stock.roe != null ? `${stock.roe.toFixed(1)}%` : "-"}</div>
+                  </div>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="ui-panel-muted text-center text-text-secondary">
+              {viewState === "seeded"
+                ? "기본 캐시 결과가 비어 있습니다. 프리셋을 누르거나 조건 검색으로 바로 다시 계산해 주세요."
+                : "조건에 맞는 종목이 없습니다. 필터를 조금 완화해 보세요."}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden px-2 pb-2 pt-1 md:block md:px-3">
+          <div className="ui-table-shell">
           <table className="w-full min-w-[1240px] text-sm">
             <thead>
               <tr className="border-b border-border bg-surface/40 text-left text-text-secondary">
@@ -470,6 +526,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </section>
     </div>

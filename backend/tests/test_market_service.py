@@ -100,6 +100,27 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(quote_screen["ranked"]), 2)
         self.assertEqual(quote_screen["ranked"][0]["ticker"], "047810.KS")
 
+    def test_can_reuse_quick_seed_payload_requires_matching_source_and_size(self):
+        payload = {
+            "universe_source": "krx_listing",
+            "universe_size": 2729,
+        }
+        selection = SimpleNamespace(
+            sectors={"Information Technology": ["005930.KS", "000660.KS"]},
+            source="fallback",
+            note="test universe",
+        )
+
+        self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
+
+        selection = SimpleNamespace(
+            sectors={"Information Technology": ["005930.KS", "000660.KS"]},
+            source="krx_listing",
+            note="test universe",
+        )
+
+        self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
+
     def test_sample_universe_pairs_round_robins_across_sectors(self):
         pairs = market_service._sample_universe_pairs(
             {

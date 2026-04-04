@@ -65,6 +65,20 @@ FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 3.0
 QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 2.5
 
 
+def _can_reuse_quick_seed_payload(quick_seed_payload: dict | None, universe_selection) -> bool:
+    if not quick_seed_payload:
+        return False
+    expected_source = str(getattr(universe_selection, "source", "") or "").strip()
+    cached_source = str(quick_seed_payload.get("universe_source") or "").strip()
+    if not expected_source or cached_source != expected_source:
+        return False
+    expected_size = len(_flatten_universe(getattr(universe_selection, "sectors", {}) or {}))
+    cached_size = int(quick_seed_payload.get("universe_size") or 0)
+    if expected_size <= 0 or cached_size <= 0:
+        return False
+    return expected_size == cached_size
+
+
 
 
 
@@ -641,15 +655,17 @@ async def get_market_opportunities(
         )
 
         quick_seed_limit = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
+        universe_selection = await resolve_opportunity_universe(country_code)
         quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
-        seeded_quick = _build_seeded_quote_screen_from_quick_payload(
-            quick_seed_payload,
-            candidate_limit=quick_seed_limit,
-        )
+        seeded_quick = None
+        if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
+            seeded_quick = _build_seeded_quote_screen_from_quick_payload(
+                quick_seed_payload,
+                candidate_limit=quick_seed_limit,
+            )
         if seeded_quick is not None:
             universe_selection, quote_screen = seeded_quick
         else:
-            universe_selection = await resolve_opportunity_universe(country_code)
             universe_selection, quote_screen = await _resolve_resilient_quote_screen(
                 country_code=country_code,
                 universe_selection=universe_selection,
