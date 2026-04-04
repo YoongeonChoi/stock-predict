@@ -62,6 +62,15 @@ export default function Navigation() {
     setThemeReady(true);
   }, []);
 
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = mobileOpen ? "hidden" : originalOverflow;
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [mobileOpen]);
+
   const isDarkMode = themeReady && theme === "dark";
   const themeButtonLabel = isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환";
 
@@ -71,10 +80,10 @@ export default function Navigation() {
   };
 
   const navLinks = (
-    <div className="space-y-7">
+    <div className="space-y-7 pb-3">
       {NAV_GROUPS.map((group) => (
         <div key={group.title}>
-          <div className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
+          <div className="break-words px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
             {group.title}
           </div>
           <div className="mt-2.5 space-y-2">
@@ -105,13 +114,13 @@ export default function Navigation() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
-                      <span className={cn("text-[0.95rem] font-semibold", active ? "text-text" : "")}>{item.label}</span>
+                      <span className={cn("break-words text-[0.95rem] font-semibold", active ? "text-text" : "")}>{item.label}</span>
                       <ChevronRight
                         size={16}
                         className={cn("transition-transform group-hover:translate-x-0.5", active ? "text-accent" : "text-text-secondary")}
                       />
                     </span>
-                    <span className="mt-1 block text-[0.82rem] leading-5 text-text-secondary">{item.description}</span>
+                    <span className="mt-1 block break-words text-[0.82rem] leading-5 text-text-secondary">{item.description}</span>
                   </span>
                 </Link>
               );
@@ -158,10 +167,13 @@ export default function Navigation() {
         </div>
       </aside>
 
-      <div className="fixed left-0 right-0 top-0 z-50 flex min-h-[68px] items-center justify-between border-b border-border/70 bg-surface/92 px-4 py-3 backdrop-blur-sm shadow-[0_16px_34px_-30px_rgba(15,23,42,0.2)] lg:hidden">
-        <Link href="/" className="min-w-0">
+      <div
+        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/70 bg-surface/98 px-4 pb-3 pt-3 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.28)] backdrop-blur-md lg:hidden"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      >
+        <Link href="/" className="min-w-0 flex-1 pr-3">
           <div className="text-[0.98rem] font-semibold tracking-tight text-text">Stock Predict</div>
-          <div className="mt-0.5 text-[0.72rem] text-text-secondary">시장 탐색과 운영 흐름</div>
+          <div className="mt-0.5 truncate text-[0.72rem] text-text-secondary">시장 탐색과 운영 흐름</div>
         </Link>
         <div className="flex items-center gap-2 pl-3">
           <button
@@ -185,13 +197,16 @@ export default function Navigation() {
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 overflow-hidden lg:hidden">
           <button
             aria-label="메뉴 닫기"
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
           />
-          <div className="relative h-full max-w-[348px] border-r border-border/70 bg-surface px-4 pb-6 pt-[86px] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]">
+          <div
+            className="relative h-full w-[min(88vw,348px)] overflow-y-auto overscroll-contain border-r border-border/70 bg-surface px-4 pb-8 shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]"
+            style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.75rem)" }}
+          >
             <div className="ui-panel-muted">
               <div className="text-sm font-semibold text-text">메뉴</div>
               <div className="mt-1 text-xs leading-6 text-text-secondary">탐색, 운영, 리서치 흐름을 한 곳에서 이동합니다.</div>
@@ -200,8 +215,6 @@ export default function Navigation() {
           </div>
         </div>
       )}
-
-      <div className="h-[68px] shrink-0 lg:hidden" />
     </>
   );
 }

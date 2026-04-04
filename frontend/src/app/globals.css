@@ -44,6 +44,7 @@
   --radius-lg: 24px;
   --radius-xl: 30px;
   --touch-target-min: 44px;
+  --mobile-nav-height: calc(76px + env(safe-area-inset-top, 0px));
   --layout-gutter: clamp(1rem, 0.76rem + 0.75vw, 2rem);
   --layout-max: 1500px;
   --surface-soft: rgba(255, 255, 255, 0.56);
@@ -124,6 +125,7 @@ html {
 body {
   position: relative;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 24%),
     radial-gradient(circle at top right, rgba(148, 163, 184, 0.08), transparent 22%),
@@ -278,6 +280,7 @@ body::before {
 
 .info-chip {
   @apply inline-flex items-center gap-2 border font-medium;
+  max-width: 100%;
   border-color: var(--border);
   background: var(--surface-soft);
   border-radius: 999px;
@@ -294,6 +297,7 @@ body::before {
 
 .action-chip {
   @apply inline-flex items-center justify-center gap-2 font-medium transition-all;
+  max-width: 100%;
   min-height: var(--control-height-sm);
   border-radius: 999px;
   padding-inline: clamp(0.95rem, 0.82rem + 0.4vw, 1.2rem);
@@ -319,6 +323,7 @@ body::before {
 
 .metric-card {
   @apply border;
+  min-width: 0;
   border-radius: var(--radius-md);
   padding: clamp(0.95rem, 0.82rem + 0.35vw, 1.2rem);
   border-color: var(--border);
@@ -354,6 +359,7 @@ body::before {
 .ui-button-ghost,
 .ui-button-warning {
   @apply inline-flex items-center justify-center gap-2 font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60;
+  max-width: 100%;
   min-height: var(--control-height-md);
   border-radius: 999px;
   padding-inline: clamp(1rem, 0.82rem + 0.5vw, 1.35rem);
@@ -440,6 +446,7 @@ body::before {
 .ui-panel-muted,
 .ui-panel-warning,
 .ui-empty-frame {
+  min-width: 0;
   border-radius: var(--radius-md);
   padding: var(--space-panel);
 }
@@ -470,6 +477,7 @@ body::before {
 
 .ui-chip {
   @apply inline-flex items-center gap-2 font-medium;
+  max-width: 100%;
   min-height: calc(var(--touch-target-min) - 4px);
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -507,6 +515,21 @@ body::before {
   @apply flex flex-wrap items-center gap-2;
 }
 
+.workspace-panel,
+.workspace-panel-tight,
+.workspace-empty-frame,
+.page-header-panel,
+.metric-card,
+.ui-panel,
+.ui-panel-muted,
+.ui-panel-warning,
+.ui-empty-frame,
+.info-chip,
+.action-chip,
+.ui-chip {
+  min-width: 0;
+}
+
 @media (max-width: 767px) {
   .page-shell {
     gap: clamp(1.15rem, 1.02rem + 0.7vw, 1.5rem);
@@ -522,6 +545,35 @@ body::before {
   .ui-panel-warning,
   .ui-empty-frame {
     border-radius: 22px;
+  }
+
+  .workspace-panel,
+  .workspace-panel-tight,
+  .workspace-empty-frame,
+  .page-header-panel,
+  .metric-card,
+  .ui-panel,
+  .ui-panel-muted,
+  .ui-panel-warning,
+  .ui-empty-frame {
+    overflow-wrap: anywhere;
+  }
+
+  .info-chip,
+  .action-chip,
+  .ui-chip,
+  .ui-button-primary,
+  .ui-button-secondary,
+  .ui-button-ghost,
+  .ui-button-warning {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .info-chip,
+  .ui-chip {
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
 }
 
