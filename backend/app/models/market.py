@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.models.forecast import NextDayForecast
+
 
 class MarketRegimeSignal(BaseModel):
     name: str
@@ -37,6 +39,23 @@ class TradePlan(BaseModel):
     risk_reward_estimate: float = 0
     thesis: list[str] = Field(default_factory=list)
     invalidation: str = ""
+
+
+class ShortTermChartFactor(BaseModel):
+    key: str
+    label: str
+    signal: Literal["bullish", "neutral", "bearish"]
+    score: float
+    detail: str = ""
+
+
+class ShortTermChartAnalysis(BaseModel):
+    score: float
+    signal: Literal["bullish", "neutral", "bearish"]
+    summary: str = ""
+    entry_style: Literal["pullback", "breakout", "balanced", "stand_aside"] = "balanced"
+    factors: list[ShortTermChartFactor] = Field(default_factory=list)
+    caution_flags: list[str] = Field(default_factory=list)
 
 
 class OpportunityItem(BaseModel):
@@ -96,6 +115,25 @@ class OpportunityItem(BaseModel):
     forecast_date: str = ""
 
 
+class NextDayFocusRecommendation(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    country_code: str
+    radar_rank: int | None = None
+    current_price: float
+    profit_probability: float
+    expected_return_pct: float
+    expected_edge_pct: float
+    selection_score: float
+    selection_summary: str = ""
+    thesis: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    chart_analysis: ShortTermChartAnalysis
+    next_day_forecast: NextDayForecast
+    trade_plan: TradePlan
+
+
 class OpportunityRadarResponse(BaseModel):
     country_code: str
     snapshot_id: str
@@ -110,4 +148,5 @@ class OpportunityRadarResponse(BaseModel):
     bullish_count: int
     universe_source: Literal["dynamic", "fallback", "krx_listing", "kr_top200"] = "fallback"
     universe_note: str = ""
+    next_day_focus: NextDayFocusRecommendation | None = None
     opportunities: list[OpportunityItem]

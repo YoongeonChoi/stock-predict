@@ -98,8 +98,8 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
       : "실시간 시세 확보가 지연돼 대표 후보를 아직 만들지 못했습니다. 잠시 뒤 다시 열어 주세요.";
   const radarSummary =
     data.detailed_scanned_count > 0
-      ? `${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
-      : `${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+      ? `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
+      : `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
   const operationalFallbackNote =
     data.partial && hasItems
       ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
@@ -207,12 +207,12 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                     <div className={`text-[11px] ${changeColor(item.change_pct)}`}>{formatPct(item.change_pct)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-                    <div className="text-[11px] text-text-secondary">상승 확률</div>
+                    <div className="text-[11px] text-text-secondary">20거래일 상승 확률</div>
                     <div className="mt-1 font-semibold">{item.up_probability.toFixed(1)}%</div>
                     <div className="text-[11px] text-text-secondary">신뢰도 {item.confidence.toFixed(0)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-                    <div className="text-[11px] text-text-secondary">예상 수익률</div>
+                    <div className="text-[11px] text-text-secondary">20거래일 예상 수익률</div>
                     <div className={`mt-1 font-semibold ${changeColor(item.predicted_return_pct)}`}>
                       {formatPct(item.predicted_return_pct)}
                     </div>
@@ -364,7 +364,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <div className={`text-[11px] ${changeColor(item.change_pct)}`}>{formatPct(item.change_pct)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-secondary">상승 확률</div>
+                  <div className="text-[11px] text-text-secondary">20거래일 상승 확률</div>
                   <div className="font-semibold">{item.up_probability.toFixed(1)}%</div>
                   <div className="text-[11px] text-text-secondary">신뢰도 {item.confidence.toFixed(0)}</div>
                 </div>
@@ -373,7 +373,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <div className="font-semibold">{priceRange(item.entry_low, item.entry_high, item.country_code)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-secondary">손익비</div>
+                  <div className="text-[11px] text-text-secondary">20거래일 손익비</div>
                   <div className="font-semibold">{item.risk_reward_estimate.toFixed(2)}</div>
                   <div className={`text-[11px] ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
                 </div>

@@ -4,7 +4,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.models.forecast import ForecastScenario, NextDayForecast
-from app.models.market import MarketRegime, MarketRegimeSignal, TradePlan
+from app.models.market import (
+    MarketRegime,
+    MarketRegimeSignal,
+    ShortTermChartAnalysis,
+    ShortTermChartFactor,
+    TradePlan,
+)
 from app.models.stock import BuySellGuide, TechnicalIndicators, ValuationMethod
 from app.services import market_service
 
@@ -34,7 +40,139 @@ async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
     return await fetcher()
 
 
+def _sample_chart_analysis(
+    *,
+    score: float = 74.0,
+    signal: str = "bullish",
+    entry_style: str = "pullback",
+    caution_flags: list[str] | None = None,
+) -> ShortTermChartAnalysis:
+    return ShortTermChartAnalysis(
+        score=score,
+        signal=signal,
+        summary="차트 정렬과 거래량 확인 신호를 함께 반영한 단타 점수입니다.",
+        entry_style=entry_style,
+        factors=[
+            ShortTermChartFactor(
+                key="trend_alignment",
+                label="추세 정렬",
+                signal="bullish",
+                score=78.0,
+                detail="EMA 정렬이 유지됩니다.",
+            ),
+            ShortTermChartFactor(
+                key="extension_discipline",
+                label="과열/변동성",
+                signal="neutral",
+                score=61.0,
+                detail="과열 부담은 보통 수준입니다.",
+            ),
+        ],
+        caution_flags=caution_flags or [],
+    )
+
+
+def _sample_focus_pick() -> market_service.NextDayFocusRecommendation:
+    return market_service.NextDayFocusRecommendation(
+        ticker="005930.KS",
+        name="삼성전자",
+        sector="Information Technology",
+        country_code="KR",
+        radar_rank=1,
+        current_price=101.0,
+        profit_probability=61.0,
+        expected_return_pct=1.4,
+        expected_edge_pct=0.85,
+        selection_score=1.12,
+        selection_summary="상승 확률과 예상 수익률을 함께 본 1일 실행 점수 기준 추천입니다.",
+        thesis=["다음 거래일 장중 집중 대응 후보입니다."],
+        risk_flags=["변동성 주의"],
+        chart_analysis=_sample_chart_analysis(),
+        next_day_forecast=NextDayForecast(
+            target_date="2026-03-27",
+            reference_date="2026-03-26",
+            reference_price=101.0,
+            direction="up",
+            up_probability=61.0,
+            predicted_open=101.2,
+            predicted_close=102.4,
+            predicted_high=103.3,
+            predicted_low=100.4,
+            predicted_return_pct=1.4,
+            confidence=67.0,
+            confidence_note="",
+            news_sentiment=0.1,
+            raw_signal=0.2,
+            flow_signal=None,
+            drivers=[],
+            model_version="signal-v2.1",
+        ),
+        trade_plan=TradePlan(
+            setup_label="다음 거래일 집중 매수",
+            action="accumulate",
+            conviction=68.0,
+            entry_low=100.9,
+            entry_high=101.4,
+            stop_loss=99.8,
+            take_profit_1=102.4,
+            take_profit_2=103.3,
+            expected_holding_days=1,
+            risk_reward_estimate=1.45,
+            thesis=["손절과 목표가를 하루 플랜 기준으로 고정합니다."],
+            invalidation="장중 손절가를 이탈하면 시나리오 종료입니다.",
+        ),
+    )
+
+
+def _focus_source_item(
+    *,
+    rank: int,
+    ticker: str,
+    change_pct: float,
+    opportunity_score: float,
+    action: str = "accumulate",
+    risk_reward_estimate: float = 1.4,
+) -> market_service.OpportunityItem:
+    return market_service.OpportunityItem(
+        rank=rank,
+        ticker=ticker,
+        name=ticker,
+        sector="Information Technology",
+        country_code="KR",
+        current_price=100.0,
+        change_pct=change_pct,
+        opportunity_score=opportunity_score,
+        quant_score=62.0,
+        up_probability=58.0,
+        confidence=60.0,
+        predicted_return_pct=4.0,
+        target_horizon_days=20,
+        expected_return_pct_20d=4.0,
+        up_probability_20d=58.0,
+        setup_label="포커스 후보",
+        action=action,
+        regime_tailwind="tailwind",
+        entry_low=99.0,
+        entry_high=101.0,
+        stop_loss=96.0,
+        take_profit_1=104.0,
+        take_profit_2=106.0,
+        risk_reward_estimate=risk_reward_estimate,
+        thesis=["focus"],
+        risk_flags=[],
+        forecast_date="2026-03-26",
+    )
+
+
 class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.focus_patch = patch(
+            "app.services.market_service._build_next_day_focus_recommendation",
+            new=AsyncMock(return_value=None),
+        )
+        self.focus_patch.start()
+        self.addCleanup(self.focus_patch.stop)
+
     def test_quote_only_scores_preserve_spread_for_hot_kr_names(self):
         market_regime = MarketRegime(
             label="중립",
@@ -65,6 +203,289 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(scores[0], scores[1])
         self.assertGreater(scores[1], scores[2])
         self.assertLessEqual(scores[0], 86.0)
+
+    def test_focus_source_selection_penalizes_recent_surges(self):
+        hot = _focus_source_item(rank=1, ticker="HOT.KS", change_pct=11.8, opportunity_score=86.0)
+        calm = _focus_source_item(rank=6, ticker="CALM.KS", change_pct=2.1, opportunity_score=82.0)
+
+        selected = market_service._select_focus_source_items([hot, calm], limit=2)
+
+        self.assertEqual(selected[0].ticker, "CALM.KS")
+        self.assertGreater(
+            market_service._focus_source_seed_score(calm),
+            market_service._focus_source_seed_score(hot),
+        )
+
+    async def test_next_day_focus_can_pick_candidate_outside_initial_top_three(self):
+        self.focus_patch.stop()
+        market_regime = MarketRegime(
+            label="상승 우위",
+            stance="risk_on",
+            trend="uptrend",
+            volatility="normal",
+            breadth="strong",
+            score=72.0,
+            conviction=64.0,
+            summary="시장 참여가 안정적입니다.",
+            playbook=["강한 종목 선별"],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.7, signal="bullish", detail="breadth strong")],
+        )
+        candidates = [
+            _focus_source_item(rank=1, ticker="HOT1.KS", change_pct=12.0, opportunity_score=90.0),
+            _focus_source_item(rank=2, ticker="HOT2.KS", change_pct=10.5, opportunity_score=89.0),
+            _focus_source_item(rank=3, ticker="HOT3.KS", change_pct=8.7, opportunity_score=88.0),
+            _focus_source_item(rank=4, ticker="CALM1.KS", change_pct=2.4, opportunity_score=82.0),
+            _focus_source_item(rank=5, ticker="CALM2.KS", change_pct=1.8, opportunity_score=81.5),
+        ]
+        seen_snapshots: list[str] = []
+
+        async def _snapshot(ticker: str, period: str = "6mo"):
+            seen_snapshots.append(ticker)
+            return {"valid": True, "current_price": 100.0}
+
+        async def _stock_info(ticker: str):
+            return {"name": ticker, "current_price": 100.0}
+
+        def _forecast(*, ticker: str, **kwargs):
+            predicted_return = {
+                "HOT1.KS": 1.05,
+                "HOT2.KS": 1.02,
+                "HOT3.KS": 1.0,
+                "CALM1.KS": 1.14,
+                "CALM2.KS": 1.18,
+            }[ticker]
+            up_probability = {
+                "HOT1.KS": 59.0,
+                "HOT2.KS": 58.0,
+                "HOT3.KS": 57.0,
+                "CALM1.KS": 61.0,
+                "CALM2.KS": 62.0,
+            }[ticker]
+            return NextDayForecast(
+                target_date="2026-03-27",
+                reference_date="2026-03-26",
+                reference_price=100.0,
+                direction="up",
+                up_probability=up_probability,
+                predicted_open=100.1,
+                predicted_close=round(100.0 * (1.0 + predicted_return / 100.0), 2),
+                predicted_high=round(100.0 * (1.0 + (predicted_return + 0.9) / 100.0), 2),
+                predicted_low=99.1,
+                predicted_return_pct=predicted_return,
+                confidence=66.0,
+                confidence_note="",
+                news_sentiment=0.0,
+                raw_signal=0.0,
+                flow_signal=None,
+                drivers=[],
+                model_version="signal-v2.1",
+                execution_bias="lean_long",
+                execution_note="다음 거래일 테스트",
+            )
+
+        def _trade_plan(*, ticker: str, **kwargs):
+            rr = 1.05 if ticker.startswith("HOT") else 1.35
+            tp1 = 101.0 if ticker.startswith("HOT") else 101.6
+            tp2 = 101.8 if ticker.startswith("HOT") else 102.5
+            return TradePlan(
+                setup_label="다음 거래일 매수",
+                action="accumulate",
+                conviction=68.0,
+                entry_low=99.7,
+                entry_high=100.3,
+                stop_loss=98.6,
+                take_profit_1=tp1,
+                take_profit_2=tp2,
+                expected_holding_days=1,
+                risk_reward_estimate=rr,
+                thesis=["다음 거래일 테스트"],
+                invalidation="손절가 이탈 시 종료",
+            )
+
+        buy_sell = BuySellGuide(
+            buy_zone_low=99.0,
+            buy_zone_high=101.0,
+            fair_value=105.0,
+            sell_zone_low=106.0,
+            sell_zone_high=109.0,
+            risk_reward_ratio=1.8,
+            confidence_grade="A",
+            methodology=[ValuationMethod(name="blend", value=105.0, weight=1.0, details="test")],
+            summary="테스트",
+        )
+        technical = TechnicalIndicators(
+            ma_20=[99.5],
+            ma_60=[97.0],
+            rsi_14=[56.0],
+            macd=[0.4],
+            macd_signal=[0.3],
+            macd_hist=[0.1],
+            dates=["2026-03-26"],
+        )
+        gather_errors: list[str] = []
+        async def _gather_safe(items, worker, limit=6):
+            results = []
+            for item in items:
+                try:
+                    results.append(await worker(item))
+                except Exception as exc:  # pragma: no cover - keeps focus selection test deterministic
+                    gather_errors.append(repr(exc))
+                    results.append(exc)
+            return results
+
+        with (
+            patch("app.services.market_service.gather_limited", new=AsyncMock(side_effect=_gather_safe)),
+            patch("app.services.market_service.yfinance_client.get_market_snapshot", new=AsyncMock(side_effect=_snapshot)),
+            patch("app.services.market_service.yfinance_client.get_stock_info", new=AsyncMock(side_effect=_stock_info)),
+            patch("app.services.market_service.yfinance_client.get_price_history", new=AsyncMock(return_value=_sample_prices(90, 100.0))),
+            patch("app.services.market_service.yfinance_client.get_analyst_ratings", new=AsyncMock(return_value={})),
+            patch("app.services.market_service.build_quick_buy_sell", return_value=buy_sell),
+            patch("app.services.market_service._calc_technicals", return_value=technical),
+            patch("app.services.market_service.forecast_next_day", side_effect=_forecast),
+            patch("app.services.market_service.build_short_horizon_trade_plan", side_effect=_trade_plan),
+        ):
+            focus = await market_service._build_next_day_focus_recommendation(
+                source_items=candidates,
+                country_code="KR",
+                market_regime=market_regime,
+            )
+
+        self.assertFalse(gather_errors, gather_errors)
+        self.assertGreater(len(seen_snapshots), 3, seen_snapshots)
+        self.assertIsNotNone(focus)
+        self.assertEqual(focus.ticker, "CALM2.KS")
+        self.assertIn("CALM2.KS", seen_snapshots)
+
+    async def test_next_day_focus_weights_chart_analysis_heavily(self):
+        self.focus_patch.stop()
+        market_regime = MarketRegime(
+            label="중립",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=58.0,
+            conviction=52.0,
+            summary="중립 장세입니다.",
+            playbook=[],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
+        )
+        candidates = [
+            _focus_source_item(rank=1, ticker="RET.KS", change_pct=1.7, opportunity_score=84.0),
+            _focus_source_item(rank=2, ticker="CHART.KS", change_pct=1.4, opportunity_score=82.0),
+        ]
+
+        async def _snapshot(ticker: str, period: str = "6mo"):
+            return {"valid": True, "current_price": 100.0}
+
+        async def _stock_info(ticker: str):
+            return {"name": ticker, "current_price": 100.0}
+
+        def _forecast(*, ticker: str, **kwargs):
+            predicted_return = 2.1 if ticker == "RET.KS" else 1.35
+            return NextDayForecast(
+                target_date="2026-03-27",
+                reference_date="2026-03-26",
+                reference_price=100.0,
+                direction="up",
+                up_probability=61.0 if ticker == "RET.KS" else 59.0,
+                predicted_open=100.1,
+                predicted_close=round(100.0 * (1.0 + predicted_return / 100.0), 2),
+                predicted_high=round(100.0 * (1.0 + (predicted_return + 0.8) / 100.0), 2),
+                predicted_low=99.2,
+                predicted_return_pct=predicted_return,
+                confidence=66.0,
+                confidence_note="",
+                news_sentiment=0.0,
+                raw_signal=0.0,
+                flow_signal=None,
+                drivers=[],
+                model_version="signal-v2.1",
+                execution_bias="lean_long",
+                execution_note="장중 대응 테스트",
+            )
+
+        def _trade_plan(*, ticker: str, **kwargs):
+            return TradePlan(
+                setup_label="다음 거래일 매수",
+                action="accumulate",
+                conviction=68.0,
+                entry_low=99.8,
+                entry_high=100.3,
+                stop_loss=98.7,
+                take_profit_1=101.7,
+                take_profit_2=102.6,
+                expected_holding_days=1,
+                risk_reward_estimate=1.35,
+                thesis=["단타 테스트"],
+                invalidation="손절가 이탈 시 종료",
+            )
+
+        buy_sell = BuySellGuide(
+            buy_zone_low=99.0,
+            buy_zone_high=101.0,
+            fair_value=105.0,
+            sell_zone_low=106.0,
+            sell_zone_high=109.0,
+            risk_reward_ratio=1.8,
+            confidence_grade="A",
+            methodology=[ValuationMethod(name="blend", value=105.0, weight=1.0, details="test")],
+            summary="테스트",
+        )
+        technical = TechnicalIndicators(
+            ma_20=[99.5],
+            ma_60=[97.0],
+            rsi_14=[56.0],
+            macd=[0.4],
+            macd_signal=[0.3],
+            macd_hist=[0.1],
+            dates=["2026-03-26"],
+        )
+
+        async def _gather_safe(items, worker, limit=6):
+            results = []
+            for item in items:
+                results.append(await worker(item))
+            return results
+
+        with (
+            patch("app.services.market_service.gather_limited", new=AsyncMock(side_effect=_gather_safe)),
+            patch("app.services.market_service.yfinance_client.get_market_snapshot", new=AsyncMock(side_effect=_snapshot)),
+            patch("app.services.market_service.yfinance_client.get_stock_info", new=AsyncMock(side_effect=_stock_info)),
+            patch("app.services.market_service.yfinance_client.get_price_history", new=AsyncMock(return_value=_sample_prices(90, 100.0))),
+            patch("app.services.market_service.yfinance_client.get_analyst_ratings", new=AsyncMock(return_value={})),
+            patch("app.services.market_service.build_quick_buy_sell", return_value=buy_sell),
+            patch("app.services.market_service._calc_technicals", return_value=technical),
+            patch("app.services.market_service.forecast_next_day", side_effect=_forecast),
+            patch("app.services.market_service.build_short_horizon_trade_plan", side_effect=_trade_plan),
+            patch(
+                "app.services.market_service.build_short_horizon_chart_analysis",
+                side_effect=[
+                    _sample_chart_analysis(
+                        score=38.0,
+                        signal="bearish",
+                        entry_style="stand_aside",
+                        caution_flags=["과열 부담", "상단 이격 확대"],
+                    ),
+                    _sample_chart_analysis(
+                        score=79.0,
+                        signal="bullish",
+                        entry_style="pullback",
+                    ),
+                ],
+            ),
+        ):
+            focus = await market_service._build_next_day_focus_recommendation(
+                source_items=candidates,
+                country_code="KR",
+                market_regime=market_regime,
+            )
+
+        self.assertIsNotNone(focus)
+        self.assertEqual(focus.ticker, "CHART.KS")
+        self.assertGreater(focus.chart_analysis.score, 70.0)
 
     def test_build_seeded_quote_screen_from_quick_payload_restores_ranked_candidates(self):
         payload = {
@@ -183,6 +604,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, cached_payload)
 
     async def test_get_market_opportunities_returns_distributional_signal_profile(self):
+        focus_pick = _sample_focus_pick()
         forecast = NextDayForecast(
             target_date="2026-03-27",
             reference_date="2026-03-26",
@@ -310,6 +732,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.market_service._calc_technicals", return_value=technical),
             patch("app.services.market_service.forecast_next_day", return_value=forecast),
             patch("app.services.market_service.build_trade_plan", return_value=trade_plan),
+            patch("app.services.market_service._build_next_day_focus_recommendation", new=AsyncMock(return_value=focus_pick)),
             patch("app.services.market_service.build_market_regime", return_value=market_regime),
             patch(
                 "app.services.market_service.ecos_client.get_kr_economic_snapshot",
@@ -331,6 +754,9 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["quote_available_count"], 3)
         self.assertEqual(result["detailed_scanned_count"], 1)
         self.assertEqual(len(result["opportunities"]), 1)
+        self.assertIsNotNone(result["next_day_focus"])
+        self.assertEqual(result["next_day_focus"]["ticker"], "005930.KS")
+        self.assertEqual(result["next_day_focus"]["trade_plan"]["expected_holding_days"], 1)
         self.assertEqual(result["opportunities"][0]["ticker"], "005930.KS")
         self.assertGreater(result["opportunities"][0]["predicted_return_pct"], 0.0)
 
@@ -404,6 +830,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("기본 종목군 2개", result["universe_note"])
 
     async def test_get_market_opportunities_quick_returns_quote_only_response(self):
+        focus_pick = _sample_focus_pick()
         fallback_selection = market_service.UniverseSelection(
             sectors={"Information Technology": ["005930.KS", "000660.KS"]},
             source="fallback",
@@ -429,6 +856,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.market_service._build_quote_screen",
                 new=AsyncMock(return_value=fallback_screen),
             ),
+            patch("app.services.market_service._build_next_day_focus_recommendation", new=AsyncMock(return_value=focus_pick)),
         ):
             result = await market_service.get_market_opportunities_quick("KR", limit=2)
 
@@ -439,6 +867,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["quote_available_count"], 2)
         self.assertEqual(result["detailed_scanned_count"], 0)
         self.assertEqual(len(result["opportunities"]), 2)
+        self.assertIsNotNone(result["next_day_focus"])
+        self.assertEqual(result["next_day_focus"]["trade_plan"]["expected_holding_days"], 1)
         self.assertIn("1차 시세 스캔 후보", result["universe_note"])
 
     async def test_get_market_opportunities_quick_falls_back_to_curated_universe_when_top200_quotes_are_empty(self):

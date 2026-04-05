@@ -277,6 +277,23 @@ export interface TradePlan {
   invalidation: string;
 }
 
+export interface ShortTermChartFactor {
+  key: string;
+  label: string;
+  signal: "bullish" | "neutral" | "bearish";
+  score: number;
+  detail: string;
+}
+
+export interface ShortTermChartAnalysis {
+  score: number;
+  signal: "bullish" | "neutral" | "bearish";
+  summary: string;
+  entry_style: "pullback" | "breakout" | "balanced" | "stand_aside";
+  factors: ShortTermChartFactor[];
+  caution_flags: string[];
+}
+
 export interface OpportunityItem {
   rank: number;
   ticker: string;
@@ -334,6 +351,25 @@ export interface OpportunityItem {
   forecast_date: string;
 }
 
+export interface NextDayFocusRecommendation {
+  ticker: string;
+  name: string;
+  sector: string;
+  country_code: string;
+  radar_rank?: number | null;
+  current_price: number;
+  profit_probability: number;
+  expected_return_pct: number;
+  expected_edge_pct: number;
+  selection_score: number;
+  selection_summary: string;
+  thesis: string[];
+  risk_flags: string[];
+  chart_analysis: ShortTermChartAnalysis;
+  next_day_forecast: NextDayForecast;
+  trade_plan: TradePlan;
+}
+
 export interface OpportunityRadarResponse {
   country_code: string;
   snapshot_id: string;
@@ -350,6 +386,7 @@ export interface OpportunityRadarResponse {
   bullish_count: number;
   universe_source?: "dynamic" | "fallback" | "krx_listing" | "kr_top200";
   universe_note?: string;
+  next_day_focus?: NextDayFocusRecommendation | null;
   opportunities: OpportunityItem[];
 }
 

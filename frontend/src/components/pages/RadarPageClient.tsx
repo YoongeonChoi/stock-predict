@@ -6,6 +6,7 @@ import MarketRegimeCard from "@/components/MarketRegimeCard";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
+import RadarNextDayFocusCard from "@/components/RadarNextDayFocusCard";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api } from "@/lib/api";
 import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
@@ -17,6 +18,7 @@ import {
   reportPanelDegraded,
 } from "@/lib/route-observability";
 import type { OpportunityRadarResponse } from "@/lib/types";
+import { formatPct } from "@/lib/utils";
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -121,6 +123,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   const auditSummary = buildPublicAuditSummary(activeAuditMeta, {
     defaultSummary: "시장 국면, 스캔 수, 표시 후보 수를 먼저 보여주고 상세 보드는 뒤이어 갱신합니다.",
   });
+  const nextDayFocus = visibleData?.next_day_focus ?? null;
   const placeholderUniverseSize = placeholderData?.universe_size ?? 0;
   const radarHeaderDescription = visibleData
     ? visibleData.universe_source === "kr_top200"
@@ -139,6 +142,12 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             <span className="info-chip">실행 후보 우선</span>
             <span className="info-chip">시장 국면 반영</span>
             {visibleData ? <span className="info-chip">1차 스캔 {visibleData.total_scanned}개</span> : null}
+            {nextDayFocus ? (
+              <>
+                <span className="info-chip">1일 포커스 {nextDayFocus.name}</span>
+                <span className="info-chip">동일 금액 기준 기대 수익 {formatPct(nextDayFocus.expected_edge_pct)}</span>
+              </>
+            ) : null}
           </>
         }
         actions={
@@ -157,6 +166,19 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
           </div>
         }
       />
+
+      {visibleData && nextDayFocus ? (
+        <RadarNextDayFocusCard focus={nextDayFocus} />
+      ) : visibleData ? (
+        <WorkspaceStateCard
+          eyebrow="다음 거래일 포커스 준비 중"
+          title="단기 추천은 상위 후보를 다시 계산한 뒤 이어집니다"
+          message="레이더 보드는 먼저 확인할 수 있고, 다음 거래일 전용 매수·목표·손절 기준은 정밀 후보 재평가가 끝나는 순서대로 채워집니다."
+          tone="warning"
+          actionLabel="레이더 다시 불러오기"
+          onAction={retryLoad}
+        />
+      ) : null}
 
       {visibleData ? (
         <section className="card !p-5 space-y-4">
