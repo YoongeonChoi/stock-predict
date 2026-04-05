@@ -16,7 +16,6 @@ from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, y
 from app.data.universe_data import (
     UNIVERSE,
     UniverseSelection,
-    fetch_krx_listing_universe,
     resolve_opportunity_universe,
     resolve_universe,
 )
@@ -42,6 +41,7 @@ from app.services.market.universe import (
     build_sector_lookup as _build_sector_lookup,
     build_seeded_quote_screen_from_quick_payload as _build_seeded_quote_screen_from_quick_payload,
     flatten_universe as _flatten_universe,
+    group_ranked_quotes_by_sector as _group_ranked_quotes_by_sector,
     sample_universe_pairs as _sample_universe_pairs,
 )
 from app.scoring.stock_scorer import score_stock
@@ -64,7 +64,9 @@ QUICK_OPPORTUNITY_CACHE_TTL_SECONDS = 300
 QUOTE_SCREEN_CACHE_WAIT_TIMEOUT_SECONDS = 1.6
 FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 3.0
 QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 2.5
-QUICK_KRX_LISTING_FETCH_TIMEOUT_SECONDS = 2.5
+KR_RADAR_KOSPI_LIMIT = 190
+KR_RADAR_KOSDAQ_LIMIT = 10
+KR_RADAR_UNIVERSE_SOURCE = "kr_top200"
 
 
 def _has_full_quote_screen_coverage(
@@ -292,8 +294,77 @@ async def _build_kr_representative_quote_only_opportunities(
     )
 
 
+def _build_kr_radar_universe_note(*, total: int) -> str:
+    return (
+        f"코스피 시가총액 상위 {KR_RADAR_KOSPI_LIMIT}개와 코스닥 상위 {KR_RADAR_KOSDAQ_LIMIT}개, "
+        f"총 {total}개 대표 종목을 1차 스캔합니다. 상위 후보만 정밀 분석합니다."
+    )
+
+
+def _build_kr_radar_selection_from_ranked_quotes(ranked_quotes: list[dict]) -> SimpleNamespace | None:
+    if not ranked_quotes:
+        return None
+    grouped = _group_ranked_quotes_by_sector(ranked_quotes)
+    total = sum(len(tickers) for tickers in grouped.values())
+    return SimpleNamespace(
+        sectors=grouped,
+        source=KR_RADAR_UNIVERSE_SOURCE,
+        note=_build_kr_radar_universe_note(total=total),
+    )
+
+
+async def _build_kr_radar_quote_screen(market_regime) -> tuple[SimpleNamespace, dict] | None:
+    quotes = await kr_market_quote_client.get_kr_radar_quotes(
+        kospi_limit=KR_RADAR_KOSPI_LIMIT,
+        kosdaq_limit=KR_RADAR_KOSDAQ_LIMIT,
+    )
+    if not quotes:
+        return None
+
+    curated_sector_lookup = _build_sector_lookup(UNIVERSE.get("KR", {}))
+    regime_bias = 0.75 if market_regime.stance == "risk_on" else -0.55 if market_regime.stance == "risk_off" else 0.0
+    ranked_quotes: list[dict] = []
+    for quote in quotes.values():
+        ticker = str(quote.get("ticker") or "").upper()
+        current_price = _safe_float(quote.get("current_price"), 0.0)
+        if current_price <= 0:
+            continue
+        change_pct = _safe_float(quote.get("change_pct"))
+        market_label = str(quote.get("market") or "").upper()
+        sector = curated_sector_lookup.get(ticker)
+        if not sector:
+            sector = "코스닥 대표" if market_label == "KOSDAQ" else "코스피 대표"
+        quick_score = (
+            change_pct * 1.7
+            + min(_safe_float(quote.get("market_cap")) / 1_000_000_000_000, 8.0)
+            + regime_bias
+        )
+        ranked_quotes.append(
+            {
+                "sector": sector,
+                "ticker": ticker,
+                "current_price": round(current_price, 2),
+                "change_pct": round(change_pct, 2),
+                "quick_score": round(quick_score, 4),
+            }
+        )
+
+    ranked_quotes.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
+    selection = _build_kr_radar_selection_from_ranked_quotes(ranked_quotes)
+    if selection is None:
+        return None
+
+    total = len(ranked_quotes)
+    return selection, {
+        "universe_size": total,
+        "scanned_count": total,
+        "quote_available_count": total,
+        "ranked": ranked_quotes,
+    }
+
+
 def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
-    return f"opportunity_radar_quick:v3:{country_code.upper()}:{int(limit)}"
+    return f"opportunity_radar_quick:v4:{country_code.upper()}:{int(limit)}"
 
 
 def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> dict:
@@ -349,7 +420,7 @@ def _full_opportunity_cache_key(
     *,
     max_candidates: int | None = None,
 ) -> str:
-    return f"opportunity_radar:v17:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
+    return f"opportunity_radar:v18:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
 
 
 async def _build_quote_screen(
@@ -367,7 +438,7 @@ async def _build_quote_screen(
         universe_pairs = full_universe_pairs
         scope_token = "full"
     cache_key = (
-        f"opportunity_quote_screen:v3:{country_code}:{universe_selection.source}:"
+        f"opportunity_quote_screen:v4:{country_code}:{universe_selection.source}:"
         f"{len(full_universe_pairs)}:{scope_token}"
     )
 
@@ -462,28 +533,14 @@ async def _build_quote_screen(
 async def _resolve_quick_opportunity_universe(country_code: str):
     country_code = country_code.upper()
     if country_code == "KR":
-        cached = await cache.get("krx_listing_universe:KR")
-        if cached and isinstance(cached, dict):
-            sectors = {
-                sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
-                for sector, tickers in (cached.get("sectors") or {}).items()
-            }
-            total = int(cached.get("total") or sum(len(tickers) for tickers in sectors.values()))
-            if total > 0:
-                return SimpleNamespace(
-                    sectors=sectors,
-                    source="krx_listing",
-                    note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 백그라운드에서 이어집니다.",
-                )
-        try:
-            fetched = await asyncio.wait_for(
-                fetch_krx_listing_universe(country_code),
-                timeout=QUICK_KRX_LISTING_FETCH_TIMEOUT_SECONDS,
-            )
-        except Exception:
-            fetched = None
-        if fetched and getattr(fetched, "sectors", None):
-            return fetched
+        market_regime = _build_placeholder_market_regime(
+            country_code=country_code,
+            index_name=COUNTRY_REGISTRY[country_code].indices[0].name,
+            note="KR 대표 종목군을 우선 정리해 1차 스캔 후보를 빠르게 준비합니다.",
+        )
+        radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+        if radar_quote_screen is not None:
+            return radar_quote_screen[0]
 
         fallback_sectors = {
             sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
@@ -495,8 +552,8 @@ async def _resolve_quick_opportunity_universe(country_code: str):
                 sectors=fallback_sectors,
                 source="fallback",
                 note=(
-                    f"KRX 상장사 목록 캐시가 아직 준비되지 않아 운영용 기본 종목군 {fallback_total}개를 먼저 1차 스캔합니다. "
-                    "정식 전종목 스캔은 캐시가 준비되는 즉시 이어집니다."
+                    f"대표 200종목 시세가 아직 비어 운영용 기본 종목군 {fallback_total}개를 먼저 1차 스캔합니다. "
+                    "대표 종목 시세가 복구되면 190/10 레이더로 다시 전환합니다."
                 ),
             )
     return await resolve_universe(country_code)
@@ -687,26 +744,55 @@ async def get_market_opportunities(
         )
 
         quick_seed_limit = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
-        universe_selection = await resolve_opportunity_universe(country_code)
-        quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
-        seeded_quick = None
-        if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
-            seeded_quick = _build_seeded_quote_screen_from_quick_payload(
-                quick_seed_payload,
-                candidate_limit=quick_seed_limit,
-            )
-        if seeded_quick is not None:
-            universe_selection, quote_screen = seeded_quick
+        if country_code == "KR":
+            universe_selection = await _resolve_quick_opportunity_universe(country_code)
+            quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
+            seeded_quick = None
+            if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
+                seeded_quick = _build_seeded_quote_screen_from_quick_payload(
+                    quick_seed_payload,
+                    candidate_limit=quick_seed_limit,
+                )
+            if seeded_quick is not None:
+                universe_selection, quote_screen = seeded_quick
+            elif universe_selection.source == KR_RADAR_UNIVERSE_SOURCE:
+                live_radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+                if live_radar_quote_screen is not None:
+                    universe_selection, quote_screen = live_radar_quote_screen
+                else:
+                    universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                        country_code=country_code,
+                        universe_selection=universe_selection,
+                        market_regime=market_regime,
+                    )
+            else:
+                universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                    country_code=country_code,
+                    universe_selection=universe_selection,
+                    market_regime=market_regime,
+                )
         else:
-            universe_selection, quote_screen = await _resolve_resilient_quote_screen(
-                country_code=country_code,
-                universe_selection=universe_selection,
-                market_regime=market_regime,
-            )
+            universe_selection = await resolve_opportunity_universe(country_code)
+            quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
+            seeded_quick = None
+            if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
+                seeded_quick = _build_seeded_quote_screen_from_quick_payload(
+                    quick_seed_payload,
+                    candidate_limit=quick_seed_limit,
+                )
+            if seeded_quick is not None:
+                universe_selection, quote_screen = seeded_quick
+            else:
+                universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                    country_code=country_code,
+                    universe_selection=universe_selection,
+                    market_regime=market_regime,
+                )
         ranked_quotes = list(quote_screen.get("ranked") or [])
         detail_budget = _resolve_detail_candidate_budget(
             limit=limit,
             available=len(ranked_quotes),
+            universe_source=getattr(universe_selection, "source", None),
             max_candidates=max_candidates,
             min_candidates=MIN_DETAILED_OPPORTUNITY_CANDIDATES,
             large_universe_cap=LARGE_UNIVERSE_DETAILED_SCAN_CAP,
@@ -1053,13 +1139,17 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
         }
         ranked: list[OpportunityItem] = []
         representative_scanned_count = 0
-        if country_code == "KR":
-            ranked, representative_scanned_count = await _build_kr_representative_quote_only_opportunities(
-                country_code=country_code,
-                market_regime=market_regime,
-                universe_selection=universe_selection,
-                limit=limit,
-            )
+        if country_code == "KR" and universe_selection.source == KR_RADAR_UNIVERSE_SOURCE:
+            live_radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+            if live_radar_quote_screen is not None:
+                universe_selection, quote_screen = live_radar_quote_screen
+                ranked = _build_quote_only_opportunities(
+                    ranked_quotes=list(quote_screen.get("ranked") or []),
+                    country_code=country_code,
+                    market_regime=market_regime,
+                    limit=limit,
+                )
+                representative_scanned_count = int(quote_screen.get("quote_available_count") or 0)
         if not ranked:
             universe_selection, quote_screen = await _resolve_resilient_quote_screen(
                 country_code=country_code,
@@ -1096,7 +1186,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             )
         if representative_scanned_count > 0:
             note_parts.append(
-                f"yfinance quick 시세가 비어 KOSPI/KOSDAQ 대표 시총 페이지 기준 {representative_scanned_count}개 1차 후보로 즉시 전환했습니다."
+                f"코스피 상위 {KR_RADAR_KOSPI_LIMIT}개와 코스닥 상위 {KR_RADAR_KOSDAQ_LIMIT}개 대표 종목 중 실제 시세를 확보한 {representative_scanned_count}개를 먼저 정렬했습니다."
             )
         note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
         note_parts.append("같은 화면을 다시 열면 fresh quick 스냅샷과 정밀 후보 계산을 새로 시도합니다.")
@@ -1193,7 +1283,11 @@ async def get_cached_market_opportunities(
     normalized = dict(cached)
     normalized.setdefault("partial", True)
     normalized.setdefault("fallback_reason", "opportunity_quote_only_full")
-    full_scan_note = "전종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+    full_scan_note = (
+        "대표 200종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+        if str(normalized.get("universe_source") or "") == KR_RADAR_UNIVERSE_SOURCE
+        else "전종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+    )
     existing_note = str(normalized.get("universe_note") or "").strip()
     if full_scan_note not in existing_note:
         normalized["universe_note"] = " ".join(

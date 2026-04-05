@@ -76,9 +76,18 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
   const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
   const usingFallbackUniverse = data.universe_source === "fallback";
   const usingKrxListingUniverse = data.universe_source === "krx_listing";
+  const usingTop200Universe = data.universe_source === "kr_top200";
   const quoteAvailableCount = data.quote_available_count ?? data.total_scanned;
   const visibleCandidateCount = Math.max(data.opportunities.length, data.actionable_count);
   const hasItems = items.length > 0;
+  const universeLabel = usingTop200Universe ? "대표 유니버스" : "전체 유니버스";
+  const radarUniverseSummary = usingTop200Universe
+    ? `코스피 상위 190개와 코스닥 상위 10개, 총 ${data.universe_size}개 대표 종목`
+    : `KR 유니버스 ${data.universe_size}개`;
+  const liveUniverseBadge = usingTop200Universe ? "대표 200종목 유니버스 기반 추천" : "실시간 유니버스 기반 추천";
+  const listingUniverseNote = usingTop200Universe
+    ? data.universe_note || "코스피 190개와 코스닥 10개 대표 종목 기준 1차 스캔 결과입니다."
+    : data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다.";
   const quoteCoverageNote =
     quoteAvailableCount < data.total_scanned
       ? `실제 시세를 확보한 종목은 ${quoteAvailableCount}개입니다. 일부 종목은 데이터 원본 제한이나 거래 상태에 따라 1차 점수 계산에서 제외될 수 있습니다.`
@@ -89,8 +98,8 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
       : "실시간 시세 확보가 지연돼 대표 후보를 아직 만들지 못했습니다. 잠시 뒤 다시 열어 주세요.";
   const radarSummary =
     data.detailed_scanned_count > 0
-      ? `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
-      : `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+      ? `${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
+      : `${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
   const operationalFallbackNote =
     data.partial && hasItems
       ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
@@ -112,13 +121,13 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
               <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
                 {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
               </div>
-            ) : usingKrxListingUniverse ? (
+            ) : usingKrxListingUniverse || usingTop200Universe ? (
               <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-                {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
+                {listingUniverseNote}
               </div>
             ) : (
               <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-                실시간 유니버스 기반 추천
+                {liveUniverseBadge}
               </div>
             )}
             <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
@@ -127,7 +136,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           </div>
           <div className="workspace-metric-grid">
             <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-3">
-              <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+              <div className="text-[11px] text-text-secondary">{universeLabel}</div>
               <div className="mt-2 text-xl font-semibold text-text">{data.universe_size}</div>
               <div className="mt-1 text-[11px] text-text-secondary">오늘 레이더 기준 종목군</div>
             </div>
@@ -273,13 +282,13 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
               {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
             </div>
-          ) : usingKrxListingUniverse ? (
+          ) : usingKrxListingUniverse || usingTop200Universe ? (
             <div className="mt-2 inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-              {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
+              {listingUniverseNote}
             </div>
           ) : (
             <div className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-              실시간 유니버스 기반 추천
+              {liveUniverseBadge}
             </div>
           )}
           <div className="mt-2">
@@ -290,7 +299,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <div className="rounded-lg bg-border/40 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+            <div className="text-[11px] text-text-secondary">{universeLabel}</div>
             <div className="font-bold">{data.universe_size}</div>
           </div>
           <div className="rounded-lg bg-border/40 px-3 py-2">

@@ -11,6 +11,7 @@ def resolve_detail_candidate_budget(
     *,
     limit: int,
     available: int,
+    universe_source: str | None,
     max_candidates: int | None,
     min_candidates: int,
     large_universe_cap: int,
@@ -21,7 +22,7 @@ def resolve_detail_candidate_budget(
     if max_candidates is not None:
         return max(1, min(available, max_candidates))
     preferred = max(limit * 2, min_candidates)
-    if available >= 120:
+    if available >= 120 and universe_source in {"fallback", "krx_listing"}:
         preferred = min(preferred, large_universe_cap)
     return max(1, min(available, min(preferred, max_detailed_candidates)))
 

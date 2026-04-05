@@ -348,7 +348,7 @@ export interface OpportunityRadarResponse {
   detailed_scanned_count: number;
   actionable_count: number;
   bullish_count: number;
-  universe_source?: "dynamic" | "fallback" | "krx_listing";
+  universe_source?: "dynamic" | "fallback" | "krx_listing" | "kr_top200";
   universe_note?: string;
   opportunities: OpportunityItem[];
 }

@@ -108,6 +108,6 @@ class OpportunityRadarResponse(BaseModel):
     detailed_scanned_count: int
     actionable_count: int
     bullish_count: int
-    universe_source: Literal["dynamic", "fallback", "krx_listing"] = "fallback"
+    universe_source: Literal["dynamic", "fallback", "krx_listing", "kr_top200"] = "fallback"
     universe_note: str = ""
     opportunities: list[OpportunityItem]

@@ -33,6 +33,9 @@ KR_BULK_QUOTE_TTL = 900
 KR_REMAINDER_FALLBACK_LIMIT = 180
 KR_SMALL_REQUEST_FAST_PATH_LIMIT = 120
 KR_REPRESENTATIVE_MARKET_PAGES = 1
+KR_RADAR_KOSPI_LIMIT = 190
+KR_RADAR_KOSDAQ_LIMIT = 10
+NAVER_MARKET_SUM_PAGE_SIZE = 50
 TICKER_CODE_PATTERN = re.compile(r"\d{6}")
 
 
@@ -86,7 +89,7 @@ def _parse_last_page(soup: BeautifulSoup) -> int:
     return max(int(match.group(1)), 1)
 
 
-def _parse_market_page_quotes(html: str, *, suffix: str) -> tuple[int, dict[str, dict]]:
+def _parse_market_page_quotes(html: str, *, suffix: str, market_label: str) -> tuple[int, dict[str, dict]]:
     soup = BeautifulSoup(html, "html.parser")
     last_page = _parse_last_page(soup)
     quotes: dict[str, dict] = {}
@@ -119,28 +122,48 @@ def _parse_market_page_quotes(html: str, *, suffix: str) -> tuple[int, dict[str,
             "change_pct": round(change_pct, 2),
             "market_cap": round((market_cap_uk or 0.0) * 100_000_000, 2),
             "session_date": latest_closed_trading_day("KR").isoformat(),
+            "market": market_label,
         }
     return last_page, quotes
 
 
-async def _fetch_market_page(client: httpx.AsyncClient, *, sosok: int, page: int, suffix: str) -> tuple[int, dict[str, dict]]:
+async def _fetch_market_page(
+    client: httpx.AsyncClient,
+    *,
+    sosok: int,
+    page: int,
+    suffix: str,
+    market_label: str,
+) -> tuple[int, dict[str, dict]]:
     response = await client.get(
         NAVER_MARKET_SUM_URL,
         params={"sosok": sosok, "page": page},
         headers=NAVER_HEADERS,
     )
     response.raise_for_status()
-    return _parse_market_page_quotes(response.text, suffix=suffix)
+    return _parse_market_page_quotes(response.text, suffix=suffix, market_label=market_label)
 
 
-async def _fetch_market_quotes(sosok: int, *, suffix: str) -> dict[str, dict]:
+async def _fetch_market_quotes(sosok: int, *, suffix: str, market_label: str) -> dict[str, dict]:
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-        first_last_page, first_quotes = await _fetch_market_page(client, sosok=sosok, page=1, suffix=suffix)
+        first_last_page, first_quotes = await _fetch_market_page(
+            client,
+            sosok=sosok,
+            page=1,
+            suffix=suffix,
+            market_label=market_label,
+        )
         if first_last_page <= 1:
             return first_quotes
 
         async def _worker(page: int) -> dict[str, dict]:
-            _, quotes = await _fetch_market_page(client, sosok=sosok, page=page, suffix=suffix)
+            _, quotes = await _fetch_market_page(
+                client,
+                sosok=sosok,
+                page=page,
+                suffix=suffix,
+                market_label=market_label,
+            )
             return quotes
 
         merged = dict(first_quotes)
@@ -161,7 +184,11 @@ async def _fetch_full_kr_market_quotes() -> dict[str, dict]:
                 (NAVER_KOSPI, ".KS"),
                 (NAVER_KOSDAQ, ".KQ"),
             ],
-            lambda item: _fetch_market_quotes(item[0], suffix=item[1]),
+            lambda item: _fetch_market_quotes(
+                item[0],
+                suffix=item[1],
+                market_label="KOSPI" if item[0] == NAVER_KOSPI else "KOSDAQ",
+            ),
             limit=2,
         )
         merged: dict[str, dict] = {}
@@ -186,9 +213,18 @@ async def _fetch_representative_kr_market_quotes(*, pages_per_market: int = KR_R
     async def _fetch():
         merged: dict[str, dict] = {}
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            for sosok, suffix in ((NAVER_KOSPI, ".KS"), (NAVER_KOSDAQ, ".KQ")):
+            for sosok, suffix, market_label in (
+                (NAVER_KOSPI, ".KS", "KOSPI"),
+                (NAVER_KOSDAQ, ".KQ", "KOSDAQ"),
+            ):
                 for page in range(1, page_count + 1):
-                    _, quotes = await _fetch_market_page(client, sosok=sosok, page=page, suffix=suffix)
+                    _, quotes = await _fetch_market_page(
+                        client,
+                        sosok=sosok,
+                        page=page,
+                        suffix=suffix,
+                        market_label=market_label,
+                    )
                     merged.update(quotes)
         return merged
 
@@ -211,6 +247,71 @@ async def get_kr_representative_quotes(
         if len(limited_quotes) >= max(1, limit):
             break
     return limited_quotes
+
+
+async def get_kr_radar_quotes(
+    *,
+    kospi_limit: int = KR_RADAR_KOSPI_LIMIT,
+    kosdaq_limit: int = KR_RADAR_KOSDAQ_LIMIT,
+) -> dict[str, dict]:
+    session_token = market_session_cache_token(country_code="KR")
+    settings = get_settings()
+    normalized_kospi_limit = max(1, int(kospi_limit))
+    normalized_kosdaq_limit = max(1, int(kosdaq_limit))
+
+    async def _fetch_market_window(
+        client: httpx.AsyncClient,
+        *,
+        sosok: int,
+        suffix: str,
+        market_label: str,
+        limit: int,
+    ) -> dict[str, dict]:
+        page_count = max(1, (limit + NAVER_MARKET_SUM_PAGE_SIZE - 1) // NAVER_MARKET_SUM_PAGE_SIZE)
+        window: dict[str, dict] = {}
+        for page in range(1, page_count + 1):
+            _, quotes = await _fetch_market_page(
+                client,
+                sosok=sosok,
+                page=page,
+                suffix=suffix,
+                market_label=market_label,
+            )
+            for ticker, quote in quotes.items():
+                if ticker not in window:
+                    window[ticker] = quote
+                if len(window) >= limit:
+                    return window
+        return window
+
+    async def _fetch():
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            kospi_quotes, kosdaq_quotes = await gather_limited(
+                [
+                    (NAVER_KOSPI, ".KS", "KOSPI", normalized_kospi_limit),
+                    (NAVER_KOSDAQ, ".KQ", "KOSDAQ", normalized_kosdaq_limit),
+                ],
+                lambda item: _fetch_market_window(
+                    client,
+                    sosok=item[0],
+                    suffix=item[1],
+                    market_label=item[2],
+                    limit=item[3],
+                ),
+                limit=2,
+            )
+        merged: dict[str, dict] = {}
+        for chunk in (kospi_quotes, kosdaq_quotes):
+            if isinstance(chunk, Exception):
+                continue
+            merged.update(chunk)
+        return merged
+
+    return await cache.get_or_fetch(
+        f"kr_market_quotes:radar:{normalized_kospi_limit}:{normalized_kosdaq_limit}:{session_token}",
+        _fetch,
+        min(max(settings.cache_ttl_price, 300), KR_BULK_QUOTE_TTL),
+    )
 
 
 def _normalize_yfinance_quote(ticker: str, quote: dict) -> dict | None:

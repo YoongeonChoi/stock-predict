@@ -122,17 +122,18 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
     defaultSummary: "시장 국면, 스캔 수, 표시 후보 수를 먼저 보여주고 상세 보드는 뒤이어 갱신합니다.",
   });
   const placeholderUniverseSize = placeholderData?.universe_size ?? 0;
+  const radarHeaderDescription = visibleData
+    ? visibleData.universe_source === "kr_top200"
+      ? `금일 코스피 190개 + 코스닥 10개 대표 ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
+      : `금일 KRX ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
+    : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다.";
 
   return (
     <div className="page-shell">
       <PageHeader
         eyebrow="Opportunity Radar"
         title="기회 레이더"
-        description={
-          visibleData
-            ? `금일 KRX ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
-            : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다."
-        }
+        description={radarHeaderDescription}
         meta={
           <>
             <span className="info-chip">실행 후보 우선</span>

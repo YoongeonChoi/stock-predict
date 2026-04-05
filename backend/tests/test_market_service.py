@@ -68,10 +68,10 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
 
     def test_build_seeded_quote_screen_from_quick_payload_restores_ranked_candidates(self):
         payload = {
-            "universe_size": 2729,
-            "total_scanned": 72,
+            "universe_size": 200,
+            "total_scanned": 200,
             "quote_available_count": 72,
-            "universe_source": "krx_listing",
+            "universe_source": "kr_top200",
             "universe_note": "cached quick",
             "opportunities": [
                 {
@@ -93,17 +93,17 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(result)
         selection, quote_screen = result
-        self.assertEqual(selection.source, "krx_listing")
+        self.assertEqual(selection.source, "kr_top200")
         self.assertIn("seed로 정밀 후보 계산", selection.note)
-        self.assertEqual(quote_screen["universe_size"], 2729)
+        self.assertEqual(quote_screen["universe_size"], 200)
         self.assertEqual(quote_screen["quote_available_count"], 72)
         self.assertEqual(len(quote_screen["ranked"]), 2)
         self.assertEqual(quote_screen["ranked"][0]["ticker"], "047810.KS")
 
     def test_can_reuse_quick_seed_payload_requires_matching_source_size_and_coverage(self):
         payload = {
-            "universe_source": "krx_listing",
-            "universe_size": 2729,
+            "universe_source": "kr_top200",
+            "universe_size": 200,
             "total_scanned": 72,
             "quote_available_count": 72,
         }
@@ -117,23 +117,23 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
 
         selection = SimpleNamespace(
             sectors={"Information Technology": ["005930.KS", "000660.KS"]},
-            source="krx_listing",
+            source="kr_top200",
             note="test universe",
         )
 
         self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
 
-        tickers = [f"{index:06d}.KS" for index in range(2729)]
+        tickers = [f"{index:06d}.KS" for index in range(200)]
         selection = SimpleNamespace(
             sectors={"Information Technology": tickers},
-            source="krx_listing",
+            source="kr_top200",
             note="test universe",
         )
 
         self.assertFalse(market_service._can_reuse_quick_seed_payload(payload, selection))
 
-        payload["total_scanned"] = 2729
-        payload["quote_available_count"] = 130
+        payload["total_scanned"] = 200
+        payload["quote_available_count"] = 200
 
         self.assertTrue(market_service._can_reuse_quick_seed_payload(payload, selection))
 
@@ -255,7 +255,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.resolve_opportunity_universe",
+                "app.services.market_service._resolve_quick_opportunity_universe",
                 new=AsyncMock(
                     return_value=SimpleNamespace(
                         sectors={"Information Technology": ["005930.KS", "000660.KS", "035420.KS"]},
@@ -352,7 +352,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.resolve_opportunity_universe",
+                "app.services.market_service._resolve_quick_opportunity_universe",
                 new=AsyncMock(
                     return_value=SimpleNamespace(
                         sectors={"Information Technology": ["005930.KS", "000660.KS"]},
@@ -404,57 +404,6 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("기본 종목군 2개", result["universe_note"])
 
     async def test_get_market_opportunities_quick_returns_quote_only_response(self):
-        with (
-            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
-            patch(
-                "app.services.market_service.cache.get",
-                new=AsyncMock(
-                    return_value={
-                        "sectors": {"Information Technology": ["005930.KS", "000660.KS"]},
-                        "total": 2,
-                    }
-                ),
-            ),
-            patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_representative_quotes",
-                new=AsyncMock(return_value={}),
-            ),
-            patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_bulk_quotes",
-                new=AsyncMock(
-                    return_value={
-                        "005930.KS": {
-                            "ticker": "005930.KS",
-                            "name": "삼성전자",
-                            "current_price": 70100.0,
-                            "prev_close": 69300.0,
-                            "change_pct": 1.15,
-                            "market_cap": 420000000000.0,
-                        },
-                        "000660.KS": {
-                            "ticker": "000660.KS",
-                            "name": "SK하이닉스",
-                            "current_price": 201000.0,
-                            "prev_close": 198500.0,
-                            "change_pct": 1.26,
-                            "market_cap": 146000000000.0,
-                        },
-                    }
-                ),
-            ),
-        ):
-            result = await market_service.get_market_opportunities_quick("KR", limit=2)
-
-        self.assertEqual(result["country_code"], "KR")
-        self.assertIn("snapshot_id", result)
-        self.assertEqual(result["fallback_tier"], "quick")
-        self.assertEqual(result["universe_size"], 2)
-        self.assertEqual(result["quote_available_count"], 2)
-        self.assertEqual(result["detailed_scanned_count"], 0)
-        self.assertEqual(len(result["opportunities"]), 2)
-        self.assertIn("1차 시세 스캔 후보", result["universe_note"])
-
-    async def test_get_market_opportunities_quick_falls_back_to_curated_universe_when_krx_quotes_are_empty(self):
         fallback_selection = market_service.UniverseSelection(
             sectors={"Information Technology": ["005930.KS", "000660.KS"]},
             source="fallback",
@@ -473,27 +422,42 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.cache.get",
-                new=AsyncMock(
-                    return_value={
-                        "sectors": {"전자부품 제조업": ["111111.KS", "222222.KS"]},
-                        "total": 2,
-                    }
-                ),
-            ),
-            patch("app.services.market_service.resolve_universe", new=AsyncMock(return_value=fallback_selection)),
-            patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_representative_quotes",
-                new=AsyncMock(return_value={}),
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=fallback_selection),
             ),
             patch(
                 "app.services.market_service._build_quote_screen",
-                new=AsyncMock(
-                    side_effect=[
-                        {"universe_size": 2, "scanned_count": 2, "quote_available_count": 0, "ranked": []},
-                        fallback_screen,
-                    ]
-                ),
+                new=AsyncMock(return_value=fallback_screen),
+            ),
+        ):
+            result = await market_service.get_market_opportunities_quick("KR", limit=2)
+
+        self.assertEqual(result["country_code"], "KR")
+        self.assertIn("snapshot_id", result)
+        self.assertEqual(result["fallback_tier"], "quick")
+        self.assertEqual(result["universe_size"], 2)
+        self.assertEqual(result["quote_available_count"], 2)
+        self.assertEqual(result["detailed_scanned_count"], 0)
+        self.assertEqual(len(result["opportunities"]), 2)
+        self.assertIn("1차 시세 스캔 후보", result["universe_note"])
+
+    async def test_get_market_opportunities_quick_falls_back_to_curated_universe_when_top200_quotes_are_empty(self):
+        fallback_screen = {
+            "universe_size": 2,
+            "scanned_count": 2,
+            "quote_available_count": 2,
+            "ranked": [
+                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
+                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
+            ],
+        }
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.services.market_service._build_kr_radar_quote_screen", new=AsyncMock(return_value=None)),
+            patch(
+                "app.services.market_service._build_quote_screen",
+                new=AsyncMock(return_value=fallback_screen),
             ),
         ):
             result = await market_service.get_market_opportunities_quick("KR", limit=2)
@@ -502,100 +466,96 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["universe_source"], "fallback")
         self.assertEqual(result["quote_available_count"], 2)
         self.assertEqual(len(result["opportunities"]), 2)
-        self.assertIn("즉시 전환", result["universe_note"])
+        self.assertIn("190/10 레이더로 다시 전환", result["universe_note"])
 
-    async def test_get_market_opportunities_quick_prefers_representative_quotes_for_kr_before_quote_screen(self):
-        fallback_selection = market_service.UniverseSelection(
+    async def test_get_market_opportunities_quick_prefers_top200_quotes_for_kr_before_quote_screen(self):
+        top200_selection = SimpleNamespace(
             sectors={
                 "Information Technology": ["005930.KS", "000660.KS"],
                 "Communication Services": ["035420.KS"],
             },
-            source="fallback",
-            note="검증된 한국 기본 종목군으로 추천 중입니다.",
+            source="kr_top200",
+            note="코스피 시가총액 상위 190개와 코스닥 상위 10개를 먼저 스캔합니다.",
         )
-        representative_quotes = {
-            "005930.KS": {
-                "ticker": "005930.KS",
-                "name": "삼성전자",
-                "current_price": 70100.0,
-                "prev_close": 69300.0,
-                "change_pct": 1.15,
-            },
-            "035420.KS": {
-                "ticker": "035420.KS",
-                "name": "NAVER",
-                "current_price": 223000.0,
-                "prev_close": 220500.0,
-                "change_pct": 1.13,
-            },
+        radar_quote_screen = {
+            "universe_size": 3,
+            "scanned_count": 3,
+            "quote_available_count": 3,
+            "ranked": [
+                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
+                {"sector": "Communication Services", "ticker": "035420.KS", "current_price": 223000.0, "change_pct": 1.13},
+                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 0.88},
+            ],
         }
 
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
                 "app.services.market_service._resolve_quick_opportunity_universe",
-                new=AsyncMock(return_value=fallback_selection),
+                new=AsyncMock(return_value=top200_selection),
+            ),
+            patch(
+                "app.services.market_service._build_kr_radar_quote_screen",
+                new=AsyncMock(return_value=(top200_selection, radar_quote_screen)),
             ),
             patch(
                 "app.services.market_service._resolve_resilient_quote_screen",
-                new=AsyncMock(side_effect=AssertionError("representative path should skip quote screen when usable")),
-            ),
-            patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_representative_quotes",
-                new=AsyncMock(return_value=representative_quotes),
+                new=AsyncMock(side_effect=AssertionError("top200 quick path should skip fallback quote screen")),
             ),
         ):
             result = await market_service.get_market_opportunities_quick("KR", limit=2)
 
-        self.assertEqual(result["quote_available_count"], 2)
-        self.assertEqual(result["total_scanned"], 2)
+        self.assertEqual(result["universe_source"], "kr_top200")
+        self.assertEqual(result["quote_available_count"], 3)
+        self.assertEqual(result["total_scanned"], 3)
         self.assertEqual(len(result["opportunities"]), 2)
-        self.assertIn("대표 시총 페이지", result["universe_note"])
+        self.assertIn("코스피 상위 190개와 코스닥 상위 10개", result["universe_note"])
         self.assertEqual(result["opportunities"][0]["ticker"], "005930.KS")
 
-    async def test_get_market_opportunities_quick_caps_large_kr_quote_screen(self):
-        tickers = [f"{index:06d}.KS" for index in range(240)]
-        capped_tickers = tickers[: market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP]
-        batch_quotes = {
-            ticker: {
-                "ticker": ticker,
-                "name": ticker,
-                "current_price": 100.0 + index,
-                "prev_close": 99.0 + index,
-                "change_pct": round(0.3 + index * 0.01, 2),
-                "market_cap": 1000000000.0 + index,
-            }
-            for index, ticker in enumerate(capped_tickers)
+    async def test_get_market_opportunities_quick_uses_full_top200_quote_screen_when_available(self):
+        tickers = [f"{index:06d}.KS" for index in range(1, 201)]
+        top200_selection = SimpleNamespace(
+            sectors={"Information Technology": tickers},
+            source="kr_top200",
+            note="코스피 시가총액 상위 190개와 코스닥 상위 10개를 먼저 스캔합니다.",
+        )
+        radar_quote_screen = {
+            "universe_size": 200,
+            "scanned_count": 200,
+            "quote_available_count": 200,
+            "ranked": [
+                {
+                    "sector": "Information Technology",
+                    "ticker": ticker,
+                    "current_price": 100.0 + index,
+                    "change_pct": round(0.3 + index * 0.01, 2),
+                }
+                for index, ticker in enumerate(tickers)
+            ],
         }
 
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.cache.get",
-                new=AsyncMock(
-                    return_value={
-                        "sectors": {"Information Technology": tickers},
-                        "total": len(tickers),
-                    }
-                ),
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=top200_selection),
             ),
             patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_representative_quotes",
-                new=AsyncMock(return_value={}),
+                "app.services.market_service._build_kr_radar_quote_screen",
+                new=AsyncMock(return_value=(top200_selection, radar_quote_screen)),
             ),
             patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_bulk_quotes",
-                new=AsyncMock(return_value=batch_quotes),
-            ) as bulk_quotes_mock,
+                "app.services.market_service._resolve_resilient_quote_screen",
+                new=AsyncMock(side_effect=AssertionError("top200 quick path should not cap to fallback quote screen")),
+            ),
         ):
             result = await market_service.get_market_opportunities_quick("KR", limit=5)
 
-        requested_tickers = bulk_quotes_mock.await_args.args[0]
-        self.assertEqual(len(requested_tickers), market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
-        self.assertEqual(result["universe_size"], 240)
-        self.assertEqual(result["total_scanned"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
-        self.assertEqual(result["quote_available_count"], market_service.QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP)
-        self.assertIn("대표 1차 스캔 120개", result["universe_note"])
+        self.assertEqual(result["universe_source"], "kr_top200")
+        self.assertEqual(result["universe_size"], 200)
+        self.assertEqual(result["total_scanned"], 200)
+        self.assertEqual(result["quote_available_count"], 200)
+        self.assertIn("코스피 상위 190개와 코스닥 상위 10개", result["universe_note"])
 
     async def test_get_cached_market_opportunities_quick_reuses_other_limit_when_usable(self):
         cached_payload = {
@@ -705,13 +665,13 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 "warnings": [],
                 "signals": [],
             },
-            "universe_size": 210,
+            "universe_size": 200,
             "total_scanned": 72,
             "quote_available_count": 72,
             "detailed_scanned_count": 0,
             "actionable_count": 8,
             "bullish_count": 5,
-            "universe_source": "krx_listing",
+            "universe_source": "kr_top200",
             "universe_note": "cached quick-like full",
             "opportunities": [{"ticker": "005930.KS", "current_price": 70100.0, "change_pct": 4.1}],
         }
@@ -740,13 +700,13 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
                 "warnings": [],
                 "signals": [],
             },
-            "universe_size": 210,
-            "total_scanned": 210,
+            "universe_size": 200,
+            "total_scanned": 200,
             "quote_available_count": 72,
             "detailed_scanned_count": 0,
             "actionable_count": 8,
             "bullish_count": 5,
-            "universe_source": "krx_listing",
+            "universe_source": "kr_top200",
             "universe_note": "cached quote-only full",
             "opportunities": [{"ticker": "005930.KS", "current_price": 70100.0, "change_pct": 4.1}],
         }
@@ -757,41 +717,33 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result["partial"])
         self.assertEqual(result["fallback_reason"], "opportunity_quote_only_full")
-        self.assertIn("전종목 1차 스캔 결과", result["universe_note"])
+        self.assertIn("대표 200종목 1차 스캔 결과", result["universe_note"])
 
-    async def test_resolve_quick_opportunity_universe_fetches_krx_listing_on_cache_miss(self):
+    async def test_resolve_quick_opportunity_universe_uses_kr_top200_when_quotes_exist(self):
         fetched_selection = SimpleNamespace(
             sectors={"Information Technology": ["005930.KS", "000660.KS", "035420.KS"]},
-            source="krx_listing",
-            note="fetched krx listing",
+            source="kr_top200",
+            note="fetched representative top200",
         )
 
-        with (
-            patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
-            patch(
-                "app.services.market_service.fetch_krx_listing_universe",
-                new=AsyncMock(return_value=fetched_selection),
-            ),
+        with patch(
+            "app.services.market_service._build_kr_radar_quote_screen",
+            new=AsyncMock(return_value=(fetched_selection, {"ranked": []})),
         ):
             selection = await market_service._resolve_quick_opportunity_universe("KR")
 
-        self.assertEqual(selection.source, "krx_listing")
+        self.assertEqual(selection.source, "kr_top200")
         self.assertEqual(sum(len(v) for v in selection.sectors.values()), 3)
 
-    async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_when_krx_listing_fetch_fails(self):
+    async def test_resolve_quick_opportunity_universe_uses_curated_kr_fallback_when_top200_quotes_are_empty(self):
         with (
-            patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
-            patch("app.services.market_service.fetch_krx_listing_universe", new=AsyncMock(return_value=None)),
-            patch(
-                "app.services.market_service.resolve_universe",
-                new=AsyncMock(side_effect=AssertionError("quick KR fallback should not wait for resolve_universe")),
-            ),
+            patch("app.services.market_service._build_kr_radar_quote_screen", new=AsyncMock(return_value=None)),
         ):
             selection = await market_service._resolve_quick_opportunity_universe("KR")
 
         self.assertEqual(selection.source, "fallback")
         self.assertTrue(selection.sectors)
-        self.assertIn("KRX 상장사 목록 캐시가 아직 준비되지 않아", selection.note)
+        self.assertIn("대표 200종목 시세가 아직 비어", selection.note)
 
     async def test_lightweight_opportunities_cap_candidate_budget(self):
         market_regime = MarketRegime(
@@ -863,7 +815,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.resolve_opportunity_universe",
+                "app.services.market_service._resolve_quick_opportunity_universe",
                 new=AsyncMock(
                     return_value=SimpleNamespace(
                         sectors={"Information Technology": tickers},
@@ -904,7 +856,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["opportunities"][0]["setup_label"], "전수 1차 스캔")
         self.assertIn("운영 환경에서는 응답 안정성을 위해 1차 스캔 상위 후보를 우선 반환합니다.", result["universe_note"])
 
-    async def test_get_market_opportunities_uses_full_krx_listing_universe_for_kr(self):
+    async def test_get_market_opportunities_uses_top200_universe_for_kr(self):
         market_regime = MarketRegime(
             label="중립",
             stance="neutral",
@@ -919,32 +871,36 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
         )
         tickers = [f"{index:06d}.KS" for index in range(2000, 2130)]
-        batch_quotes = {
-            ticker: {
-                "ticker": ticker,
-                "current_price": 100.0 + index,
-                "prev_close": 99.0 + index,
-                "change_pct": round(0.4 + index * 0.01, 2),
-                "session_date": "2026-03-26",
-            }
-            for index, ticker in enumerate(tickers)
+        radar_selection = SimpleNamespace(
+            sectors={"전자부품 제조업": tickers},
+            source="kr_top200",
+            note="코스피 시가총액 상위 190개와 코스닥 상위 10개를 먼저 스캔합니다.",
+        )
+        radar_quote_screen = {
+            "universe_size": 200,
+            "scanned_count": 200,
+            "quote_available_count": 130,
+            "ranked": [
+                {
+                    "sector": "전자부품 제조업",
+                    "ticker": ticker,
+                    "current_price": 100.0 + index,
+                    "change_pct": round(0.4 + index * 0.01, 2),
+                }
+                for index, ticker in enumerate(tickers)
+            ],
         }
 
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.services.market_service.cache.get", new=AsyncMock(return_value=None)),
             patch(
-                "app.services.market_service.resolve_opportunity_universe",
-                new=AsyncMock(
-                    return_value=SimpleNamespace(
-                        sectors={"전자부품 제조업": tickers},
-                        source="krx_listing",
-                        note="KRX 상장사 목록 기준 전종목 130개를 1차 스캔합니다.",
-                    )
-                ),
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=radar_selection),
             ),
             patch(
-                "app.services.market_service.kr_market_quote_client.get_kr_bulk_quotes",
-                new=AsyncMock(return_value=batch_quotes),
+                "app.services.market_service._build_kr_radar_quote_screen",
+                new=AsyncMock(return_value=(radar_selection, radar_quote_screen)),
             ),
             patch(
                 "app.services.market_service.yfinance_client.get_price_history",
@@ -952,7 +908,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "app.services.market_service.yfinance_client.get_market_snapshot",
-                new=AsyncMock(side_effect=AssertionError("detailed scan should be skipped for large KRX universe")),
+                new=AsyncMock(side_effect=asyncio.TimeoutError()),
             ),
             patch(
                 "app.services.market_service.ecos_client.get_kr_economic_snapshot",
@@ -966,16 +922,16 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await market_service.get_market_opportunities("KR", limit=12)
 
-        self.assertEqual(result["universe_source"], "krx_listing")
-        self.assertEqual(result["universe_size"], 130)
-        self.assertEqual(result["total_scanned"], 130)
+        self.assertEqual(result["universe_source"], "kr_top200")
+        self.assertEqual(result["universe_size"], 200)
+        self.assertEqual(result["total_scanned"], 200)
         self.assertEqual(result["quote_available_count"], 130)
         self.assertEqual(result["detailed_scanned_count"], 0)
         self.assertEqual(len(result["opportunities"]), 12)
         self.assertGreater(result["actionable_count"], 0)
-        self.assertIn("KRX 상장사 목록 기준 전종목", result["universe_note"])
+        self.assertIn("코스피 시가총액 상위 190개와 코스닥 상위 10개", result["universe_note"])
 
-    async def test_get_market_opportunities_falls_back_to_curated_universe_when_krx_quotes_are_empty(self):
+    async def test_get_market_opportunities_falls_back_to_curated_universe_when_top200_quotes_are_empty(self):
         market_regime = MarketRegime(
             label="중립",
             stance="neutral",
@@ -992,37 +948,27 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         fallback_selection = SimpleNamespace(
             sectors={"Information Technology": ["005930.KS", "000660.KS"]},
             source="fallback",
-            note="검증된 한국 기본 종목군으로 추천 중입니다.",
+            note="대표 200종목 시세가 아직 비어 운영용 기본 종목군으로 먼저 1차 스캔합니다.",
         )
 
         with (
             patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
             patch(
-                "app.services.market_service.resolve_opportunity_universe",
-                new=AsyncMock(
-                    return_value=SimpleNamespace(
-                        sectors={"전자부품 제조업": ["111111.KS", "222222.KS"]},
-                        source="krx_listing",
-                        note="KRX 상장사 목록 기준 전종목 2개를 1차 스캔합니다.",
-                    )
-                ),
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=fallback_selection),
             ),
-            patch("app.services.market_service.resolve_universe", new=AsyncMock(return_value=fallback_selection)),
             patch(
                 "app.services.market_service._build_quote_screen",
                 new=AsyncMock(
-                    side_effect=[
-                        {"universe_size": 2, "scanned_count": 2, "quote_available_count": 0, "ranked": []},
-                        {
-                            "universe_size": 2,
-                            "scanned_count": 2,
-                            "quote_available_count": 2,
-                            "ranked": [
-                                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
-                                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
-                            ],
-                        },
-                    ]
+                    return_value={
+                        "universe_size": 2,
+                        "scanned_count": 2,
+                        "quote_available_count": 2,
+                        "ranked": [
+                            {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
+                            {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
+                        ],
+                    }
                 ),
             ),
             patch(
@@ -1050,88 +996,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["universe_source"], "fallback")
         self.assertEqual(result["quote_available_count"], 2)
         self.assertEqual(len(result["opportunities"]), 2)
-        self.assertIn("즉시 전환", result["universe_note"])
-
-    async def test_get_market_opportunities_recovers_with_sampled_fallback_quote_screen(self):
-        market_regime = MarketRegime(
-            label="중립",
-            stance="neutral",
-            trend="range",
-            volatility="normal",
-            breadth="mixed",
-            score=55.0,
-            conviction=48.0,
-            summary="중립 장세",
-            playbook=["선별 대응"],
-            warnings=[],
-            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
-        )
-        fallback_selection = SimpleNamespace(
-            sectors={
-                "Information Technology": ["005930.KS", "000660.KS"],
-                "Communication Services": ["035420.KS", "051910.KS"],
-            },
-            source="fallback",
-            note="검증된 한국 기본 종목군으로 추천 중입니다.",
-        )
-
-        with (
-            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
-            patch(
-                "app.services.market_service.resolve_opportunity_universe",
-                new=AsyncMock(
-                    return_value=SimpleNamespace(
-                        sectors={"전자부품 제조업": ["111111.KS", "222222.KS"]},
-                        source="krx_listing",
-                        note="KRX 상장사 목록 기준 전종목 2개를 1차 스캔합니다.",
-                    )
-                ),
-            ),
-            patch("app.services.market_service.resolve_universe", new=AsyncMock(return_value=fallback_selection)),
-            patch(
-                "app.services.market_service._build_quote_screen",
-                new=AsyncMock(
-                    side_effect=[
-                        {"universe_size": 2, "scanned_count": 2, "quote_available_count": 0, "ranked": []},
-                        {"universe_size": 4, "scanned_count": 4, "quote_available_count": 0, "ranked": []},
-                        {
-                            "universe_size": 4,
-                            "scanned_count": 4,
-                            "quote_available_count": 2,
-                            "ranked": [
-                                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
-                                {"sector": "Communication Services", "ticker": "035420.KS", "current_price": 197000.0, "change_pct": 0.82},
-                            ],
-                        },
-                    ]
-                ),
-            ),
-            patch(
-                "app.services.market_service.yfinance_client.get_price_history",
-                new=AsyncMock(return_value=_sample_prices(90, 3000.0)),
-            ),
-            patch(
-                "app.services.market_service.yfinance_client.get_market_snapshot",
-                new=AsyncMock(side_effect=asyncio.TimeoutError()),
-            ),
-            patch(
-                "app.services.market_service.ecos_client.get_kr_economic_snapshot",
-                new=AsyncMock(return_value={}),
-            ),
-            patch(
-                "app.services.market_service.kosis_client.get_kr_macro_snapshot",
-                new=AsyncMock(return_value={}),
-            ),
-            patch("app.services.market_service.build_market_regime", return_value=market_regime),
-            patch("app.services.market_service.gather_limited", new=_gather_sequential),
-        ):
-            result = await market_service.get_market_opportunities("KR", limit=2, max_candidates=2)
-
-        self.assertEqual(result["country_code"], "KR")
-        self.assertEqual(result["universe_source"], "fallback")
-        self.assertEqual(result["quote_available_count"], 2)
-        self.assertEqual(len(result["opportunities"]), 2)
-        self.assertIn("분산 샘플링", result["universe_note"])
+        self.assertIn("대표 200종목 시세가 아직 비어", result["universe_note"])
 
 
 if __name__ == "__main__":

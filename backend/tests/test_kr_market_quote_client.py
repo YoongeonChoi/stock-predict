@@ -29,13 +29,18 @@ SAMPLE_HTML = """
 
 class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
     def test_parse_market_page_quotes_extracts_tickers(self):
-        last_page, quotes = kr_market_quote_client._parse_market_page_quotes(SAMPLE_HTML, suffix=".KS")
+        last_page, quotes = kr_market_quote_client._parse_market_page_quotes(
+            SAMPLE_HTML,
+            suffix=".KS",
+            market_label="KOSPI",
+        )
 
         self.assertEqual(last_page, 49)
         self.assertEqual(set(quotes.keys()), {"005930.KS", "000660.KS"})
         self.assertEqual(quotes["005930.KS"]["name"], "삼성전자")
         self.assertEqual(quotes["005930.KS"]["current_price"], 179700.0)
         self.assertEqual(quotes["005930.KS"]["change_pct"], -0.22)
+        self.assertEqual(quotes["005930.KS"]["market"], "KOSPI")
         self.assertGreater(quotes["005930.KS"]["market_cap"], 0.0)
 
     async def test_get_kr_bulk_quotes_merges_market_pages_and_fallback(self):

@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.56.0 - 2026-04-05
+
+- KR `Opportunity Radar`의 기본 유니버스를 `코스피 상위 190개 + 코스닥 상위 10개` 대표 200종목으로 고정했습니다. 그래서 레이더의 1차 스캔 숫자, 후보 보드, 설명 문구가 실제 운영 동작과 같은 의미를 말하도록 맞췄습니다.
+- KR quick path는 이제 대표 200종목 quote screen을 먼저 만들고, 그 안에서 상위 후보만 정밀 분석합니다. `KRX listing cache`나 전종목 quote 확보가 늦어질 때도 대표 유니버스 기준 후보를 더 빠르게 보여주도록 cache key와 seed 재사용 조건을 함께 정리했습니다.
+- `/radar` 페이지 헤더와 레이더 보드 문구도 `대표 유니버스`, `코스피 190개 + 코스닥 10개` 기준으로 바꿨습니다. README와 화면에서 여전히 전종목 스캔처럼 읽히던 혼선을 줄였습니다.
+
 ## v2.55.2 - 2026-04-05
 
 - `/api/research/predictions`와 예측 연구실 기본 조회가 `refresh=false`여도 만기 도달한 pending 예측 로그를 짧은 background refresh로 먼저 재평가하도록 바꿨습니다. 이 경로는 cache miss 기준에서만 제한적으로 돌고, 만기 표본이 있으면 연구실 통계를 더 빨리 실측값으로 승격합니다.
