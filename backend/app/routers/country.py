@@ -14,7 +14,7 @@ from app.analysis.forecast_engine import forecast_index
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.runtime import get_or_create_background_job
-from app.services import archive_service, export_service, market_service, route_stability_service
+from app.services import archive_service, export_service, market_service, prediction_capture_service, route_stability_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
 from app.utils import build_route_trace
@@ -360,6 +360,13 @@ def _spawn_opportunity_refresh(code: str, limit: int) -> None:
     task.add_done_callback(
         lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
     )
+
+
+async def _capture_opportunity_payload(code: str, payload: dict) -> None:
+    try:
+        await prediction_capture_service.capture_market_opportunity_predictions(code, payload)
+    except Exception as exc:
+        logging.warning("opportunity prediction capture failed for %s: %s", code, exc, exc_info=True)
 
 
 async def _build_countries_payload() -> list[dict]:
@@ -883,6 +890,11 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
+    try:
+        await prediction_capture_service.capture_report_predictions("country", report, country_code=code)
+    except Exception as e:
+        SP_5002(str(e)[:100]).log()
+
     if not partial:
         try:
             await archive_service.save_report("country", report, country_code=code)
@@ -1168,6 +1180,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
 
     cached_full = await market_service.get_cached_market_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_full):
+        await _capture_opportunity_payload(code, cached_full)
         _record_market_opportunities_trace(
             started_at,
             request_phase="full",
@@ -1179,6 +1192,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
+        await _capture_opportunity_payload(code, cached_quick)
         payload = _build_traced_opportunity_partial(
             started_at,
             payload=cached_quick,
@@ -1202,6 +1216,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         )
         if _is_usable_opportunity_payload(quick_response):
             _spawn_opportunity_refresh(code, limit)
+            await _capture_opportunity_payload(code, quick_response)
             payload = _build_traced_opportunity_partial(
                 started_at,
                 payload=quick_response,
@@ -1219,6 +1234,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
+        await _capture_opportunity_payload(code, cached_quick)
         payload = _build_traced_opportunity_partial(
             started_at,
             payload=cached_quick,

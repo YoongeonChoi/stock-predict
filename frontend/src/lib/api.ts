@@ -823,6 +823,44 @@ export interface PredictionLabResponse {
   partial?: boolean;
   fallback_reason?: string | null;
   accuracy: PredictionAccuracyStats;
+  pipeline_health: {
+    stored_predictions: number;
+    pending_predictions: number;
+    evaluated_predictions: number;
+    stale_pending_predictions: number;
+    last_saved_at?: string | null;
+    last_evaluated_at?: string | null;
+    last_checked_at: string;
+    backfill_checked_reports: number;
+    backfill_updated_reports: number;
+    backfill_captured_predictions: number;
+  };
+  coverage_breakdown: {
+    by_scope: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+    by_prediction_type: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+    by_model_version: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+  };
+  pipeline_alerts: {
+    key: string;
+    severity: "high" | "medium" | "info";
+    title: string;
+    detail: string;
+  }[];
   horizon_accuracy: {
     prediction_type: string;
     label: string;

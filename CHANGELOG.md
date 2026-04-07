@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.59.0 - 2026-04-07
+
+- `/api/research/predictions`에 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 추가하고, `/lab` 첫 화면을 `표본 수집 퍼널 -> horizon 커버리지 -> 지금 막히는 지점` 순서로 다시 정리했습니다.
+- `prediction_capture_service`를 도입해 `stock` quick detail, `country` partial report, `market/opportunities` quick/cached 응답에서도 canonical sample을 누적하도록 복구했습니다.
+- 최근 archive만 작은 배치로 복구하는 bounded backfill을 연구실 집계 경로에 연결해, 누락된 prediction log를 한 번에 몰지 않고 되살리도록 조정했습니다.
+
 ## v2.58.1 - 2026-04-07
 
 - iPhone Safari 기준으로 `Navigation`, `SearchBar`, `AuthStatus`, `PageHeader`를 다시 묶어 모바일 상단 shell을 더 낮고 읽기 쉽게 정리했습니다.

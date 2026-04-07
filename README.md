@@ -9,11 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.58.1`
+현재 릴리즈: `v2.59.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- `/api/research/predictions`가 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 함께 반환해 연구실이 비어 보일 때도 어디서 표본이 끊겼는지 먼저 설명합니다.
+- `stock` quick detail, `country` partial report, `market/opportunities` quick/cached 응답에서 prediction capture를 다시 연결해 1D뿐 아니라 5D/20D 표본도 누적되도록 복구했습니다.
+- `/lab` 첫 화면을 `표본 수집 퍼널 -> horizon 커버리지 -> 지금 막히는 지점` 순서로 재구성해, 성과 카드보다 저장/평가 상태를 먼저 읽게 바꿨습니다.
 - iPhone Safari 기준으로 상단 mobile shell을 `브랜드/컨트롤 + 검색/계정`의 compact 흐름으로 다시 정리했습니다.
 - `/`, `/radar`, `/calendar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/lab`의 상태 카드를 `blocking / partial / empty / loading` 규칙으로 맞췄습니다.
 - `/calendar` 모바일 보드는 날짜 셀 장식을 줄이고 `월간 보드 + 선택 날짜 agenda` 구조로 다시 정리했습니다.
@@ -133,7 +136,8 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 ### 7. 예측 연구실
 
 - 저장된 예측 로그와 실제 결과를 비교해, 방향 적중률/오차/보정 품질을 점검합니다.
-- 단순 성과 표가 아니라 `반복 실패 패턴`, `리뷰 큐`, `현재 표본 상태`까지 함께 보여 줍니다.
+- 단순 성과 표가 아니라 `표본 수집 퍼널`, `반복 실패 패턴`, `리뷰 큐`, `현재 표본 상태`까지 함께 보여 줍니다.
+- `/api/research/predictions`는 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 포함해 저장만 되고 평가가 없는 상태나 5D/20D 누락 상태를 먼저 설명합니다.
 
 ## 시스템 아키텍처
 
@@ -507,6 +511,12 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 3. target date 도달 후 실제값(`actual_close`, `actual_low`, `actual_high`) 업데이트
 4. calibration profile refresh
 5. `/lab`과 diagnostics에 반영
+
+추가 규칙:
+
+- `stock` quick detail이 먼저 내려가더라도 필요하면 background distributional capture를 다시 걸어 5D/20D 표본을 복구합니다.
+- `country` report는 `partial` 응답이어도 usable forecast가 있으면 표본 저장을 건너뛰지 않습니다.
+- `market/opportunities` quick/cached 응답도 usable payload라면 stock canonical sample로 다시 저장해 표본 수집 경로를 넓힙니다.
 
 ### 핵심 저장 필드
 
