@@ -563,9 +563,16 @@ aside에 부적합한 내용:
 순서:
 
 1. page header
-2. top metrics
-3. breakdowns
-4. logs or audit detail
+2. pipeline summary
+3. freshness / audit
+4. workspace review sections
+
+규칙:
+
+- `/lab` 첫 화면은 성과 카드보다 `표본 저장 -> 실측 평가 -> 어디가 비었는지`를 먼저 보여 준다.
+- 상단 첫 카드에는 `stored / pending / evaluated / stale pending` 네 지표를 같은 톤으로 배치한다.
+- `pipeline_alerts`는 chip 나열보다 짧은 운영형 상태 카드로 렌더하고, 한 카드에 한 문제만 설명한다.
+- horizon coverage는 `1D / 5D / 20D`를 같은 단위의 compact metric으로 먼저 보여 주고, 상세 review queue는 그 아래로 내린다.
 
 ---
 

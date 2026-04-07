@@ -641,6 +641,27 @@ class Database:
             )
             await conn.commit()
 
+    async def prediction_record_exists(
+        self,
+        *,
+        scope: str,
+        symbol: str,
+        prediction_type: str,
+        target_date: str,
+    ) -> bool:
+        async with self._connect() as conn:
+            cur = await conn.execute(
+                """
+                SELECT 1
+                FROM prediction_records
+                WHERE scope = ? AND symbol = ? AND prediction_type = ? AND target_date = ?
+                LIMIT 1
+                """,
+                (scope, symbol, prediction_type, target_date),
+            )
+            row = await cur.fetchone()
+            return row is not None
+
     async def prediction_pending(self, target_date_to: str, limit: int = 200) -> list[dict]:
         async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
@@ -809,6 +830,69 @@ class Database:
                 (prediction_type, scope, symbol, limit),
             )
             return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_collection_breakdown(self, *, field: str, limit: int = 10) -> list[dict]:
+        field_map = {
+            "scope": "scope",
+            "prediction_type": "prediction_type",
+            "model_version": "COALESCE(model_version, 'unknown')",
+        }
+        group_expr = field_map.get(field)
+        if group_expr is None:
+            raise ValueError(f"Unsupported prediction breakdown field: {field}")
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    f"""
+                    SELECT
+                        {group_expr} AS label,
+                        COUNT(*) AS stored_predictions,
+                        SUM(CASE WHEN actual_close IS NULL THEN 1 ELSE 0 END) AS pending_predictions,
+                        SUM(CASE WHEN actual_close IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_predictions
+                    FROM prediction_records
+                    GROUP BY {group_expr}
+                    ORDER BY stored_predictions DESC, label ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_collection_breakdown lock fallback for %s", field)
+                return []
+            raise
+
+    async def prediction_activity_summary(self, *, due_date_to: str) -> dict:
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT
+                        MAX(created_at) AS last_created_at,
+                        MAX(evaluated_at) AS last_evaluated_at,
+                        SUM(CASE WHEN actual_close IS NULL AND target_date < ? THEN 1 ELSE 0 END) AS stale_pending_predictions
+                    FROM prediction_records
+                    """,
+                    (due_date_to,),
+                )
+                row = await cur.fetchone()
+                return dict(row) if row else {
+                    "last_created_at": None,
+                    "last_evaluated_at": None,
+                    "stale_pending_predictions": 0,
+                }
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_activity_summary lock fallback")
+                return {
+                    "last_created_at": None,
+                    "last_evaluated_at": None,
+                    "stale_pending_predictions": 0,
+                }
+            raise
 
     async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
         try:

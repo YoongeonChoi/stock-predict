@@ -7,25 +7,10 @@ from datetime import datetime
 from app.data import cache
 from app.data import yfinance_client
 from app.database import db
-
-MULTI_HORIZON_PREDICTION_TYPES = {
-    5: "distributional_5d",
-    20: "distributional_20d",
-}
+from app.services import prediction_capture_service
 PREDICTION_ACCURACY_CACHE_TTL_SECONDS = 300
 PREDICTION_ACCURACY_WAIT_TIMEOUT_SECONDS = 2.0
 PREDICTION_ACCURACY_REFRESH_TIMEOUT_SECONDS = 8.0
-
-
-def _prediction_symbol(report_type: str, report: dict, ticker: str | None) -> str | None:
-    if ticker:
-        return ticker
-    if report_type == "country":
-        country = report.get("country", {})
-        indices = country.get("indices", [])
-        if indices:
-            return indices[0].get("ticker")
-    return None
 
 
 async def save_report(
@@ -53,68 +38,12 @@ async def save_report(
         scores_json=scores,
         predictions_json=predictions,
     )
-
-    next_day = report.get("next_day_forecast")
-    symbol = _prediction_symbol(report_type, report, ticker)
-    if isinstance(next_day, dict) and symbol and next_day.get("reference_price") is not None:
-        await db.prediction_upsert(
-            scope=report_type,
-            symbol=symbol,
-            country_code=country_code or report.get("country_code") or report.get("country", {}).get("code"),
-            prediction_type="next_day",
-            target_date=next_day.get("target_date", ""),
-            reference_date=next_day.get("reference_date"),
-            reference_price=float(next_day.get("reference_price", 0)),
-            predicted_close=float(next_day.get("predicted_close", 0)),
-            predicted_low=next_day.get("predicted_low"),
-            predicted_high=next_day.get("predicted_high"),
-            up_probability=next_day.get("up_probability"),
-            confidence=next_day.get("confidence"),
-            direction=next_day.get("direction"),
-            drivers_json=next_day.get("drivers"),
-            calibration_json=next_day.get("calibration_snapshot"),
-            model_version=next_day.get("model_version"),
-        )
-
-    free_kr = report.get("free_kr_forecast")
-    if isinstance(free_kr, dict) and symbol and free_kr.get("reference_price") is not None:
-        evidence = free_kr.get("evidence")
-        model_version = free_kr.get("model_version")
-        horizons = free_kr.get("horizons") or []
-        for horizon in horizons:
-            if not isinstance(horizon, dict):
-                continue
-            horizon_days = int(horizon.get("horizon_days") or 0)
-            prediction_type = MULTI_HORIZON_PREDICTION_TYPES.get(horizon_days)
-            if not prediction_type:
-                continue
-            p_up = float(horizon.get("p_up") or 0.0)
-            p_down = float(horizon.get("p_down") or 0.0)
-            p_flat = float(horizon.get("p_flat") or 0.0)
-            if p_up >= max(p_down, p_flat):
-                direction = "up"
-            elif p_down >= max(p_up, p_flat):
-                direction = "down"
-            else:
-                direction = "flat"
-            await db.prediction_upsert(
-                scope=report_type,
-                symbol=symbol,
-                country_code=country_code or report.get("country_code") or report.get("country", {}).get("code"),
-                prediction_type=prediction_type,
-                target_date=horizon.get("target_date", ""),
-                reference_date=free_kr.get("reference_date"),
-                reference_price=float(free_kr.get("reference_price", 0)),
-                predicted_close=float(horizon.get("price_q50") or 0),
-                predicted_low=horizon.get("price_q10"),
-                predicted_high=horizon.get("price_q90"),
-                up_probability=horizon.get("p_up"),
-                confidence=horizon.get("confidence"),
-                direction=direction,
-                drivers_json=evidence,
-                calibration_json=horizon.get("calibration_snapshot"),
-                model_version=model_version,
-            )
+    await prediction_capture_service.capture_report_predictions(
+        report_type,
+        report,
+        country_code=country_code,
+        ticker=ticker,
+    )
 
     return report_id
 

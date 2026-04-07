@@ -20,7 +20,13 @@ from app.analysis.stock_analyzer import (
     get_cached_stock_detail,
 )
 from app.data import yfinance_client, cache
-from app.services import archive_service, forecast_monitor_service, route_stability_service, ticker_resolver_service
+from app.services import (
+    archive_service,
+    forecast_monitor_service,
+    prediction_capture_service,
+    route_stability_service,
+    ticker_resolver_service,
+)
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
 from app.utils import build_route_trace
 
@@ -125,6 +131,7 @@ def _build_traced_partial_stock_detail(
 
 
 async def _finalize_stock_detail_response(detail: dict, ticker: str, *, prefer_full: bool, cache_state: str) -> JSONResponse:
+    await prediction_capture_service.capture_report_predictions("stock", detail, ticker=ticker)
     if settings.effective_stock_detail_background_refresh:
         asyncio.create_task(_archive_stock_report(detail, ticker))
     else:
@@ -176,6 +183,7 @@ async def _serve_quick_stock_detail(
     cache_state: str,
     source_label: str,
 ) -> JSONResponse:
+    await prediction_capture_service.capture_report_predictions("stock", quick_snapshot, ticker=ticker)
     if prefer_full:
         upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
         try:
@@ -197,6 +205,7 @@ async def _serve_quick_stock_detail(
                 cache_state=cache_state,
             )
         except asyncio.TimeoutError:
+            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=quick_snapshot,
@@ -213,6 +222,7 @@ async def _serve_quick_stock_detail(
             )
             return _build_stock_success_response(partial_payload)
         except Exception as exc:
+            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=quick_snapshot,
@@ -231,6 +241,7 @@ async def _serve_quick_stock_detail(
             return _build_stock_success_response(partial_payload)
 
     _schedule_stock_detail_refresh(ticker)
+    await prediction_capture_service.schedule_stock_distributional_capture(ticker)
     partial_payload = _build_traced_partial_stock_detail(
         started_at,
         cached=quick_snapshot,
@@ -257,6 +268,7 @@ async def get_stock_detail(
     ticker = _resolve_kr_ticker(ticker)
     cached = await get_cached_stock_detail(ticker, refresh_quote=False)
     if cached:
+        await prediction_capture_service.capture_report_predictions("stock", cached, ticker=ticker)
         _record_stock_detail_trace(
             started_at,
             request_phase="full",
@@ -305,6 +317,7 @@ async def get_stock_detail(
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
+            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,
@@ -352,6 +365,7 @@ async def get_stock_detail(
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
+            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,

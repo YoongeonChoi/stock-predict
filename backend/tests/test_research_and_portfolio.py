@@ -324,6 +324,82 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
+                "app.services.research_service.db.prediction_collection_breakdown",
+                new=AsyncMock(
+                    side_effect=[
+                        [
+                            {
+                                "label": "stock",
+                                "stored_predictions": 20,
+                                "pending_predictions": 3,
+                                "evaluated_predictions": 17,
+                            },
+                            {
+                                "label": "country",
+                                "stored_predictions": 6,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 4,
+                            },
+                        ],
+                        [
+                            {
+                                "label": "next_day",
+                                "stored_predictions": 12,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 10,
+                            },
+                            {
+                                "label": "distributional_5d",
+                                "stored_predictions": 8,
+                                "pending_predictions": 1,
+                                "evaluated_predictions": 7,
+                            },
+                            {
+                                "label": "distributional_20d",
+                                "stored_predictions": 6,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 4,
+                            },
+                        ],
+                        [
+                            {
+                                "label": "signal-v2.1",
+                                "stored_predictions": 18,
+                                "pending_predictions": 3,
+                                "evaluated_predictions": 15,
+                            },
+                            {
+                                "label": "dist-studentt-v3.3-lfgraph",
+                                "stored_predictions": 8,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 6,
+                            },
+                        ],
+                    ]
+                ),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_activity_summary",
+                new=AsyncMock(
+                    return_value={
+                        "last_created_at": 1712552400.0,
+                        "last_evaluated_at": 1712556000.0,
+                        "stale_pending_predictions": 2,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.research_service.prediction_capture_service.backfill_recent_archive_predictions",
+                new=AsyncMock(
+                    return_value={
+                        "checked_at": "2026-04-07T10:05:00",
+                        "checked_reports": 12,
+                        "updated_reports": 1,
+                        "captured_predictions": 2,
+                    }
+                ),
+            ),
+            patch(
                 "app.services.research_service.confidence_calibration_service.get_profile_summary",
                 return_value=[
                     {
@@ -458,6 +534,12 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["review_queue"][0]["symbol"], "005930.KS")
         self.assertEqual(result["review_queue"][0]["review_kind"], "clean-hit")
         self.assertTrue(result["insights"])
+        self.assertEqual(result["pipeline_health"]["stored_predictions"], 26)
+        self.assertEqual(result["pipeline_health"]["stale_pending_predictions"], 2)
+        self.assertEqual(result["pipeline_health"]["backfill_updated_reports"], 1)
+        self.assertEqual(result["coverage_breakdown"]["by_scope"][0]["label"], "stock")
+        self.assertEqual(result["coverage_breakdown"]["by_prediction_type"][1]["label"], "distributional_5d")
+        self.assertTrue(any(item["key"] == "evaluation_delay" for item in result["pipeline_alerts"]))
 
     async def test_prediction_lab_uses_runtime_summary_when_recent_query_times_out(self):
         async def _slow_recent(*args, **kwargs):
