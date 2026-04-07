@@ -83,6 +83,17 @@ function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function jumpToDate(dateText: string, setViewYear: (value: number) => void, setViewMonth: (value: number) => void, setSelectedDate: (value: string) => void) {
+  const next = new Date(`${dateText}T12:00:00`);
+  if (Number.isNaN(next.getTime())) {
+    setSelectedDate(dateText);
+    return;
+  }
+  setViewYear(next.getFullYear());
+  setViewMonth(next.getMonth());
+  setSelectedDate(dateText);
+}
+
 function typeLabel(event: CalendarEvent) {
   if (event.type === "policy") return "정책";
   if (event.type === "earnings") return "실적";
@@ -210,16 +221,16 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Market Schedule Workspace"
+        eyebrow="시장 일정"
         title="시장 일정 캘린더"
-        description="한국장의 월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
+        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 외부 일정이 늦으면 월간 핵심 일정부터 먼저 보여주고, 확인된 실제 일정이 들어오면 바로 반영합니다."
+        variant="compact"
         meta={
           <>
             <span className="info-chip">{activeCountry.flag} {activeCountry.label} 기준</span>
             <span className="info-chip">{formatMonthLabel(currentMonthDate)}</span>
-            {data ? <span className="info-chip">총 일정 {data.summary.total_events}건</span> : null}
             {data ? <span className="info-chip">고중요도 {data.summary.high_impact_count}건</span> : null}
-            {refreshing ? <span className="info-chip">월간 보드 갱신 중</span> : null}
+            {refreshing ? <span className="info-chip">갱신 중</span> : null}
           </>
         }
         actions={
@@ -240,7 +251,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       {loading ? (
         <div className="space-y-4">
           <WorkspaceLoadingCard
-            title="월간 일정 요약을 준비하고 있습니다"
+            title="이번 달 일정 요약을 준비하고 있습니다"
             message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 먼저 묶는 중입니다."
             className="min-h-[160px]"
           />
@@ -274,7 +285,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
           <section className="card !p-5 space-y-4">
             <div className="section-heading gap-4">
               <div>
-                <h2 className="section-title">다음 3개 일정</h2>
+                <h2 className="section-title">이번 달 먼저 볼 일정</h2>
                 <p className="section-copy">{auditSummary}</p>
               </div>
               <PublicAuditStrip meta={data} />
@@ -282,7 +293,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             <div className="grid gap-3 xl:grid-cols-3">
               {data.upcoming_events.slice(0, 3).map((event) => {
                 const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
-                const sourceLabel = event.source === "recurring" ? "estimated" : "official";
+                const sourceLabel = event.source === "recurring" ? "추정 일정" : "확인된 일정";
                 return (
                   <div key={`${event.date}-${event.title}`} className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
@@ -308,6 +319,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               title="새 일정 동기화가 잠시 늦어지고 있습니다"
               message={`${error} 기존에 확인하던 일정은 먼저 유지해 두었습니다.`}
               tone="warning"
+              kind="partial"
             />
           ) : null}
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -355,28 +367,30 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 ))}
               </div>
 
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
                 {days.map((date) => {
                   const key = dateKey(date);
                   const inMonth = date.getMonth() === viewMonth;
                   const isToday = key === todayKey;
                   const isSelected = key === selectedDate;
                   const dayEvents = eventsByDate[key] || [];
+                  const hasHighImpact = dayEvents.some((event) => event.impact === "high");
 
                   return (
                     <button
                       key={key}
                       onClick={() => setSelectedDate(key)}
-                      className={`min-h-[118px] rounded-2xl border p-2.5 text-left transition-all ${
+                      className={`min-h-[82px] rounded-[20px] border p-2 text-left transition-[border-color,background-color,box-shadow,opacity] sm:min-h-[100px] sm:p-2.5 lg:min-h-[118px] ${
                         isSelected
                           ? "border-accent bg-accent/10 shadow-[0_0_0_1px_rgba(15,118,110,0.16)]"
                           : "border-border bg-surface/60 hover:border-accent/35 hover:bg-surface"
-                      } ${!inMonth ? "opacity-55" : "opacity-100"}`}
+                      } ${!inMonth ? "opacity-45" : "opacity-100"} ${hasHighImpact && !isSelected ? "border-rose-300/45" : ""}`}
+                      aria-pressed={isSelected}
                     >
-                      <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-                            isToday ? "bg-accent text-white" : "bg-border/45 text-text"
+                          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium sm:h-8 sm:w-8 sm:text-sm ${
+                            isToday ? "bg-accent text-white" : isSelected ? "bg-accent/15 text-accent" : "bg-border/45 text-text"
                           }`}
                         >
                           {date.getDate()}
@@ -386,22 +400,33 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                         ) : null}
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="mt-2 hidden space-y-1.5 sm:block">
                         {dayEvents.slice(0, 2).map((event) => {
                           const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
                           return (
-                            <div key={event.id} className={`rounded-xl border px-2 py-1.5 ${style.chip}`}>
+                            <div key={event.id} className="rounded-xl border border-border/60 bg-surface/72 px-2 py-1.5">
                               <div className="flex items-center gap-1.5">
                                 <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
                                 <span className={`text-[10px] font-medium ${style.label}`}>{typeLabel(event)}</span>
                               </div>
-                              <div className="mt-1 line-clamp-2 text-[11px] leading-tight text-text">{event.title}</div>
+                              <div className="mt-1 line-clamp-1 text-[11px] leading-tight text-text">{event.title}</div>
                             </div>
                           );
                         })}
                         {dayEvents.length > 2 ? (
                           <div className="px-1 text-[11px] text-text-secondary">+{dayEvents.length - 2}건 더 보기</div>
                         ) : null}
+                      </div>
+
+                      <div className="mt-3 flex min-h-[24px] items-end justify-between gap-2 sm:hidden">
+                        <div className="flex items-center gap-1">
+                          {dayEvents.slice(0, 3).map((event) => {
+                            const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
+                            return <span key={event.id} className={`h-2 w-2 rounded-full ${style.dot}`} />;
+                          })}
+                          {dayEvents.length > 3 ? <span className="text-[10px] text-text-secondary">+{dayEvents.length - 3}</span> : null}
+                        </div>
+                        {hasHighImpact ? <span className="text-[10px] font-medium text-rose-600">중요</span> : null}
                       </div>
                     </button>
                   );
@@ -412,7 +437,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             <div className="workspace-stack xl:sticky xl:top-5">
               <div className="card !p-4 space-y-3">
                 <div>
-                  <h2 className="text-base font-semibold">선택한 날짜</h2>
+                  <h2 className="text-base font-semibold">선택한 날짜 agenda</h2>
                   <p className="mt-1 text-sm text-text-secondary">
                     {selectedDate ? formatDateLabel(selectedDate) : "달력에서 날짜를 선택해 주세요."}
                   </p>
@@ -432,6 +457,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                               </div>
                               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-secondary">
                                 <span>{typeLabel(event)}</span>
+                                <span>{event.source === "recurring" ? "추정 일정" : "확인된 일정"}</span>
                                 {event.subtitle ? <span>{event.subtitle}</span> : null}
                               </div>
                             </div>
@@ -462,7 +488,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                     return (
                       <button
                         key={event.id}
-                        onClick={() => setSelectedDate(event.date)}
+                        onClick={() => jumpToDate(event.date, setViewYear, setViewMonth, setSelectedDate)}
                         className="w-full rounded-2xl border border-border bg-surface/50 px-3 py-3 text-left transition-colors hover:border-accent/35"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -490,7 +516,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
 
               <div className="card !p-4 space-y-3">
                 <div>
-                  <h2 className="text-base font-semibold">정기 체크포인트</h2>
+                  <h2 className="text-base font-semibold">월간 체크포인트</h2>
                   <p className="mt-1 text-sm text-text-secondary">매달 반복해서 확인할 대표 일정들입니다.</p>
                 </div>
                 <div className="space-y-2">
@@ -522,6 +548,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
           title="시장 일정 캘린더를 아직 불러오지 못했습니다"
           message={error || "시장 일정 데이터를 불러오지 못했습니다."}
           tone="warning"
+          kind="blocking"
           actionLabel="다시 시도"
           onAction={() => {
             setLoading(true);

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
+import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import StockHeatmap from "@/components/charts/StockHeatmap";
@@ -329,21 +330,39 @@ export default function HomeDashboardClient({
 
   return (
     <div className="page-shell">
-      <section className="card !p-5 space-y-5">
-        <div className="section-heading gap-4">
-          <div>
-            <h1 className="section-title text-2xl">대시보드</h1>
-            <p className="section-copy">
-              {countryReport && radarData
-                ? `선택 시장 현황 / 핵심 수치 / 오늘의 포커스 ${focusSlots.length}개 / 마지막 갱신 ${lastUpdated || "방금"}`
-                : "선택한 시장의 지수, 뉴스, 히트맵, 강한 셋업을 한 흐름으로 봅니다."}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+      <PageHeader
+        variant="compact"
+        eyebrow="시장 탐색"
+        title="대시보드"
+        description={countryReport && radarData
+          ? "선택 시장 현황과 핵심 수치, 오늘 먼저 볼 신호를 한 흐름으로 정리합니다."
+          : "시장 현황과 브리핑, 히트맵, 레이더 요약을 한 화면에서 먼저 확인합니다."}
+        meta={
+          <>
             {lastUpdated ? <span className="info-chip">최근 갱신 {lastUpdated}</span> : null}
-            {countryReport?.generated_at ? <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span> : null}
-          </div>
-        </div>
+            {countryReport?.generated_at ? (
+              <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span>
+            ) : null}
+            {focusSlots.length > 0 ? <span className="info-chip">오늘 포커스 {focusSlots.length}개</span> : null}
+          </>
+        }
+        actions={
+          countries.length > 1 ? (
+            <div className="flex flex-wrap gap-2">
+              {countries.map((country) => (
+                <button
+                  key={country.code}
+                  onClick={() => void loadCountryWorkspace(country.code)}
+                  className={selectedCountry === country.code ? "action-chip-primary" : "action-chip-secondary"}
+                >
+                  {COUNTRY_FLAGS[country.code]} {country.name_local}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
+      />
+      <section className="card !p-5 space-y-5">
         <PublicAuditStrip meta={dashboardAuditMeta} />
         <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
           {dashboardSummary}
@@ -351,10 +370,10 @@ export default function HomeDashboardClient({
 
         {workspaceDelays.length > 0 ? (
           <WorkspaceStateCard
+            kind="partial"
             eyebrow="부분 업데이트"
             title="일부 계산이 더 필요합니다"
             message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
-            tone="warning"
             actionLabel="현재 시장 다시 불러오기"
             onAction={retryCurrentWorkspace}
           />

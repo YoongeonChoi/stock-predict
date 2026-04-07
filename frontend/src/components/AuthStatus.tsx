@@ -30,6 +30,27 @@ function buildIdentityLabel({
   return "로그인됨";
 }
 
+function buildCompactIdentityLabel({
+  username,
+  fullName,
+  email,
+}: {
+  username?: string | null;
+  fullName?: string | null;
+  email?: string | null;
+}) {
+  if (username) {
+    return `@${username}`;
+  }
+  if (fullName) {
+    return fullName;
+  }
+  if (email) {
+    return email.length > 18 ? `${email.slice(0, 15)}…` : email;
+  }
+  return "로그인됨";
+}
+
 export default function AuthStatus() {
   const router = useRouter();
   const { toast } = useToast();
@@ -50,10 +71,10 @@ export default function AuthStatus() {
   if (!user) {
     return (
       <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
-        <Link href="/auth" className="ui-button-secondary">
+        <Link href="/auth" className="ui-button-secondary px-4 sm:px-5">
           로그인
         </Link>
-        <Link href="/auth?mode=signup" className="ui-button-primary">
+        <Link href="/auth?mode=signup" className="ui-button-primary px-4 sm:px-5">
           회원가입
         </Link>
       </div>
@@ -73,14 +94,23 @@ export default function AuthStatus() {
 
   return (
     <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
-      <div className="min-w-0 max-w-full rounded-full border border-border/70 bg-surface/74 px-3.5 py-2.5 text-[0.88rem] text-text-secondary">
-        {buildIdentityLabel({
-          username: profile?.username,
-          fullName: profile?.full_name,
-          email: user.email,
-        })}
+      <div className="min-w-0 max-w-full rounded-full border border-border/70 bg-surface/74 px-3 py-2 text-[0.82rem] text-text-secondary sm:px-3.5 sm:py-2.5 sm:text-[0.88rem]">
+        <span className="sm:hidden">
+          {buildCompactIdentityLabel({
+            username: profile?.username,
+            fullName: profile?.full_name,
+            email: user.email,
+          })}
+        </span>
+        <span className="hidden sm:inline">
+          {buildIdentityLabel({
+            username: profile?.username,
+            fullName: profile?.full_name,
+            email: user.email,
+          })}
+        </span>
       </div>
-      <button onClick={handleSignOut} className="ui-button-secondary">
+      <button onClick={handleSignOut} className="ui-button-secondary px-4 sm:px-5">
         로그아웃
       </button>
     </div>

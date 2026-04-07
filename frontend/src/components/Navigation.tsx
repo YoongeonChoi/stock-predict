@@ -96,18 +96,18 @@ export default function Navigation() {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    "group flex min-h-[var(--touch-target-min)] items-start gap-3 rounded-[24px] border px-3.5 py-3.5 transition-all",
+                    "group flex min-h-[var(--touch-target-min)] items-start gap-3 rounded-[24px] border px-3.5 py-3.5 transition-[background-color,border-color,color,box-shadow,transform]",
                     active
                       ? "border-accent/25 bg-accent/10 text-text shadow-[0_18px_38px_-30px_rgba(37,99,235,0.25)]"
                       : "border-transparent text-text-secondary hover:border-border hover:bg-white/55 hover:text-text dark:hover:bg-slate-900/42",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] border transition-colors",
-                      active
-                        ? "border-accent/20 bg-accent/15 text-accent"
-                        : "border-border bg-surface/50 text-text-secondary group-hover:text-text",
+                    <span
+                      className={cn(
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] border transition-[background-color,border-color,color]",
+                        active
+                          ? "border-accent/20 bg-accent/15 text-accent"
+                          : "border-border bg-surface/50 text-text-secondary group-hover:text-text",
                     )}
                   >
                     <Icon size={18} strokeWidth={2.1} />
@@ -168,12 +168,12 @@ export default function Navigation() {
       </aside>
 
       <div
-        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/70 bg-surface/98 px-4 pb-3 pt-3 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.28)] backdrop-blur-md lg:hidden"
-        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/70 bg-surface/98 px-4 pb-2.5 pt-2.5 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.28)] backdrop-blur-md lg:hidden"
+        style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top))" }}
       >
         <Link href="/" className="min-w-0 flex-1 pr-3">
-          <div className="text-[0.98rem] font-semibold tracking-tight text-text">Stock Predict</div>
-          <div className="mt-0.5 truncate text-[0.72rem] text-text-secondary">시장 탐색과 운영 흐름</div>
+          <div className="text-[0.98rem] font-semibold tracking-tight text-text" translate="no">Stock Predict</div>
+          <div className="mt-0.5 truncate text-[0.7rem] text-text-secondary">시장 탐색과 운영 흐름</div>
         </Link>
         <div className="flex items-center gap-2 pl-3">
           <button
@@ -205,7 +205,7 @@ export default function Navigation() {
           />
           <div
             className="relative h-full w-[min(88vw,348px)] overflow-y-auto overscroll-contain border-r border-border/70 bg-surface px-4 pb-8 shadow-[0_28px_60px_-40px_rgba(15,23,42,0.55)]"
-            style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.75rem)" }}
+            style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.65rem)" }}
           >
             <div className="ui-panel-muted">
               <div className="text-sm font-semibold text-text">메뉴</div>

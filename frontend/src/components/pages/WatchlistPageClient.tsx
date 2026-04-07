@@ -211,14 +211,14 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Watchlist"
+        variant="compact"
+        eyebrow="자산 관리"
         title="관심종목"
         description="추적할 종목을 먼저 저장해 두고, 필요한 종목은 심화 추적으로 올려 최근 예측 변화와 적중 기록까지 이어서 확인합니다."
         meta={
           <>
             <span className="info-chip">전체 {items.length}개</span>
             <span className="info-chip">심화 추적 {trackedCount}개</span>
-            <span className="info-chip">KR 기준 입력</span>
           </>
         }
       />
@@ -230,11 +230,17 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
             <p className="section-copy">숫자 6자리 또는 티커를 입력하면 먼저 해석 결과를 보여드리고, 저장 후 심화 추적 화면으로 이어집니다.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_92px_auto]">
+            <label htmlFor="watchlist-ticker" className="sr-only">
+              관심종목으로 추가할 티커 입력
+            </label>
             <input
+              id="watchlist-ticker"
               value={ticker}
               onChange={(event) => setTicker(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && void add()}
               placeholder="티커 입력 · 예: 005930"
+              aria-label="관심종목 티커 입력"
+              enterKeyHint="search"
               className="ui-input w-full"
             />
             <div className="flex items-center justify-center rounded-2xl border border-border bg-surface/60 px-3 py-3 text-sm text-text-secondary">
@@ -297,10 +303,10 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         ) : loadError && items.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
+              kind="blocking"
               eyebrow="관심종목 지연"
               title="관심종목 목록을 아직 불러오지 못했습니다"
               message={loadError}
-              tone="warning"
               actionLabel="목록 다시 불러오기"
               onAction={() => void load(true)}
             />
@@ -308,29 +314,29 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         ) : items.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
+              kind="empty"
               eyebrow="관심종목 비어 있음"
               title="관심종목이 아직 비어 있습니다"
               message="관심 있는 종목을 추가하면 가격 변화와 현재 점수를 먼저 정리해 두고, 필요할 때 심화 추적으로 올릴 수 있습니다."
-              tone="neutral"
             />
           </div>
         ) : visibleItems.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
+              kind="empty"
               eyebrow="추적 중 없음"
               title="아직 심화 추적 중인 종목이 없습니다"
               message="목록에서 심화 추적 시작을 누르면 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다."
-              tone="neutral"
             />
           </div>
         ) : (
           <div className="space-y-2 px-5 py-5">
             {loadError ? (
               <WorkspaceStateCard
+                kind="partial"
                 eyebrow="부분 업데이트"
                 title="관심종목 목록 일부가 늦어지고 있습니다"
                 message={`${loadError} 기존에 확인하던 종목은 유지한 채 다시 불러오기를 기다립니다.`}
-                tone="warning"
                 actionLabel="목록 다시 불러오기"
                 onAction={() => void load(true)}
               />

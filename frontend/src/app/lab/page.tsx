@@ -23,7 +23,8 @@ export default async function LabPage() {
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Prediction Lab"
+        variant="compact"
+        eyebrow="예측 검증"
         title="예측 연구실"
         description={
           data
@@ -33,7 +34,6 @@ export default async function LabPage() {
         meta={
           <>
             <span className="info-chip">방향 적중률</span>
-            <span className="info-chip">밴드 적중률</span>
             <span className="info-chip">Calibration 추적</span>
           </>
         }
@@ -120,10 +120,10 @@ export default async function LabPage() {
         </section>
       ) : (
         <WorkspaceStateCard
+          kind="blocking"
           eyebrow="예측 검증 지연"
           title="예측 연구실 데이터를 아직 불러오지 못했습니다"
           message="실측 검증 스냅샷이 준비되면 1D, 5D, 20D 성과와 보정 상태를 같은 화면에서 바로 확인할 수 있습니다."
-          tone="warning"
         />
       )}
     </div>
