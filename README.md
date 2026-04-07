@@ -9,8 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.58.0`
+현재 릴리즈: `v2.58.1`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
+
+### 이번 릴리즈 하이라이트
+
+- iPhone Safari 기준으로 상단 mobile shell을 `브랜드/컨트롤 + 검색/계정`의 compact 흐름으로 다시 정리했습니다.
+- `/`, `/radar`, `/calendar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/lab`의 상태 카드를 `blocking / partial / empty / loading` 규칙으로 맞췄습니다.
+- `/calendar` 모바일 보드는 날짜 셀 장식을 줄이고 `월간 보드 + 선택 날짜 agenda` 구조로 다시 정리했습니다.
 
 - 프론트: [https://yoongeon.xyz](https://yoongeon.xyz)
 - 백엔드 API: [https://api.yoongeon.xyz](https://api.yoongeon.xyz)

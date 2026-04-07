@@ -6,6 +6,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import AuthGateCard from "@/components/AuthGateCard";
 import { useAuth } from "@/components/AuthProvider";
+import PageHeader from "@/components/PageHeader";
 import PortfolioConditionalRecommendationPanel from "@/components/PortfolioConditionalRecommendationPanel";
 import PortfolioEventRadar from "@/components/PortfolioEventRadar";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
@@ -190,6 +191,13 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
   const mixedCountries = useMemo(() => false, []);
   const demoPreviewItems = (demoData?.opportunities || []).slice(0, 2);
+  const portfolioHeaderDescription = "총자산과 보유 종목을 먼저 정리하고, 추천과 이벤트 레이더는 그 다음 순서로 확인합니다.";
+  const portfolioHeaderMeta = (
+    <>
+      <span className="info-chip">보유 종목 {summary?.holding_count ?? 0}개</span>
+      <span className="info-chip">투입 가능 자금 {formatAssetValue(summary?.deployable_cash ?? 0)}</span>
+    </>
+  );
   const handlePortfolioLoaded = useCallback((next: PortfolioData) => {
     setData(next);
     setProfileForm(buildProfileForm(next.profile));
@@ -558,12 +566,19 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
 
   return (
     <div className="page-shell">
+      <PageHeader
+        variant="compact"
+        eyebrow="자산 관리"
+        title="포트폴리오"
+        description={portfolioHeaderDescription}
+        meta={portfolioHeaderMeta}
+      />
       {portfolioLoadError ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="부분 업데이트"
           title="자산 요약 최신 응답이 늦어지고 있습니다"
           message={`${portfolioLoadError} 직전 포트폴리오 스냅샷은 유지한 채 다시 불러오기를 기다립니다.`}
-          tone="warning"
           actionLabel="포트폴리오 다시 불러오기"
           onAction={() => {
             setLoading(true);

@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
-import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import { WarningBanner } from "@/components/ErrorBanner";
 import ForecastDeltaCard from "@/components/ForecastDeltaCard";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import MetricValueCard from "@/components/MetricValueCard";
+import PageHeader from "@/components/PageHeader";
 import PivotLevelsCard from "@/components/PivotLevelsCard";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
@@ -24,6 +25,7 @@ import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api } from "@/lib/api";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
 import type { StockDetail, WatchlistItem } from "@/lib/types";
@@ -167,24 +169,67 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-8 bg-border rounded w-64" />
-        <div className="h-72 bg-border rounded" />
-        <div className="h-48 bg-border rounded" />
+      <div className="page-shell space-y-4">
+        <PageHeader
+          variant="compact"
+          eyebrow="종목 상세"
+          title={initialTicker.toUpperCase()}
+          description="가격 흐름, 기술 신호, 공개 판단 요약을 먼저 정리하고 세부 분석을 이어서 불러옵니다."
+        />
+        <WorkspaceLoadingCard
+          title="종목 핵심 수치를 불러오고 있습니다"
+          message="현재가와 공개 판단 요약, 관심종목 상태를 먼저 확인할 수 있도록 준비하고 있습니다."
+          className="min-h-[180px]"
+        />
+        <WorkspaceLoadingCard
+          title="차트와 세부 분석을 이어서 준비하고 있습니다"
+          message="기술 요약, 예측 차트, 매수·매도 가이드가 순서대로 이어집니다."
+          className="min-h-[260px]"
+        />
       </div>
     );
   }
 
   if (!stock && error) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <Link href="/" className="text-text-secondary hover:text-text">&larr; 홈으로</Link>
-        <ErrorBanner error={error} onRetry={() => window.location.reload()} />
+      <div className="page-shell space-y-4">
+        <PageHeader
+          variant="compact"
+          eyebrow="종목 상세"
+          title={initialTicker.toUpperCase()}
+          description="종목 상세 응답이 아직 도착하지 않아, 다시 불러오기로 최신 스냅샷을 재요청합니다."
+          actions={
+            <Link href="/" className="action-chip-secondary">
+              홈으로
+            </Link>
+          }
+        />
+        <WorkspaceStateCard
+          kind="blocking"
+          eyebrow="응답 지연"
+          title="종목 상세를 아직 불러오지 못했습니다"
+          message={error.message}
+          actionLabel="다시 시도"
+          onAction={() => window.location.reload()}
+        />
       </div>
     );
   }
 
-  if (!stock) return <div className="text-text-secondary">종목 정보를 찾을 수 없습니다.</div>;
+  if (!stock) {
+    return (
+      <div className="page-shell">
+        <WorkspaceStateCard
+          kind="blocking"
+          eyebrow="종목 없음"
+          title="종목 정보를 찾을 수 없습니다"
+          message="티커를 다시 확인한 뒤 검색 또는 홈 화면에서 다른 종목으로 이동해 주세요."
+          actionLabel="홈으로"
+          onAction={() => router.push("/")}
+        />
+      </div>
+    );
+  }
 
   const priceKey = stock.country_code;
   const bsg = stock.buy_sell_guide;
@@ -245,24 +290,34 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         : "관심종목 추가";
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
-          <div>
-            <h1 className="text-2xl font-bold">{stock.name}</h1>
-            <span className="text-text-secondary text-sm">{stock.ticker} · {stock.sector} · {stock.industry}</span>
+    <div className="page-shell">
+      <PageHeader
+        variant="compact"
+        eyebrow="종목 상세"
+        title={stock.name}
+        description={`${stock.ticker} · ${stock.sector} · ${stock.industry}`}
+        meta={
+          <>
+            <span className="info-chip">{formatPrice(stock.current_price, priceKey)}</span>
+            <span className={`info-chip ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</span>
+            <span className="info-chip">시가총액 {formatMarketCap(stock.market_cap, priceKey)}</span>
+          </>
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link href="/" className="action-chip-secondary">
+              홈으로
+            </Link>
+            <button
+              onClick={handleTrackingAction}
+              disabled={watchlistSyncing}
+              className="action-chip-primary disabled:cursor-wait disabled:opacity-60"
+            >
+              {watchlistActionLabel}
+            </button>
           </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={addToWatchlist} className="text-sm px-4 py-2 rounded-lg border border-border hover:border-accent transition-colors">워치리스트 추가</button>
-          <div className="text-right">
-            <div className="text-2xl font-bold font-mono">{formatPrice(stock.current_price, priceKey)}</div>
-            <div className={`text-lg ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</div>
-          </div>
-        </div>
-      </div>
-
+        }
+      />
       {(stock.generated_at || stock.partial || stock.fallback_reason || (stock.errors && stock.errors.length > 0)) ? (
         <div className="card !p-4 space-y-3">
           <PublicAuditStrip meta={stock} />

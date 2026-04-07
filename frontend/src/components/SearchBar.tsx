@@ -55,23 +55,29 @@ export default function SearchBar() {
   };
 
   return (
-    <div ref={ref} className="relative w-full max-w-3xl">
+    <div ref={ref} className="relative w-full max-w-3xl" role="search" aria-label="사이트 검색">
+      <label htmlFor="global-search-input" className="sr-only">
+        티커 또는 종목명 검색
+      </label>
       <div
         className={cn(
-          "flex min-h-[var(--control-height-lg)] items-center gap-3 rounded-[26px] border px-3.5 py-3 transition-all sm:px-4",
+          "flex min-h-[var(--control-height-md)] items-center gap-3 rounded-[24px] border px-3 py-2.5 transition-[border-color,box-shadow,background-color] sm:min-h-[var(--control-height-lg)] sm:px-4 sm:py-3",
           focused || open
             ? "border-accent/35 bg-surface shadow-[0_22px_45px_-34px_rgba(37,99,235,0.22)]"
             : "border-border bg-surface/92"
         )}
       >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[20px] bg-accent/10 text-accent">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] bg-accent/10 text-accent sm:h-11 sm:w-11">
           <Search size={18} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-text-secondary sm:block">
+          <div className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary sm:block">
             빠른 종목 검색
           </div>
           <input
+            id="global-search-input"
+            type="search"
+            name="global_search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => {
@@ -85,8 +91,14 @@ export default function SearchBar() {
                 select(results[0].ticker);
               }
             }}
-            placeholder="티커 또는 종목명 검색"
-            className="mt-0.5 w-full bg-transparent text-[0.95rem] text-text outline-none placeholder:text-text-secondary"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="search"
+            aria-expanded={open}
+            aria-controls="global-search-results"
+            placeholder="티커 또는 종목명 검색…"
+            className="mt-0.5 w-full bg-transparent text-[0.94rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.95rem]"
           />
         </div>
         <div className="hidden shrink-0 rounded-full border border-border px-3 py-1.5 text-[11px] text-text-secondary xl:inline-flex">
@@ -101,7 +113,10 @@ export default function SearchBar() {
       )}
 
       {open && query.length > 0 && (
-        <div className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[24px] border border-border bg-surface shadow-[0_20px_42px_-30px_rgba(15,23,42,0.24)]">
+        <div
+          id="global-search-results"
+          className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[24px] border border-border bg-surface shadow-[0_20px_42px_-30px_rgba(15,23,42,0.24)]"
+        >
           <div className="border-b border-border/70 px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
             검색 결과
           </div>
@@ -112,7 +127,7 @@ export default function SearchBar() {
                 <button
                   key={r.ticker}
                   onClick={() => select(r.ticker)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-border/20"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-[background-color,color] hover:bg-border/20 focus-visible:bg-border/20"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

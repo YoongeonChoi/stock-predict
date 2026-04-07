@@ -195,6 +195,9 @@
 - 액션은 header에 몰아넣지 않는다
 - header에 들어가는 secondary action은 최대 `3개`
 - 페이지 전체 primary action은 최대 `1개`
+- 모바일 compact header는 `브랜드/목적 -> 한 줄 설명 -> meta 1줄 -> action 1줄` 순서를 기본으로 한다
+- 모바일 first screen에서는 header 자체가 viewport를 과점유하지 않게 하고, 같은 내용의 큰 제목 카드를 바로 아래에 반복하지 않는다
+- 공개 workspace 화면의 첫 카드에는 summary나 freshness/audit 중 적어도 하나가 header 바로 아래에서 이어져야 한다
 
 ### 4.2 Decision thread
 
@@ -602,6 +605,9 @@ aside에 부적합한 내용:
 - 모바일에서는 상단 고정 바와 drawer, form CTA가 서로 겹치지 않게 spacing을 확보한다
 - 최신 iPhone / Galaxy 계열 세로 비율에서도 헤더, 입력 폼, sticky 요소가 viewport를 과도하게 차지하지 않게 한다
 - 가로 스크롤이 불가피한 표는 wrapper 안에서만 스크롤되게 하고, 페이지 전체가 옆으로 밀리지 않게 한다
+- 상태 카드는 `blocking failure / partial warning / empty guidance / loading skeleton` 네 가지 계층으로만 분류하고, raw timeout 문구를 바로 노출하지 않는다
+- 캘린더 모바일 보드는 `월 제목 -> 월 이동 -> 범례 -> 월간 보드 -> 선택 날짜 agenda` 순서를 유지하고, 날짜 셀 안에는 mini card stack 대신 `날짜 번호 + 점/건수 + 선택 강조`만 남긴다
+- 오늘, 선택 날짜, 바깥 달 날짜, 고중요도 일정은 같은 보드 안에서 서로 다른 시각 규칙으로 구분한다
 
 ---
 

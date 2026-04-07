@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.58.1 - 2026-04-07
+
+- iPhone Safari 기준으로 `Navigation`, `SearchBar`, `AuthStatus`, `PageHeader`를 다시 묶어 모바일 상단 shell을 더 낮고 읽기 쉽게 정리했습니다.
+- `WorkspaceStateCard`와 `ErrorBanner` 시각 규칙을 맞추고, `/`, `/radar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/lab`에서 `blocking / partial / empty / loading` 상태 표현을 같은 언어로 통일했습니다.
+- `/calendar` 모바일 월간 보드를 `월 제목 -> 이동 컨트롤 -> 범례 -> 월간 보드 -> 선택 날짜 agenda` 순서로 재정리하고, 날짜 셀은 `날짜 번호 + 이벤트 점/건수 + 선택 강조` 중심으로 단순화했습니다.
+
 ## v2.58.0 - 2026-04-06
 
 - `다음 거래일 포커스` 추천에 단타용 `차트 점수`를 추가했습니다. 추세 정렬, MACD 모멘텀, RSI 위치, 거래량 확인, 볼린저 밴드/돌파 품질, ATR 기반 과열 여부를 묶어 1일 추천 점수에 크게 반영합니다.

@@ -18,7 +18,6 @@ import {
   reportPanelDegraded,
 } from "@/lib/route-observability";
 import type { OpportunityRadarResponse } from "@/lib/types";
-import { formatPct } from "@/lib/utils";
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -134,34 +133,29 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Opportunity Radar"
+        variant="compact"
+        eyebrow="시장 탐색"
         title="기회 레이더"
         description={radarHeaderDescription}
         meta={
           <>
             <span className="info-chip">실행 후보 우선</span>
-            <span className="info-chip">시장 국면 반영</span>
             {visibleData ? <span className="info-chip">1차 스캔 {visibleData.total_scanned}개</span> : null}
             {nextDayFocus ? (
-              <>
-                <span className="info-chip">1일 포커스 {nextDayFocus.name}</span>
-                <span className="info-chip">동일 금액 기준 기대 수익 {formatPct(nextDayFocus.expected_edge_pct)}</span>
-              </>
+              <span className="info-chip">1일 포커스 {nextDayFocus.name}</span>
             ) : null}
           </>
         }
         actions={
           <div className="flex flex-wrap gap-2">
             {MARKETS.map((code) => (
-              <button
-                key={code}
-                onClick={() => setMarket(code)}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  market === code ? "bg-accent text-white" : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
-                }`}
-              >
-                {code}
-              </button>
+                <button
+                  key={code}
+                  onClick={() => setMarket(code)}
+                  className={market === code ? "action-chip-primary" : "action-chip-secondary"}
+                >
+                  {code}
+                </button>
             ))}
           </div>
         }
@@ -171,10 +165,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         <RadarNextDayFocusCard focus={nextDayFocus} />
       ) : visibleData ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="다음 거래일 포커스 준비 중"
           title="단기 추천은 상위 후보를 다시 계산한 뒤 이어집니다"
           message="레이더 보드는 먼저 확인할 수 있고, 다음 거래일 전용 매수·목표·손절 기준은 정밀 후보 재평가가 끝나는 순서대로 채워집니다."
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -250,10 +244,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
 
       {placeholderData && visibleData ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="레이더 partial"
           title="최신 레이더가 아직 완전히 올라오지 않아 마지막 사용 가능 스냅샷을 유지합니다"
           message="대표 스냅샷과 audit 정보는 최신 상태로 갱신하고, 실제 후보 보드는 마지막으로 확인된 사용 가능 스냅샷으로 먼저 유지합니다."
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -261,10 +255,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
 
       {error && visibleData ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="다시 확인 필요"
           title="최신 레이더 계산이 잠시 지연되고 있습니다"
           message={getUserFacingErrorMessage(error, "이전 계산 결과를 먼저 보여주고 있습니다. 잠시 후 다시 시도해 주세요.")}
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -290,10 +284,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         </>
       ) : (
         <WorkspaceStateCard
+          kind="blocking"
           eyebrow="레이더 지연"
           title="기회 레이더를 아직 불러오지 못했습니다"
           message={getUserFacingErrorMessage(error, "레이더 계산이 길어지면 먼저 시장 국면만 보일 수 있습니다. 잠시 후 다시 시도해 주세요.")}
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />

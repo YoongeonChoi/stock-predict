@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Navigation />
                 <div className="flex min-w-0 flex-1 flex-col pt-[var(--mobile-nav-height)] lg:pt-0">
                   <header className="relative z-20 bg-transparent shadow-none lg:sticky lg:top-0 lg:z-30 lg:border-b lg:border-border/70 lg:bg-surface/92 lg:shadow-[0_18px_36px_-32px_rgba(15,23,42,0.24)] lg:backdrop-blur-sm">
-                    <div className="mx-auto grid w-full max-w-[1500px] gap-3 px-4 pb-2 pt-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4 lg:px-8 lg:py-3 xl:px-10">
+                    <div className="mx-auto grid w-full max-w-[1500px] gap-2 px-4 pb-2 pt-3 sm:px-6 sm:pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4 lg:px-8 lg:py-3 xl:px-10">
                       <div className="min-w-0">
                         <SearchBar />
                       </div>
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </div>
                   </header>
                   <main className="flex-1">
-                    <div className="mx-auto w-full max-w-[1500px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8 xl:px-10">
+                    <div className="mx-auto w-full max-w-[1500px] px-4 pb-10 pt-3 sm:px-6 sm:pt-5 lg:px-8 lg:pt-6 xl:px-10">
                       {children}
                     </div>
                   </main>
