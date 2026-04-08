@@ -103,11 +103,11 @@ export default async function LabPage() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl border border-border/70 bg-surface/60 p-4">
+              <div className="section-slab-subtle !p-4">
                 <div className="text-sm font-semibold text-text">Horizon 커버리지</div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                   {coverageRows.map((row) => (
-                    <div key={row.label} className="rounded-xl border border-border/70 bg-background px-3 py-3">
+                    <div key={row.label} className="metric-strip">
                       <div className="text-xs text-text-secondary">{row.label}</div>
                       <div className="mt-2 text-lg font-semibold text-text">
                         {row.stored_predictions.toLocaleString("ko-KR")}건
@@ -120,23 +120,23 @@ export default async function LabPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border/70 bg-surface/60 p-4">
+              <div className="section-slab-subtle !p-4">
                 <div className="text-sm font-semibold text-text">지금 막히는 지점</div>
                 <div className="mt-3 space-y-2">
                   {pipelineAlerts.length > 0 ? (
                     pipelineAlerts.map((alert) => (
-                      <div key={alert.key} className="rounded-xl border border-border/70 bg-background px-3 py-3">
+                      <div key={alert.key} className="section-slab-muted !px-3 !py-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium text-text">{alert.title}</div>
                             <div className="mt-1 text-sm text-text-secondary">{alert.detail}</div>
                           </div>
-                          <span className="info-chip">{alert.severity}</span>
+                          <span className="status-token">{alert.severity}</span>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-border/70 bg-background px-3 py-3 text-sm text-text-secondary">
+                    <div className="section-slab-muted !px-3 !py-3 text-sm text-text-secondary">
                       현재 공개 연구실 기준으로는 즉시 조치가 필요한 수집 경고가 크지 않습니다. 아래 검증 섹션에서 horizon별 성과와 review queue를 이어서 확인해 주세요.
                     </div>
                   )}

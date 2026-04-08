@@ -23,6 +23,7 @@ import {
 } from "@/lib/account";
 import { api, getApiRetryAfterSeconds, isApiErrorCode } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { cn } from "@/lib/utils";
 
 type AuthMode = "signin" | "signup" | "recovery";
 
@@ -440,16 +441,26 @@ function AuthPageContent() {
       <section className="mx-auto grid max-w-[1180px] gap-5 xl:grid-cols-[minmax(0,1.12fr)_360px]">
         <div className="card space-y-5">
           {mode !== "recovery" ? (
-            <div className="flex gap-2 rounded-[24px] border border-border/70 bg-surface/55 p-1.5">
+            <div className="section-slab-subtle !p-1.5">
               <button
                 onClick={() => setModeInUrl("signin")}
-                className={`min-h-[var(--control-height-md)] flex-1 rounded-[20px] px-4 text-[0.95rem] font-semibold transition-colors ${mode === "signin" ? "bg-accent text-white shadow-[0_18px_36px_-28px_rgba(37,99,235,0.4)]" : "text-text-secondary"}`}
+                className={cn(
+                  "min-h-[var(--control-height-md)] flex-1 rounded-md px-4 text-[0.95rem] font-semibold transition-colors",
+                  mode === "signin"
+                    ? "bg-accent text-white"
+                    : "text-text-secondary hover:bg-text/5 hover:text-text",
+                )}
               >
                 로그인
               </button>
               <button
                 onClick={() => setModeInUrl("signup")}
-                className={`min-h-[var(--control-height-md)] flex-1 rounded-[20px] px-4 text-[0.95rem] font-semibold transition-colors ${mode === "signup" ? "bg-accent text-white shadow-[0_18px_36px_-28px_rgba(37,99,235,0.4)]" : "text-text-secondary"}`}
+                className={cn(
+                  "min-h-[var(--control-height-md)] flex-1 rounded-md px-4 text-[0.95rem] font-semibold transition-colors",
+                  mode === "signup"
+                    ? "bg-accent text-white"
+                    : "text-text-secondary hover:bg-text/5 hover:text-text",
+                )}
               >
                 회원가입
               </button>
@@ -718,7 +729,7 @@ function AuthPageContent() {
           </button>
 
           {!configured ? (
-            <div className="rounded-[24px] border border-negative/20 bg-negative/5 px-4 py-3 text-[0.95rem] text-negative">
+            <div className="ui-panel-warning !px-4 !py-3 text-[0.95rem]">
               Supabase 브라우저 설정이 비어 있습니다. `NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 확인해 주세요.
             </div>
           ) : null}

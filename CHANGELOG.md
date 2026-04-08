@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.0 - 2026-04-08
+
+- 전역 UI 디자인 시스템을 `glass/card-heavy` 톤에서 `brutal editorial + less is more` 기준으로 다시 정리했습니다. 라이트 모드를 canonical theme로 두고 `IBM Plex Sans KR`와 `IBM Plex Mono`를 기준 글꼴로 맞췄습니다.
+- `globals.css`, `layout.tsx`, `Navigation`, `SearchBar`, `AuthStatus`, `WorkspaceStateCard`를 다시 설계해 상단 chrome, 상태 카드, 입력 필드, slab/metric/data frame 규칙을 하나의 시각 언어로 통일했습니다.
+- `/compare`, `/country/[code]`, `/country/[code]/sector/[id]`, `/settings`, `/auth`, `/lab`와 홈/레이더/종목/포트폴리오 핵심 패널을 새 primitive 기준으로 정리해 pill 남발, 다중 보더, 긴 문장의 캡슐 배치를 줄였습니다.
+- `DESIGN_BIBLE.md`를 전면 갱신해 `한 블록 = 한 visible frame`, `chip은 짧은 상태만`, `긴 한국어 문장은 box보다 rhythm 우선` 규칙을 canonical spec으로 명시했습니다.
+
 ## v2.59.0 - 2026-04-07
 
 - `/api/research/predictions`에 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 추가하고, `/lab` 첫 화면을 `표본 수집 퍼널 -> horizon 커버리지 -> 지금 막히는 지점` 순서로 다시 정리했습니다.

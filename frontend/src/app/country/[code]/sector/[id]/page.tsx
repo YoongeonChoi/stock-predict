@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ErrorBanner, { WarningBanner } from "@/components/ErrorBanner";
+import PageHeader from "@/components/PageHeader";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import { api } from "@/lib/api";
@@ -28,27 +30,44 @@ export default function SectorPage() {
     setError(null);
     api.getSectorReport(code, id)
       .then(setReport)
-      .catch((e) => {
-        console.error(e);
-        setError(toError(e));
-      })
+      .catch((caught) => setError(toError(caught)))
       .finally(() => setLoading(false));
   }, [code, id]);
 
   if (loading) {
-    return <div className="animate-pulse space-y-4"><div className="h-8 bg-border rounded w-48" /><div className="h-96 bg-border rounded" /></div>;
+    return (
+      <div className="page-shell">
+        <WorkspaceLoadingCard
+          title="섹터 리포트를 불러오고 있습니다"
+          message="섹터 점수, 상위 종목, 강점과 주의 포인트를 다시 정리하는 중입니다."
+          className="min-h-[220px]"
+        />
+      </div>
+    );
   }
 
   if (!report && error) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <Link href={`/country/${code}`} className="text-text-secondary hover:text-text">&larr; 국가 리포트로</Link>
+      <div className="page-shell">
+        <Link href={`/country/${code}`} className="ui-button-ghost w-fit px-0">
+          국가 리포트로
+        </Link>
         <ErrorBanner error={error} onRetry={() => window.location.reload()} />
       </div>
     );
   }
 
-  if (!report) return <div className="text-text-secondary">섹터 리포트를 찾을 수 없습니다.</div>;
+  if (!report) {
+    return (
+      <div className="page-shell">
+        <WorkspaceStateCard
+          kind="empty"
+          title="섹터 리포트를 찾지 못했습니다"
+          message="섹터 경로가 올바른지 다시 확인해 주세요."
+        />
+      </div>
+    );
+  }
 
   const defaultScore: ScoreItem = { name: "", score: 0, max_score: 0, description: "" };
   const sc = report.score;
@@ -62,69 +81,100 @@ export default function SectorPage() {
   ];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div className="flex items-center gap-4">
-        <Link href={`/country/${code}`} className="text-text-secondary hover:text-text">&larr;</Link>
-        <div>
-          <h1 className="text-2xl font-bold">{report.sector?.name || "섹터"} 리포트</h1>
-          <span className="text-text-secondary text-sm">종목 수 {report.sector?.stock_count ?? 0}개</span>
-        </div>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="시장 탐색"
+        title={`${report.sector?.name || "섹터"} 리포트`}
+        description={`종목 수 ${report.sector?.stock_count ?? 0}개 기준으로 섹터 점수, 상위 종목, 강점과 주의 포인트를 한 화면에서 정리합니다.`}
+        meta={
+          <>
+            <span className="info-chip">{code}</span>
+            <span className="info-chip">섹터 {id}</span>
+          </>
+        }
+        actions={
+          <Link href={`/country/${code}`} className="ui-button-secondary px-4">
+            국가 리포트로
+          </Link>
+        }
+      />
 
       {report.errors && report.errors.length > 0 ? <WarningBanner codes={report.errors} /> : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="card lg:col-span-2">
-          <div className="flex items-center gap-6">
+      <div className="workspace-grid-balanced">
+        <section className="card !p-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
             <ScoreRadial score={sc.total || 0} label="종합" />
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <ScoreBreakdown items={scoreItems} />
             </div>
           </div>
-        </div>
-        <div className="card">
-          <h3 className="font-semibold mb-3">섹터 요약</h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{report.summary || "요약 정보가 아직 없습니다."}</p>
-        </div>
+        </section>
+        <section className="card !p-5">
+          <div className="section-heading">
+            <div>
+              <h2 className="section-title">섹터 요약</h2>
+            </div>
+          </div>
+          <div className="mt-4 text-sm leading-7 text-text-secondary">
+            {report.summary || "섹터 요약 정보가 아직 없습니다."}
+          </div>
+        </section>
       </div>
 
       {report.top_stocks.length > 0 ? (
-        <div className="card">
-          <h2 className="font-semibold mb-4">상위 종목</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <section className="card !p-5">
+          <div className="section-heading">
+            <div>
+              <h2 className="section-title">상위 종목</h2>
+            </div>
+          </div>
+          <div className="mt-4 ui-table-shell">
+            <table>
               <thead>
-                <tr className="text-left text-text-secondary border-b border-border">
-                  <th className="pb-2 w-8">순위</th>
-                  <th className="pb-2">종목</th>
-                  <th className="pb-2 text-right">현재가</th>
-                  <th className="pb-2 text-right">등락률</th>
-                  <th className="pb-2 text-right">점수</th>
-                  <th className="pb-2 hidden md:table-cell">장점</th>
-                  <th className="pb-2 hidden md:table-cell">주의점</th>
+                <tr className="border-b border-border/10 text-left text-text-secondary">
+                  <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em]">순위</th>
+                  <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em]">종목</th>
+                  <th className="px-4 py-3 text-right font-mono text-[11px] uppercase tracking-[0.12em]">현재가</th>
+                  <th className="px-4 py-3 text-right font-mono text-[11px] uppercase tracking-[0.12em]">등락률</th>
+                  <th className="px-4 py-3 text-right font-mono text-[11px] uppercase tracking-[0.12em]">점수</th>
+                  <th className="hidden px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] md:table-cell">강점</th>
+                  <th className="hidden px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] md:table-cell">주의점</th>
                 </tr>
               </thead>
               <tbody>
                 {report.top_stocks.map((stock) => (
-                  <tr key={stock.ticker} className="border-b border-border/50 hover:bg-border/20">
-                    <td className="py-3 font-bold text-accent">{stock.rank}</td>
-                    <td className="py-3">
-                      <Link href={`/stock/${stock.ticker}`} className="hover:text-accent transition-colors">
-                        <div className="font-medium">{stock.name}</div>
-                        <div className="text-xs text-text-secondary">{stock.ticker}</div>
+                  <tr key={stock.ticker} className="border-b border-border/10 last:border-b-0">
+                    <td className="px-4 py-4 font-mono font-semibold text-accent">{stock.rank}</td>
+                    <td className="px-4 py-4">
+                      <Link href={`/stock/${stock.ticker}`} className="block hover:text-accent">
+                        <div className="font-semibold text-text">{stock.name}</div>
+                        <div className="mt-1 font-mono text-[12px] text-text-secondary">{stock.ticker}</div>
                       </Link>
                     </td>
-                    <td className="py-3 text-right font-mono">{formatPrice(stock.current_price, code)}</td>
-                    <td className={`py-3 text-right ${changeColor(stock.change_pct ?? 0)}`}>{formatPct(stock.change_pct ?? 0)}</td>
-                    <td className="py-3 text-right font-bold">{(stock.score ?? 0).toFixed(1)}</td>
-                    <td className="py-3 text-xs text-text-secondary hidden md:table-cell">{(stock.pros || []).slice(0, 2).map((item, index) => <div key={index}>+ {item}</div>)}</td>
-                    <td className="py-3 text-xs text-text-secondary hidden md:table-cell">{(stock.cons || []).slice(0, 2).map((item, index) => <div key={index}>- {item}</div>)}</td>
+                    <td className="px-4 py-4 text-right font-mono text-text">{formatPrice(stock.current_price, code)}</td>
+                    <td className={`px-4 py-4 text-right font-mono ${changeColor(stock.change_pct ?? 0)}`}>
+                      {formatPct(stock.change_pct ?? 0)}
+                    </td>
+                    <td className="px-4 py-4 text-right font-mono font-semibold text-text">
+                      {(stock.score ?? 0).toFixed(1)}
+                    </td>
+                    <td className="hidden px-4 py-4 text-xs leading-6 text-text-secondary md:table-cell">
+                      {(stock.pros || []).slice(0, 2).map((item, index) => (
+                        <div key={index}>+ {item}</div>
+                      ))}
+                    </td>
+                    <td className="hidden px-4 py-4 text-xs leading-6 text-text-secondary md:table-cell">
+                      {(stock.cons || []).slice(0, 2).map((item, index) => (
+                        <div key={index}>- {item}</div>
+                      ))}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       ) : null}
     </div>
   );

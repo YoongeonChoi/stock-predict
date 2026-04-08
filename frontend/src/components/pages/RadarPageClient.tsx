@@ -218,10 +218,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             <PublicAuditStrip meta={placeholderData} />
           </div>
           <div className="workspace-grid-balanced">
-            <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/5 px-4 py-4 text-sm leading-6 text-amber-700">
+            <div className="ui-panel-warning !px-4 !py-4 text-sm leading-6">
               최신 레이더는 이번 요청에서 바로 쓸 수 있는 후보 스냅샷을 만들지 못했습니다. 자동 장기 스캔이 계속 도는 상태를 기다리는 것이 아니라, 다시 불러오기 때 fresh quick 스냅샷과 캐시 재사용을 새로 시도하는 구조입니다.
             </div>
-            <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
+            <div className="section-slab-subtle !px-4 !py-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">현재 상태</div>
               <div className="mt-3 space-y-3 text-sm text-text-secondary">
                 <div>
@@ -230,7 +230,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
                     {placeholderUniverseSize > 0 ? `${placeholderUniverseSize.toLocaleString("ko-KR")}개 후보군` : "기본 후보군 준비 중"}
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-surface/70 px-3 py-3">
+                <div className="section-slab-muted !px-3 !py-3">
                   <div className="text-xs text-text-secondary">다음 동작</div>
                   <div className="mt-2 leading-6">
                     다시 불러오기를 누르거나 새로 열면 quick 후보 스냅샷을 새로 만들고, usable 후보가 생기면 그 즉시 후보 보드로 바뀝니다. 계속 같은 화면을 띄워 두는 것만으로 완료되지는 않습니다.

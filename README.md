@@ -9,11 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.59.0`
+현재 릴리즈: `v2.60.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 전역 UI 디자인 시스템을 `glass/card-heavy` 톤에서 `brutal editorial + less is more` 기준으로 다시 정리했습니다. `IBM Plex Sans KR`와 `IBM Plex Mono`를 기준 글꼴로 두고, 라이트 모드를 canonical theme로 맞췄습니다.
+- `Navigation`, `SearchBar`, `AuthStatus`, `WorkspaceStateCard`, `PageHeader`를 다시 설계해 상단 chrome, 상태 카드, slab/metric/data frame 규칙을 같은 시각 언어로 통일했습니다.
+- `/compare`, `/country/[code]`, `/country/[code]/sector/[id]`, `/settings`, `/auth`, `/lab`와 홈/레이더/종목/포트폴리오 핵심 패널을 새 primitive 기준으로 정리해 pill 남발, 다중 보더, 긴 문장의 캡슐 배치를 줄였습니다.
 - `/api/research/predictions`가 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 함께 반환해 연구실이 비어 보일 때도 어디서 표본이 끊겼는지 먼저 설명합니다.
 - `stock` quick detail, `country` partial report, `market/opportunities` quick/cached 응답에서 prediction capture를 다시 연결해 1D뿐 아니라 5D/20D 표본도 누적되도록 복구했습니다.
 - `/lab` 첫 화면을 `표본 수집 퍼널 -> horizon 커버리지 -> 지금 막히는 지점` 순서로 재구성해, 성과 카드보다 저장/평가 상태를 먼저 읽게 바꿨습니다.

@@ -15,18 +15,10 @@ function buildIdentityLabel({
   fullName?: string | null;
   email?: string | null;
 }) {
-  if (fullName && username) {
-    return `${fullName} · @${username}`;
-  }
-  if (fullName) {
-    return fullName;
-  }
-  if (username) {
-    return `@${username}`;
-  }
-  if (email) {
-    return email.length > 26 ? `${email.slice(0, 23)}...` : email;
-  }
+  if (fullName && username) return `${fullName} @${username}`;
+  if (fullName) return fullName;
+  if (username) return `@${username}`;
+  if (email) return email.length > 26 ? `${email.slice(0, 23)}...` : email;
   return "로그인됨";
 }
 
@@ -39,15 +31,9 @@ function buildCompactIdentityLabel({
   fullName?: string | null;
   email?: string | null;
 }) {
-  if (username) {
-    return `@${username}`;
-  }
-  if (fullName) {
-    return fullName;
-  }
-  if (email) {
-    return email.length > 18 ? `${email.slice(0, 15)}…` : email;
-  }
+  if (username) return `@${username}`;
+  if (fullName) return fullName;
+  if (email) return email.length > 18 ? `${email.slice(0, 15)}...` : email;
   return "로그인됨";
 }
 
@@ -58,14 +44,14 @@ export default function AuthStatus() {
 
   if (!configured) {
     return (
-      <div className="ui-panel-warning hidden px-3 py-2 text-xs text-amber-600 md:block">
-        인증 설정을 확인해 주세요
+      <div className="hidden text-[0.8rem] leading-6 text-warning md:block">
+        인증 설정을 확인해 주세요.
       </div>
     );
   }
 
   if (loading) {
-    return <div className="h-11 w-full animate-pulse rounded-[20px] bg-border/60 sm:w-48" />;
+    return <div className="h-11 w-full animate-pulse rounded-[10px] bg-border/30 sm:w-48" />;
   }
 
   if (!user) {
@@ -93,23 +79,24 @@ export default function AuthStatus() {
   };
 
   return (
-    <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
-      <div className="min-w-0 max-w-full rounded-full border border-border/70 bg-surface/74 px-3 py-2 text-[0.82rem] text-text-secondary sm:px-3.5 sm:py-2.5 sm:text-[0.88rem]">
-        <span className="sm:hidden">
+    <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-3">
+      <Link href="/settings" className="min-w-0 max-w-full border-b border-border/20 pb-1 text-right hover:border-text hover:text-text">
+        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">Account</div>
+        <div className="mt-1 truncate text-[0.9rem] font-semibold text-text sm:hidden">
           {buildCompactIdentityLabel({
             username: profile?.username,
             fullName: profile?.full_name,
             email: user.email,
           })}
-        </span>
-        <span className="hidden sm:inline">
+        </div>
+        <div className="mt-1 hidden text-[0.9rem] font-semibold text-text sm:block">
           {buildIdentityLabel({
             username: profile?.username,
             fullName: profile?.full_name,
             email: user.email,
           })}
-        </span>
-      </div>
+        </div>
+      </Link>
       <button onClick={handleSignOut} className="ui-button-secondary px-4 sm:px-5">
         로그아웃
       </button>

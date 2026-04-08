@@ -364,7 +364,7 @@ export default function HomeDashboardClient({
       />
       <section className="card !p-5 space-y-5">
         <PublicAuditStrip meta={dashboardAuditMeta} />
-        <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
+        <div className="section-slab-subtle !px-4 !py-4 text-sm leading-6 text-text-secondary">
           {dashboardSummary}
         </div>
 
@@ -385,10 +385,10 @@ export default function HomeDashboardClient({
                 <button
                   key={country.code}
                   onClick={() => void loadCountryWorkspace(country.code)}
-                  className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`text-sm font-medium transition-colors ${
                     selectedCountry === country.code
-                      ? "bg-accent text-white"
-                      : "border border-border bg-surface/70 text-text-secondary hover:border-accent/35 hover:text-text"
+                      ? "action-chip-primary"
+                      : "action-chip-secondary"
                   }`}
                 >
                   {COUNTRY_FLAGS[country.code]} {country.name_local}
@@ -409,7 +409,7 @@ export default function HomeDashboardClient({
                 </div>
               </div>
               {marketView ? (
-                <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusTone(marketView.stance)}`}>
+                <span className={`status-token ${statusTone(marketView.stance)}`}>
                   {marketView.label}
                 </span>
               ) : null}
@@ -418,7 +418,7 @@ export default function HomeDashboardClient({
             {macroClaims.length > 0 ? (
               <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {macroClaims.map((claim) => (
-                  <div key={`${claim.source}-${claim.metric}`} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+                  <div key={`${claim.source}-${claim.metric}`} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{claim.metric}</div>
                     <div className={`mt-2 text-base font-semibold ${macroClaimTone(claim.direction)}`}>
                       {formatMacroClaimValue(claim)}
@@ -454,7 +454,7 @@ export default function HomeDashboardClient({
               ) : null}
             </div>
             {hasDelayedIndices ? (
-              <div className="mt-3 rounded-2xl border border-border/70 bg-surface/45 px-4 py-3 text-sm text-text-secondary">
+              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
                 대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
               </div>
             ) : null}
@@ -462,7 +462,7 @@ export default function HomeDashboardClient({
             {visibleIndicators.length > 0 ? (
               <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 {visibleIndicators.map((indicator) => (
-                  <div key={indicator.name} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+                  <div key={indicator.name} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{indicator.name}</div>
                     <div className="mt-2 text-sm font-semibold text-text">{indicatorLabel(indicator)}</div>
                     <div className={`mt-1 text-[11px] ${changeColor(indicator.change_pct ?? 0)}`}>
@@ -473,7 +473,7 @@ export default function HomeDashboardClient({
               </div>
             ) : null}
             {hasDelayedIndicators ? (
-              <div className="mt-3 rounded-2xl border border-border/70 bg-surface/45 px-4 py-3 text-sm text-text-secondary">
+              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
                 환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
               </div>
             ) : null}
@@ -500,7 +500,7 @@ export default function HomeDashboardClient({
                     if (slot.kind === "focus") {
                       const item = slot.item;
                       return (
-                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="font-medium text-text">{item.name}</div>
@@ -518,10 +518,10 @@ export default function HomeDashboardClient({
                     if (slot.kind === "event") {
                       const event = slot.item;
                       return (
-                        <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                        <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="font-medium text-text">{event.title}</div>
-                            <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${impactTone(event.impact)}`}>{event.date}</span>
+                            <span className={`status-token ${impactTone(event.impact)}`}>{event.date}</span>
                           </div>
                           <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
                         </div>
@@ -529,7 +529,7 @@ export default function HomeDashboardClient({
                     }
 
                     return (
-                      <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                      <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
                         <div className="font-medium text-text">{slot.title}</div>
                         <div className="mt-1 text-xs leading-6 text-text-secondary">{slot.summary}</div>
                       </div>
@@ -672,7 +672,7 @@ export default function HomeDashboardClient({
             </div>
             <div className="mt-4 space-y-3">
               {topNews.map((item) => (
-                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                   <div className="font-medium text-text">{item.title}</div>
                   <div className="mt-2 text-xs text-text-secondary">{item.source} · {item.published}</div>
                 </a>
@@ -699,7 +699,7 @@ export default function HomeDashboardClient({
             </div>
             <div className="mt-4 space-y-2">
               {topStocks.map((stock) => (
-                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium text-text">{stock.name}</div>
