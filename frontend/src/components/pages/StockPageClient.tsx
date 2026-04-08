@@ -373,7 +373,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
                 공개 요약은 상승 근거보다 반대 조건과 실패 시그널을 먼저 읽도록 정리했습니다.
               </p>
             </div>
-            <div className="min-w-[260px] max-w-[360px] rounded-xl border border-border bg-accent/5 px-4 py-3">
+            <div className="min-w-[260px] max-w-[360px] section-slab-subtle !px-4 !py-3">
               <div className="text-xs text-text-secondary">신뢰 메모</div>
               <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.confidence_note}</p>
             </div>
@@ -384,7 +384,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           {publicSummaryCards.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {publicSummaryCards.map((section) => (
-                <div key={section.title} className="rounded-xl border border-border px-4 py-4">
+                <div key={section.title} className="section-slab-subtle !px-4 !py-4">
                   <h3 className="text-sm font-semibold mb-3">{section.title}</h3>
                   <SummaryBulletList items={section.items} />
                 </div>
@@ -392,7 +392,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-border bg-border/20 px-4 py-4">
+          <div className="section-slab-muted !px-4 !py-4">
             <div className="text-xs text-text-secondary">데이터 품질</div>
             <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.data_quality}</p>
           </div>
@@ -412,12 +412,12 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex gap-1">
               {[{ label: "1M", value: "1mo" }, { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" }, { label: "1Y", value: "1y" }].map((period) => (
-                <button key={period.value} onClick={() => changeChartPeriod(period.value)} className={`px-2 py-0.5 text-xs rounded ${chartPeriod === period.value ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>{period.label}</button>
+                <button key={period.value} onClick={() => changeChartPeriod(period.value)} className={`text-xs ${chartPeriod === period.value ? "action-chip-primary" : "action-chip-secondary"}`}>{period.label}</button>
               ))}
             </div>
             <div className="flex gap-1 ml-2 border-l border-border pl-2">
-              <button onClick={() => setChartType("line")} className={`px-2 py-0.5 text-xs rounded ${chartType === "line" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>라인</button>
-              <button onClick={() => setChartType("candle")} className={`px-2 py-0.5 text-xs rounded ${chartType === "candle" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>캔들</button>
+              <button onClick={() => setChartType("line")} className={`text-xs ${chartType === "line" ? "action-chip-primary" : "action-chip-secondary"}`}>라인</button>
+              <button onClick={() => setChartType("candle")} className={`text-xs ${chartType === "candle" ? "action-chip-primary" : "action-chip-secondary"}`}>캔들</button>
             </div>
           </div>
         </div>

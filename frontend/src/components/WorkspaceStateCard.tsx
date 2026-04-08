@@ -57,13 +57,7 @@ export default function WorkspaceStateCard({
         <div className="state-card-actions">
           {aside}
           {onAction ? (
-            <button
-              onClick={onAction}
-              className={cn(
-                "state-card-action",
-                actionClassName,
-              )}
-            >
+            <button onClick={onAction} className={cn("state-card-action", actionClassName)}>
               {actionLabel}
             </button>
           ) : null}
@@ -100,7 +94,7 @@ export function WorkspaceLoadingCard({
           {Array.from({ length: lines }, (_, index) => (
             <div
               key={`${title}-${index}`}
-              className="h-3 animate-pulse rounded-full bg-border/35"
+              className="h-3 animate-pulse rounded-full bg-border/25"
               style={{ width: `${92 - index * 14}%` }}
             />
           ))}

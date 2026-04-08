@@ -33,9 +33,9 @@ export default function AuthSupportPanel() {
         {ITEMS.map((item) => {
           const Icon = item.icon;
           return (
-            <div key={item.title} className="rounded-[20px] border border-border/70 bg-surface/55 p-4">
+            <div key={item.title} className="border-t border-border/10 pt-3 first:border-t-0 first:pt-0">
               <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
                   <Icon size={18} />
                 </span>
                 <div className="min-w-0">

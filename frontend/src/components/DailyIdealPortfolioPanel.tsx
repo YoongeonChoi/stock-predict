@@ -84,12 +84,12 @@ function CompactPositionCard({ item }: { item: DailyIdealPortfolioPosition }) {
   return (
     <Link
       href={`/stock/${encodeURIComponent(item.ticker)}`}
-      className="block rounded-[22px] border border-border/80 bg-surface/70 px-4 py-4 transition-colors hover:border-accent/45"
+      className="block section-slab-subtle !px-4 !py-4 transition-colors hover:border-accent/45"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-border px-2 py-1 text-[11px] text-text-secondary">
+            <span className="status-token text-[11px]">
               {item.country_code}
             </span>
             <span className="truncate font-semibold text-text">{item.name}</span>
@@ -116,21 +116,21 @@ function CompactPositionCard({ item }: { item: DailyIdealPortfolioPosition }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
+        <div className="metric-strip">
           <div className="text-[11px] text-text-secondary">현재가</div>
           <div className="mt-1 font-semibold">{formatPrice(item.reference_price, item.country_code)}</div>
         </div>
-        <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
+        <div className="metric-strip">
           <div className="text-[11px] text-text-secondary">20거래일 기대수익률</div>
           <div className={`mt-1 font-semibold ${changeColor(expectedReturn20d(item))}`}>
             {formatPct(expectedReturn20d(item))}
           </div>
         </div>
-        <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
+        <div className="metric-strip">
           <div className="text-[11px] text-text-secondary">상방 / 하방</div>
           <div className="mt-1 font-semibold">{upProbability20d(item).toFixed(1)}% / {downProbability20d(item).toFixed(1)}%</div>
         </div>
-        <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
+        <div className="metric-strip">
           <div className="text-[11px] text-text-secondary">변동성 / 점수</div>
           <div className="mt-1 font-semibold">{volatility20d(item).toFixed(2)}% / {item.selection_score.toFixed(1)}</div>
         </div>
@@ -141,7 +141,7 @@ function CompactPositionCard({ item }: { item: DailyIdealPortfolioPosition }) {
       </div>
 
       {item.risk_flags.length > 0 ? (
-        <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
+        <div className="mt-3 ui-panel-warning !px-3 !py-2 text-xs">
           {item.risk_flags[0]}
         </div>
       ) : null}
@@ -168,13 +168,13 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             <p className="text-sm leading-6 text-text-secondary">{data.objective}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <div className="rounded-full bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
+            <div className="status-token bg-accent/10 text-accent">
               {data.risk_budget.style_label}
             </div>
             {data.target_dates.map((item) => (
               <div
                 key={`${item.country_code}-${item.target_date}`}
-                className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium"
+                className="status-token"
               >
                 {item.country_code} {item.target_date}
               </div>
@@ -183,26 +183,26 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+          <div className="metric-card">
             <div className="text-[11px] text-text-secondary">추천 종목 수</div>
             <div className="mt-2 text-2xl font-bold">{data.summary.selected_count}</div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+          <div className="metric-card">
             <div className="text-[11px] text-text-secondary">주식 / 현금 비중</div>
             <div className="mt-2 text-base font-semibold">
               {data.risk_budget.recommended_equity_pct.toFixed(1)}% / {data.risk_budget.cash_buffer_pct.toFixed(1)}%
             </div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+          <div className="metric-card">
             <div className="text-[11px] text-text-secondary">20거래일 기대수익률</div>
             <div className={`mt-2 text-2xl font-bold ${changeColor(expectedReturn20d(data.summary))}`}>{formatPct(expectedReturn20d(data.summary))}</div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+          <div className="metric-card">
             <div className="text-[11px] text-text-secondary">기대초과 / 변동성</div>
             <div className={`mt-2 text-2xl font-bold ${changeColor(excessReturn20d(data.summary))}`}>{formatPct(excessReturn20d(data.summary))}</div>
             <div className="mt-1 text-[11px] text-text-secondary">변동성 {volatility20d(data.summary).toFixed(2)}%</div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3">
+          <div className="metric-card">
             <div className="text-[11px] text-text-secondary">상방 / 하방 / 회전율</div>
             <div className="mt-2 text-2xl font-bold">{upProbability20d(data.summary).toFixed(1)}%</div>
             <div className="mt-1 text-[11px] text-text-secondary">하방 {downProbability20d(data.summary).toFixed(1)}% · 회전율 {data.summary.turnover_pct.toFixed(2)}%</div>
@@ -216,18 +216,18 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-          <div className="rounded-[22px] border border-border/80 bg-surface/55 px-4 py-4">
+          <div className="section-slab-subtle !px-4 !py-4">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">운영 플레이북</div>
             <div className="mt-3 space-y-2">
               {data.playbook.slice(0, 3).map((item) => (
-                <div key={item} className="rounded-xl border border-border/70 bg-surface/60 px-3 py-2 text-sm">
+                <div key={item} className="section-slab-muted !px-3 !py-2 text-sm">
                   {item}
                 </div>
               ))}
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
               {data.market_view.map((item) => (
-                <div key={item.country_code} className="rounded-xl border border-border/70 px-3 py-2">
+                <div key={item.country_code} className="section-slab-muted !px-3 !py-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-medium">{item.country_code}</div>
                     <div className={`rounded-full px-2 py-1 text-[11px] ${stanceTone(item.stance)}`}>
@@ -240,11 +240,11 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-border/80 bg-surface/55 px-4 py-4">
+          <div className="section-slab-subtle !px-4 !py-4">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">최근 기록 추적</div>
             <div className="mt-3 space-y-2">
               {history.map((item) => (
-                <div key={item.reference_date} className="rounded-xl border border-border/70 px-3 py-2">
+                <div key={item.reference_date} className="section-slab-muted !px-3 !py-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium">{item.reference_date}</div>
@@ -279,13 +279,13 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             <p className="mt-1 text-sm text-text-secondary">{data.objective}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <div className="rounded-full bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent">
+            <div className="status-token bg-accent/10 text-accent">
               {data.risk_budget.style_label}
             </div>
             {data.target_dates.map((item) => (
               <div
                 key={`${item.country_code}-${item.target_date}`}
-                className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium"
+                className="status-token"
               >
                 {item.country_code} {item.target_date}
               </div>
@@ -334,7 +334,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
           <div className="space-y-2">
             <div className="text-xs font-semibold uppercase tracking-[0.12em] text-text-secondary">시장 국면</div>
             {data.market_view.map((item) => (
-              <div key={item.country_code} className="rounded-xl border border-border/70 px-3 py-2">
+              <div key={item.country_code} className="section-slab-muted !px-3 !py-2">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="font-medium">{item.country_code}</div>
@@ -464,7 +464,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
           </div>
           <div className="space-y-2">
             {history.map((item) => (
-              <div key={item.reference_date} className="rounded-xl border border-border/70 px-3 py-2">
+              <div key={item.reference_date} className="section-slab-muted !px-3 !py-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-medium">{item.reference_date}</div>
