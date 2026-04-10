@@ -812,9 +812,9 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                       {holding.risk_flags.length > 0 ? <div className="mt-2 max-w-[220px] text-[11px] text-amber-600">{holding.risk_flags[0]}</div> : null}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-3 text-xs">
-                        <button onClick={() => startEdit(holding)} className="text-accent hover:underline">수정</button>
-                        <button onClick={() => removeHolding(holding.id)} className="text-negative hover:underline">삭제</button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button onClick={() => startEdit(holding)} className="action-chip-secondary">수정</button>
+                        <button onClick={() => removeHolding(holding.id)} className="action-chip-secondary text-negative">삭제</button>
                       </div>
                     </td>
                   </tr>

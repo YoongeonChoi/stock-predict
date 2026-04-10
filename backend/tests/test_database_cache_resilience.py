@@ -69,6 +69,14 @@ class DatabaseCacheResilienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recent, [])
         self.assertEqual(calibration, [])
 
+    async def test_initialize_does_not_repeat_constructor_bootstrap(self):
+        with patch.object(Database, "_bootstrap_schema_sync", autospec=True) as bootstrap_mock:
+            db = Database()
+            await db.initialize()
+            await db.initialize()
+
+        self.assertEqual(bootstrap_mock.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -182,7 +182,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             </div>
             <PublicAuditStrip meta={activeAuditMeta} />
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="workspace-metric-grid">
             <div className="metric-card">
               <div className="text-xs text-text-secondary">시장 국면</div>
               <div className="mt-2 text-2xl font-semibold text-text">{visibleData.market_regime.label}</div>

@@ -79,8 +79,11 @@ export default function AuthStatus() {
   };
 
   return (
-    <div className="flex w-full shrink-0 flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-end min-[420px]:gap-3">
-      <Link href="/settings" className="min-w-0 max-w-full border-b border-border/20 pb-1 text-left hover:border-text hover:text-text min-[420px]:text-right">
+    <div className="flex w-full shrink-0 flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-end min-[420px]:gap-2.5">
+      <Link
+        href="/settings"
+        className="min-w-0 max-w-full rounded-[12px] border border-border/12 bg-surface px-3 py-2.5 text-left transition-colors hover:border-border/20 hover:bg-surface-muted min-[420px]:max-w-[248px] min-[420px]:text-right"
+      >
         <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">Account</div>
         <div className="mt-1 truncate text-[0.9rem] font-semibold text-text sm:hidden">
           {buildCompactIdentityLabel({
@@ -97,7 +100,7 @@ export default function AuthStatus() {
           })}
         </div>
       </Link>
-      <button onClick={handleSignOut} className="ui-button-secondary w-full px-4 min-[420px]:w-auto sm:px-5">
+      <button onClick={handleSignOut} className="ui-button-secondary w-full px-4 min-[420px]:w-auto min-[420px]:shrink-0 sm:px-5">
         로그아웃
       </button>
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
+import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
 import type { ScreenerResponse, ScreenerResult } from "@/lib/api";
@@ -209,21 +210,30 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
 
   return (
     <div className="page-shell">
-      <section className="card space-y-5">
-            <div className="section-heading gap-4">
-          <div>
-            <h1 className="section-title text-2xl">스크리너</h1>
-            <p className="section-copy">
-              {viewState === "seeded"
-                ? `전일 종가 기준 기본 후보 ${results.length.toLocaleString("ko-KR")}개를 먼저 보여주고, 이후 조건 실행으로 결과를 다시 좁힙니다.`
-                : "한국장 기준으로 밸류, 퀄리티, 모멘텀, 리스크 조건을 함께 써서 실제 투자 후보군을 압축합니다."}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <PageHeader
+        variant="compact"
+        eyebrow="시장 탐색"
+        title="스크리너"
+        description={
+          viewState === "seeded"
+            ? `전일 종가 기준 기본 후보 ${results.length.toLocaleString("ko-KR")}개를 먼저 보여주고, 이후 조건 실행으로 결과를 다시 좁힙니다.`
+            : "한국장 기준으로 밸류, 퀄리티, 모멘텀, 리스크 조건을 함께 써서 실제 투자 후보군을 압축합니다."
+        }
+        meta={
+          <>
             <span className="info-chip">{viewState === "seeded" ? "기본 캐시 결과" : "사용자 실행 결과"}</span>
             <span className="info-chip">결과 {results.length}개</span>
             <span className="info-chip">흑자 {digest.profitable}개</span>
             {digest.avgRoe != null ? <span className="info-chip">평균 ROE {digest.avgRoe.toFixed(1)}%</span> : null}
+          </>
+        }
+      />
+
+      <section className="card !p-4 sm:!p-5 space-y-4">
+        <div className="section-heading gap-4">
+          <div>
+            <h2 className="section-title">빠른 프리셋</h2>
+            <p className="section-copy">대표 조건 묶음을 먼저 눌러 보고, 아래에서 세부 조건을 조정해 결과를 다시 좁힙니다.</p>
           </div>
         </div>
         <PublicAuditStrip meta={seedAudit} />
@@ -231,7 +241,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
           {auditSummary}
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {PRESETS.map((preset) => (
             <button
               key={preset.label}
@@ -245,7 +255,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
         </div>
       </section>
 
-      <section className="card space-y-5">
+      <section className="card !p-4 sm:!p-5 space-y-5">
         <div className="section-heading gap-4">
           <div>
             <h2 className="section-title">조건 설정</h2>
@@ -257,7 +267,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
           </div>
         </div>
 
-        <div className="grid gap-4 2xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           <div className="ui-panel space-y-3">
             <div className="ui-field-label">시장 / 규모</div>
             <div className="grid gap-3 md:grid-cols-2">
@@ -400,10 +410,10 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
               <p className="section-copy">정렬을 바꿔 후보의 성격을 빠르게 비교할 수 있습니다.</p>
             </div>
             <div className="ui-inline-actions">
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "score", sortDir: "desc" }))} className="ui-button-secondary">점수</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "roe", sortDir: "desc" }))} className="ui-button-secondary">ROE</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "dividend_yield", sortDir: "desc" }))} className="ui-button-secondary">배당</button>
-              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "pct_from_52w_high", sortDir: "desc" }))} className="ui-button-secondary">고점 대비</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "score", sortDir: "desc" }))} className={filters.sortBy === "score" ? "action-chip-primary" : "action-chip-secondary"}>점수</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "roe", sortDir: "desc" }))} className={filters.sortBy === "roe" ? "action-chip-primary" : "action-chip-secondary"}>ROE</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "dividend_yield", sortDir: "desc" }))} className={filters.sortBy === "dividend_yield" ? "action-chip-primary" : "action-chip-secondary"}>배당</button>
+              <button onClick={() => setFilters((prev) => ({ ...prev, sortBy: "pct_from_52w_high", sortDir: "desc" }))} className={filters.sortBy === "pct_from_52w_high" ? "action-chip-primary" : "action-chip-secondary"}>고점 대비</button>
               <button onClick={() => runSearch()} className="ui-button-primary">정렬 적용</button>
             </div>
           </div>

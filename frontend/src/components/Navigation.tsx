@@ -79,7 +79,7 @@ export default function Navigation() {
   };
 
   const navLinks = (
-    <div className="space-y-7 pb-4">
+    <div className="space-y-6 pb-4">
       {NAV_GROUPS.map((group) => (
         <section key={group.title}>
           <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
@@ -95,20 +95,20 @@ export default function Navigation() {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    "grid grid-cols-[18px_minmax(0,1fr)_16px] items-start gap-3 border-b border-border/10 py-3 transition-colors",
+                    "grid grid-cols-[17px_minmax(0,1fr)_14px] items-start gap-2.5 border-b border-border/10 py-2.5 transition-colors",
                     active ? "text-text" : "text-text-secondary hover:text-text",
                   )}
                 >
-                  <Icon size={17} strokeWidth={2.1} className={cn("mt-0.5", active ? "text-accent" : "text-text-secondary")} />
+                  <Icon size={16} strokeWidth={2.1} className={cn("mt-0.5", active ? "text-accent" : "text-text-secondary")} />
                   <span className="min-w-0">
-                    <span className={cn("block text-[0.95rem] font-semibold tracking-tight", active ? "text-text" : "")}>
+                    <span className={cn("block text-[0.92rem] font-semibold tracking-tight", active ? "text-text" : "")}>
                       {item.label}
                     </span>
-                    <span className="mt-1 block text-[0.8rem] leading-5 text-text-secondary">
+                    <span className="mt-1 block max-w-[14rem] text-[0.76rem] leading-5 text-text-secondary">
                       {item.description}
                     </span>
                   </span>
-                  <ChevronRight size={15} className={cn("mt-0.5", active ? "text-accent" : "text-text-secondary")} />
+                  <ChevronRight size={14} className={cn("mt-0.5", active ? "text-accent" : "text-text-secondary")} />
                 </Link>
               );
             })}
@@ -120,24 +120,24 @@ export default function Navigation() {
 
   return (
     <>
-      <aside className="hidden lg:flex lg:w-[288px] lg:shrink-0 xl:w-[304px]">
-        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/12 bg-bg px-5 py-5">
-          <Link href="/" className="border-b border-border/12 pb-5">
+      <aside className="hidden lg:flex lg:w-[244px] lg:shrink-0 xl:w-[260px]">
+        <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/12 bg-bg px-4 py-4 xl:px-5">
+          <Link href="/" className="border-b border-border/12 pb-4">
             <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">Stock Predict</div>
-            <div className="mt-2 text-[1.45rem] font-semibold tracking-tight text-text">시장 탐색과 운영을 한 흐름으로</div>
-            <div className="mt-2 max-w-[18rem] text-[0.86rem] leading-6 text-text-secondary">
-              숫자, 일정, 후보, 검증 흐름을 더 적은 프레임과 더 큰 위계로 보여주는 투자 워크스페이스.
+            <div className="mt-2 text-[1.22rem] font-semibold tracking-tight text-text">시장 탐색과 운영을 한 흐름으로</div>
+            <div className="mt-2 max-w-[15rem] text-[0.8rem] leading-5 text-text-secondary">
+              숫자, 일정, 후보, 검증 흐름을 더 적은 프레임으로 정리합니다.
             </div>
           </Link>
 
-          <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
             <nav>{navLinks}</nav>
           </div>
 
           <div className="border-t border-border/12 pt-4">
             <button
               onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-              className="ui-button-secondary w-full justify-between px-4"
+              className="ui-button-secondary w-full justify-between px-3.5"
               aria-label={themeButtonLabel}
             >
               <span className="flex items-center gap-2">
@@ -151,7 +151,7 @@ export default function Navigation() {
       </aside>
 
       <div
-        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/12 bg-bg/98 px-4 pb-2 pt-2 backdrop-blur-md lg:hidden"
+        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/12 bg-bg/98 px-3.5 pb-2 pt-2 backdrop-blur-md lg:hidden"
         style={{ paddingTop: "max(0.55rem, env(safe-area-inset-top))" }}
       >
         <Link href="/" className="min-w-0 flex-1 pr-3">
@@ -165,14 +165,14 @@ export default function Navigation() {
         <div className="flex items-center gap-2 pl-3">
           <button
             onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text-secondary"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-border/15 bg-surface text-text-secondary"
             aria-label={themeButtonLabel}
           >
             {isDarkMode ? <SunMedium size={17} /> : <MoonStar size={17} />}
           </button>
           <button
             onClick={() => setMobileOpen((value) => !value)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-border/15 bg-surface text-text"
             aria-expanded={mobileOpen}
             aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
           >
@@ -189,12 +189,12 @@ export default function Navigation() {
             className="absolute inset-0 bg-slate-950/48"
           />
           <div
-            className="relative h-full w-[min(88vw,360px)] overflow-y-auto overscroll-contain border-r border-border/12 bg-bg px-5 pb-8"
+            className="relative h-full w-[min(84vw,320px)] overflow-y-auto overscroll-contain border-r border-border/12 bg-bg px-4 pb-8"
             style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.55rem)" }}
           >
             <div className="border-b border-border/12 pb-4">
               <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">Menu</div>
-              <div className="mt-2 text-[1.2rem] font-semibold tracking-tight text-text">탐색, 운영, 검증 흐름</div>
+              <div className="mt-2 text-[1.08rem] font-semibold tracking-tight text-text">탐색, 운영, 검증 흐름</div>
             </div>
             <nav className="mt-5">{navLinks}</nav>
           </div>

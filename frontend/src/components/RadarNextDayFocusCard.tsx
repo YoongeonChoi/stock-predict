@@ -88,7 +88,7 @@ export default function RadarNextDayFocusCard({
         </div>
         <Link
           href={`/stock/${encodeURIComponent(focus.ticker)}`}
-          className="action-chip-secondary text-center"
+          className="ui-button-secondary text-center"
         >
           종목 상세 보기
         </Link>

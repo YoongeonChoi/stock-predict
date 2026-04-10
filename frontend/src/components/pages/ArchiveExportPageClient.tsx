@@ -85,7 +85,7 @@ export default function ArchiveExportPageClient({
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="space-y-2">
-        <Link href="/archive" className="text-sm text-accent hover:underline">
+        <Link href="/archive" className="ui-button-ghost w-fit px-0">
           아카이브로 돌아가기
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">리포트 내보내기</h1>
@@ -127,13 +127,13 @@ export default function ArchiveExportPageClient({
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => manualDownload("pdf")}
-                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90"
+                  className="ui-button-primary px-4"
                 >
                   PDF 다운로드
                 </button>
                 <button
                   onClick={() => manualDownload("csv")}
-                  className="px-3 py-1.5 rounded-lg border border-border text-sm font-medium hover:border-accent/50"
+                  className="ui-button-secondary px-4"
                 >
                   CSV 다운로드
                 </button>
@@ -152,7 +152,7 @@ export default function ArchiveExportPageClient({
                   href={pdfHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-lg border border-border text-sm font-medium hover:border-accent/50"
+                  className="ui-button-secondary px-4"
                 >
                   PDF 새 탭 열기
                 </a>
@@ -160,7 +160,7 @@ export default function ArchiveExportPageClient({
                   href={csvHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-lg border border-border text-sm font-medium hover:border-accent/50"
+                  className="ui-button-secondary px-4"
                 >
                   CSV 새 탭 열기
                 </a>

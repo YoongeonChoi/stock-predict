@@ -125,7 +125,7 @@ export default function PortfolioConditionalRecommendationPanel({
         <button
           onClick={onRun}
           disabled={running}
-          className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+          className="ui-button-primary w-full xl:w-auto"
         >
           {running ? "조건 추천 계산 중..." : "조건 추천 실행"}
         </button>

@@ -140,7 +140,41 @@ export default function ComparePage() {
             </div>
           </div>
 
-          <div className="ui-table-shell">
+          <div className="space-y-3 md:hidden">
+            {validResults.map((result) => (
+              <article key={result.ticker} className="ui-panel space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-text">{result.name}</div>
+                    <div className="mt-1 font-mono text-[0.8rem] text-text-secondary">{result.ticker}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">종합 점수</div>
+                    <div className="mt-1 font-mono text-lg font-semibold text-text">
+                      {result.score?.total?.toFixed(1) ?? "없음"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[0.9rem]">
+                  {METRICS.slice(0, 6).map((metric) => (
+                    <div key={`${result.ticker}-${metric.key}`}>
+                      <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">{metric.label}</div>
+                      <div
+                        className={cn(
+                          "mt-1 font-mono font-medium",
+                          metric.key === "change_pct" ? changeColor(Number(result[metric.key] ?? 0)) : "text-text",
+                        )}
+                      >
+                        {formatValue(result[metric.key], metric.fmt, result.ticker)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden md:block ui-table-shell">
             <table>
               <thead>
                 <tr className="border-b border-border/10 text-left text-text-secondary">

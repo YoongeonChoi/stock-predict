@@ -476,10 +476,10 @@ export default function AccountSettingsPanel() {
           로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송, 비밀번호 변경, 세션 종료 같은 보안 작업도 바로 처리할 수 있습니다.
         </div>
         <div className="ui-inline-actions">
-          <Link href="/auth?next=/settings" className="action-chip-primary">
+          <Link href="/auth?next=/settings" className="ui-button-primary">
             로그인하러 가기
           </Link>
-          <Link href="/auth?mode=signup&next=/settings" className="action-chip-secondary">
+          <Link href="/auth?mode=signup&next=/settings" className="ui-button-secondary">
             회원가입하기
           </Link>
         </div>
@@ -643,7 +643,7 @@ export default function AccountSettingsPanel() {
           </div>
         </div>
 
-        <aside className="grid gap-5 xl:grid-cols-2 xl:items-start">
+        <aside className="grid gap-5 lg:grid-cols-2 lg:items-start">
           <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">

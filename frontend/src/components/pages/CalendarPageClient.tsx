@@ -214,6 +214,8 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
     { label: "정책 일정", value: data.summary.policy_count, note: "중앙은행·금리 이벤트" },
     { label: "실적 일정", value: data.summary.earnings_count, note: "주요 기업 발표" },
   ] : [];
+  const featuredUpcomingEvents = data?.upcoming_events.slice(0, 2) ?? [];
+  const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
   const auditSummary = buildPublicAuditSummary(data, {
     defaultSummary: "다음 일정과 월간 보드를 함께 보여주고, 실제 이벤트가 늦으면 추정 반복 일정으로 먼저 채웁니다.",
   });
@@ -233,7 +235,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             {refreshing ? <span className="info-chip">갱신 중</span> : null}
           </>
         }
-        actions={
+        actions={COUNTRIES.length > 1 ? (
           <div className="ui-inline-actions">
             {COUNTRIES.map((item) => (
               <button
@@ -245,7 +247,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               </button>
             ))}
           </div>
-        }
+        ) : undefined}
       />
 
       {loading ? (
@@ -290,12 +292,13 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               </div>
               <PublicAuditStrip meta={data} />
             </div>
-            <div className="grid gap-3 xl:grid-cols-3">
-              {data.upcoming_events.slice(0, 3).map((event) => {
+            <div className="workspace-grid-balanced">
+              <div className="space-y-3">
+                {featuredUpcomingEvents.map((event) => {
                 const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
                 const sourceLabel = event.source === "recurring" ? "추정 일정" : "확인된 일정";
                 return (
-                  <div key={`${event.date}-${event.title}`} className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
+                  <div key={`${event.date}-${event.title}`} className="rounded-[20px] border border-border/70 bg-surface/55 px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${style.badge}`}>{typeLabel(event)}</span>
                       <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
@@ -311,6 +314,38 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                   </div>
                 );
               })}
+              </div>
+              <div className="section-slab-subtle !px-4 !py-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">이번 달 리듬</div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="metric-strip">
+                    <div className="text-xs text-text-secondary">핵심 일정 수</div>
+                    <div className="mt-2 text-lg font-semibold text-text">{data.summary.high_impact_count}건</div>
+                    <div className="mt-1 text-xs text-text-secondary">이번 달 우선 확인할 일정</div>
+                  </div>
+                  <div className="metric-strip">
+                    <div className="text-xs text-text-secondary">선택 기준</div>
+                    <div className="mt-2 text-sm font-semibold text-text">{activeCountry.flag} {activeCountry.label}</div>
+                    <div className="mt-1 text-xs text-text-secondary">{formatMonthLabel(currentMonthDate)}</div>
+                  </div>
+                </div>
+                <div className="mt-4 section-slab-muted !px-3 !py-3">
+                  <div className="text-xs text-text-secondary">agenda 미리보기</div>
+                  {agendaPreviewEvent ? (
+                    <>
+                      <div className="mt-2 font-medium text-text">{agendaPreviewEvent.title}</div>
+                      <div className="mt-1 text-xs leading-5 text-text-secondary">
+                        {formatDateLabel(agendaPreviewEvent.date)}
+                        {agendaPreviewEvent.subtitle ? ` · ${agendaPreviewEvent.subtitle}` : ""}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-2 text-sm text-text-secondary">
+                      아직 연결된 agenda 미리보기가 없습니다.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
           {error ? (

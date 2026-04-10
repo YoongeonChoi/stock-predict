@@ -26,6 +26,8 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         with (
             patch("app.routers.country.COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.country.analyze_country", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
             patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)),
             patched_client() as client,
         ):

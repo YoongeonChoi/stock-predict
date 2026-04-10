@@ -2,6 +2,26 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.9 - 2026-04-10
+
+- `verify.py --deployed-site-smoke`가 하위 headless browser 프로세스에서 오래 멈추지 않도록 `browser_smoke.py`에 per-command timeout과 전체 deadline을 추가하고, `verify.py`도 같은 시간 예산을 넘겨 주도록 정리했습니다. 이제 배포 브라우저 스모크는 hang 대신 구조화된 실패로 빠르게 종료됩니다.
+- `backend/tests/test_browser_smoke_runtime.py`를 추가해 browser subprocess timeout, virtual time 기준 timeout 보정, 전체 deadline 초과 시 즉시 종료를 회귀로 고정했습니다.
+- `country report` timeout 회귀 테스트는 최근 `last_success`/archived cache 상태에 흔들리지 않도록 분리해, 검증 순서에 따라 `partial` 필드 기대가 깨지던 flaky 경로를 정리했습니다.
+- SQLite schema bootstrap은 import 시점과 startup `initialize()`에서 두 번 반복하지 않도록 1회 보장으로 바꿨습니다. `backend/tests/test_database_cache_resilience.py`에 constructor + initialize 중복 bootstrap 방지 회귀를 추가했고, cold start 초기화 비용을 더 줄였습니다.
+
+## v2.60.8 - 2026-04-10
+
+- UI 품질 루프를 한 번 더 돌려 `action-chip`이 실행 CTA로 남아 있던 구간을 추가 정리했습니다. `AuthGateCard`, `PortfolioConditionalRecommendationPanel`, `OpportunityRadarBoard`, `RadarNextDayFocusCard`의 로그인/회원가입, 조건 추천 실행, 연구실 이동, 종목 상세 이동은 모두 `primary / secondary` button hierarchy로 다시 흡수했습니다.
+- `/settings`의 계정 패널은 로그인 전 CTA를 공용 버튼으로 맞추고, 보안/이메일/탈퇴 보조 패널이 `lg`부터 더 이른 시점에 2열로 읽히도록 조정해 데스크톱 세로 길이와 액션 혼선을 줄였습니다.
+- `/watchlist`는 관심종목 추가, 심화 추적, 상세 보기, 제거 버튼을 공용 실행 버튼 계층으로 다시 정리했고, `/country/[code]/sector/[id]`는 모바일에서 상위 종목 summary card를 먼저 보여준 뒤 `md` 이상에서 표를 확장하도록 보강했습니다.
+
+## v2.60.7 - 2026-04-10
+
+- 전 화면 UI 리디자인 품질 루프를 한 번 더 돌려 `globals.css`, `layout.tsx`, `Navigation`, `SearchBar`, `AuthStatus`의 공용 비율과 간격을 다시 조정했습니다. 데스크톱 좌측 레일은 더 슬림하게 줄이고, 상단 검색/계정 스트립과 `PageHeader`는 더 낮은 높이로 맞춰 첫 viewport에서 제목과 첫 판단 카드가 함께 보이도록 정리했습니다.
+- `/`, `/radar`, `/calendar`, `/screener`, `/compare`, `/archive`, `/stock/[ticker]`의 카드 스팬과 버튼 언어를 다시 다듬어, 실행 버튼은 `primary / secondary / text`, 필터/세그먼트만 chip으로 남기도록 정리했습니다. 특히 `/calendar`는 단일 국가일 때 어색한 헤더 액션을 숨기고, 상단 빈 공간을 agenda preview와 이번 달 리듬 요약으로 다시 채웠습니다.
+- `/watchlist`, `/settings`, `/country/[code]/sector/[id]`는 모바일/태블릿 흐름을 추가로 보강했습니다. 관심종목 추가/삭제/상세/심화 추적은 button 계층으로 다시 흡수했고, 설정 패널은 로그인 전 CTA와 보안/이메일 패널 배치를 정리했으며, 섹터 상세는 모바일에서 상위 종목 summary card를 먼저 보여주고 `md` 이상에서 표를 확장하도록 바꿨습니다.
+- `DESIGN_BIBLE.md`와 `README.md`를 현재 공용 규칙에 맞게 갱신해, slim rail, action chip 제한, 상태 카드 액션 스택, summary-first 모바일 규칙이 실제 구현과 같은 의미를 말하도록 동기화했습니다.
+
 ## v2.60.6 - 2026-04-10
 
 - `kr_market_quote_client`의 representative quote 캐시에 짧은 `wait_timeout`과 `last_success` fallback을 추가했습니다. 이제 공개 `/api/screener?country=KR&limit=20`의 cold partial 경로가 느린 대표 시세 fetch를 끝까지 기다리지 않고, 최근 정상 시세가 있으면 바로 그 값을 재사용하며 없을 때도 빈 placeholder로 빨리 복귀한 뒤 background refresh를 이어 갑니다.

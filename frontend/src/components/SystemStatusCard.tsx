@@ -63,8 +63,8 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
         </div>
       </div>
 
-      <div className="flex items-center justify-end mb-4">
-        <Link href="/lab" className="text-sm text-accent hover:underline">
+      <div className="mb-4 flex items-center justify-end">
+        <Link href="/lab" className="ui-button-primary px-4">
           예측 연구실 열기
         </Link>
       </div>

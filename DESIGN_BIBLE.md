@@ -117,7 +117,9 @@
 
 - 계층은 `primary / secondary / text` 세 단계만 쓴다
 - 같은 row에서 primary는 1개만 강하게 보인다
-- 작은 전환 버튼은 chip처럼 보이더라도 역할은 action으로 본다
+- 실행 버튼과 상태 선택 토글을 섞지 않는다
+- chip 계열은 `filter / segment / range / mode`처럼 상태를 고르는 토글에만 쓴다
+- 페이지 이동, 저장, 삭제, 새로고침, 다운로드처럼 결과를 발생시키는 CTA는 button primitive를 사용한다
 
 ### 3.6 Field Shell
 
@@ -188,6 +190,7 @@
 
 - 카드형 메뉴를 기본으로 하지 않는다
 - 더 건조한 rail/list 구조를 사용한다
+- 데스크톱 rail은 slim 폭을 유지하고, 브랜드 설명은 본문을 잠식하지 않을 정도로만 압축한다
 - 그룹은 최대 3개
 - 그룹당 메뉴는 보통 2~5개
 
@@ -293,6 +296,7 @@
 - dense action row는 모바일에서 full-width stack이나 1열 흐름으로 먼저 정리하고, 좁은 화면에서 버튼 여러 개를 억지로 한 줄에 우겨 넣지 않는다
 - helper text, pending email, 상태 설명은 잘림보다 자연스러운 줄바꿈을 우선한다
 - audit/status chip과 metric value는 긴 티커, 경로, stale 메타가 들어와도 `max-width + wrap`으로 먼저 수용한다
+- state card와 warning banner의 액션은 모바일에서 내용 오른쪽에 억지로 붙이지 않고, 본문 아래 stack으로 내려 읽기 순서를 유지한다
 
 모바일 성공 기준:
 

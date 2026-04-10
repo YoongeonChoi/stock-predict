@@ -29,10 +29,10 @@ export default function AuthGateCard({
         meta={<span className="info-chip">계정별 데이터 분리</span>}
         actions={
           <>
-            <Link href={authHref} className="action-chip-primary">
+            <Link href={authHref} className="ui-button-primary">
               로그인하기
             </Link>
-            <Link href={`/auth?mode=signup&next=${encodeURIComponent(nextPath)}`} className="action-chip-secondary">
+            <Link href={`/auth?mode=signup&next=${encodeURIComponent(nextPath)}`} className="ui-button-secondary">
               회원가입
             </Link>
           </>

@@ -9,11 +9,19 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.6`
+현재 릴리즈: `v2.60.9`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- `verify.py --deployed-site-smoke`가 하위 headless browser 프로세스에서 오래 멈추지 않도록 브라우저 스모크에 명시적 command timeout과 전체 deadline을 추가했습니다. 이제 배포 검증은 hang 대신 구조화된 실패로 빠르게 돌아와 다음 회귀를 이어서 잡을 수 있습니다.
+- `country report` timeout 테스트는 `last_success`/archived cache 오염에 흔들리지 않도록 분리했고, SQLite schema bootstrap은 import 시점과 startup에서 두 번 돌지 않도록 1회 보장으로 정리했습니다. 그래서 배포 검증 루프는 더 안정적으로 반복되고, cold start 때 health 공개 전 불필요한 초기화 비용도 줄였습니다.
+- 공용 레이아웃을 한 번 더 다듬어 좌측 레일 폭, 상단 검색/계정 스트립, `PageHeader` 높이를 다시 줄였습니다. 그래서 대시보드, 레이더, 캘린더처럼 상단 체감이 큰 화면에서도 제목과 첫 판단 카드가 더 빨리 같은 viewport 안에 들어옵니다.
+- 실행 버튼과 선택 chip의 역할을 다시 분리했습니다. `watchlist`, `settings`, `stock`, `archive`, `calendar`에 남아 있던 기본 버튼 느낌 또는 chip-형 CTA를 `primary / secondary / text` 버튼 계층으로 다시 흡수해, 실제 액션과 필터 토글이 더 쉽게 구분됩니다.
+- 인증 게이트, 조건 추천, 레이더 보드, 다음 거래일 포커스 카드처럼 여러 화면에 반복되던 CTA도 같은 button hierarchy로 다시 정리했습니다. 로그인/회원가입, 조건 추천 실행, 연구실 이동, 종목 상세 이동이 더 이상 토글 chip처럼 보이지 않고 실행 버튼으로 읽히도록 맞췄습니다.
+- `/calendar`는 상단 빈 공간을 agenda preview와 이번 달 리듬 요약으로 다시 채우고, 단일 국가일 때 어색하게 떠 있던 헤더 버튼을 제거했습니다.
+- `/watchlist`와 `/country/[code]/sector/[id]`는 모바일에서 표나 chip 액션을 바로 강요하지 않고, summary-first 카드와 명확한 실행 버튼을 먼저 보여주도록 보강했습니다.
+- `/settings`는 로그인 전/후 액션 언어를 다시 맞추고, 보안/이메일/탈퇴 패널이 데스크톱에서는 더 이른 시점부터 2열로 읽히도록 정리해 세로 길이와 버튼 혼선을 줄였습니다.
 - 공개 `screener`의 KR representative quote 캐시는 이제 짧은 `wait_timeout` 뒤에 최근 정상 `last_success`를 우선 다시 쓰고, 그것도 없으면 빈 placeholder로 바로 복귀한 뒤 background refresh를 이어 갑니다. 그래서 운영 cold request에서도 `partial` warming 응답이 대표 시세 fetch를 끝까지 기다리며 10초 넘게 늘어지는 구간을 더 줄였습니다.
 - 공개 `country report`는 이제 최근 정상 캐시가 있으면 그 응답을 바로 내리고, 캐시가 없어도 최근 아카이브가 있으면 stale public fallback을 즉시 내려줍니다. 최신 정밀 계산은 백그라운드 refresh로 계속 갱신해서, 운영에서는 느린 국가 리포트 계산 때문에 첫 응답이 20초 이상 붙잡히는 구간을 더 줄였습니다.
 - 공개 `country report`는 정밀 계산 timeout과 export timeout을 분리했습니다. 운영 공개 경로는 더 이른 시점에 archived report/시장 스냅샷 fallback으로 내려가고, PDF/CSV export는 기존 여유 시간을 유지해 배포 스모크의 15초 기준과 내보내기 안정성을 같이 맞춥니다.

@@ -123,7 +123,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="info-chip">{universeBadgeLabel}</div>
-            <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
+            <Link href="/lab" className="ui-button-secondary px-4">
               유사 셋업 검증 보기
             </Link>
           </div>
@@ -280,7 +280,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <div className="info-chip">{universeBadgeLabel}</div>
-            <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
+            <Link href="/lab" className="ui-button-secondary px-4">
               유사 셋업 검증 보기
             </Link>
           </div>

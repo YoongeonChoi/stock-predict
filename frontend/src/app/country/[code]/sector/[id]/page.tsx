@@ -129,7 +129,47 @@ export default function SectorPage() {
               <h2 className="section-title">상위 종목</h2>
             </div>
           </div>
-          <div className="mt-4 ui-table-shell">
+          <div className="mt-4 space-y-3 md:hidden">
+            {report.top_stocks.map((stock) => (
+              <Link
+                key={stock.ticker}
+                href={`/stock/${stock.ticker}`}
+                className="block rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4 transition-colors hover:border-accent/30"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-accent">#{stock.rank}</span>
+                      <span className="font-semibold text-text">{stock.name}</span>
+                    </div>
+                    <div className="mt-1 font-mono text-[12px] text-text-secondary">{stock.ticker}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-sm font-semibold text-text">{formatPrice(stock.current_price, code)}</div>
+                    <div className={`mt-1 text-sm ${changeColor(stock.change_pct ?? 0)}`}>{formatPct(stock.change_pct ?? 0)}</div>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-2xl border border-border/60 bg-surface/65 px-3 py-2">
+                    <div className="text-[11px] text-text-secondary">점수</div>
+                    <div className="mt-1 font-semibold text-text">{(stock.score ?? 0).toFixed(1)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-surface/65 px-3 py-2">
+                    <div className="text-[11px] text-text-secondary">강점</div>
+                    <div className="mt-1 text-xs leading-5 text-text-secondary">
+                      {(stock.pros || []).slice(0, 1).join(" · ") || "요약 준비 중"}
+                    </div>
+                  </div>
+                </div>
+                {(stock.cons || []).length > 0 ? (
+                  <div className="mt-3 text-xs leading-5 text-text-secondary">
+                    주의점 · {(stock.cons || []).slice(0, 1).join(" · ")}
+                  </div>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4 hidden md:block ui-table-shell">
             <table>
               <thead>
                 <tr className="border-b border-border/10 text-left text-text-secondary">

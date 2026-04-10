@@ -1,7 +1,9 @@
+import asyncio
 import aiosqlite
 import json
 import logging
 import sqlite3
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -161,8 +163,10 @@ def _is_sqlite_lock_error(exc: Exception) -> bool:
 class Database:
     def __init__(self):
         self.db_path = str(self._resolve_db_path(get_settings().db_path))
+        self._bootstrap_lock = threading.Lock()
+        self._bootstrap_complete = False
         self._ensure_db_parent_dir()
-        self._bootstrap_schema_sync()
+        self._ensure_bootstrap_schema_sync_once()
 
     def _resolve_db_path(self, raw_path: str | Path) -> Path:
         path = Path(raw_path).expanduser()
@@ -193,6 +197,15 @@ class Database:
                 (time.time(),),
             )
             conn.commit()
+
+    def _ensure_bootstrap_schema_sync_once(self) -> None:
+        if self._bootstrap_complete:
+            return
+        with self._bootstrap_lock:
+            if self._bootstrap_complete:
+                return
+            self._bootstrap_schema_sync()
+            self._bootstrap_complete = True
 
     @asynccontextmanager
     async def _connect(
@@ -229,19 +242,7 @@ class Database:
             yield conn
 
     async def initialize(self):
-        self._ensure_db_parent_dir()
-        async with self._connect() as conn:
-            await conn.executescript(_SCHEMA)
-            await self._ensure_prediction_record_schema(conn)
-            await conn.execute(
-                """
-                INSERT OR IGNORE INTO portfolio_profile (
-                    id, total_assets, cash_balance, monthly_budget, updated_at
-                ) VALUES (1, 0, 0, 0, ?)
-                """,
-                (time.time(),),
-            )
-            await conn.commit()
+        await asyncio.to_thread(self._ensure_bootstrap_schema_sync_once)
 
     async def _ensure_prediction_record_schema(self, conn) -> None:
         cur = await conn.execute("PRAGMA table_info(prediction_records)")

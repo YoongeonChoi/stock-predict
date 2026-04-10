@@ -58,7 +58,7 @@ export default function SearchBar() {
   };
 
   return (
-    <div ref={ref} className="relative w-full max-w-3xl" role="search" aria-label="종목 검색">
+    <div ref={ref} className="relative w-full max-w-[54rem]" role="search" aria-label="종목 검색">
       <label htmlFor="global-search-input" className="sr-only">
         티커 또는 종목명 검색
       </label>
@@ -66,8 +66,8 @@ export default function SearchBar() {
         className={cn(
           "flex min-h-[3rem] items-center gap-2.5 border px-3.5 py-2.5 transition-colors sm:min-h-[var(--control-height-lg)] sm:gap-3 sm:px-4 sm:py-3",
           focused || open
-            ? "rounded-[14px] border-accent/30 bg-surface"
-            : "rounded-[12px] border-border/15 bg-surface",
+            ? "rounded-[16px] border-accent/28 bg-surface"
+            : "rounded-[14px] border-border/15 bg-surface",
         )}
       >
         <div className="flex h-8 w-8 shrink-0 items-center justify-center text-text-secondary sm:h-9 sm:w-9">
@@ -97,7 +97,7 @@ export default function SearchBar() {
           aria-expanded={open}
           aria-controls="global-search-results"
           placeholder="티커 또는 종목명을 입력하세요"
-          className="w-full bg-transparent text-[0.94rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.98rem]"
+          className="w-full bg-transparent text-[0.93rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.97rem]"
         />
         <div className="hidden shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary xl:block">
           Enter
@@ -113,7 +113,7 @@ export default function SearchBar() {
       {open && query.length > 0 ? (
         <div
           id="global-search-results"
-          className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[14px] border border-border/15 bg-surface"
+          className="absolute top-full z-50 mt-2 w-full overflow-hidden rounded-[16px] border border-border/15 bg-surface shadow-[0_24px_40px_-30px_rgba(17,24,39,0.35)]"
         >
           {results.length > 0 ? (
             <div className="max-h-72 overflow-y-auto">

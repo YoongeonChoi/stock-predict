@@ -305,13 +305,13 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         }
         actions={
           <div className="ui-inline-actions">
-            <Link href="/" className="action-chip-secondary">
+            <Link href="/" className="ui-button-secondary px-4">
               홈으로
             </Link>
             <button
               onClick={handleTrackingAction}
               disabled={watchlistSyncing}
-              className="action-chip-primary disabled:cursor-wait disabled:opacity-60"
+              className="ui-button-primary px-4 disabled:cursor-wait disabled:opacity-60"
             >
               {watchlistActionLabel}
             </button>
@@ -339,7 +339,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           <button
             onClick={handleTrackingAction}
             disabled={watchlistSyncing}
-            className="action-chip-primary w-full justify-center disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+            className="ui-button-primary w-full justify-center px-4 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
           >
             {watchlistActionLabel}
           </button>

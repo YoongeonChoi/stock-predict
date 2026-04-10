@@ -347,9 +347,9 @@ export default function HomeDashboardClient({
           </>
         }
       />
-      <section className="card !p-5 space-y-5">
+      <section className="card !p-4 sm:!p-5 space-y-4">
         <PublicAuditStrip meta={dashboardAuditMeta} />
-        <div className="section-slab-subtle !px-4 !py-4 text-sm leading-6 text-text-secondary">
+        <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
           {dashboardSummary}
         </div>
 
@@ -382,8 +382,8 @@ export default function HomeDashboardClient({
           </div>
         ) : null}
 
-        <div className="workspace-grid">
-          <div className="workspace-panel h-full">
+        <div className="workspace-grid-balanced">
+          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">
@@ -401,7 +401,7 @@ export default function HomeDashboardClient({
             </div>
 
             {macroClaims.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
                 {macroClaims.map((claim) => (
                   <div key={`${claim.source}-${claim.metric}`} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{claim.metric}</div>
@@ -445,7 +445,7 @@ export default function HomeDashboardClient({
             ) : null}
 
             {visibleIndicators.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
                 {visibleIndicators.map((indicator) => (
                   <div key={indicator.name} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{indicator.name}</div>
@@ -464,7 +464,7 @@ export default function HomeDashboardClient({
             ) : null}
           </div>
 
-          <div className="workspace-panel h-full">
+          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">오늘의 포커스</div>
@@ -535,7 +535,7 @@ export default function HomeDashboardClient({
         </div>
       </section>
 
-      <section className="workspace-grid">
+      <section className="workspace-grid-balanced">
         <div className="card !p-4 h-full">
           <div className="section-heading gap-4">
             <div>

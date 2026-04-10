@@ -246,7 +246,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
             <div className="flex items-center justify-center rounded-2xl border border-border bg-surface/60 px-3 py-3 text-sm text-text-secondary">
               KR
             </div>
-            <button onClick={() => void add()} className="action-chip-primary w-full justify-center">
+            <button onClick={() => void add()} className="ui-button-primary w-full">
               추가
             </button>
           </div>
@@ -384,7 +384,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                       <button
                         onClick={() => void toggleTracking(item)}
                         disabled={isPending}
-                        className={item.tracking_enabled ? "action-chip-primary" : "action-chip-secondary"}
+                        className={item.tracking_enabled ? "ui-button-secondary" : "ui-button-primary"}
                       >
                         {isPending
                           ? "처리 중"
@@ -392,13 +392,13 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                             ? "심화 추적 중지"
                             : "심화 추적 시작"}
                       </button>
-                      <Link href={`/watchlist/${encodeURIComponent(item.ticker)}`} className="action-chip-secondary">
+                      <Link href={`/watchlist/${encodeURIComponent(item.ticker)}`} className="ui-button-secondary">
                         상세 보기
                       </Link>
                       <button
                         onClick={() => void remove(item.ticker)}
                         disabled={isPending}
-                        className="action-chip-secondary text-negative"
+                        className="ui-button-secondary border-negative/30 text-negative hover:bg-negative/10 hover:text-negative"
                       >
                         제거
                       </button>
