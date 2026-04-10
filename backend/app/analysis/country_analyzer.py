@@ -388,6 +388,7 @@ async def analyze_country(country_code: str) -> dict:
 
     ttl = settings.cache_ttl_report if not llm_failed else 120
     await cache.set(cache_key, report, ttl)
+    await cache.set(f"country_report:last_success:{country_code}", report, ttl)
     return report
 
 

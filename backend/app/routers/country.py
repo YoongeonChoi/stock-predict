@@ -594,11 +594,32 @@ async def _load_latest_archived_country_report(code: str) -> dict | None:
         return None
 
 
+async def _load_latest_cached_country_report(code: str) -> dict | None:
+    from app.data import cache as data_cache
+
+    payload = await data_cache.get(f"country_report:last_success:{code}")
+    return payload if isinstance(payload, dict) else None
+
+
+def _spawn_country_report_refresh(code: str) -> None:
+    label = f"Country report refresh for {code}"
+    task, created = get_or_create_background_job(
+        f"country_report:{code}",
+        lambda: analyze_country(code),
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing refresh task.", label)
+        return
+    task.add_done_callback(
+        lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
+    )
+
+
 async def _build_country_report_fallback(
     code: str,
     *,
     reason: str,
-    error_code: str,
+    error_code: str | None,
     detail: str,
 ) -> dict:
     country = COUNTRY_REGISTRY[code]
@@ -679,7 +700,7 @@ async def _build_country_report_fallback(
         if quick_opportunities and not response.get("top_stocks"):
             response["top_stocks"] = _build_top_stock_refs(quick_opportunities)
         errors = list(response.get("errors") or [])
-        if error_code not in errors:
+        if error_code and error_code not in errors:
             errors.append(error_code)
         response["errors"] = errors
         response["llm_available"] = False
@@ -710,7 +731,7 @@ async def _build_country_report_fallback(
         "primary_index_history": [],
         "market_data": market_data,
         "llm_available": False,
-        "errors": [error_code],
+        "errors": [error_code] if error_code else [],
         "partial": True,
         "fallback_reason": reason,
         "generated_at": datetime.now().isoformat(),
@@ -880,6 +901,25 @@ async def get_country_report(code: str):
         err = SP_6001(code)
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
+
+    cached_success = await _load_latest_cached_country_report(code)
+    if cached_success:
+        _spawn_country_report_refresh(code)
+        return _build_country_success_response(cached_success)
+
+    archived_report = await _load_latest_archived_country_report(code)
+    if archived_report:
+        _spawn_country_report_refresh(code)
+        report = await _build_country_report_fallback(
+            code,
+            reason="country_report_stale_public",
+            error_code=None,
+            detail=(
+                f"{code} 국가 리포트 최신 계산은 백그라운드에서 계속 갱신하고 있으며, "
+                "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다."
+            ),
+        )
+        return _build_country_success_response(report)
 
     try:
         report, partial = await _load_country_report_with_fallback(

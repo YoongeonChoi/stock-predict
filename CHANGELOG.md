@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.5 - 2026-04-10
+
+- 공개 `/api/country/{code}/report`는 최근 정상 `last_success` 캐시가 있으면 그 응답을 먼저 내리고, 캐시가 없더라도 최근 아카이브가 있으면 stale public fallback을 즉시 내려주도록 바꿨습니다. 최신 정밀 계산은 background refresh로 계속 이어 가기 때문에 운영에서 첫 응답이 `20초+`로 늘어지는 구간을 더 줄였습니다.
+- `country_analyzer`는 정상 리포트를 만들면 `country_report:last_success:{code}` 캐시도 함께 갱신해, 공개 국가 리포트가 timeout에 매번 새로 걸리지 않고 가장 최근의 정상 결과를 다시 사용할 수 있게 했습니다.
+- `backend/tests/test_country_router.py`를 확장해 `last_success` 즉시 응답과 archived stale public fallback 우선 경로를 회귀로 고정했습니다.
+
 ## v2.60.4 - 2026-04-10
 
 - 공개 `/api/country/{code}/report`는 정밀 계산 timeout을 export timeout과 분리했습니다. 공개 경로는 더 이른 시점에 partial fallback으로 내려가 Render 워밍업이나 느린 외부 소스 구간에서도 배포 스모크의 `15초` 기준을 더 잘 맞추고, PDF/CSV export는 기존 여유 시간을 유지합니다.
