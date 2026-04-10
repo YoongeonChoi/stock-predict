@@ -9,14 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.14`
+현재 릴리즈: `v2.60.15`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 공개 `country report`와 `stock detail`은 응답 직전에 예측 캡처/아카이브 저장을 동기식으로 기다리던 경로를 정리했습니다. 이제 사용자 응답은 먼저 반환하고, 비핵심 후처리는 별도 경로로 넘겨 `No response returned` 형태의 500과 응답 지연을 줄입니다.
+- Render `500MB` memory-safe 모드에서는 후처리성 공개 작업도 현재 메모리 압박이 높으면 과감히 건너뜁니다. 서비스 가용성과 첫 화면 응답을 우선하고, 메모리 경고 상태에서 prediction/archive 부가 작업이 다시 메모리를 밀어 올리는 경로를 줄였습니다.
 - Render `500MB` memory-safe 모드에서는 `/api/countries`, `/api/screener`도 cold start에 오래 붙잡히지 않도록 shell-first 응답을 더 강화했습니다. `countries`는 캐시가 비어 있으면 즉시 fallback을 반환하고 백그라운드에서 다시 채우며, `screener`는 representative snapshot이 늦을 때 짧은 seed cache와 safe-mode shell partial로 먼저 응답합니다.
-- Render `500MB` memory-safe 모드에서는 공개 `country report`, `market opportunities`, `screener` partial 응답 뒤에 무거운 background refresh를 바로 이어 붙이지 않도록 정리했습니다. 이제 공개 fallback은 실제 동작과 맞게 “다음 재조회에서 정밀 계산을 다시 시도한다”는 문구를 사용하고, 작은 인스턴스에서 공개 요청이 다시 공개 background 계산을 증폭시켜 재시작으로 이어지는 경로를 줄였습니다.
-- 메모리 캐시는 이제 전체 엔트리 수와 총 용량뿐 아니라 `per-entry` 상한도 함께 적용합니다. 큰 리포트·대시보드 payload는 SQLite에는 계속 저장하되 in-memory hot cache에는 올리지 않아, `500MB` Render 인스턴스에서 deep copy 기반 메모리 누적이 커지는 구간을 더 강하게 막습니다.
 - `/api/diagnostics`는 `memory_diagnostics`를 함께 내려 현재 RSS/cgroup 사용량, 메모리 압박 상태, hot memory cache 엔트리 수와 추정 바이트, oversized cache write skip 횟수를 같이 보여줍니다. accuracy/research archive probe도 병렬로 돌려 진단 엔드포인트 자체가 느려지는 구간을 줄였습니다.
 - 공개 지연 경로는 `quick` fallback 기준을 더 짧게 조정했습니다. `market/opportunities` quick timeout과 `stock detail` quick/full grace를 줄였고, 홈·레이더·스크리너·종목 상세 SSR은 클라이언트 hydration 재요청이 있는 화면부터 timebox를 더 낮춰 첫 HTML이 backend cold path를 오래 기다리지 않도록 정리했습니다.
 - `scripts/latency_probe.py`를 운영/로컬 지연 재현용으로 정리해 프론트 HTML, 핵심 공개 API, `/api/diagnostics`의 route latency와 `memory_diagnostics`를 같은 형식으로 다시 측정할 수 있게 했습니다.

@@ -131,6 +131,27 @@ def get_memory_trim_stats() -> dict[str, Any]:
         return dict(_TRIM_STATS)
 
 
+def get_memory_pressure_snapshot() -> dict[str, Any]:
+    settings = get_settings()
+    snapshot = _get_pressure_snapshot(settings)
+    observed_bytes = int(snapshot.get("observed_bytes") or 0)
+    resolved_budget_bytes = int(snapshot.get("resolved_budget_bytes") or 0)
+    pressure_ratio = (observed_bytes / resolved_budget_bytes) if resolved_budget_bytes else 0.0
+    pressure_state = "ok"
+    if pressure_ratio >= 0.9:
+        pressure_state = "critical"
+    elif pressure_ratio >= 0.75:
+        pressure_state = "warning"
+    return {
+        "observed_bytes": observed_bytes,
+        "observed_mb": round(observed_bytes / (1024 * 1024), 2),
+        "resolved_budget_bytes": resolved_budget_bytes,
+        "resolved_budget_mb": round(resolved_budget_bytes / (1024 * 1024), 2) if resolved_budget_bytes else None,
+        "pressure_ratio": round(pressure_ratio, 4),
+        "pressure_state": pressure_state,
+    }
+
+
 def maybe_trim_process_memory(reason: str, *, min_pressure_ratio: float = _TRIM_MIN_PRESSURE_RATIO) -> dict[str, Any]:
     global _LAST_TRIM_MONOTONIC
 

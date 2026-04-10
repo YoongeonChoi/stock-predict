@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable
 from datetime import datetime, timezone
 import logging
 import math
@@ -29,7 +30,7 @@ from app.services import (
 )
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
 from app.utils import build_route_trace
-from app.utils.memory_hygiene import maybe_trim_process_memory
+from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
 
 router = APIRouter(prefix="/api", tags=["stock"])
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
+PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 
 
 def _maybe_trim_public_route_memory(reason: str) -> None:
@@ -45,6 +47,49 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         maybe_trim_process_memory(reason)
     except Exception:
         pass
+
+
+def _should_skip_public_side_effects() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception:
+        return False
+    return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+async def _run_stock_public_side_effect(
+    job: Awaitable[Any],
+    *,
+    label: str,
+    trim_reason: str,
+) -> None:
+    try:
+        await job
+    except asyncio.CancelledError:
+        logger.warning("%s was cancelled before completion.", label)
+    except Exception as exc:
+        logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+    finally:
+        _maybe_trim_public_route_memory(trim_reason)
+
+
+def _spawn_stock_public_side_effect(job: Awaitable[Any], *, label: str, trim_reason: str) -> bool:
+    if _should_skip_public_side_effects():
+        logger.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory(f"{trim_reason}:skip")
+        return False
+    asyncio.create_task(_run_stock_public_side_effect(job, label=label, trim_reason=trim_reason))
+    return True
+
+
+def _schedule_stock_detail_persist(detail: dict, ticker: str) -> bool:
+    return _spawn_stock_public_side_effect(
+        _archive_stock_report(detail, ticker),
+        label=f"stock detail persist {ticker}",
+        trim_reason="stock_detail_post",
+    )
 
 
 def _record_stock_detail_trace(
@@ -142,11 +187,7 @@ def _build_traced_partial_stock_detail(
 
 
 async def _finalize_stock_detail_response(detail: dict, ticker: str, *, prefer_full: bool, cache_state: str) -> JSONResponse:
-    await prediction_capture_service.capture_report_predictions("stock", detail, ticker=ticker)
-    if settings.effective_stock_detail_background_refresh:
-        asyncio.create_task(_archive_stock_report(detail, ticker))
-    else:
-        await _archive_stock_report(detail, ticker)
+    _schedule_stock_detail_persist(detail, ticker)
 
     logger.info(
         "stock detail served | ticker=%s request_phase=full cache_state=%s served_state=fresh prefer_full=%s",
@@ -194,7 +235,6 @@ async def _serve_quick_stock_detail(
     cache_state: str,
     source_label: str,
 ) -> JSONResponse:
-    await prediction_capture_service.capture_report_predictions("stock", quick_snapshot, ticker=ticker)
     if prefer_full:
         upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
         try:
@@ -279,7 +319,6 @@ async def get_stock_detail(
     ticker = _resolve_kr_ticker(ticker)
     cached = await get_cached_stock_detail(ticker, refresh_quote=False)
     if cached:
-        await prediction_capture_service.capture_report_predictions("stock", cached, ticker=ticker)
         _record_stock_detail_trace(
             started_at,
             request_phase="full",

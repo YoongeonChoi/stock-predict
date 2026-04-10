@@ -364,6 +364,36 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(loader.await_args.kwargs["timeout_seconds"], country.COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS)
         self.assertTrue(loader.await_args.kwargs["keep_background"])
 
+    async def test_get_country_report_partial_response_skips_inline_prediction_capture(self):
+        report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "market_summary": "partial summary",
+            "macro_claims": [],
+            "key_news": [],
+            "institutional_analysis": {"policy_institutions": [], "sell_side": [], "policy_sellside_aligned": False, "consensus_count": 0, "consensus_summary": ""},
+            "top_stocks": [],
+            "fear_greed": {"value": 50.0, "label": "neutral", "summary": ""},
+            "forecast": {"index_ticker": "KS11", "index_name": "KOSPI", "current_price": 1.0, "fair_value": 1.0, "scenarios": [], "confidence_note": ""},
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": 0.1}},
+            "generated_at": "2026-04-04T00:00:00",
+            "partial": True,
+            "fallback_reason": "country_report_timeout",
+            "errors": [],
+        }
+
+        with (
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, True))),
+            patch("app.routers.country.prediction_capture_service.capture_report_predictions", new=AsyncMock(side_effect=AssertionError("inline capture should be skipped"))),
+            patch("app.routers.country.archive_service.save_report", new=AsyncMock(side_effect=AssertionError("partial response should not archive inline"))),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertTrue(payload["partial"])
+
 
 if __name__ == "__main__":
     unittest.main()

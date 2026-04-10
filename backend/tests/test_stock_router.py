@@ -150,6 +150,38 @@ class StockRouterTests(unittest.TestCase):
         analyze_stock.assert_awaited()
         schedule_refresh.assert_not_called()
 
+    def test_stock_detail_cached_full_skips_inline_prediction_capture(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=_cached_snapshot())),
+            patch("app.routers.stock.prediction_capture_service.capture_report_predictions", new=AsyncMock(side_effect=AssertionError("cached full response should not capture inline"))),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["partial"])
+
+    def test_stock_detail_quick_path_skips_inline_prediction_capture(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service.capture_report_predictions", new=AsyncMock(side_effect=AssertionError("quick response should not capture inline"))),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+
     def test_stock_detail_prefer_full_records_full_trace_when_cached_quick_upgrades_successfully(self):
         quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
         full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)

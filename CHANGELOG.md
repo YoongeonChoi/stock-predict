@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.15 - 2026-04-11
+
+- 공개 `country report`와 `stock detail`이 응답 직전에 prediction capture / archive save를 동기식으로 기다리던 경로를 정리했습니다. 이제 full report는 응답을 먼저 반환하고 저장성 후처리는 분리해, 운영에서 보이던 `SP-9999 / No response returned` 500과 첫 응답 지연 가능성을 줄였습니다.
+- stock quick path와 cached full path에서는 inline prediction capture를 제거했습니다. 이미 보관된 보고서가 다시 같은 prediction row를 중복으로 쓰면서 응답 시간을 늘리고, 일부 티커에서 실패가 응답까지 전파되던 구간을 줄였습니다.
+- Render `500MB` memory-safe 모드에서는 공개 후처리성 작업도 현재 pressure가 높으면 건너뛰도록 가드했습니다. 메모리 경고 상태에서 non-critical archive/capture가 다시 워크셋을 키워 peak RSS를 밀어 올리는 경로를 더 보수적으로 막습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 partial country response와 stock cached/quick response가 inline prediction capture 없이도 정상 응답을 유지하는 회귀를 추가했습니다.
+
 ## v2.60.14 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 `/api/countries`가 캐시 미스 + cold start 구간에 너무 오래 붙잡히던 문제를 줄였습니다. 이제 공개 `countries`는 캐시가 비어 있어도 즉시 fallback을 돌려주고, 실제 지수 quote 재계산은 백그라운드 refresh로 분리합니다. 인덱스 quote에도 개별 timeout을 넣어 느린 외부 호출 한두 개가 전체 응답을 붙잡지 않게 했습니다.

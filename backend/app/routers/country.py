@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import Awaitable
 from typing import Any
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
@@ -18,7 +19,7 @@ from app.runtime import get_or_create_background_job
 from app.services import archive_service, export_service, market_service, prediction_capture_service, route_stability_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
-from app.utils.memory_hygiene import maybe_trim_process_memory
+from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
 from app.utils import build_route_trace
 from app.utils.market_calendar import market_session_cache_token
 
@@ -53,6 +54,7 @@ HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
 COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
+PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -382,6 +384,50 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         maybe_trim_process_memory(reason)
     except Exception as exc:
         logging.debug("memory trim skipped for %s: %s", reason, exc)
+
+
+def _should_skip_public_side_effects() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception as exc:
+        logging.debug("country side effect memory snapshot failed: %s", exc)
+        return False
+    return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+async def _run_country_public_side_effect(
+    job: Awaitable[Any],
+    *,
+    label: str,
+    trim_reason: str,
+) -> None:
+    try:
+        await job
+    except asyncio.CancelledError:
+        logging.warning("%s was cancelled before completion.", label)
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+    finally:
+        _maybe_trim_public_route_memory(trim_reason)
+
+
+def _spawn_country_public_side_effect(job: Awaitable[Any], *, label: str, trim_reason: str) -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory(f"{trim_reason}:skip")
+        return False
+    asyncio.create_task(_run_country_public_side_effect(job, label=label, trim_reason=trim_reason))
+    return True
+
+
+def _schedule_country_report_persist(report: dict, code: str) -> bool:
+    return _spawn_country_public_side_effect(
+        archive_service.save_report("country", report, country_code=code),
+        label=f"country report persist {code}",
+        trim_reason="country_report_post",
+    )
 
 
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
@@ -1073,16 +1119,8 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 
-    try:
-        await prediction_capture_service.capture_report_predictions("country", report, country_code=code)
-    except Exception as e:
-        SP_5002(str(e)[:100]).log()
-
     if not partial:
-        try:
-            await archive_service.save_report("country", report, country_code=code)
-        except Exception as e:
-            SP_5002(str(e)[:100]).log()
+        _schedule_country_report_persist(report, code)
 
     _maybe_trim_public_route_memory("country_report")
     return _build_country_success_response(report)
