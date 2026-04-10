@@ -21,7 +21,9 @@ from app.utils import build_route_trace
 from app.utils.market_calendar import market_session_cache_token
 
 router = APIRouter(prefix="/api", tags=["country"])
-PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
+COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 12
+COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
+COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 1.0
 OPPORTUNITY_TIMEOUT_SECONDS = 12
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 12
 HEATMAP_TIMEOUT_SECONDS = 10
@@ -650,21 +652,22 @@ async def _build_country_report_fallback(
         "signals": [],
     }
 
-    quick_opportunities: list[dict] = []
-    try:
-        quick_response = await market_service.get_cached_market_opportunities(code, limit=5)
-        if not _is_usable_opportunity_payload(quick_response):
-            quick_response = await market_service.get_cached_market_opportunities_quick(code, limit=5)
-        if not _is_usable_opportunity_payload(quick_response):
-            quick_response = await asyncio.wait_for(
-                market_service.get_market_opportunities_quick(code, limit=5),
-                timeout=1.5,
-            )
-        quick_opportunities = list(quick_response.get("opportunities") or [])
-    except Exception as exc:
-        logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
-
     archived_report = await _load_latest_archived_country_report(code)
+    quick_opportunities: list[dict] = []
+    if not archived_report or not archived_report.get("top_stocks"):
+        try:
+            quick_response = await market_service.get_cached_market_opportunities(code, limit=5)
+            if not _is_usable_opportunity_payload(quick_response):
+                quick_response = await market_service.get_cached_market_opportunities_quick(code, limit=5)
+            if not _is_usable_opportunity_payload(quick_response):
+                quick_response = await asyncio.wait_for(
+                    market_service.get_market_opportunities_quick(code, limit=5),
+                    timeout=COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS,
+                )
+            quick_opportunities = list(quick_response.get("opportunities") or [])
+        except Exception as exc:
+            logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
+
     if archived_report:
         response = dict(archived_report)
         existing_summary = str(response.get("market_summary") or "").strip()
@@ -881,7 +884,7 @@ async def get_country_report(code: str):
     try:
         report, partial = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
             keep_background=True,
         )
     except Exception as e:
@@ -965,7 +968,7 @@ async def download_country_report_pdf(code: str):
     try:
         report, _ = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
         )
         country_name = COUNTRY_REGISTRY[code].name_local or COUNTRY_REGISTRY[code].name
@@ -992,7 +995,7 @@ async def download_country_report_csv(code: str):
     try:
         report, _ = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
         )
         csv_content = export_service.export_csv(report)

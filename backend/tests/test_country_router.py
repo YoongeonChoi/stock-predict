@@ -217,6 +217,47 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["market_data"]["KOSPI"]["price"], 2550.0)
         self.assertIn("SP-5018", response["errors"])
 
+    async def test_country_report_fallback_skips_quick_candidates_when_archive_already_has_top_stocks(self):
+        archived_report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "market_summary": "이전 정상 리포트입니다.",
+            "key_news": [],
+            "top_stocks": [{"ticker": "005930.KS", "name": "삼성전자", "score": 78.5, "change_pct": 1.4, "reason": "실적 회복 기대"}],
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": 0.4}},
+            "errors": [],
+        }
+
+        with (
+            patch("app.routers.country.archive_service.list_reports", new=AsyncMock(return_value=[{"id": 7}])),
+            patch("app.routers.country.archive_service.get_report", new=AsyncMock(return_value={"report_json": archived_report})),
+            patch("app.data.cache.get", new=AsyncMock(return_value=[{"code": "KR", "indices": [{"price": 2550.0, "change_pct": 0.8}]}])),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(side_effect=AssertionError("quick candidate lookup should be skipped"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("quick candidate lookup should be skipped"))),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("quick candidate lookup should be skipped"))),
+        ):
+            response = await country._build_country_report_fallback(
+                "KR",
+                reason="country_report_timeout",
+                error_code="SP-5018",
+                detail="실시간 계산이 지연되고 있습니다.",
+            )
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["top_stocks"][0]["ticker"], "005930.KS")
+
+    async def test_download_country_report_csv_uses_export_timeout_budget(self):
+        report = {"country": {"code": "KR"}, "market_summary": "summary"}
+
+        with (
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, False))) as loader,
+            patch("app.routers.country.export_service.export_csv", return_value="country\nKR\n"),
+        ):
+            response = await country.download_country_report_csv("KR")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(loader.await_args.kwargs["timeout_seconds"], country.COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS)
+        self.assertFalse(loader.await_args.kwargs["keep_background"])
+
     async def test_country_report_sanitizes_non_finite_floats(self):
         report = {
             "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
@@ -244,6 +285,30 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(payload["fear_greed"]["value"])
         self.assertIsNone(payload["forecast"]["fair_value"])
         self.assertIsNone(payload["market_data"]["KOSPI"]["change_pct"])
+
+    async def test_get_country_report_uses_public_timeout_budget(self):
+        report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "market_summary": "summary",
+            "macro_claims": [],
+            "key_news": [],
+            "institutional_analysis": {"policy_institutions": [], "sell_side": [], "policy_sellside_aligned": False, "consensus_count": 0, "consensus_summary": ""},
+            "top_stocks": [],
+            "fear_greed": {"value": 50.0, "label": "neutral", "summary": ""},
+            "forecast": {"index_ticker": "KS11", "index_name": "KOSPI", "current_price": 1.0, "fair_value": 1.0, "scenarios": [], "confidence_note": ""},
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": 0.1}},
+            "generated_at": "2026-04-04T00:00:00",
+        }
+
+        with (
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, False))) as loader,
+            patch("app.routers.country.archive_service.save_report", new=AsyncMock()),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(loader.await_args.kwargs["timeout_seconds"], country.COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS)
+        self.assertTrue(loader.await_args.kwargs["keep_background"])
 
 
 if __name__ == "__main__":

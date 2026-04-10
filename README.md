@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.3`
+현재 릴리즈: `v2.60.4`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 공개 `country report`는 정밀 계산 timeout과 export timeout을 분리했습니다. 운영 공개 경로는 더 이른 시점에 archived report/시장 스냅샷 fallback으로 내려가고, PDF/CSV export는 기존 여유 시간을 유지해 배포 스모크의 15초 기준과 내보내기 안정성을 같이 맞춥니다.
+- `country report` fallback은 최근 정상 아카이브에 이미 `top_stocks`가 있으면 quick 후보 조회를 다시 돌지 않도록 순서를 정리했습니다. 그래서 운영에서 느린 공개 요청이 fallback 단계에서 추가로 1초 이상 더 붙잡히는 경로를 줄였습니다.
 - `market/opportunities` 응답은 `NaN`/`inf`가 섞인 포커스 예측값이나 20거래일 분포 값이 있어도 JSON 직렬화에서 터지지 않도록 다시 정리했습니다. 운영에서는 `next_day_focus`, `opportunities` 카드가 비정상 수치 때문에 500으로 떨어지지 않고 안전한 기본값으로 내려갑니다.
 - 분포 인코더, 시장 국면, 과거 패턴 예측, 공포·탐욕 점수, `yfinance` 수익률 추출의 로그 수익률 계산을 다시 정리해 `0` 또는 음수 가격이 끼어도 `RuntimeWarning`이 연쇄적으로 쌓이지 않도록 보강했습니다. 이번 검증 루프에서는 `verify.py --skip-frontend --live-api-smoke` 로그 기준 `RuntimeWarning 0건`까지 다시 확인했습니다.
 - 모바일 상단 chrome과 `PageHeader`, `AuthStatus`, `SearchBar` 간격을 다시 줄여 `네비게이션 -> 검색 -> 계정 -> 본문` 흐름이 first viewport에서 과점유되지 않도록 정리했습니다.

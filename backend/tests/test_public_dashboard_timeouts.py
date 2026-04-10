@@ -24,7 +24,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "errors": ["SP-5018"],
         }
         with (
-            patch("app.routers.country.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.country.analyze_country", new=AsyncMock(side_effect=_slow_response)),
             patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)),
             patched_client() as client,

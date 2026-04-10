@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.4 - 2026-04-10
+
+- 공개 `/api/country/{code}/report`는 정밀 계산 timeout을 export timeout과 분리했습니다. 공개 경로는 더 이른 시점에 partial fallback으로 내려가 Render 워밍업이나 느린 외부 소스 구간에서도 배포 스모크의 `15초` 기준을 더 잘 맞추고, PDF/CSV export는 기존 여유 시간을 유지합니다.
+- `country report` fallback은 최근 정상 아카이브에 이미 `top_stocks`가 있으면 quick 후보 조회를 다시 돌지 않도록 순서를 정리했습니다. 그래서 timeout fallback 단계에서 quick 후보 경로를 한 번 더 기다리며 응답이 불필요하게 길어지던 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`를 확장해 공개/내보내기 timeout budget 분리와 archived report 우선 fallback 경로를 회귀로 고정했습니다.
+
 ## v2.60.3 - 2026-04-10
 
 - `market/opportunities`의 `next_day_focus`와 기회 아이템 빌더를 다시 정리해, `NaN`/`inf`가 섞인 예측값·분위수·trade plan 값이 들어와도 JSON 직렬화가 깨지지 않고 안전한 기본값으로 내려가도록 보강했습니다.
