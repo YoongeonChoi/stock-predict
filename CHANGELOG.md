@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.12 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 heavy route(`countries`, `country report`, `heatmap`, `market opportunities`, `screener`) 응답 뒤에 메모리 압박 비율이 `70%` 이상이면 `gc.collect() + malloc_trim(0)` 기반 trim을 짧은 cooldown으로 시도하도록 추가했습니다. 큰 pandas/HTML/JSON 작업 뒤에 RSS가 OS로 잘 반환되지 않아 압박이 누적되던 구간을 운영 환경에서 직접 낮추는 목적입니다.
+- `/api/diagnostics`의 `memory_diagnostics`에는 이제 `memory_trim` 메타데이터가 포함됩니다. 최근 trim 시도 횟수, 마지막 trim 사유, trim 전후 메모리 MB, trim 후 압박 비율을 같이 확인해 운영에서 실제로 메모리 완화가 일어났는지 바로 추적할 수 있습니다.
+- `backend/tests/test_memory_hygiene.py`를 추가했고, 기존 timeout/public fallback 회귀와 함께 safe mode background suppression + memory trim 경로를 다시 검증했습니다.
+
 ## v2.60.11 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `screener`가 partial/fallback 응답 뒤에 무거운 background refresh를 즉시 이어 붙이지 않도록 정리했습니다. 작은 인스턴스에서 공개 요청이 다시 공개 background 계산을 증폭시키며 재시작으로 이어지던 경로를 줄이는 쪽에 초점을 맞췄습니다.

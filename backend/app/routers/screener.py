@@ -9,6 +9,7 @@ from app.errors import SP_5018
 from app.runtime import get_or_create_background_job
 from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
+from app.utils.memory_hygiene import maybe_trim_process_memory
 
 router = APIRouter(prefix="/api", tags=["screener"])
 settings = get_settings()
@@ -229,6 +230,13 @@ def _with_screener_partial(payload: dict, *, fallback_reason: str) -> dict:
 
 def _allow_public_screener_warmup() -> bool:
     return not settings.startup_memory_safe_mode
+
+
+def _maybe_trim_public_route_memory(reason: str) -> None:
+    try:
+        maybe_trim_process_memory(reason)
+    except Exception as exc:
+        logging.debug("memory trim skipped for %s: %s", reason, exc)
 
 
 def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
@@ -673,6 +681,7 @@ async def screen_stocks(
             if should_use_cold_start_partial:
                 cached_response = await cache.get(cache_key)
                 if cached_response is not None:
+                    _maybe_trim_public_route_memory("screener")
                     return cached_response
                 representative_results = await _build_kr_representative_snapshot_results(
                     limit=limit,
@@ -704,6 +713,7 @@ async def screen_stocks(
                         fallback_reason="kr_representative_snapshot_warming",
                     )
                     _spawn_screener_cache_warmup(cache_key, _build_response)
+                    _maybe_trim_public_route_memory("screener")
                     return response
                 response = await asyncio.wait_for(
                     _build_response(
@@ -731,6 +741,9 @@ async def screen_stocks(
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
-        return await _build_snapshot_fallback(country=country, sector=sector, limit=limit)
+        response = await _build_snapshot_fallback(country=country, sector=sector, limit=limit)
+        _maybe_trim_public_route_memory("screener")
+        return response
 
+    _maybe_trim_public_route_memory("screener")
     return response

@@ -22,6 +22,7 @@ from app.services import (
     research_archive_service,
     route_stability_service,
 )
+from app.utils.memory_hygiene import get_memory_trim_stats
 from app.version import APP_VERSION
 
 
@@ -200,6 +201,7 @@ def _get_process_memory_snapshot(settings) -> dict:
         "pressure_ratio": round(pressure_ratio, 4),
         "pressure_state": pressure_state,
         "memory_cache": cache_stats,
+        "memory_trim": get_memory_trim_stats(),
         "render_memory_safe_mode": bool(settings.startup_memory_safe_mode),
     }
 

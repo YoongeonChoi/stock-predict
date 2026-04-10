@@ -18,6 +18,7 @@ from app.runtime import get_or_create_background_job
 from app.services import archive_service, export_service, market_service, prediction_capture_service, route_stability_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.utils.async_tools import gather_limited
+from app.utils.memory_hygiene import maybe_trim_process_memory
 from app.utils import build_route_trace
 from app.utils.market_calendar import market_session_cache_token
 
@@ -350,6 +351,13 @@ def _opportunity_refresh_followup_sentence() -> str:
     if _allow_public_background_refresh():
         return "정밀 후보 계산은 백그라운드에서 다시 시도합니다."
     return "정밀 후보 계산은 다음 재조회에서 다시 시도합니다."
+
+
+def _maybe_trim_public_route_memory(reason: str) -> None:
+    try:
+        maybe_trim_process_memory(reason)
+    except Exception as exc:
+        logging.debug("memory trim skipped for %s: %s", reason, exc)
 
 
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
@@ -937,13 +945,15 @@ async def list_countries():
             logging.warning("countries payload failed: %s", exc, exc_info=True)
             return _build_countries_fallback()
 
-    return await data_cache.get_or_fetch(
+    response = await data_cache.get_or_fetch(
         cache_key,
         _fetch_countries,
         ttl=COUNTRIES_CACHE_TTL_SECONDS,
         wait_timeout=COUNTRIES_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=_build_countries_fallback,
     )
+    _maybe_trim_public_route_memory("countries")
+    return response
 
 
 @router.get("/country/{code}/report")
@@ -957,6 +967,7 @@ async def get_country_report(code: str):
     cached_success = await _load_latest_cached_country_report(code)
     if cached_success:
         _spawn_country_report_refresh(code)
+        _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(cached_success)
 
     archived_report = await _load_latest_archived_country_report(code)
@@ -968,6 +979,7 @@ async def get_country_report(code: str):
             error_code=None,
             detail=_country_report_stale_detail(code),
         )
+        _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(report)
 
     try:
@@ -994,6 +1006,7 @@ async def get_country_report(code: str):
         except Exception as e:
             SP_5002(str(e)[:100]).log()
 
+    _maybe_trim_public_route_memory("country_report")
     return _build_country_success_response(report)
 
 
@@ -1038,13 +1051,15 @@ async def get_heatmap(code: str):
                 return response
             return await _build_heatmap_fallback(code)
 
-    return await data_cache.get_or_fetch(
+    response = await data_cache.get_or_fetch(
         cache_key,
         _fetch_heatmap,
         ttl=900,
         wait_timeout=HEATMAP_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=lambda: _build_heatmap_fallback(code),
     )
+    _maybe_trim_public_route_memory("country_heatmap")
+    return response
 
 
 @router.get("/country/{code}/report/pdf")
@@ -1282,6 +1297,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             cache_state="sqlite_hit",
             payload=cached_full,
         )
+        _maybe_trim_public_route_memory("market_opportunities")
         return cached_full
 
     cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
@@ -1300,6 +1316,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             ),
             fallback_tier="cached_quick",
         )
+        _maybe_trim_public_route_memory("market_opportunities")
         return payload
 
     quick_label = f"Opportunity quick fallback for {code}"
@@ -1326,6 +1343,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                     f"{_opportunity_refresh_followup_sentence()}"
                 ),
             )
+            _maybe_trim_public_route_memory("market_opportunities")
             return payload
     except asyncio.TimeoutError:
         logging.warning("opportunity quick fetch timed out for %s", code)
@@ -1348,6 +1366,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             ),
             fallback_tier="cached_quick",
         )
+        _maybe_trim_public_route_memory("market_opportunities")
         return payload
 
     _spawn_opportunity_refresh(code, limit)
@@ -1366,4 +1385,5 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         fallback_reason="opportunity_placeholder_response",
         served_state="degraded",
     )
+    _maybe_trim_public_route_memory("market_opportunities")
     return payload
