@@ -37,6 +37,56 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "country_report_timeout")
 
+    def test_country_report_stale_public_skips_background_refresh_in_render_safe_mode(self):
+        archived_payload = {
+            "market_summary": "최근 정상 리포트입니다.",
+            "top_stocks": [],
+        }
+        with (
+            patch("app.routers.country._allow_public_background_refresh", return_value=False),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=archived_payload)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"opportunities": [], "quote_available_count": 0}),
+            ),
+            patch("app.routers.country.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/country/KR/report")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "country_report_stale_public")
+        self.assertIn("다음 재조회", response.json()["market_summary"])
+        background_job.assert_not_called()
+
+    def test_country_report_safe_mode_uses_public_error_code_without_background_job(self):
+        with (
+            patch("app.routers.country._allow_public_background_refresh", return_value=False),
+            patch("app.routers.country.analyze_country", new=AsyncMock(side_effect=RuntimeError("boom"))),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"opportunities": [], "quote_available_count": 0}),
+            ),
+            patch("app.routers.country.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/country/KR/report")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "country_report_error")
+        self.assertIn("SP-3001", response.json()["errors"])
+        self.assertNotIn("SP-5004", response.json()["errors"])
+        background_job.assert_not_called()
+
     def test_market_opportunities_returns_quick_fallback_without_waiting_for_full_timeout(self):
         quick_payload = {
             "country_code": "KR",
@@ -119,6 +169,49 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
         self.assertIn("최근 usable 후보", response.json()["universe_note"])
+
+    def test_market_opportunities_safe_mode_skips_background_refresh(self):
+        cached_quick_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "정밀 시장 국면 계산이 길어져 1차 시세 스캔 후보를 먼저 제공합니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 2729,
+            "total_scanned": 120,
+            "quote_available_count": 96,
+            "detailed_scanned_count": 0,
+            "actionable_count": 8,
+            "bullish_count": 5,
+            "universe_source": "krx_listing",
+            "universe_note": "이전 quick 응답입니다.",
+            "opportunities": [{"ticker": "005930.KS", "action": "accumulate"}],
+        }
+        with (
+            patch("app.routers.country._allow_public_background_refresh", return_value=False),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=cached_quick_payload)),
+            patch("app.routers.country.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
+        self.assertIn("다음 재조회", response.json()["universe_note"])
+        self.assertNotIn("백그라운드", response.json()["universe_note"])
+        background_job.assert_not_called()
 
     def test_market_opportunities_returns_placeholder_when_quick_times_out_and_no_cache_exists(self):
         placeholder_payload = {
@@ -390,6 +483,41 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "kr_bulk_snapshot_warming")
         bulk_quotes.assert_awaited_once_with(expected_tickers, skip_full_market_fallback=True)
         warmup.assert_called_once()
+
+    def test_screener_partial_does_not_schedule_cache_warmup_in_render_safe_mode(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        representative_quotes = AsyncMock(
+            return_value={
+                "000001.KS": {
+                    "ticker": "000001.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
+        with (
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
+            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=representative_quotes,
+            ),
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
+        background_job.assert_not_called()
 
 
 if __name__ == "__main__":

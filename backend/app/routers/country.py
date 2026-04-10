@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
+from app.config import get_settings
 from app.models.country import COUNTRY_REGISTRY
 from app.data import kr_market_quote_client, yfinance_client
 from app.analysis.country_analyzer import analyze_country
@@ -21,6 +22,7 @@ from app.utils import build_route_trace
 from app.utils.market_calendar import market_session_cache_token
 
 router = APIRouter(prefix="/api", tags=["country"])
+settings = get_settings()
 COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 8
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
 COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 1.0
@@ -316,6 +318,40 @@ def _build_traced_opportunity_partial(
     return response
 
 
+def _allow_public_background_refresh() -> bool:
+    return not settings.startup_memory_safe_mode
+
+
+def _country_report_refresh_retry_detail(code: str, *, background_enabled: bool) -> str:
+    if background_enabled:
+        return (
+            f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
+            "백그라운드 계산은 계속 진행되니 잠시 뒤 다시 열면 정밀 리포트가 바로 보일 수 있습니다."
+        )
+    return (
+        f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
+        "현재 응답에서는 무거운 후속 계산을 이어가지 않고, 다음 재조회에서 정밀 리포트를 다시 시도합니다."
+    )
+
+
+def _country_report_stale_detail(code: str) -> str:
+    if _allow_public_background_refresh():
+        return (
+            f"{code} 국가 리포트 최신 계산은 백그라운드에서 계속 갱신하고 있으며, "
+            "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다."
+        )
+    return (
+        f"{code} 국가 리포트 최신 계산은 이번 응답에서 안전한 경로로 보류하고, "
+        "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다. 다음 재조회에서 정밀 리포트를 다시 시도합니다."
+    )
+
+
+def _opportunity_refresh_followup_sentence() -> str:
+    if _allow_public_background_refresh():
+        return "정밀 후보 계산은 백그라운드에서 다시 시도합니다."
+    return "정밀 후보 계산은 다음 재조회에서 다시 시도합니다."
+
+
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
     if not payload:
         return False
@@ -350,6 +386,8 @@ def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
 
 
 def _spawn_opportunity_refresh(code: str, limit: int) -> None:
+    if not _allow_public_background_refresh():
+        return
     code = code.upper()
     label = f"Opportunity radar background refresh for {code}"
     task, created = get_or_create_background_job(
@@ -602,6 +640,8 @@ async def _load_latest_cached_country_report(code: str) -> dict | None:
 
 
 def _spawn_country_report_refresh(code: str) -> None:
+    if not _allow_public_background_refresh():
+        return
     label = f"Country report refresh for {code}"
     task, created = get_or_create_background_job(
         f"country_report:{code}",
@@ -743,8 +783,24 @@ async def _load_country_report_with_fallback(
     *,
     timeout_seconds: float,
     keep_background: bool,
+    fallback_context: str = "public",
 ) -> tuple[dict, bool]:
-    if keep_background:
+    use_background_refresh = keep_background and _allow_public_background_refresh()
+    if fallback_context == "export":
+        timeout_detail = "내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
+        error_detail = "내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
+        error_code = "SP-5004"
+        log_label = "country report export load failed"
+    else:
+        timeout_detail = _country_report_refresh_retry_detail(
+            code,
+            background_enabled=use_background_refresh,
+        )
+        error_detail = "정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷으로 우선 전환했습니다."
+        error_code = "SP-3001"
+        log_label = "country report load failed"
+
+    if use_background_refresh:
         report_label = f"Country report for {code}"
         report_task, created = get_or_create_background_job(
             f"country_report:{code}",
@@ -758,16 +814,12 @@ async def _load_country_report_with_fallback(
             report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
             return report, False
         except asyncio.TimeoutError:
-            detail = (
-                f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
-                "백그라운드 계산은 계속 진행되니 잠시 뒤 다시 열면 정밀 리포트가 바로 보일 수 있습니다."
-            )
             return (
                 await _build_country_report_fallback(
                     code,
                     reason="country_report_timeout",
                     error_code="SP-5018",
-                    detail=detail,
+                    detail=timeout_detail,
                 ),
                 True,
             )
@@ -777,8 +829,8 @@ async def _load_country_report_with_fallback(
                 await _build_country_report_fallback(
                     code,
                     reason="country_report_error",
-                    error_code="SP-3001",
-                    detail="정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷으로 우선 전환했습니다.",
+                    error_code=error_code,
+                    detail=error_detail,
                 ),
                 True,
             )
@@ -792,18 +844,18 @@ async def _load_country_report_with_fallback(
                 code,
                 reason="country_report_timeout",
                 error_code="SP-5018",
-                detail="내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+                detail=timeout_detail,
             ),
             True,
         )
     except Exception as exc:
-        logging.warning("country report export load failed for %s: %s", code, exc, exc_info=True)
+        logging.warning("%s for %s: %s", log_label, code, exc, exc_info=True)
         return (
             await _build_country_report_fallback(
                 code,
                 reason="country_report_error",
-                error_code="SP-5004",
-                detail="내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+                error_code=error_code,
+                detail=error_detail,
             ),
             True,
         )
@@ -914,10 +966,7 @@ async def get_country_report(code: str):
             code,
             reason="country_report_stale_public",
             error_code=None,
-            detail=(
-                f"{code} 국가 리포트 최신 계산은 백그라운드에서 계속 갱신하고 있으며, "
-                "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다."
-            ),
+            detail=_country_report_stale_detail(code),
         )
         return _build_country_success_response(report)
 
@@ -926,6 +975,7 @@ async def get_country_report(code: str):
             code,
             timeout_seconds=COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
             keep_background=True,
+            fallback_context="public",
         )
     except Exception as e:
         err = SP_3001(code)
@@ -1010,6 +1060,7 @@ async def download_country_report_pdf(code: str):
             code,
             timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
+            fallback_context="export",
         )
         country_name = COUNTRY_REGISTRY[code].name_local or COUNTRY_REGISTRY[code].name
         pdf_bytes = export_service.export_pdf(report, title=f"{country_name} Market Report")
@@ -1037,6 +1088,7 @@ async def download_country_report_csv(code: str):
             code,
             timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
+            fallback_context="export",
         )
         csv_content = export_service.export_csv(report)
         return Response(
@@ -1242,7 +1294,10 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             request_phase="quick",
             cache_state="sqlite_hit",
             fallback_reason="opportunity_cached_quick_response",
-            note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
+            note=(
+                "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                f"{_opportunity_refresh_followup_sentence()}"
+            ),
             fallback_tier="cached_quick",
         )
         return payload
@@ -1266,7 +1321,10 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 request_phase="quick",
                 cache_state="miss",
                 fallback_reason="opportunity_quick_response",
-                note="이번 응답에서는 1차 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
+                note=(
+                    "이번 응답에서는 1차 usable 후보를 먼저 표시하고, "
+                    f"{_opportunity_refresh_followup_sentence()}"
+                ),
             )
             return payload
     except asyncio.TimeoutError:
@@ -1284,7 +1342,10 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             request_phase="quick",
             cache_state="sqlite_hit",
             fallback_reason="opportunity_cached_quick_response",
-            note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
+            note=(
+                "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                f"{_opportunity_refresh_followup_sentence()}"
+            ),
             fallback_tier="cached_quick",
         )
         return payload
@@ -1296,7 +1357,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             code,
             note=(
                 f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
-                "정밀 후보 계산은 백그라운드에서 계속 시도하고, 다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
+                f"{_opportunity_refresh_followup_sentence()} "
+                "다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
             ),
         ),
         request_phase="shell",

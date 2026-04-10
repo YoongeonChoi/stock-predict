@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.11 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `screener`가 partial/fallback 응답 뒤에 무거운 background refresh를 즉시 이어 붙이지 않도록 정리했습니다. 작은 인스턴스에서 공개 요청이 다시 공개 background 계산을 증폭시키며 재시작으로 이어지던 경로를 줄이는 쪽에 초점을 맞췄습니다.
+- `country report` 공개 fallback은 이제 실제 동작과 맞는 안내 문구와 에러 코드를 사용합니다. background refresh를 이어가지 않는 경로에서는 “다음 재조회에서 정밀 리포트를 다시 시도한다”는 문구를 사용하고, public non-background 오류가 export용 `SP-5004`로 잘못 섞이던 copy-paste 버그도 `SP-3001` 기준으로 바로잡았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`를 확장해 safe mode에서 `country/opportunities/screener` background job이 실제로 생성되지 않는지, 공개 fallback 문구가 거짓 약속을 하지 않는지, public country error path가 export용 코드로 오염되지 않는지를 회귀로 고정했습니다.
+
 ## v2.60.10 - 2026-04-11
 
 - 메모리 hot cache에 `entry_count + total bytes + per-entry bytes` 상한을 함께 걸고, oversized payload는 SQLite에만 저장하고 in-memory cache에는 올리지 않도록 정리했습니다. Render memory-safe 모드에서는 캐시 상한을 더 보수적으로 적용해 `500MB` 서버에서 큰 partial/report payload가 deep copy와 함께 누적되는 경로를 줄였습니다.

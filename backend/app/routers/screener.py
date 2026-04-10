@@ -2,6 +2,7 @@ import asyncio
 import logging
 from fastapi import APIRouter, Query
 from fastapi.params import Param
+from app.config import get_settings
 from app.data import cache, kr_market_quote_client, yfinance_client
 from app.data.universe_data import get_universe
 from app.errors import SP_5018
@@ -10,6 +11,7 @@ from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
 
 router = APIRouter(prefix="/api", tags=["screener"])
+settings = get_settings()
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
 SCREENER_RESPONSE_CACHE_TTL = 600
 SCREENER_MAX_CANDIDATES = 36
@@ -225,7 +227,14 @@ def _with_screener_partial(payload: dict, *, fallback_reason: str) -> dict:
     return response
 
 
+def _allow_public_screener_warmup() -> bool:
+    return not settings.startup_memory_safe_mode
+
+
 def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
+    if not _allow_public_screener_warmup():
+        return
+
     async def _warm() -> None:
         try:
             await cache.get_or_fetch(cache_key, fetcher, ttl=SCREENER_RESPONSE_CACHE_TTL)
