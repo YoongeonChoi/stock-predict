@@ -29,7 +29,9 @@ COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 8
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
 COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
-COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 1.0
+COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS = 0.2
+COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
+COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
 OPPORTUNITY_TIMEOUT_SECONDS = 8
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 4
 HEATMAP_TIMEOUT_SECONDS = 10
@@ -57,6 +59,7 @@ MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
 COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
+PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -397,6 +400,21 @@ def _should_skip_public_side_effects() -> bool:
         logging.debug("country side effect memory snapshot failed: %s", exc)
         return False
     return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+def _public_memory_pressure_ratio() -> float:
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception as exc:
+        logging.debug("country public pressure snapshot failed: %s", exc)
+        return 0.0
+    return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+def _should_use_ultra_fast_public_fallback() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
 
 
 async def _run_country_public_side_effect(
@@ -810,7 +828,11 @@ async def _build_country_report_fallback(
     primary_index = country.indices[0]
     from app.data import cache as data_cache
 
-    countries_snapshot = await data_cache.get("countries:v2")
+    countries_snapshot = await _timed_country_lookup(
+        data_cache.get(COUNTRIES_CACHE_KEY),
+        timeout_seconds=COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country fallback countries snapshot {code}",
+    )
     market_data = {}
     if isinstance(countries_snapshot, list):
         current = next((item for item in countries_snapshot if item.get("code") == code), None)
@@ -857,19 +879,32 @@ async def _build_country_report_fallback(
         "signals": [],
     }
 
-    archived_report = await _load_latest_archived_country_report(code)
+    archived_report = await _timed_country_lookup(
+        _load_latest_archived_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country fallback archived report lookup {code}",
+    )
     quick_opportunities: list[dict] = []
     if not archived_report or not archived_report.get("top_stocks"):
         try:
-            quick_response = await market_service.get_cached_market_opportunities(code, limit=5)
+            quick_response = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities(code, limit=5),
+                timeout_seconds=COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS,
+                label=f"country fallback cached opportunities {code}",
+            )
             if not _is_usable_opportunity_payload(quick_response):
-                quick_response = await market_service.get_cached_market_opportunities_quick(code, limit=5)
-            if not _is_usable_opportunity_payload(quick_response):
-                quick_response = await asyncio.wait_for(
-                    market_service.get_market_opportunities_quick(code, limit=5),
-                    timeout=COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS,
+                quick_response = await _timed_country_lookup(
+                    market_service.get_cached_market_opportunities_quick(code, limit=5),
+                    timeout_seconds=COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS,
+                    label=f"country fallback cached quick opportunities {code}",
                 )
-            quick_opportunities = list(quick_response.get("opportunities") or [])
+            if not _is_usable_opportunity_payload(quick_response) and not _should_use_ultra_fast_public_fallback():
+                quick_response = await _timed_country_lookup(
+                    market_service.get_market_opportunities_quick(code, limit=5),
+                    timeout_seconds=COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS,
+                    label=f"country fallback live quick opportunities {code}",
+                )
+            quick_opportunities = list((quick_response or {}).get("opportunities") or [])
         except Exception as exc:
             logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
 
@@ -979,10 +1014,16 @@ async def _load_country_report_with_fallback(
                 True,
             )
 
+    report_label = f"Country report for {code}"
+    report_task = asyncio.create_task(analyze_country(code))
+    report_task.add_done_callback(
+        lambda task, label=report_label: _log_background_completion(task, label=label)
+    )
     try:
-        report = await asyncio.wait_for(analyze_country(code), timeout=timeout_seconds)
+        report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
         return report, False
     except asyncio.TimeoutError:
+        _cancel_background_task(report_task, label=report_label)
         return (
             await _build_country_report_fallback(
                 code,
@@ -993,6 +1034,7 @@ async def _load_country_report_with_fallback(
             True,
         )
     except Exception as exc:
+        _cancel_background_task(report_task, label=report_label)
         logging.warning("%s for %s: %s", log_label, code, exc, exc_info=True)
         return (
             await _build_country_report_fallback(

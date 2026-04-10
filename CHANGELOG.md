@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.17 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 route가 실제 메모리 압박을 잘못 읽어 non-critical side effect를 계속 이어가던 버그를 수정했습니다. memory pressure snapshot이 실제 budget bytes를 기준으로 계산되도록 바로잡아, 고압 상태에서 archive/prediction capture 같은 후처리가 더 보수적으로 건너뛰어지도록 맞췄습니다.
+- 공개 `country report`는 hard-timeout 후 취소 정리까지 기다리느라 예산보다 오래 붙잡히던 경로를 `task + shield + 즉시 fallback` 구조로 바꿨습니다. fallback 내부의 `countries/archive/opportunity` 조회도 짧게 timebox해서, 운영에서 보이던 `partial인데도 10초 이상 늦는` 구간을 더 줄였습니다.
+- 공개 `stock detail`도 full 분석 timeout을 hard-timeout으로 바꾸고, quick 응답 뒤에 붙던 distributional capture scheduling을 짧게 제한했습니다. 이로써 일부 티커의 first-hit 504와 quick response 뒤 추가 지연 가능성을 더 줄였습니다.
+- `backend/tests/test_memory_hygiene.py`, `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`를 확장해 memory pressure 판정, cancellation-cleanup 비대기, high-pressure ultra-fast fallback, quick-path capture timebox를 회귀로 고정했습니다.
+
 ## v2.60.16 - 2026-04-11
 
 - 공개 `country report`와 `stock detail`은 cached/archive lookup 자체에도 짧은 timeout을 적용합니다. SQLite/cache 조회가 지연되면 오래 붙잡히지 않고 즉시 miss로 간주해 fallback/quick path로 내려가도록 바꿔, 운영에서 보인 `report는 partial인데도 10초 이상 늦는` 구간을 더 줄였습니다.

@@ -120,6 +120,26 @@ class MemoryHygieneTests(unittest.TestCase):
         self.assertEqual(stats["attempts"], 2)
         self.assertTrue(stats["last_cooldown_bypassed"])
 
+    def test_pressure_snapshot_uses_budget_bytes_from_runtime_snapshot(self):
+        raw_snapshot = {
+            "current_bytes": 440 * 1024 * 1024,
+            "rss_bytes": 470 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 440 * 1024 * 1024,
+            "pressure_ratio": 440 / 512,
+        }
+
+        with (
+            patch("app.utils.memory_hygiene.get_settings", return_value=self._settings(safe_mode=True)),
+            patch("app.utils.memory_hygiene._get_pressure_snapshot", return_value=raw_snapshot),
+        ):
+            snapshot = memory_hygiene.get_memory_pressure_snapshot()
+
+        self.assertEqual(snapshot["observed_mb"], 440.0)
+        self.assertEqual(snapshot["resolved_budget_mb"], 512.0)
+        self.assertAlmostEqual(snapshot["pressure_ratio"], round(440 / 512, 4))
+        self.assertEqual(snapshot["pressure_state"], "warning")
+
 
 if __name__ == "__main__":
     unittest.main()

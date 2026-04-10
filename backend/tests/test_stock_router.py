@@ -1,4 +1,5 @@
 import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -257,6 +258,64 @@ class StockRouterTests(unittest.TestCase):
         self.assertIn("SP-5018", payload["errors"])
         analyze_stock.assert_awaited()
         schedule_refresh.assert_not_called()
+
+    def test_stock_detail_quick_path_timeboxes_distributional_capture_scheduling(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_schedule(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return True
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(side_effect=_slow_schedule)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            started_at = time.perf_counter()
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+            elapsed = time.perf_counter() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.08)
+
+    def test_stock_detail_prefer_full_timeout_does_not_wait_for_cancellation_cleanup(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_full(*args, **kwargs):
+            try:
+                await asyncio.sleep(0.2)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(return_value=True)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            started_at = time.perf_counter()
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+            elapsed = time.perf_counter() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.08)
 
     def test_stock_detail_prefer_full_returns_full_when_quick_snapshot_is_unavailable(self):
         full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)

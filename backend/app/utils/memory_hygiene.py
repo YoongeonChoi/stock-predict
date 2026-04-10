@@ -135,7 +135,7 @@ def get_memory_pressure_snapshot() -> dict[str, Any]:
     settings = get_settings()
     snapshot = _get_pressure_snapshot(settings)
     observed_bytes = int(snapshot.get("observed_bytes") or 0)
-    resolved_budget_bytes = int(snapshot.get("resolved_budget_bytes") or 0)
+    resolved_budget_bytes = int(snapshot.get("budget_bytes") or 0)
     pressure_ratio = (observed_bytes / resolved_budget_bytes) if resolved_budget_bytes else 0.0
     pressure_state = "ok"
     if pressure_ratio >= 0.9:

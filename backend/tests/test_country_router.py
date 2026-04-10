@@ -1,6 +1,8 @@
 import asyncio
 import json
+import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.routers import country
@@ -424,6 +426,72 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         loader.assert_awaited_once()
+
+    async def test_country_report_fallback_timeboxes_snapshot_and_quick_candidate_lookups_under_pressure(self):
+        async def _slow_lookup(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return None
+
+        with (
+            patch("app.routers.country.COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=_slow_lookup)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(side_effect=_slow_lookup)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(side_effect=_slow_lookup)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(side_effect=_slow_lookup)),
+            patch(
+                "app.routers.country.market_service.get_market_opportunities_quick",
+                new=AsyncMock(side_effect=AssertionError("high-pressure fallback should skip live quick candidates")),
+            ),
+        ):
+            response = await country._build_country_report_fallback(
+                "KR",
+                reason="country_report_timeout",
+                error_code="SP-5018",
+                detail="실시간 계산이 지연되고 있습니다.",
+            )
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "country_report_timeout")
+        self.assertEqual(response["top_stocks"], [])
+
+    async def test_load_country_report_with_fallback_returns_without_waiting_for_cancellation_cleanup(self):
+        started = asyncio.Event()
+
+        async def _slow_analyze(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.sleep(0.2)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+
+        fallback_payload = {
+            "country": {"code": "KR"},
+            "market_summary": "fallback",
+            "partial": True,
+            "fallback_reason": "country_report_timeout",
+            "errors": ["SP-5018"],
+        }
+
+        with (
+            patch("app.routers.country.analyze_country", new=AsyncMock(side_effect=_slow_analyze)),
+            patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)),
+        ):
+            started_at = time.perf_counter()
+            response, partial = await country._load_country_report_with_fallback(
+                "KR",
+                timeout_seconds=0.01,
+                keep_background=False,
+            )
+            elapsed = time.perf_counter() - started_at
+
+        self.assertTrue(partial)
+        self.assertEqual(response["fallback_reason"], "country_report_timeout")
+        self.assertLess(elapsed, 0.08)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 
@@ -58,6 +59,23 @@ def _should_skip_public_side_effects() -> bool:
     except Exception:
         return False
     return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
+    if task.cancelled():
+        logger.info("%s background task was cancelled.", label)
+        return
+    try:
+        task.result()
+    except Exception as exc:
+        logger.warning("%s background task failed: %s", label, str(exc)[:180], exc_info=True)
+
+
+def _cancel_background_task(task: asyncio.Task, *, label: str) -> None:
+    if task.done():
+        return
+    task.cancel()
+    logger.info("%s background task cancelled after fallback response.", label)
 
 
 async def _run_stock_public_side_effect(
@@ -172,6 +190,42 @@ def _stock_detail_upgrade_timeout_seconds() -> float:
     return min(STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS, STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS)
 
 
+async def _run_timed_stock_analysis(ticker: str, *, timeout_seconds: float, label: str) -> dict:
+    analysis_task = asyncio.create_task(analyze_stock(ticker))
+    analysis_task.add_done_callback(
+        lambda task, task_label=label: _log_background_completion(task, label=task_label)
+    )
+    try:
+        return await asyncio.wait_for(asyncio.shield(analysis_task), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        _cancel_background_task(analysis_task, label=label)
+        raise
+    except Exception:
+        _cancel_background_task(analysis_task, label=label)
+        raise
+
+
+async def _try_schedule_distributional_capture(ticker: str) -> bool:
+    if _should_skip_public_side_effects():
+        logger.info("Skipping stock distributional capture for %s because Render memory pressure is high.", ticker)
+        return False
+    try:
+        return await asyncio.wait_for(
+            prediction_capture_service.schedule_stock_distributional_capture(ticker),
+            timeout=STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "stock distributional capture scheduling timed out for %s after %.2fs",
+            ticker,
+            STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS,
+        )
+        return False
+    except Exception as exc:
+        logger.warning("stock distributional capture scheduling failed for %s: %s", ticker, str(exc)[:180], exc_info=True)
+        return False
+
+
 def _build_traced_partial_stock_detail(
     started_at: float,
     *,
@@ -250,9 +304,10 @@ async def _serve_quick_stock_detail(
     if prefer_full:
         upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
         try:
-            detail = await asyncio.wait_for(
-                analyze_stock(ticker),
-                timeout=upgrade_timeout,
+            detail = await _run_timed_stock_analysis(
+                ticker,
+                timeout_seconds=upgrade_timeout,
+                label=f"stock prefer-full analyze {ticker}",
             )
             _record_stock_detail_trace(
                 started_at,
@@ -268,7 +323,7 @@ async def _serve_quick_stock_detail(
                 cache_state=cache_state,
             )
         except asyncio.TimeoutError:
-            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
+            await _try_schedule_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=quick_snapshot,
@@ -285,7 +340,7 @@ async def _serve_quick_stock_detail(
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         except Exception as exc:
-            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
+            await _try_schedule_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=quick_snapshot,
@@ -304,7 +359,7 @@ async def _serve_quick_stock_detail(
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
 
     _schedule_stock_detail_refresh(ticker)
-    await prediction_capture_service.schedule_stock_distributional_capture(ticker)
+    await _try_schedule_distributional_capture(ticker)
     partial_payload = _build_traced_partial_stock_detail(
         started_at,
         cached=quick_snapshot,
@@ -379,7 +434,11 @@ async def get_stock_detail(
                 cache_state="miss",
                 source_label="fresh quick snapshot",
             )
-        detail = await asyncio.wait_for(analyze_stock(ticker), timeout=detail_timeout)
+        detail = await _run_timed_stock_analysis(
+            ticker,
+            timeout_seconds=detail_timeout,
+            label=f"stock detail analyze {ticker}",
+        )
     except asyncio.TimeoutError:
         cached_quick = quick_fallback or await _timed_stock_cache_lookup(
             get_cached_quick_stock_detail(ticker),
@@ -388,7 +447,7 @@ async def get_stock_detail(
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
-            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
+            await _try_schedule_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,
@@ -443,7 +502,7 @@ async def get_stock_detail(
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
-            await prediction_capture_service.schedule_stock_distributional_capture(ticker)
+            await _try_schedule_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,
