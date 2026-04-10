@@ -33,6 +33,9 @@ HEATMAP_TIMEOUT_SECONDS = 10
 COUNTRIES_TIMEOUT_SECONDS = 6
 COUNTRIES_WAIT_TIMEOUT_SECONDS = 2.5
 COUNTRIES_CACHE_TTL_SECONDS = 300
+COUNTRIES_LAST_SUCCESS_TTL_SECONDS = 1800
+COUNTRIES_SAFE_MODE_SEED_TTL_SECONDS = 90
+COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS = 1.5
 COUNTRIES_CONCURRENCY = 4
 MARKET_MOVERS_TIMEOUT_SECONDS = 6
 MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
@@ -48,6 +51,8 @@ HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
 HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
+COUNTRIES_CACHE_KEY = "countries:v2"
+COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -67,6 +72,25 @@ def _sanitize_json_value(value: Any) -> Any:
 def _build_country_success_response(payload: dict) -> JSONResponse:
     encoded = jsonable_encoder(payload)
     return JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+
+
+def _countries_payload_has_live_quotes(payload: Any) -> bool:
+    if not isinstance(payload, list):
+        return False
+    for country in payload:
+        if not isinstance(country, dict):
+            continue
+        for quote in country.get("indices") or []:
+            if not isinstance(quote, dict):
+                continue
+            try:
+                price = float(quote.get("price") or 0.0)
+                change_pct = float(quote.get("change_pct") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if abs(price) > 0 or abs(change_pct) > 0:
+                return True
+    return False
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -426,7 +450,17 @@ async def _build_countries_payload() -> list[dict]:
     async def _load_index_quote(entry: tuple[str, object, object]) -> dict:
         _code, _info, idx = entry
         try:
-            quote = await yfinance_client.get_index_quote(idx.ticker)
+            quote = await asyncio.wait_for(
+                yfinance_client.get_index_quote(idx.ticker),
+                timeout=COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "countries index quote timed out for %s after %.1fs",
+                idx.ticker,
+                COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS,
+            )
+            quote = {"price": 0, "change_pct": 0}
         except Exception:
             SP_2005(idx.ticker).log()
             quote = {"price": 0, "change_pct": 0}
@@ -483,6 +517,49 @@ def _build_countries_fallback() -> list[dict]:
         }
         for code, info in COUNTRY_REGISTRY.items()
     ]
+
+
+async def _fetch_countries_payload_for_cache() -> list[dict]:
+    from app.data import cache as data_cache
+
+    try:
+        payload = await asyncio.wait_for(
+            _build_countries_payload(),
+            timeout=COUNTRIES_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logging.warning("countries payload timed out after %ss", COUNTRIES_TIMEOUT_SECONDS)
+        payload = _build_countries_fallback()
+    except Exception as exc:
+        logging.warning("countries payload failed: %s", exc, exc_info=True)
+        payload = _build_countries_fallback()
+
+    if _countries_payload_has_live_quotes(payload):
+        await data_cache.set(COUNTRIES_LAST_SUCCESS_KEY, payload, COUNTRIES_LAST_SUCCESS_TTL_SECONDS)
+    return payload
+
+
+async def _refresh_countries_cache_in_background() -> list[dict]:
+    from app.data import cache as data_cache
+
+    payload = await _fetch_countries_payload_for_cache()
+    await data_cache.set(COUNTRIES_CACHE_KEY, payload, COUNTRIES_CACHE_TTL_SECONDS)
+    _maybe_trim_public_route_memory("countries_refresh")
+    return payload
+
+
+def _spawn_countries_refresh() -> None:
+    label = "Countries refresh"
+    task, created = get_or_create_background_job(
+        "countries_refresh:v2",
+        _refresh_countries_cache_in_background,
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing refresh task.", label)
+        return
+    task.add_done_callback(
+        lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
+    )
 
 
 async def _build_market_movers_payload(code: str) -> dict:
@@ -930,24 +1007,25 @@ async def _build_sector_performance_payload(code: str) -> list[dict]:
 async def list_countries():
     from app.data import cache as data_cache
 
-    cache_key = "countries:v2"
+    cached_response = await data_cache.get(COUNTRIES_CACHE_KEY)
+    if isinstance(cached_response, list):
+        _maybe_trim_public_route_memory("countries")
+        return cached_response
 
-    async def _fetch_countries():
-        try:
-            return await asyncio.wait_for(
-                _build_countries_payload(),
-                timeout=COUNTRIES_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logging.warning("countries payload timed out after %ss", COUNTRIES_TIMEOUT_SECONDS)
-            return _build_countries_fallback()
-        except Exception as exc:
-            logging.warning("countries payload failed: %s", exc, exc_info=True)
-            return _build_countries_fallback()
+    if settings.startup_memory_safe_mode:
+        last_success = await data_cache.get(COUNTRIES_LAST_SUCCESS_KEY)
+        _spawn_countries_refresh()
+        if isinstance(last_success, list) and last_success:
+            _maybe_trim_public_route_memory("countries")
+            return last_success
+        response = _build_countries_fallback()
+        await data_cache.set(COUNTRIES_CACHE_KEY, response, COUNTRIES_SAFE_MODE_SEED_TTL_SECONDS)
+        _maybe_trim_public_route_memory("countries")
+        return response
 
     response = await data_cache.get_or_fetch(
-        cache_key,
-        _fetch_countries,
+        COUNTRIES_CACHE_KEY,
+        _fetch_countries_payload_for_cache,
         ttl=COUNTRIES_CACHE_TTL_SECONDS,
         wait_timeout=COUNTRIES_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=_build_countries_fallback,

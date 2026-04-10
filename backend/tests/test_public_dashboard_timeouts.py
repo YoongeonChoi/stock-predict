@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 from app.routers import country as country_router
 from client_helpers import patched_client
@@ -9,6 +9,11 @@ from client_helpers import patched_client
 async def _slow_response(*args, **kwargs):
     await asyncio.sleep(0.05)
     return {}
+
+
+async def _slow_list_response(*args, **kwargs):
+    await asyncio.sleep(0.05)
+    return []
 
 
 async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
@@ -278,6 +283,25 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertIn("children", response)
 
+    def test_countries_safe_mode_returns_fallback_and_starts_background_refresh(self):
+        background_task = unittest.mock.Mock()
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.data.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.country.get_or_create_background_job", return_value=(background_task, True)) as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/countries")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload[0]["code"], "KR")
+        self.assertEqual(payload[0]["indices"][0]["price"], 0)
+        background_job.assert_called_once()
+        background_task.add_done_callback.assert_called_once()
+        cache_set.assert_awaited_once()
+
     def test_daily_briefing_timeout_returns_partial_fallback(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",
@@ -518,6 +542,35 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
         background_job.assert_not_called()
+
+    def test_screener_safe_mode_returns_shell_response_when_representative_path_times_out(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        background_task = unittest.mock.Mock()
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener._build_kr_representative_snapshot_results",
+                new=AsyncMock(side_effect=_slow_list_response),
+            ),
+            patch("app.routers.screener.get_or_create_background_job", return_value=(background_task, True)) as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=20")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        background_job.assert_called_once()
+        self.assertGreaterEqual(cache_set.await_count, 1)
 
 
 if __name__ == "__main__":

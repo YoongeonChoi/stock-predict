@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.14 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 `/api/countries`가 캐시 미스 + cold start 구간에 너무 오래 붙잡히던 문제를 줄였습니다. 이제 공개 `countries`는 캐시가 비어 있어도 즉시 fallback을 돌려주고, 실제 지수 quote 재계산은 백그라운드 refresh로 분리합니다. 인덱스 quote에도 개별 timeout을 넣어 느린 외부 호출 한두 개가 전체 응답을 붙잡지 않게 했습니다.
+- 공개 `screener`는 representative snapshot warming 경로가 늦어질 때도 길게 대기하지 않도록 safe-mode shell-first partial 응답을 추가했습니다. 캐시가 비어 있고 representative path가 제시간에 끝나지 않으면 먼저 shell partial을 보내고, 짧은 seed cache와 safe-mode background warmup으로 다음 요청이 빨라지도록 맞췄습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`를 확장해 countries safe-mode fallback/background refresh와 screener representative timeout shell 응답을 회귀로 고정했습니다.
+
 ## v2.60.13 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 trim이 실제로 너무 드문 간격으로만 실행돼, 운영 실측상 pressure가 `critical`인데도 `/api/health`, `/api/country/KR/report`, 일부 종목 상세가 다시 오래 붙잡히는 문제가 있었습니다. 이번 패치에서는 공개 API GET 요청 진입 전에 pre-request trim을 먼저 시도하고, `stock detail`, `daily briefing`, `market sessions`까지 공개 heavy route trim 경로를 넓혔습니다.

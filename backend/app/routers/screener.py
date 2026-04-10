@@ -14,7 +14,10 @@ from app.utils.memory_hygiene import maybe_trim_process_memory
 router = APIRouter(prefix="/api", tags=["screener"])
 settings = get_settings()
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
+PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS = 2.0
 SCREENER_RESPONSE_CACHE_TTL = 600
+SCREENER_LAST_SUCCESS_TTL = 1800
+SCREENER_SAFE_MODE_SEED_TTL = 180
 SCREENER_MAX_CANDIDATES = 36
 SCREENER_MAX_SECTOR_CANDIDATES = 16
 SCREENER_MAX_PER_SECTOR = 4
@@ -228,6 +231,73 @@ def _with_screener_partial(payload: dict, *, fallback_reason: str) -> dict:
     return response
 
 
+def _screener_last_success_key(cache_key: str) -> str:
+    return f"{cache_key}:last_success"
+
+
+async def _load_screener_last_success(cache_key: str) -> dict | None:
+    payload = await cache.get(_screener_last_success_key(cache_key))
+    if not isinstance(payload, dict):
+        return None
+    if not list(payload.get("results") or []):
+        return None
+    return payload
+
+
+async def _persist_screener_last_success(cache_key: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    if not list(payload.get("results") or []):
+        return
+    await cache.set(_screener_last_success_key(cache_key), payload, SCREENER_LAST_SUCCESS_TTL)
+
+
+def _build_safe_mode_shell_response(
+    *,
+    tickers: list[str],
+    universe: dict[str, list[str]],
+    sector: str | None,
+    country: str,
+    sort_by: str,
+    sort_dir: str,
+    limit: int,
+    fallback_reason: str,
+) -> dict:
+    shell_results: list[dict] = []
+    for ticker in tickers[: max(1, limit)]:
+        shell_results.append(
+            {
+                "ticker": ticker,
+                "name": ticker.split(".")[0],
+                "sector": _find_owning_sector(universe, ticker, sector),
+                "industry": "N/A",
+                "market_cap": 0.0,
+                "current_price": 0.0,
+                "change_pct": 0.0,
+                "pe_ratio": None,
+                "pb_ratio": None,
+                "dividend_yield": None,
+                "beta": None,
+                "week52_high": None,
+                "week52_low": None,
+                "pct_from_52w_high": None,
+                "revenue_growth": None,
+                "roe": None,
+                "debt_to_equity": None,
+                "avg_volume": None,
+                "profit_margins": None,
+                "score": None,
+                "country_code": country,
+            }
+        )
+    response = {
+        "results": _sort_screened_results(shell_results, sort_by=sort_by, sort_dir=sort_dir, limit=limit),
+        "total": len(shell_results[:limit]),
+        "sectors": list(universe.keys()),
+    }
+    return _with_screener_partial(response, fallback_reason=fallback_reason)
+
+
 def _allow_public_screener_warmup() -> bool:
     return not settings.startup_memory_safe_mode
 
@@ -239,15 +309,21 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         logging.debug("memory trim skipped for %s: %s", reason, exc)
 
 
-def _spawn_screener_cache_warmup(cache_key: str, fetcher) -> None:
-    if not _allow_public_screener_warmup():
+def _spawn_screener_cache_warmup(cache_key: str, fetcher, *, allow_safe_mode: bool = False) -> None:
+    if not allow_safe_mode and not _allow_public_screener_warmup():
         return
 
     async def _warm() -> None:
         try:
-            await cache.get_or_fetch(cache_key, fetcher, ttl=SCREENER_RESPONSE_CACHE_TTL)
+            payload = await fetcher()
+            if payload is not None:
+                ttl = SCREENER_SAFE_MODE_SEED_TTL if allow_safe_mode else SCREENER_RESPONSE_CACHE_TTL
+                await cache.set(cache_key, payload, ttl)
+                await _persist_screener_last_success(cache_key, payload)
         except Exception as exc:
             logging.warning("screener cache warmup failed for %s: %s", cache_key, exc)
+        finally:
+            _maybe_trim_public_route_memory("screener_warmup")
 
     _, created = get_or_create_background_job(f"screener_cache_warmup:{cache_key}", _warm)
     if not created:
@@ -683,12 +759,42 @@ async def screen_stocks(
                 if cached_response is not None:
                     _maybe_trim_public_route_memory("screener")
                     return cached_response
-                representative_results = await _build_kr_representative_snapshot_results(
-                    limit=limit,
-                    universe=current_universe,
-                    sector=sector,
-                    country=country,
-                )
+                if settings.startup_memory_safe_mode:
+                    last_success_response = await _load_screener_last_success(cache_key)
+                    if last_success_response is not None:
+                        response = _with_screener_partial(
+                            dict(last_success_response),
+                            fallback_reason="kr_last_success_snapshot",
+                        )
+                        await cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL)
+                        _spawn_screener_cache_warmup(
+                            cache_key,
+                            lambda: _build_response(
+                                candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
+                                partial=True,
+                                fallback_reason="kr_bulk_snapshot_warming",
+                            ),
+                            allow_safe_mode=True,
+                        )
+                        _maybe_trim_public_route_memory("screener")
+                        return response
+                representative_results: list[dict] = []
+                try:
+                    representative_results = await asyncio.wait_for(
+                        _build_kr_representative_snapshot_results(
+                            limit=limit,
+                            universe=current_universe,
+                            sector=sector,
+                            country=country,
+                        ),
+                        timeout=PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    logging.warning(
+                        "screener representative snapshot timed out after %.1fs for %s",
+                        PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
+                        cache_key,
+                    )
                 filtered_representative_results = _filter_snapshot_results(
                     representative_results,
                     market_cap_min=market_cap_min,
@@ -712,7 +818,36 @@ async def screen_stocks(
                         },
                         fallback_reason="kr_representative_snapshot_warming",
                     )
+                    await cache.set(
+                        cache_key,
+                        response,
+                        SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+                    )
+                    await _persist_screener_last_success(cache_key, response)
                     _spawn_screener_cache_warmup(cache_key, _build_response)
+                    _maybe_trim_public_route_memory("screener")
+                    return response
+                if settings.startup_memory_safe_mode:
+                    response = _build_safe_mode_shell_response(
+                        tickers=selected_tickers,
+                        universe=current_universe,
+                        sector=sector,
+                        country=country,
+                        sort_by=sort_by,
+                        sort_dir=sort_dir,
+                        limit=limit,
+                        fallback_reason="kr_safe_shell_warming",
+                    )
+                    await cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL)
+                    _spawn_screener_cache_warmup(
+                        cache_key,
+                        lambda: _build_response(
+                            candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
+                            partial=True,
+                            fallback_reason="kr_bulk_snapshot_warming",
+                        ),
+                        allow_safe_mode=True,
+                    )
                     _maybe_trim_public_route_memory("screener")
                     return response
                 response = await asyncio.wait_for(
@@ -745,5 +880,13 @@ async def screen_stocks(
         _maybe_trim_public_route_memory("screener")
         return response
 
+    if use_direct_kr_quick_path:
+        await cache.set(
+            cache_key,
+            response,
+            SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+        )
+        if response.get("fallback_reason") != "kr_safe_shell_warming":
+            await _persist_screener_last_success(cache_key, response)
     _maybe_trim_public_route_memory("screener")
     return response
