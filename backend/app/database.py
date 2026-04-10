@@ -149,6 +149,7 @@ SQLITE_PUBLIC_READ_CONNECT_TIMEOUT_SECONDS = 0.75
 SQLITE_PUBLIC_READ_BUSY_TIMEOUT_MS = 500
 
 log = logging.getLogger("stock_predict.database")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _is_sqlite_lock_error(exc: Exception) -> bool:
@@ -159,7 +160,39 @@ def _is_sqlite_lock_error(exc: Exception) -> bool:
 
 class Database:
     def __init__(self):
-        self.db_path = get_settings().db_path
+        self.db_path = str(self._resolve_db_path(get_settings().db_path))
+        self._ensure_db_parent_dir()
+        self._bootstrap_schema_sync()
+
+    def _resolve_db_path(self, raw_path: str | Path) -> Path:
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = (BACKEND_ROOT / path).resolve()
+        return path
+
+    def _ensure_db_parent_dir(self) -> None:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_prediction_record_schema_sync(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(prediction_records)").fetchall()
+        existing_columns = {row[1] for row in rows}
+        if "calibration_json" not in existing_columns:
+            conn.execute("ALTER TABLE prediction_records ADD COLUMN calibration_json TEXT")
+
+    def _bootstrap_schema_sync(self) -> None:
+        self._ensure_db_parent_dir()
+        with sqlite3.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT_SECONDS) as conn:
+            conn.executescript(_SCHEMA)
+            self._ensure_prediction_record_schema_sync(conn)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO portfolio_profile (
+                    id, total_assets, cash_balance, monthly_budget, updated_at
+                ) VALUES (1, 0, 0, 0, ?)
+                """,
+                (time.time(),),
+            )
+            conn.commit()
 
     @asynccontextmanager
     async def _connect(
@@ -168,6 +201,7 @@ class Database:
         timeout_seconds: float = SQLITE_CONNECT_TIMEOUT_SECONDS,
         busy_timeout_ms: int = SQLITE_BUSY_TIMEOUT_MS,
     ):
+        self._ensure_db_parent_dir()
         conn = await aiosqlite.connect(self.db_path, timeout=timeout_seconds)
         try:
             await conn.execute("PRAGMA journal_mode=WAL")
@@ -195,7 +229,7 @@ class Database:
             yield conn
 
     async def initialize(self):
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_db_parent_dir()
         async with self._connect() as conn:
             await conn.executescript(_SCHEMA)
             await self._ensure_prediction_record_schema(conn)

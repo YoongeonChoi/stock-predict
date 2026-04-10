@@ -30,18 +30,18 @@ function valueOrPending(value: number | null | undefined, priceKey: string) {
 export default function TradePlanCard({ plan, priceKey }: Props) {
   return (
     <div className="card">
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-semibold">트레이드 플랜</h2>
           <p className="text-sm text-text-secondary mt-1">{plan.setup_label}</p>
         </div>
-        <div className="text-right">
+        <div className="self-start text-left sm:text-right">
           <div className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${actionTone(plan.action)}`}>{actionLabel(plan.action)}</div>
           <div className="text-xs text-text-secondary mt-2">확신도 {plan.conviction.toFixed(0)} / 100</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
         <div className="p-3 rounded-lg bg-border/40"><div className="text-[11px] text-text-secondary">진입 하단</div><div className="font-bold">{valueOrPending(plan.entry_low, priceKey)}</div></div>
         <div className="p-3 rounded-lg bg-border/40"><div className="text-[11px] text-text-secondary">진입 상단</div><div className="font-bold">{valueOrPending(plan.entry_high, priceKey)}</div></div>
         <div className="p-3 rounded-lg bg-negative/10"><div className="text-[11px] text-text-secondary">손절가</div><div className="font-bold text-negative">{valueOrPending(plan.stop_loss, priceKey)}</div></div>

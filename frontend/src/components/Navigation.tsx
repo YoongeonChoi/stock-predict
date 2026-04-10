@@ -151,28 +151,28 @@ export default function Navigation() {
       </aside>
 
       <div
-        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/12 bg-bg/98 px-4 pb-2.5 pt-2.5 backdrop-blur-md lg:hidden"
-        style={{ paddingTop: "max(0.65rem, env(safe-area-inset-top))" }}
+        className="fixed left-0 right-0 top-0 z-50 flex min-h-[var(--mobile-nav-height)] items-center justify-between border-b border-border/12 bg-bg/98 px-4 pb-2 pt-2 backdrop-blur-md lg:hidden"
+        style={{ paddingTop: "max(0.55rem, env(safe-area-inset-top))" }}
       >
         <Link href="/" className="min-w-0 flex-1 pr-3">
           <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-text-secondary" translate="no">
             Stock Predict
           </div>
-          <div className="mt-1 truncate text-[0.88rem] font-semibold tracking-tight text-text">
+          <div className="mt-1 truncate text-[0.84rem] font-semibold tracking-tight text-text">
             시장 탐색과 운영
           </div>
         </Link>
         <div className="flex items-center gap-2 pl-3">
           <button
             onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text-secondary"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text-secondary"
             aria-label={themeButtonLabel}
           >
             {isDarkMode ? <SunMedium size={17} /> : <MoonStar size={17} />}
           </button>
           <button
             onClick={() => setMobileOpen((value) => !value)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-border/15 bg-surface text-text"
             aria-expanded={mobileOpen}
             aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
           >
@@ -190,7 +190,7 @@ export default function Navigation() {
           />
           <div
             className="relative h-full w-[min(88vw,360px)] overflow-y-auto overscroll-contain border-r border-border/12 bg-bg px-5 pb-8"
-            style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.8rem)" }}
+            style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.55rem)" }}
           >
             <div className="border-b border-border/12 pb-4">
               <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">Menu</div>

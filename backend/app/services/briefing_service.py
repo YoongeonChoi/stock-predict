@@ -14,6 +14,22 @@ BRIEFING_CACHE_TTL_SECONDS = 300
 BRIEFING_CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 
 
+def _briefing_radar_request_timeout_seconds() -> float:
+    return max(4.0, BRIEFING_RADAR_TIMEOUT_SECONDS / 2)
+
+
+def _observe_background_task(task: asyncio.Task, label: str) -> None:
+    def _consume_result(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.warning("Daily briefing %s finished with a late failure: %s", label, exc, exc_info=True)
+
+    task.add_done_callback(_consume_result)
+
+
 def _event_score(event: dict) -> tuple:
     impact_rank = {"high": 0, "medium": 1, "low": 2}.get(event.get("impact", "medium"), 1)
     return (event.get("date", "9999-12-31"), impact_rank, event.get("country_code", "ZZ"), event.get("title", ""))
@@ -129,15 +145,18 @@ async def _load_briefing_radar(country_code: str) -> dict:
     if cached_quick and cached_quick.get("opportunities"):
         return cached_quick
 
+    request_timeout = _briefing_radar_request_timeout_seconds()
+    task = asyncio.create_task(market_service.get_market_opportunities_quick(country_code, 4))
     try:
-        return await asyncio.wait_for(
-            market_service.get_market_opportunities_quick(country_code, 4),
-            timeout=max(4.0, BRIEFING_RADAR_TIMEOUT_SECONDS / 2),
-        )
+        return await asyncio.wait_for(asyncio.shield(task), timeout=request_timeout)
     except asyncio.TimeoutError:
         note = "공개 추천 계산이 길어져 브리핑에는 요약만 표시합니다."
-        log.warning("Daily briefing radar timed out for %s after %ss", country_code, BRIEFING_RADAR_TIMEOUT_SECONDS)
+        _observe_background_task(task, f"radar:{country_code}")
+        log.warning("Daily briefing radar timed out for %s after %.2fs", country_code, request_timeout)
         return _radar_fallback(country_code, note)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
     except Exception as exc:
         note = "공개 추천 계산에 실패해 브리핑에는 요약만 표시합니다."
         log.warning("Daily briefing radar failed for %s: %s", country_code, exc, exc_info=True)

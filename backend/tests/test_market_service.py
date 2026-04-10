@@ -1,9 +1,10 @@
 import asyncio
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.models.forecast import ForecastScenario, NextDayForecast
+from app.models.forecast import FlowSignal, ForecastScenario, NextDayForecast
 from app.models.market import (
     MarketRegime,
     MarketRegimeSignal,
@@ -487,6 +488,147 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(focus.ticker, "CHART.KS")
         self.assertGreater(focus.chart_analysis.score, 70.0)
 
+    async def test_next_day_focus_sanitizes_non_finite_forecast_values_for_json(self):
+        self.focus_patch.stop()
+        market_regime = MarketRegime(
+            label="중립",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=58.0,
+            conviction=52.0,
+            summary="중립 장세입니다.",
+            playbook=[],
+            warnings=[],
+            signals=[MarketRegimeSignal(name="breadth", value=0.0, signal="neutral", detail="mixed breadth")],
+        )
+        candidates = [
+            _focus_source_item(rank=1, ticker="SANITIZE.KS", change_pct=1.1, opportunity_score=81.0),
+        ]
+
+        async def _snapshot(ticker: str, period: str = "6mo"):
+            return {"valid": True, "current_price": 100.0}
+
+        async def _stock_info(ticker: str):
+            return {"name": ticker, "current_price": 100.0}
+
+        forecast = NextDayForecast(
+            target_date="2026-03-27",
+            reference_date="2026-03-26",
+            reference_price=100.0,
+            direction="up",
+            up_probability=float("nan"),
+            predicted_open=float("nan"),
+            predicted_close=101.2,
+            predicted_high=102.8,
+            predicted_low=99.4,
+            predicted_return_pct=float("nan"),
+            confidence=float("nan"),
+            raw_confidence=float("nan"),
+            calibrated_probability=float("nan"),
+            probability_edge=float("nan"),
+            analog_support=float("nan"),
+            regime_support=float("nan"),
+            agreement_support=float("nan"),
+            data_quality_support=float("nan"),
+            volatility_ratio=float("nan"),
+            calibration_snapshot={
+                "gap": float("nan"),
+                "bins": [0.1, float("nan"), 0.3],
+            },
+            confidence_note="",
+            news_sentiment=float("nan"),
+            raw_signal=float("nan"),
+            scenarios=[
+                ForecastScenario(name="Bull", price=float("nan"), probability=float("nan"), description="상방"),
+            ],
+            flow_signal=FlowSignal(
+                available=True,
+                source="test",
+                market="KR",
+                unit="krw",
+                foreign_net_buy=float("nan"),
+                institutional_net_buy=float("nan"),
+                retail_net_buy=float("nan"),
+            ),
+            drivers=[],
+            model_version="signal-v2.1",
+            execution_bias="lean_long",
+            execution_note="장중 대응 테스트",
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=99.0,
+            buy_zone_high=101.0,
+            fair_value=105.0,
+            sell_zone_low=106.0,
+            sell_zone_high=109.0,
+            risk_reward_ratio=1.8,
+            confidence_grade="A",
+            methodology=[ValuationMethod(name="blend", value=105.0, weight=1.0, details="test")],
+            summary="테스트",
+        )
+        technical = TechnicalIndicators(
+            ma_20=[99.5],
+            ma_60=[97.0],
+            rsi_14=[56.0],
+            macd=[0.4],
+            macd_signal=[0.3],
+            macd_hist=[0.1],
+            dates=["2026-03-26"],
+        )
+        trade_plan = TradePlan(
+            setup_label="다음 거래일 매수",
+            action="accumulate",
+            conviction=68.0,
+            entry_low=99.8,
+            entry_high=100.3,
+            stop_loss=98.7,
+            take_profit_1=101.7,
+            take_profit_2=102.6,
+            expected_holding_days=1,
+            risk_reward_estimate=float("nan"),
+            thesis=["단타 테스트"],
+            invalidation="손절가 이탈 시 종료",
+        )
+
+        async def _gather_safe(items, worker, limit=6):
+            results = []
+            for item in items:
+                results.append(await worker(item))
+            return results
+
+        with (
+            patch("app.services.market_service.gather_limited", new=AsyncMock(side_effect=_gather_safe)),
+            patch("app.services.market_service.yfinance_client.get_market_snapshot", new=AsyncMock(side_effect=_snapshot)),
+            patch("app.services.market_service.yfinance_client.get_stock_info", new=AsyncMock(side_effect=_stock_info)),
+            patch("app.services.market_service.yfinance_client.get_price_history", new=AsyncMock(return_value=_sample_prices(90, 100.0))),
+            patch("app.services.market_service.yfinance_client.get_analyst_ratings", new=AsyncMock(return_value={})),
+            patch("app.services.market_service.build_quick_buy_sell", return_value=buy_sell),
+            patch("app.services.market_service._calc_technicals", return_value=technical),
+            patch("app.services.market_service.forecast_next_day", return_value=forecast),
+            patch("app.services.market_service.build_short_horizon_trade_plan", return_value=trade_plan),
+            patch(
+                "app.services.market_service.build_short_horizon_chart_analysis",
+                return_value=_sample_chart_analysis(score=float("nan")),
+            ),
+        ):
+            focus = await market_service._build_next_day_focus_recommendation(
+                source_items=candidates,
+                country_code="KR",
+                market_regime=market_regime,
+            )
+
+        self.assertIsNotNone(focus)
+        self.assertEqual(focus.expected_return_pct, 0.0)
+        self.assertEqual(focus.profit_probability, 0.0)
+        self.assertEqual(focus.expected_edge_pct, 0.0)
+        self.assertEqual(focus.next_day_forecast.predicted_return_pct, 0.0)
+        self.assertEqual(focus.next_day_forecast.up_probability, 0.0)
+        self.assertEqual(focus.trade_plan.risk_reward_estimate, 0.0)
+        self.assertEqual(focus.chart_analysis.score, 0.0)
+        json.dumps(focus.model_dump(), allow_nan=False)
+
     def test_build_seeded_quote_screen_from_quick_payload_restores_ranked_candidates(self):
         payload = {
             "universe_size": 200,
@@ -759,6 +901,7 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["next_day_focus"]["trade_plan"]["expected_holding_days"], 1)
         self.assertEqual(result["opportunities"][0]["ticker"], "005930.KS")
         self.assertGreater(result["opportunities"][0]["predicted_return_pct"], 0.0)
+        json.dumps(result, allow_nan=False)
 
     async def test_get_market_opportunities_falls_back_to_quote_screen_candidates(self):
         market_regime = MarketRegime(

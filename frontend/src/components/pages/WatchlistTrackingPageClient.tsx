@@ -71,7 +71,7 @@ export default function WatchlistTrackingPageClient({
           </>
         }
         actions={
-          <>
+          <div className="ui-inline-actions">
             <Link href={`/stock/${encodeURIComponent(initialTicker)}`} className="action-chip-secondary">
               종목 상세 보기
             </Link>
@@ -83,7 +83,7 @@ export default function WatchlistTrackingPageClient({
                 {detail.tracking_state === "active" ? "심화 추적 중지" : "심화 추적 시작"}
               </button>
             ) : null}
-          </>
+          </div>
         }
       />
 
@@ -98,12 +98,12 @@ export default function WatchlistTrackingPageClient({
 
       <section className="workspace-grid-balanced">
         <div className="card !p-5 space-y-4">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="section-title">최신 예측 스냅샷</h2>
               <p className="section-copy">현재 저장된 최신 예측값과 최근 판단 근거를 먼저 보여드립니다.</p>
             </div>
-            <span className="info-chip">
+            <span className="info-chip self-start">
               최근 기록 {formatPredictionAt(activeSnapshot?.last_prediction_at || detail?.watchlist_meta.last_prediction_at)}
             </span>
           </div>

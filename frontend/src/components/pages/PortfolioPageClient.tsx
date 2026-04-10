@@ -671,7 +671,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           <div>
             <h2 className="section-title">보유 종목 관리</h2>
           </div>
-          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="ui-button-secondary">수정 취소</button> : null}
+          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="ui-button-secondary w-full sm:w-auto">수정 취소</button> : null}
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_180px_140px_180px_auto]">
@@ -754,7 +754,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                     <div className="mt-1 font-semibold text-text">{tradeActionLabel(holding.trade_action)}</div>
                     <div className="mt-1 text-[0.78rem] text-text-secondary">{holding.trade_setup || "설정된 셋업 없음"}</div>
                   </div>
-                  <div className="ui-inline-actions">
+                  <div className="ui-inline-actions w-full sm:w-auto">
                     <button onClick={() => startEdit(holding)} className="ui-button-secondary">수정</button>
                     <button onClick={() => removeHolding(holding.id)} className="ui-button-warning">삭제</button>
                   </div>

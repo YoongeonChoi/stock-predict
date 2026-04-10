@@ -234,7 +234,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
           </>
         }
         actions={
-          <>
+          <div className="ui-inline-actions">
             {COUNTRIES.map((item) => (
               <button
                 key={item.code}
@@ -244,7 +244,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 {item.flag} {item.label}
               </button>
             ))}
-          </>
+          </div>
         }
       />
 
@@ -339,7 +339,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                   <h2 className="section-title">{formatMonthLabel(currentMonthDate)}</h2>
                   <p className="section-copy">{data.summary.note}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="ui-inline-actions">
                   <button onClick={() => moveMonth(-1)} className="action-chip-secondary">
                     이전 달
                   </button>
@@ -356,7 +356,9 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">정책</span>
                 <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-sky-700 dark:text-sky-300">물가 / 핵심 지표</span>
                 <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-amber-700 dark:text-amber-300">실적</span>
-                <span className="rounded-full border border-border bg-border/20 px-3 py-1.5 text-text-secondary">같은 월간 지표는 한 달에 1회만 표시</span>
+              </div>
+              <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
+                반복되는 월간 지표는 한 달에 1회만 대표 일정으로 표시합니다.
               </div>
 
               <div className="grid grid-cols-7 gap-2 px-1 text-xs text-text-secondary">

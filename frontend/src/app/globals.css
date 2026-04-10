@@ -44,7 +44,7 @@
   --radius-lg: 14px;
   --radius-xl: 18px;
   --touch-target-min: 44px;
-  --mobile-nav-height: calc(64px + env(safe-area-inset-top, 0px));
+  --mobile-nav-height: calc(58px + env(safe-area-inset-top, 0px));
   --layout-gutter: clamp(1rem, 0.78rem + 0.68vw, 1.8rem);
   --layout-max: 1500px;
   --surface-warning: rgba(180, 116, 26, 0.12);
@@ -414,6 +414,42 @@ textarea:focus-visible {
   color: var(--warning);
 }
 
+.ui-segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: 0.35rem;
+}
+
+.ui-segmented-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-md);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: clamp(0.92rem, 0.89rem + 0.08vw, 0.98rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.ui-segmented-option:hover {
+  background: rgb(var(--text-rgb) / 0.05);
+  color: var(--text);
+}
+
+.ui-segmented-option-active {
+  background: var(--accent);
+  color: white;
+}
+
 .metric-strip,
 .metric-card {
   min-width: 0;
@@ -591,7 +627,7 @@ textarea:focus-visible {
 
 @media (max-width: 767px) {
   .page-shell {
-    gap: 1.35rem;
+    gap: 1.25rem;
   }
 
   .card,
@@ -611,6 +647,11 @@ textarea:focus-visible {
     padding-block: 0.45rem 0.9rem;
   }
 
+  .page-header-layout,
+  .page-header-layout-compact {
+    gap: 0.85rem;
+  }
+
   .page-title {
     font-size: clamp(1.95rem, 1.7rem + 1vw, 2.45rem);
   }
@@ -626,6 +667,34 @@ textarea:focus-visible {
     line-height: 1.58;
   }
 
+  .page-header-meta-row,
+  .page-header-meta-row-compact {
+    margin-top: 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .page-header-actions {
+    gap: 0.5rem;
+  }
+
+  .section-heading {
+    gap: 0.75rem;
+  }
+
+  .ui-inline-actions {
+    align-items: stretch;
+  }
+
+  .ui-inline-actions > * {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .ui-table-shell {
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .info-chip,
   .ui-chip,
   .action-chip,
@@ -636,6 +705,11 @@ textarea:focus-visible {
   .state-card-action {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  .ui-segmented-control {
+    gap: 0.3rem;
+    padding: 0.3rem;
   }
 }
 

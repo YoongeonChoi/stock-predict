@@ -56,11 +56,11 @@ export default function AuthStatus() {
 
   if (!user) {
     return (
-      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
-        <Link href="/auth" className="ui-button-secondary px-4 sm:px-5">
+      <div className="flex w-full shrink-0 flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-end">
+        <Link href="/auth" className="ui-button-secondary w-full px-4 min-[420px]:w-auto sm:px-5">
           로그인
         </Link>
-        <Link href="/auth?mode=signup" className="ui-button-primary px-4 sm:px-5">
+        <Link href="/auth?mode=signup" className="ui-button-primary w-full px-4 min-[420px]:w-auto sm:px-5">
           회원가입
         </Link>
       </div>
@@ -79,8 +79,8 @@ export default function AuthStatus() {
   };
 
   return (
-    <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-3">
-      <Link href="/settings" className="min-w-0 max-w-full border-b border-border/20 pb-1 text-right hover:border-text hover:text-text">
+    <div className="flex w-full shrink-0 flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-end min-[420px]:gap-3">
+      <Link href="/settings" className="min-w-0 max-w-full border-b border-border/20 pb-1 text-left hover:border-text hover:text-text min-[420px]:text-right">
         <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">Account</div>
         <div className="mt-1 truncate text-[0.9rem] font-semibold text-text sm:hidden">
           {buildCompactIdentityLabel({
@@ -97,7 +97,7 @@ export default function AuthStatus() {
           })}
         </div>
       </Link>
-      <button onClick={handleSignOut} className="ui-button-secondary px-4 sm:px-5">
+      <button onClick={handleSignOut} className="ui-button-secondary w-full px-4 min-[420px]:w-auto sm:px-5">
         로그아웃
       </button>
     </div>

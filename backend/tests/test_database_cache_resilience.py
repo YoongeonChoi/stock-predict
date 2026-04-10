@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import patch
@@ -9,6 +10,14 @@ from app.database import Database
 class DatabaseCacheResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.db = Database()
+
+    async def test_database_uses_absolute_path_under_backend_data_by_default(self):
+        db_path = Path(self.db.db_path)
+
+        self.assertTrue(db_path.is_absolute())
+        self.assertEqual(db_path.name, "stock_predict.db")
+        self.assertEqual(db_path.parent.name, "data")
+        self.assertTrue(db_path.parent.exists())
 
     async def test_cache_get_returns_none_when_cache_db_is_locked(self):
         @asynccontextmanager

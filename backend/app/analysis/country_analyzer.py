@@ -31,7 +31,7 @@ from app.models.country import (
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.scoring.stock_scorer import score_stock
-from app.utils.async_tools import gather_limited
+from app.utils.async_tools import gather_limited, is_async_failure_result
 
 TICKER_FALLBACK = {
     "삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "네이버": "035420.KS",
@@ -220,7 +220,7 @@ async def analyze_country(country_code: str) -> dict:
 
     market_data = {}
     for idx, quote in zip(country.indices, market_quotes):
-        if isinstance(quote, Exception):
+        if is_async_failure_result(quote):
             SP_2005(idx.ticker).log("warning")
             market_data[idx.name] = {"price": 0, "change_pct": 0}
         else:
@@ -426,7 +426,7 @@ async def _score_top_stocks(
 
     scored: list[tuple[float, str, dict]] = []
     for item in await gather_limited(all_tickers, _score_ticker, limit=6):
-        if isinstance(item, Exception) or item is None:
+        if is_async_failure_result(item) or item is None:
             continue
         scored.append(item)
 

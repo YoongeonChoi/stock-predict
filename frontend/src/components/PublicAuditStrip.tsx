@@ -21,11 +21,14 @@ export default function PublicAuditStrip({
     return null;
   }
   return (
-    <div className={cn("flex flex-wrap gap-2", className)}>
+    <div className={cn("flex flex-wrap items-start gap-2", className)}>
       {chips.map((chip) => (
         <span
           key={`${chip.tone}-${chip.label}`}
-          className={cn("inline-flex items-center rounded-full border px-3 py-1.5 text-[11px] font-medium", TONE_CLASS[chip.tone])}
+          className={cn(
+            "inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-[10px] font-medium leading-5 text-left whitespace-normal break-words sm:px-3 sm:py-1.5 sm:text-[11px]",
+            TONE_CLASS[chip.tone],
+          )}
         >
           {chip.label}
         </span>

@@ -64,14 +64,14 @@ export default function SearchBar() {
       </label>
       <div
         className={cn(
-          "flex min-h-[var(--control-height-lg)] items-center gap-3 border px-4 py-3 transition-colors",
+          "flex min-h-[3rem] items-center gap-2.5 border px-3.5 py-2.5 transition-colors sm:min-h-[var(--control-height-lg)] sm:gap-3 sm:px-4 sm:py-3",
           focused || open
             ? "rounded-[14px] border-accent/30 bg-surface"
             : "rounded-[12px] border-border/15 bg-surface",
         )}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center text-text-secondary">
-          <Search size={18} />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-text-secondary sm:h-9 sm:w-9">
+          <Search size={17} />
         </div>
         <input
           id="global-search-input"
@@ -97,7 +97,7 @@ export default function SearchBar() {
           aria-expanded={open}
           aria-controls="global-search-results"
           placeholder="티커 또는 종목명을 입력하세요"
-          className="w-full bg-transparent text-[0.98rem] text-text outline-none placeholder:text-text-secondary"
+          className="w-full bg-transparent text-[0.94rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.98rem]"
         />
         <div className="hidden shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary xl:block">
           Enter

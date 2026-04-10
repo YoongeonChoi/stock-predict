@@ -475,7 +475,7 @@ export default function AccountSettingsPanel() {
         <div className="rounded-[22px] border border-border/70 bg-surface/55 p-4 text-sm text-text-secondary">
           로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송, 비밀번호 변경, 세션 종료 같은 보안 작업도 바로 처리할 수 있습니다.
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="ui-inline-actions">
           <Link href="/auth?next=/settings" className="action-chip-primary">
             로그인하러 가기
           </Link>
@@ -503,7 +503,7 @@ export default function AccountSettingsPanel() {
         </div>
         <div className="ui-panel-muted text-[0.95rem]">
           <div className="ui-field-label">로그인 계정</div>
-          <div className="mt-2 font-medium text-text">{profile.email ?? "이메일 없음"}</div>
+          <div className="mt-2 break-words font-medium text-text">{profile.email ?? "이메일 없음"}</div>
           <div className="mt-1 text-xs text-text-secondary">
             {profile.email_confirmed_at
               ? `인증 완료 시각 ${new Date(profile.email_confirmed_at).toLocaleString("ko-KR")}`
@@ -524,7 +524,7 @@ export default function AccountSettingsPanel() {
             <button
               type="button"
               onClick={resetAllDrafts}
-              className="ui-button-warning shrink-0"
+              className="ui-button-warning w-full shrink-0 sm:w-auto"
             >
               변경 모두 초기화
             </button>
@@ -539,7 +539,7 @@ export default function AccountSettingsPanel() {
               label="아이디"
               helper="영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 4~20자까지 사용할 수 있습니다."
             >
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   value={draft.username}
                   onChange={(event) =>
@@ -559,7 +559,7 @@ export default function AccountSettingsPanel() {
                   type="button"
                   onClick={handleUsernameCheck}
                   disabled={usernameState.checking || usernameCooldown.active}
-                  className="ui-button-secondary shrink-0"
+                  className="ui-button-secondary shrink-0 sm:w-auto"
                 >
                   {usernameState.checking
                     ? "확인 중..."
@@ -623,7 +623,7 @@ export default function AccountSettingsPanel() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="ui-inline-actions">
             <button
               type="button"
               onClick={handleSave}
@@ -687,7 +687,7 @@ export default function AccountSettingsPanel() {
             {profile.pending_email ? (
               <div className="ui-panel-muted mt-4 text-[0.95rem] text-text-secondary">
                 <div className="font-medium text-text">변경 대기 이메일</div>
-                <div className="mt-1 break-all">{profile.pending_email}</div>
+                <div className="mt-1 break-words">{profile.pending_email}</div>
                 <div className="mt-2 text-xs leading-6">보낸 시각: {emailChangeSentLabel}</div>
               </div>
             ) : null}
@@ -791,13 +791,13 @@ export default function AccountSettingsPanel() {
               </div>
             </div>
             <dl className="ui-panel-muted mt-4 space-y-3 text-[0.95rem]">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <dt className="text-text-secondary">마지막 로그인</dt>
-                <dd className="text-right font-medium text-text">{lastSignInLabel}</dd>
+                <dd className="break-words text-left font-medium text-text sm:text-right">{lastSignInLabel}</dd>
               </div>
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <dt className="text-text-secondary">현재 세션 만료</dt>
-                <dd className="text-right font-medium text-text">{sessionExpiryLabel}</dd>
+                <dd className="break-words text-left font-medium text-text sm:text-right">{sessionExpiryLabel}</dd>
               </div>
             </dl>
             <div className="mt-4 flex flex-col gap-2">

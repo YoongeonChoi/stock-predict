@@ -41,6 +41,7 @@ export default function SettingsPage() {
   return (
     <div className="page-shell">
       <PageHeader
+        variant="compact"
         eyebrow="운영"
         title="설정 및 시스템"
         description="계정 보안, 시장 세션, 시스템 상태, 기관 리서치 동기화를 한 곳에서 확인합니다."
@@ -116,7 +117,7 @@ export default function SettingsPage() {
               <button
                 onClick={refreshResearchArchive}
                 disabled={refreshing}
-                className="ui-button-primary px-4"
+                className="ui-button-primary w-full px-4 sm:w-auto"
               >
                 {refreshing ? "새로고침 중..." : "리서치 즉시 새로고침"}
               </button>
@@ -213,7 +214,7 @@ export default function SettingsPage() {
               </div>
               <div className="metric-card">
                 <div className="font-semibold text-text">프론트 API 경로</div>
-                <div className="mt-2 break-all font-mono text-[12px] leading-6 text-text-secondary">{apiPath("/api/health")}</div>
+                <div className="mt-2 max-w-full break-words font-mono text-[12px] leading-6 text-text-secondary">{apiPath("/api/health")}</div>
               </div>
               <div className="metric-card">
                 <div className="font-semibold text-text">현재 프론트 버전</div>

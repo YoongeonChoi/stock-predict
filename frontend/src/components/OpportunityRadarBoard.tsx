@@ -104,6 +104,11 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
     data.partial && hasItems
       ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
       : null;
+  const universeBadgeLabel = usingFallbackUniverse
+    ? "기본 유니버스 응답"
+    : usingKrxListingUniverse || usingTop200Universe
+      ? (usingTop200Universe ? "대표 200종목 기준" : "KRX 전종목 기준")
+      : "실시간 유니버스 기준";
 
   if (compact) {
     return (
@@ -117,22 +122,17 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            {usingFallbackUniverse ? (
-              <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
-                {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
-              </div>
-            ) : usingKrxListingUniverse || usingTop200Universe ? (
-              <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-                {listingUniverseNote}
-              </div>
-            ) : (
-              <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-                {liveUniverseBadge}
-              </div>
-            )}
+            <div className="info-chip">{universeBadgeLabel}</div>
             <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
               유사 셋업 검증 보기
             </Link>
+          </div>
+          <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
+            {usingFallbackUniverse
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              : usingKrxListingUniverse || usingTop200Universe
+                ? listingUniverseNote
+                : liveUniverseBadge}
           </div>
           <div className="workspace-metric-grid">
             <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-3">
@@ -278,23 +278,18 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           {quoteCoverageNote ? (
             <p className="mt-2 text-xs text-text-secondary">{quoteCoverageNote}</p>
           ) : null}
-          {usingFallbackUniverse ? (
-            <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
-              {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
-            </div>
-          ) : usingKrxListingUniverse || usingTop200Universe ? (
-            <div className="mt-2 inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-              {listingUniverseNote}
-            </div>
-          ) : (
-            <div className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-              {liveUniverseBadge}
-            </div>
-          )}
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="info-chip">{universeBadgeLabel}</div>
             <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
               유사 셋업 검증 보기
             </Link>
+          </div>
+          <div className="ui-panel-muted mt-3 text-sm leading-6 text-text-secondary">
+            {usingFallbackUniverse
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              : usingKrxListingUniverse || usingTop200Universe
+                ? listingUniverseNote
+                : liveUniverseBadge}
           </div>
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 text-center sm:grid-cols-4">

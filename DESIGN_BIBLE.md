@@ -245,6 +245,8 @@
 - dense한 정보는 표로 정리한다
 - 표 바깥 설명과 표 안 메타 정보를 중복하지 않는다
 - 숫자열은 mono + right align을 기본으로 한다
+- 모바일에서는 dense table을 바로 강요하지 않고, 핵심 수치 요약 카드나 summary block을 먼저 보여준 뒤 `md` 이상에서 표 상세를 확장한다
+- 모바일에서 표 자체가 필요하면 viewport 전체 스크롤이 아니라 table frame 내부 스크롤만 허용한다
 
 ### 7.2 Chart
 
@@ -288,6 +290,9 @@
 - box보다 텍스트 흐름을 우선한다
 - pill 남발을 금지한다
 - 한 row의 action 개수는 가능한 한 줄인다
+- dense action row는 모바일에서 full-width stack이나 1열 흐름으로 먼저 정리하고, 좁은 화면에서 버튼 여러 개를 억지로 한 줄에 우겨 넣지 않는다
+- helper text, pending email, 상태 설명은 잘림보다 자연스러운 줄바꿈을 우선한다
+- audit/status chip과 metric value는 긴 티커, 경로, stale 메타가 들어와도 `max-width + wrap`으로 먼저 수용한다
 
 모바일 성공 기준:
 
@@ -323,6 +328,7 @@
 
 - 종목 헤더, 요약, 차트, 실행 정보가 box soup처럼 보이지 않게 한다
 - confidence note, data quality, summary bullets를 같은 리듬 안에서 읽히게 정리한다
+- 모바일에서는 고정 폭 보조 패널을 두지 않고, 차트/재무는 summary-first 흐름으로 재배치한다
 
 ### `/auth`, `/settings`
 

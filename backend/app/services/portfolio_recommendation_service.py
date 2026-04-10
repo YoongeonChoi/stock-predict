@@ -12,7 +12,7 @@ from app.data.supabase_client import supabase_client
 from app.services.portfolio.recommendations import build_recommendation_context_maps
 from app.services.portfolio_optimizer import attach_candidate_return_series
 from app.services import market_service, portfolio_service
-from app.utils.async_tools import gather_limited
+from app.utils.async_tools import gather_limited, is_async_failure_result
 
 COUNTRY_FILTERS = ["KR"]
 STYLE_FILTERS = ["defensive", "balanced", "offensive"]
@@ -180,18 +180,18 @@ async def _load_recommendation_context(
         return_exceptions=True,
     )
     portfolio, watchlist_rows, radar_responses = async_results
-    if isinstance(portfolio, Exception) or portfolio is None:
+    if is_async_failure_result(portfolio) or portfolio is None:
         portfolio = {"holdings": [], "risk": {}}
-    if isinstance(watchlist_rows, Exception) or watchlist_rows is None:
+    if is_async_failure_result(watchlist_rows) or watchlist_rows is None:
         watchlist_rows = []
-    if isinstance(radar_responses, Exception) or radar_responses is None:
+    if is_async_failure_result(radar_responses) or radar_responses is None:
         radar_responses = []
 
     holdings = portfolio.get("holdings") or []
     radar_items = [
         opportunity
         for response in radar_responses
-        if not isinstance(response, Exception)
+        if not is_async_failure_result(response)
         for opportunity in response.get("opportunities", [])
     ]
     regimes = [
@@ -203,7 +203,7 @@ async def _load_recommendation_context(
             "universe_note": response.get("universe_note"),
         }
         for response in radar_responses
-        if not isinstance(response, Exception)
+        if not is_async_failure_result(response)
     ]
     return portfolio, holdings, watchlist_rows, radar_items, regimes
 

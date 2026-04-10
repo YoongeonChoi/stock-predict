@@ -1,10 +1,34 @@
 import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Iterable
-from typing import TypeVar
+from typing import TypeGuard, TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")
+
+
+class GatheredBaseExceptionError(RuntimeError):
+    """Wrap BaseException results from asyncio.gather into a regular Exception."""
+
+    def __init__(self, original: BaseException):
+        self.original = original
+        detail = str(original).strip()
+        message = f"async task failed with {type(original).__name__}"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(message)
+
+
+def is_async_failure_result(value: object) -> TypeGuard[BaseException]:
+    return isinstance(value, BaseException)
+
+
+def _normalize_gather_result(value: R | BaseException) -> R | Exception:
+    if isinstance(value, Exception):
+        return value
+    if isinstance(value, BaseException):
+        return GatheredBaseExceptionError(value)
+    return value
 
 
 async def run_blocking(func: Callable[..., T], /, *args, **kwargs) -> T:
@@ -25,4 +49,5 @@ async def gather_limited(
         async with semaphore:
             return await worker(item)
 
-    return await asyncio.gather(*(_run(item) for item in items), return_exceptions=True)
+    gathered = await asyncio.gather(*(_run(item) for item in items), return_exceptions=True)
+    return [_normalize_gather_result(item) for item in gathered]

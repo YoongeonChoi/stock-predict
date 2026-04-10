@@ -125,9 +125,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   const nextDayFocus = visibleData?.next_day_focus ?? null;
   const placeholderUniverseSize = placeholderData?.universe_size ?? 0;
   const radarHeaderDescription = visibleData
-    ? visibleData.universe_source === "kr_top200"
-      ? `금일 코스피 190개 + 코스닥 10개 대표 ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
-      : `금일 KRX ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
+    ? "대표 유니버스 기준으로 오늘 먼저 볼 후보와 다음 거래일 포커스를 같은 흐름에서 정리합니다."
     : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다.";
 
   return (
@@ -140,25 +138,26 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         meta={
           <>
             <span className="info-chip">실행 후보 우선</span>
+            {visibleData ? <span className="info-chip">대표 {visibleData.universe_size.toLocaleString("ko-KR")}개</span> : null}
             {visibleData ? <span className="info-chip">1차 스캔 {visibleData.total_scanned}개</span> : null}
             {nextDayFocus ? (
               <span className="info-chip">1일 포커스 {nextDayFocus.name}</span>
             ) : null}
           </>
         }
-        actions={
+        actions={MARKETS.length > 1 ? (
           <div className="flex flex-wrap gap-2">
             {MARKETS.map((code) => (
-                <button
-                  key={code}
-                  onClick={() => setMarket(code)}
-                  className={market === code ? "action-chip-primary" : "action-chip-secondary"}
-                >
-                  {code}
-                </button>
+              <button
+                key={code}
+                onClick={() => setMarket(code)}
+                className={market === code ? "action-chip-primary" : "action-chip-secondary"}
+              >
+                {code}
+              </button>
             ))}
           </div>
-        }
+        ) : undefined}
       />
 
       {visibleData && nextDayFocus ? (

@@ -75,7 +75,8 @@ def build_market_regime(
 
     df = pd.DataFrame(price_history).sort_values("date").reset_index(drop=True)
     close = df["close"].astype(float)
-    returns = np.log(close / close.shift(1)).dropna()
+    positive_close = close.where(close > 0)
+    returns = np.log(positive_close / positive_close.shift(1)).replace([np.inf, -np.inf], np.nan).dropna()
     current = float(close.iloc[-1])
     sma20 = float(SMAIndicator(close, window=min(20, len(close))).sma_indicator().iloc[-1])
     sma60 = float(SMAIndicator(close, window=min(60, len(close))).sma_indicator().iloc[-1])

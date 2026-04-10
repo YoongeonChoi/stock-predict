@@ -898,7 +898,10 @@ async def get_historical_returns(ticker: str, days: int = 60) -> list[float]:
             closes = df["Close"].dropna().to_numpy(dtype=float)
             if len(closes) < 10:
                 return []
-            returns = list(np.diff(np.log(closes)))
+            valid_pairs = (closes[1:] > 0) & (closes[:-1] > 0)
+            if not np.any(valid_pairs):
+                return []
+            returns = list(np.log(closes[1:][valid_pairs] / closes[:-1][valid_pairs]))
             return [round(value, 6) for value in returns[-days:]]
 
         return await asyncio.to_thread(_sync)

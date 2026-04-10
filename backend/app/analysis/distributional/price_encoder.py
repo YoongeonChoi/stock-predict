@@ -25,13 +25,17 @@ def to_frame(price_history: list[dict]) -> pd.DataFrame:
 def return_series(close: pd.Series) -> np.ndarray:
     if close.empty:
         return np.array([], dtype=float)
-    return np.log(close.astype(float) / close.astype(float).shift(1)).dropna().to_numpy(dtype=float)
+    close = pd.to_numeric(close, errors="coerce")
+    valid = close.where(close > 0)
+    return np.log(valid / valid.shift(1)).replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
 
 
 def horizon_returns(close: pd.Series, horizon: int) -> np.ndarray:
     if close.empty or len(close) <= horizon:
         return np.array([], dtype=float)
-    return np.log(close.astype(float) / close.astype(float).shift(horizon)).dropna().to_numpy(dtype=float)
+    close = pd.to_numeric(close, errors="coerce")
+    valid = close.where(close > 0)
+    return np.log(valid / valid.shift(horizon)).replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
 
 
 def window_realized_vol(returns: np.ndarray, window: int) -> float:
@@ -44,10 +48,10 @@ def window_realized_vol(returns: np.ndarray, window: int) -> float:
 def garman_klass_vol(frame: pd.DataFrame) -> float:
     if frame.empty:
         return 0.0
-    high = frame["high"].astype(float).replace(0, np.nan)
-    low = frame["low"].astype(float).replace(0, np.nan)
-    open_ = frame["open"].astype(float).replace(0, np.nan)
-    close = frame["close"].astype(float).replace(0, np.nan)
+    high = frame["high"].astype(float).where(frame["high"].astype(float) > 0, np.nan)
+    low = frame["low"].astype(float).where(frame["low"].astype(float) > 0, np.nan)
+    open_ = frame["open"].astype(float).where(frame["open"].astype(float) > 0, np.nan)
+    close = frame["close"].astype(float).where(frame["close"].astype(float) > 0, np.nan)
     term = 0.5 * np.log(high / low) ** 2 - (2 * log(2) - 1) * np.log(close / open_) ** 2
     term = term.replace([np.inf, -np.inf], np.nan).dropna()
     if term.empty:

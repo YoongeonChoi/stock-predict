@@ -364,7 +364,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                         <div className="mt-3 text-sm leading-6 text-text-secondary">{trackingSummary(item)}</div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[360px]">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:min-w-[360px]">
                         <div className="rounded-2xl border border-border/60 bg-surface/65 px-3 py-2 text-right">
                           <div className="text-[11px] text-text-secondary">현재가</div>
                           <div className="mt-1 font-mono text-text">{formatPrice(item.current_price, item.country_code)}</div>
@@ -373,14 +373,14 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                           <div className="text-[11px] text-text-secondary">등락</div>
                           <div className={`mt-1 font-medium ${changeColor(item.change_pct ?? 0)}`}>{formatPct(item.change_pct)}</div>
                         </div>
-                        <div className="rounded-2xl border border-border/60 bg-surface/65 px-3 py-2 text-right">
+                        <div className="col-span-2 rounded-2xl border border-border/60 bg-surface/65 px-3 py-2 text-right sm:col-span-1">
                           <div className="text-[11px] text-text-secondary">점수</div>
                           <div className="mt-1 font-semibold text-text">{item.score_total?.toFixed(1) ?? "없음"}</div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="ui-inline-actions">
                       <button
                         onClick={() => void toggleTracking(item)}
                         disabled={isPending}

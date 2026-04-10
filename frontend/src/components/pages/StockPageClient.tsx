@@ -304,7 +304,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           </>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="ui-inline-actions">
             <Link href="/" className="action-chip-secondary">
               홈으로
             </Link>
@@ -329,7 +329,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       ) : null}
 
       <div className="card !p-4 space-y-3">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-semibold">관심종목 · 심화 추적</h2>
             <p className="mt-1 text-sm leading-6 text-text-secondary">
@@ -339,7 +339,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           <button
             onClick={handleTrackingAction}
             disabled={watchlistSyncing}
-            className="action-chip-primary disabled:cursor-wait disabled:opacity-60"
+            className="action-chip-primary w-full justify-center disabled:cursor-wait disabled:opacity-60 sm:w-auto"
           >
             {watchlistActionLabel}
           </button>
@@ -355,25 +355,25 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {overviewMetrics.map((item) => (
-          <div key={item.label} className="card !p-4">
+          <div key={item.label} className="metric-card">
             <div className="text-xs text-text-secondary">{item.label}</div>
-            <div className="font-bold mt-2">{item.value}</div>
+            <div className="mt-2 font-bold">{item.value}</div>
           </div>
         ))}
       </div>
 
       {stock.public_summary ? (
         <div className="card space-y-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-1">
               <h2 className="font-semibold">판단 요약</h2>
               <p className="text-sm text-text-secondary">
                 공개 요약은 상승 근거보다 반대 조건과 실패 시그널을 먼저 읽도록 정리했습니다.
               </p>
             </div>
-            <div className="min-w-[260px] max-w-[360px] section-slab-subtle !px-4 !py-3">
+            <div className="section-slab-subtle w-full !px-4 !py-3 sm:max-w-[360px] xl:min-w-[260px]">
               <div className="text-xs text-text-secondary">신뢰 메모</div>
               <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.confidence_note}</p>
             </div>
@@ -407,15 +407,15 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       ) : null}
 
       <div className="card">
-        <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <h2 className="font-semibold">가격 차트</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex gap-1">
+          <div className="flex flex-col gap-2 sm:items-end">
+            <div className="flex flex-wrap gap-1">
               {[{ label: "1M", value: "1mo" }, { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" }, { label: "1Y", value: "1y" }].map((period) => (
                 <button key={period.value} onClick={() => changeChartPeriod(period.value)} className={`text-xs ${chartPeriod === period.value ? "action-chip-primary" : "action-chip-secondary"}`}>{period.label}</button>
               ))}
             </div>
-            <div className="flex gap-1 ml-2 border-l border-border pl-2">
+            <div className="flex flex-wrap gap-1 sm:border-l sm:border-border sm:pl-2">
               <button onClick={() => setChartType("line")} className={`text-xs ${chartType === "line" ? "action-chip-primary" : "action-chip-secondary"}`}>라인</button>
               <button onClick={() => setChartType("candle")} className={`text-xs ${chartType === "candle" ? "action-chip-primary" : "action-chip-secondary"}`}>캔들</button>
             </div>
@@ -473,15 +473,19 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       ) : null}
 
       <div className="card">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-semibold">매수 / 매도 가이드</h2>
             <p className="text-sm text-text-secondary mt-1">{bsg.summary}</p>
           </div>
-          <span className={`text-sm px-3 py-1 rounded-full font-medium ${bsg.confidence_grade === "A" ? "bg-emerald-500/20 text-emerald-500" : bsg.confidence_grade === "B" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"}`}>신뢰 등급 {bsg.confidence_grade}</span>
+          <span
+            className={`self-start text-sm px-3 py-1 rounded-full font-medium ${bsg.confidence_grade === "A" ? "bg-emerald-500/20 text-emerald-500" : bsg.confidence_grade === "B" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"}`}
+          >
+            신뢰 등급 {bsg.confidence_grade}
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
           {guideLevels.map((item) => (
             <MetricValueCard
               key={item.label}
@@ -495,7 +499,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
         <div className="text-sm text-text-secondary">손익비: <strong>{bsg.risk_reward_ratio.toFixed(2)}</strong></div>
         {bsg.methodology.length > 0 ? (
-          <div className="mt-3 text-xs text-text-secondary space-y-1">
+          <div className="mt-3 space-y-1 break-words text-xs leading-5 text-text-secondary">
             {bsg.methodology.map((method, index) => (
               <div key={index}>• {method.name}: {formatPrice(method.value, priceKey)} (가중치 {(method.weight * 100).toFixed(0)}%) - {method.details}</div>
             ))}
@@ -578,7 +582,20 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       {stock.financials.length > 0 ? (
         <div className="card">
           <h2 className="font-semibold mb-3">최근 재무 스냅샷</h2>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {stock.financials.slice(0, 4).map((row) => (
+              <div key={row.period} className="ui-panel-muted space-y-3">
+                <div className="text-sm font-semibold text-text">{row.period}</div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <MetricValueCard label="매출" value={row.revenue?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="영업이익" value={row.operating_income?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="순이익" value={row.net_income?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="FCF" value={row.free_cash_flow?.toLocaleString() ?? "없음"} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="text-left text-text-secondary border-b border-border">
@@ -641,7 +658,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
       {composite ? (
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <h2 className="font-semibold">복합 점수</h2>
             <div className="flex items-center gap-3">
               <div className={`text-3xl font-bold ${composite.total >= 70 ? "text-positive" : composite.total >= 50 ? "text-warning" : "text-negative"}`}>{composite.total.toFixed(1)}</div>
@@ -678,9 +695,9 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
       <div className="card">
         <h2 className="font-semibold mb-4">세부 점수</h2>
-        <div className="flex items-center gap-6 mb-5 flex-wrap">
+        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
           <ScoreRadial score={stock.score.total || 0} label="종합" />
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-wrap gap-3">
             {scoreCategories.map((category) => (
               <ScoreRadial key={category.label} score={category.data.total} max={category.data.max_score} size={84} label={category.label} />
             ))}

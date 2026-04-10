@@ -1,7 +1,9 @@
+import asyncio
 import re
 import unittest
+from unittest.mock import AsyncMock, patch
 
-from app.analysis.country_analyzer import _build_macro_claims, _finalize_public_market_summary
+from app.analysis.country_analyzer import _build_macro_claims, _finalize_public_market_summary, _score_top_stocks
 from app.models.country import InstitutionalAnalysis
 from app.scoring.country_scorer import build_country_score
 
@@ -80,6 +82,38 @@ class CountryAnalyzerPublicSummaryTests(unittest.TestCase):
         )
 
         self.assertEqual(summary, "시장은 방향성보다 선별 대응이 중요한 구간입니다.\n\n기관 해석도 업종별로 나뉘어 있습니다.")
+
+
+class CountryAnalyzerResilienceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_score_top_stocks_skips_cancelled_results(self):
+        with (
+            patch(
+                "app.data.universe_data.get_universe",
+                new=AsyncMock(return_value={"Information Technology": ["005930.KS", "000660.KS"]}),
+            ),
+            patch(
+                "app.analysis.country_analyzer.gather_limited",
+                new=AsyncMock(
+                    return_value=[
+                        asyncio.CancelledError(),
+                        (
+                            91.2,
+                            "005930.KS",
+                            {
+                                "name": "Samsung Electronics",
+                                "current_price": 71000.0,
+                                "prev_close": 70000.0,
+                            },
+                        ),
+                    ]
+                ),
+            ),
+        ):
+            top_stocks = await _score_top_stocks("KR", {})
+
+        self.assertEqual(len(top_stocks), 1)
+        self.assertEqual(top_stocks[0].ticker, "005930.KS")
+        self.assertEqual(top_stocks[0].score, 91.2)
 
 
 if __name__ == "__main__":

@@ -109,7 +109,11 @@ def _volatility_score(vix: float | None, prices: list[dict]) -> float:
     if len(prices) < 20:
         return 50
     closes = [p["close"] for p in prices]
-    returns = np.diff(np.log(closes))
+    close_array = np.asarray(closes, dtype=float)
+    valid_pairs = (close_array[1:] > 0) & (close_array[:-1] > 0)
+    if not np.any(valid_pairs):
+        return 50
+    returns = np.log(close_array[1:][valid_pairs] / close_array[:-1][valid_pairs])
     vol = float(np.std(returns[-20:]) * np.sqrt(252) * 100)
     return max(0, min(100, 100 - vol * 3))
 

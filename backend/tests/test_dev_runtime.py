@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def _load_dev_runtime():
@@ -35,3 +36,46 @@ class DevRuntimeTests(unittest.TestCase):
     def test_runtime_dir_is_under_repo_root(self) -> None:
         runtime_dir = dev_runtime.ensure_runtime_dir()
         self.assertEqual(runtime_dir.name, ".run")
+
+    def test_find_project_python_prefers_repo_local_venv(self) -> None:
+        with (
+            patch.object(dev_runtime, "local_project_python_command", return_value=["venv-python"]),
+            patch.object(dev_runtime, "current_python_command", return_value=["current-python"]),
+            patch.object(dev_runtime, "windows_py_launcher_command", return_value=["py", "-3"]),
+            patch.object(dev_runtime, "python_command_runs", side_effect=lambda command: command == ["venv-python"]),
+        ):
+            self.assertEqual(dev_runtime.find_project_python(), ["venv-python"])
+
+    def test_find_project_python_falls_back_to_current_python(self) -> None:
+        with (
+            patch.object(dev_runtime, "local_project_python_command", return_value=["venv-python"]),
+            patch.object(dev_runtime, "current_python_command", return_value=["current-python"]),
+            patch.object(dev_runtime, "windows_py_launcher_command", return_value=["py", "-3"]),
+            patch.object(dev_runtime, "python_command_runs", side_effect=lambda command: command == ["current-python"]),
+        ):
+            self.assertEqual(dev_runtime.find_project_python(), ["current-python"])
+
+    def test_find_project_python_falls_back_to_windows_py_launcher(self) -> None:
+        with (
+            patch.object(dev_runtime, "local_project_python_command", return_value=["venv-python"]),
+            patch.object(dev_runtime, "current_python_command", return_value=["current-python"]),
+            patch.object(dev_runtime, "windows_py_launcher_command", return_value=["py", "-3"]),
+            patch.object(dev_runtime, "python_command_runs", side_effect=lambda command: command == ["py", "-3"]),
+        ):
+            self.assertEqual(dev_runtime.find_project_python(), ["py", "-3"])
+
+    def test_frontend_build_command_prefers_local_runner(self) -> None:
+        with (
+            patch.object(dev_runtime, "local_frontend_runner", return_value=["frontend-next", "build"]),
+            patch.object(dev_runtime, "resolve_node_runner") as resolve_node_runner,
+        ):
+            self.assertEqual(dev_runtime.frontend_build_command(), ["frontend-next", "build"])
+            resolve_node_runner.assert_not_called()
+
+    def test_frontend_typecheck_command_falls_back_to_npx(self) -> None:
+        with (
+            patch.object(dev_runtime, "local_frontend_runner", return_value=None),
+            patch.object(dev_runtime, "resolve_node_runner", return_value=["npx", "tsc", "--noEmit"]) as resolve_node_runner,
+        ):
+            self.assertEqual(dev_runtime.frontend_typecheck_command(), ["npx", "tsc", "--noEmit"])
+            resolve_node_runner.assert_called_once_with("npx", "tsc", "--noEmit")

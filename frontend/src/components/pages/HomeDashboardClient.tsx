@@ -341,25 +341,10 @@ export default function HomeDashboardClient({
           <>
             {lastUpdated ? <span className="info-chip">최근 갱신 {lastUpdated}</span> : null}
             {countryReport?.generated_at ? (
-              <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span>
+              <span className="info-chip">리포트 {toInitialClock(countryReport.generated_at)}</span>
             ) : null}
             {focusSlots.length > 0 ? <span className="info-chip">오늘 포커스 {focusSlots.length}개</span> : null}
           </>
-        }
-        actions={
-          countries.length > 1 ? (
-            <div className="flex flex-wrap gap-2">
-              {countries.map((country) => (
-                <button
-                  key={country.code}
-                  onClick={() => void loadCountryWorkspace(country.code)}
-                  className={selectedCountry === country.code ? "action-chip-primary" : "action-chip-secondary"}
-                >
-                  {COUNTRY_FLAGS[country.code]} {country.name_local}
-                </button>
-              ))}
-            </div>
-          ) : undefined
         }
       />
       <section className="card !p-5 space-y-5">

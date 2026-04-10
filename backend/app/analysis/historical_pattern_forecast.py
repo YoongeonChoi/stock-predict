@@ -114,43 +114,49 @@ def _build_feature_frame(
         df[column] = pd.to_numeric(df[column], errors="coerce")
 
     close = df["close"]
-    high = df["high"]
-    low = df["low"]
+    positive_close = close.where(close > 0, np.nan)
+    high = df["high"].where(df["high"] > 0, np.nan)
+    low = df["low"].where(df["low"] > 0, np.nan)
     volume = df["volume"]
-    daily_return = close.pct_change()
+    daily_return = positive_close.pct_change().replace([np.inf, -np.inf], np.nan)
 
-    ma20 = SMAIndicator(close, window=20).sma_indicator()
-    ma60 = SMAIndicator(close, window=60).sma_indicator()
+    ma20 = SMAIndicator(positive_close, window=20).sma_indicator()
+    ma60 = SMAIndicator(positive_close, window=60).sma_indicator()
     rolling_high_60 = high.rolling(60).max()
     rolling_volume_mean = volume.rolling(20).mean()
     rolling_volume_std = volume.rolling(20).std()
 
-    df["momentum_5"] = close.pct_change(5) * 100.0
-    df["momentum_20"] = close.pct_change(20) * 100.0
-    df["momentum_60"] = close.pct_change(60) * 100.0
-    df["rsi_14"] = RSIIndicator(close, window=14).rsi()
-    df["stretch_20"] = (close / ma20 - 1.0) * 100.0
+    df["momentum_5"] = positive_close.pct_change(5).replace([np.inf, -np.inf], np.nan) * 100.0
+    df["momentum_20"] = positive_close.pct_change(20).replace([np.inf, -np.inf], np.nan) * 100.0
+    df["momentum_60"] = positive_close.pct_change(60).replace([np.inf, -np.inf], np.nan) * 100.0
+    df["rsi_14"] = RSIIndicator(positive_close, window=14).rsi()
+    df["stretch_20"] = (positive_close / ma20 - 1.0) * 100.0
     df["trend_stack"] = (ma20 / ma60 - 1.0) * 100.0
     df["volatility_20"] = daily_return.rolling(20).std() * sqrt(252) * 100.0
     df["atr_pct"] = (
-        AverageTrueRange(high, low, close, window=14).average_true_range() / close
+        AverageTrueRange(high, low, positive_close, window=14).average_true_range() / positive_close
     ) * 100.0
     df["volume_z"] = (volume - rolling_volume_mean) / rolling_volume_std.replace(0, np.nan)
-    df["breakout_gap"] = (close / rolling_high_60 - 1.0) * 100.0
+    df["breakout_gap"] = (positive_close / rolling_high_60 - 1.0) * 100.0
     df["max_drawdown_20"] = (
-        close.shift(-20).rolling(20).min() / close - 1.0
+        positive_close.shift(-20).rolling(20).min() / positive_close - 1.0
     ) * 100.0
     df["future_vol_20"] = daily_return.shift(-1).rolling(20).std() * sqrt(252) * 100.0
 
     for horizon in HORIZONS:
-        df[f"forward_return_{horizon}"] = (close.shift(-horizon) / close - 1.0) * 100.0
+        df[f"forward_return_{horizon}"] = (
+            positive_close.shift(-horizon) / positive_close - 1.0
+        ) * 100.0
 
     if market_history:
         market_df = pd.DataFrame(market_history).copy()
         if not market_df.empty:
             market_df["date"] = market_df["date"].astype(str)
             market_df["market_close"] = pd.to_numeric(market_df["close"], errors="coerce")
-            market_df["market_momentum_20"] = market_df["market_close"].pct_change(20) * 100.0
+            market_positive_close = market_df["market_close"].where(market_df["market_close"] > 0, np.nan)
+            market_df["market_momentum_20"] = (
+                market_positive_close.pct_change(20).replace([np.inf, -np.inf], np.nan) * 100.0
+            )
             market_df = market_df[["date", "market_momentum_20"]]
             df["date"] = df["date"].astype(str)
             df = df.merge(market_df, on="date", how="left")
@@ -283,9 +289,14 @@ def build_historical_pattern_forecast(
             closes = df["close"].iloc[start_idx : start_idx + horizon + 1].to_numpy(dtype=float)
             if len(closes) < horizon + 1:
                 continue
+            if closes[0] <= 0:
+                continue
             path_returns = (closes[1:] / closes[0] - 1.0) * 100.0
             drawdowns.append(float(path_returns.min()))
-            realized_vols.append(float(np.std(np.diff(np.log(closes))) * sqrt(252) * 100.0))
+            valid_pairs = (closes[1:] > 0) & (closes[:-1] > 0)
+            if np.any(valid_pairs):
+                log_returns = np.log(closes[1:][valid_pairs] / closes[:-1][valid_pairs])
+                realized_vols.append(float(np.std(log_returns) * sqrt(252) * 100.0))
 
         avg_drawdown = float(np.average(drawdowns, weights=weights[: len(drawdowns)])) if drawdowns else 0.0
         avg_vol = float(np.average(realized_vols, weights=weights[: len(realized_vols)])) if realized_vols else 0.0

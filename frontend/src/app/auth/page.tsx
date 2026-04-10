@@ -428,6 +428,7 @@ function AuthPageContent() {
   return (
     <div className="page-shell space-y-5">
       <PageHeader
+        variant="compact"
         eyebrow="계정"
         title={mode === "recovery" ? "비밀번호 재설정" : "로그인 및 회원가입"}
         description={
@@ -438,17 +439,15 @@ function AuthPageContent() {
         meta={<span className="info-chip">로그인 후 이동: {nextPath}</span>}
       />
 
-      <section className="mx-auto grid max-w-[1180px] gap-5 xl:grid-cols-[minmax(0,1.12fr)_360px]">
+      <section className="mx-auto grid max-w-[1180px] gap-4 xl:grid-cols-[minmax(0,1.12fr)_360px]">
         <div className="card space-y-5">
           {mode !== "recovery" ? (
-            <div className="section-slab-subtle !p-1.5">
+            <div className="ui-segmented-control">
               <button
                 onClick={() => setModeInUrl("signin")}
                 className={cn(
-                  "min-h-[var(--control-height-md)] flex-1 rounded-md px-4 text-[0.95rem] font-semibold transition-colors",
-                  mode === "signin"
-                    ? "bg-accent text-white"
-                    : "text-text-secondary hover:bg-text/5 hover:text-text",
+                  "ui-segmented-option",
+                  mode === "signin" && "ui-segmented-option-active",
                 )}
               >
                 로그인
@@ -456,10 +455,8 @@ function AuthPageContent() {
               <button
                 onClick={() => setModeInUrl("signup")}
                 className={cn(
-                  "min-h-[var(--control-height-md)] flex-1 rounded-md px-4 text-[0.95rem] font-semibold transition-colors",
-                  mode === "signup"
-                    ? "bg-accent text-white"
-                    : "text-text-secondary hover:bg-text/5 hover:text-text",
+                  "ui-segmented-option",
+                  mode === "signup" && "ui-segmented-option-active",
                 )}
               >
                 회원가입
@@ -474,7 +471,7 @@ function AuthPageContent() {
                     복구 링크의 세션이 살아 있으면 여기서 새 비밀번호를 설정할 수 있습니다.
                   </p>
                 </div>
-                <button onClick={() => setModeInUrl("signin")} className="ui-button-secondary shrink-0">
+                <button onClick={() => setModeInUrl("signin")} className="ui-button-secondary w-full shrink-0 sm:w-auto">
                   로그인으로 돌아가기
                 </button>
               </div>
@@ -545,7 +542,7 @@ function AuthPageContent() {
                   label="아이디"
                   helper="영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 사용할 수 있습니다. 입력 중 자동으로 소문자로 정리됩니다."
                 >
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input
                       value={signup.username}
                       onChange={(event) =>
@@ -565,7 +562,7 @@ function AuthPageContent() {
                       type="button"
                       onClick={handleUsernameCheck}
                       disabled={usernameState.checking || usernameCooldown.active}
-                      className="ui-button-secondary shrink-0"
+                      className="ui-button-secondary shrink-0 sm:w-auto"
                     >
                       {usernameState.checking
                         ? "확인 중..."

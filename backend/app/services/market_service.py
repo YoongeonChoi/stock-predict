@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -79,6 +80,134 @@ RADAR_FOCUS_CANDIDATE_LIMIT = 6
 RADAR_FOCUS_CONCURRENCY = 3
 RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS = 2.4
 RADAR_FOCUS_TOTAL_TIMEOUT_SECONDS = 5.2
+
+
+def _optional_finite_float(value: float | None) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
+
+def _safe_round(value: float | None, digits: int, default: float = 0.0) -> float:
+    return round(_safe_float(value, default), digits)
+
+
+def _safe_optional_round(value: float | None, digits: int) -> float | None:
+    parsed = _optional_finite_float(value)
+    if parsed is None:
+        return None
+    return round(parsed, digits)
+
+
+def _sanitize_json_value(value, *, non_finite_default=None):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else non_finite_default
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_json_value(item, non_finite_default=non_finite_default)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_json_value(item, non_finite_default=non_finite_default) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_json_value(item, non_finite_default=non_finite_default) for item in value]
+    return value
+
+
+def _sanitize_chart_analysis_model(chart_analysis: ShortTermChartAnalysis) -> ShortTermChartAnalysis:
+    sanitized_factors = [
+        factor.model_copy(update={"score": _safe_float(factor.score, 0.0)})
+        for factor in list(chart_analysis.factors or [])
+    ]
+    return chart_analysis.model_copy(
+        update={
+            "score": _safe_float(chart_analysis.score, 0.0),
+            "factors": sanitized_factors,
+        }
+    )
+
+
+def _sanitize_trade_plan_model(trade_plan: TradePlan) -> TradePlan:
+    return trade_plan.model_copy(
+        update={
+            "conviction": _safe_float(trade_plan.conviction, 0.0),
+            "entry_low": _optional_finite_float(trade_plan.entry_low),
+            "entry_high": _optional_finite_float(trade_plan.entry_high),
+            "stop_loss": _optional_finite_float(trade_plan.stop_loss),
+            "take_profit_1": _optional_finite_float(trade_plan.take_profit_1),
+            "take_profit_2": _optional_finite_float(trade_plan.take_profit_2),
+            "risk_reward_estimate": _safe_float(trade_plan.risk_reward_estimate, 0.0),
+        }
+    )
+
+
+def _sanitize_next_day_forecast_model(forecast):
+    sanitized_flow_signal = None
+    if forecast.flow_signal is not None:
+        sanitized_flow_signal = forecast.flow_signal.model_copy(
+            update={
+                "foreign_net_buy": _optional_finite_float(forecast.flow_signal.foreign_net_buy),
+                "institutional_net_buy": _optional_finite_float(forecast.flow_signal.institutional_net_buy),
+                "retail_net_buy": _optional_finite_float(forecast.flow_signal.retail_net_buy),
+            }
+        )
+    sanitized_scenarios = [
+        scenario.model_copy(
+            update={
+                "price": _safe_float(scenario.price, 0.0),
+                "probability": _safe_float(scenario.probability, 0.0),
+            }
+        )
+        for scenario in list(forecast.scenarios or [])
+    ]
+    sanitized_drivers = [
+        driver.model_copy(
+            update={
+                "value": _safe_float(driver.value, 0.0),
+                "weight": _safe_float(driver.weight, 0.0),
+                "contribution": _safe_float(driver.contribution, 0.0),
+            }
+        )
+        for driver in list(forecast.drivers or [])
+    ]
+    return forecast.model_copy(
+        update={
+            "reference_price": _safe_float(forecast.reference_price, 0.0),
+            "up_probability": _safe_float(forecast.up_probability, 0.0),
+            "predicted_open": _optional_finite_float(forecast.predicted_open),
+            "predicted_close": _safe_float(forecast.predicted_close, 0.0),
+            "predicted_high": _safe_float(forecast.predicted_high, 0.0),
+            "predicted_low": _safe_float(forecast.predicted_low, 0.0),
+            "predicted_return_pct": _safe_float(forecast.predicted_return_pct, 0.0),
+            "confidence": _safe_float(forecast.confidence, 0.0),
+            "raw_confidence": _optional_finite_float(forecast.raw_confidence),
+            "calibrated_probability": _optional_finite_float(forecast.calibrated_probability),
+            "probability_edge": _optional_finite_float(forecast.probability_edge),
+            "analog_support": _optional_finite_float(forecast.analog_support),
+            "regime_support": _optional_finite_float(forecast.regime_support),
+            "agreement_support": _optional_finite_float(forecast.agreement_support),
+            "data_quality_support": _optional_finite_float(forecast.data_quality_support),
+            "volatility_ratio": _optional_finite_float(forecast.volatility_ratio),
+            "calibration_snapshot": _sanitize_json_value(
+                forecast.calibration_snapshot,
+                non_finite_default=None,
+            )
+            if forecast.calibration_snapshot is not None
+            else None,
+            "fusion_blend_weight": _optional_finite_float(forecast.fusion_blend_weight),
+            "graph_context_score": _optional_finite_float(forecast.graph_context_score),
+            "graph_coverage": _optional_finite_float(forecast.graph_coverage),
+            "news_sentiment": _safe_float(forecast.news_sentiment, 0.0),
+            "raw_signal": _safe_float(forecast.raw_signal, 0.0),
+            "flow_signal": sanitized_flow_signal,
+            "scenarios": sanitized_scenarios,
+            "drivers": sanitized_drivers,
+        }
+    )
 
 
 def _has_full_quote_screen_coverage(
@@ -241,8 +370,8 @@ def _build_quote_only_opportunities(
             total_ranked=len(ranked_quotes),
             sector=item["sector"],
             ticker=item["ticker"],
-            current_price=float(item["current_price"]),
-            change_pct=float(item["change_pct"]),
+            current_price=_safe_float(item.get("current_price"), 0.0),
+            change_pct=_safe_float(item.get("change_pct"), 0.0),
             country_code=country_code,
             market_regime=market_regime,
         )
@@ -388,7 +517,7 @@ def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> d
     normalized["bullish_count"] = sum(
         1
         for item in clipped
-        if float(item.get("up_probability_20d") or item.get("up_probability") or 0.0) >= 55.0
+        if _safe_float(item.get("up_probability_20d") or item.get("up_probability"), 0.0) >= 55.0
     )
     return normalized
 
@@ -398,7 +527,7 @@ def _focus_expected_edge_pct(*, predicted_return_pct: float, up_probability: flo
 
 
 def _focus_recent_gain_penalty(change_pct: float) -> float:
-    normalized = float(change_pct or 0.0)
+    normalized = _safe_float(change_pct, 0.0)
     surge_penalty = max(normalized - 3.2, 0.0) * 0.045
     surge_penalty += max(normalized - 6.5, 0.0) * 0.085
     fade_penalty = max(-normalized - 4.0, 0.0) * 0.02
@@ -406,10 +535,10 @@ def _focus_recent_gain_penalty(change_pct: float) -> float:
 
 
 def _focus_source_seed_score(item: OpportunityItem) -> float:
-    probability = float(item.up_probability_20d or item.up_probability or 0.0)
-    horizon_return = float(item.expected_return_pct_20d or item.predicted_return_pct or 0.0)
-    risk_reward = float(item.risk_reward_estimate or 0.0)
-    score = float(item.opportunity_score or 0.0) * 0.045
+    probability = _safe_float(item.up_probability_20d or item.up_probability, 0.0)
+    horizon_return = _safe_float(item.expected_return_pct_20d or item.predicted_return_pct, 0.0)
+    risk_reward = _safe_float(item.risk_reward_estimate, 0.0)
+    score = _safe_float(item.opportunity_score, 0.0) * 0.045
     score += max(horizon_return, 0.0) * 0.16
     score += max(probability - 50.0, 0.0) * 0.03
     score += min(max(risk_reward, 0.0), 3.0) * 0.22
@@ -419,7 +548,7 @@ def _focus_source_seed_score(item: OpportunityItem) -> float:
         score -= 0.35
     elif item.action == "avoid":
         score -= 0.6
-    if 0.3 <= float(item.change_pct or 0.0) <= 4.5:
+    if 0.3 <= _safe_float(item.change_pct, 0.0) <= 4.5:
         score += 0.18
     return round(score - _focus_recent_gain_penalty(item.change_pct), 4)
 
@@ -435,9 +564,9 @@ def _select_focus_source_items(items: list[OpportunityItem], *, limit: int) -> l
         ranked_by_ticker.values(),
         key=lambda entry: (
             entry[0],
-            float(entry[1].opportunity_score or 0.0),
-            -abs(float(entry[1].change_pct or 0.0) - 2.0),
-            float(entry[1].up_probability_20d or entry[1].up_probability or 0.0),
+            _safe_float(entry[1].opportunity_score, 0.0),
+            -abs(_safe_float(entry[1].change_pct, 0.0) - 2.0),
+            _safe_float(entry[1].up_probability_20d or entry[1].up_probability, 0.0),
         ),
         reverse=True,
     )
@@ -459,7 +588,7 @@ def _focus_selection_score(
     confidence_multiplier = 0.76 + max(confidence, 0.0) / 170.0
     risk_reward_multiplier = 1.0 + min(max(risk_reward_estimate, 0.0), 3.2) * 0.18
     recent_gain_penalty = _focus_recent_gain_penalty(change_pct)
-    chart_score = float(chart_analysis.score or 0.0)
+    chart_score = _safe_float(chart_analysis.score, 0.0)
     chart_multiplier = 0.78 + chart_score / 140.0
     chart_edge_bonus = (chart_score - 50.0) / 12.0
     chart_signal_bonus = 0.18 if chart_analysis.signal == "bullish" else -0.22 if chart_analysis.signal == "bearish" else 0.0
@@ -556,7 +685,10 @@ async def _build_next_day_focus_recommendation(
                 timeout=RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS,
             ),
         )
-        current_price = float(info.get("current_price") or snapshot.get("current_price") or item.current_price or 0.0)
+        current_price = _safe_float(
+            info.get("current_price"),
+            _safe_float(snapshot.get("current_price"), _safe_float(item.current_price, 0.0)),
+        )
         if current_price <= 0 or len(prices) < 40:
             return None
 
@@ -595,6 +727,9 @@ async def _build_next_day_focus_recommendation(
             next_day_forecast=forecast,
             market_regime=market_regime,
         )
+        forecast = _sanitize_next_day_forecast_model(forecast)
+        short_plan = _sanitize_trade_plan_model(short_plan)
+        chart_analysis = _sanitize_chart_analysis_model(chart_analysis)
 
         if short_plan.entry_low is not None and short_plan.entry_high is not None:
             entry_reference = (short_plan.entry_low + short_plan.entry_high) / 2.0
@@ -603,18 +738,23 @@ async def _build_next_day_focus_recommendation(
         downside_pct = 0.0
         if short_plan.stop_loss is not None and entry_reference > 0:
             downside_pct = max((entry_reference - short_plan.stop_loss) / entry_reference * 100.0, 0.0)
+        predicted_return_pct = _safe_float(forecast.predicted_return_pct, 0.0)
+        profit_probability = _safe_float(forecast.up_probability, 0.0)
+        forecast_confidence = _safe_float(forecast.confidence, 0.0)
+        risk_reward_estimate = _safe_float(short_plan.risk_reward_estimate, 0.0)
+        change_pct = _safe_float(item.change_pct, 0.0)
         expected_edge_pct = _focus_expected_edge_pct(
-            predicted_return_pct=float(forecast.predicted_return_pct or 0.0),
-            up_probability=float(forecast.up_probability or 0.0),
+            predicted_return_pct=predicted_return_pct,
+            up_probability=profit_probability,
         )
         selection_score = _focus_selection_score(
             expected_edge_pct=expected_edge_pct,
-            predicted_return_pct=float(forecast.predicted_return_pct or 0.0),
-            confidence=float(forecast.confidence or 0.0),
-            risk_reward_estimate=float(short_plan.risk_reward_estimate or 0.0),
+            predicted_return_pct=predicted_return_pct,
+            confidence=forecast_confidence,
+            risk_reward_estimate=risk_reward_estimate,
             regime_stance=getattr(market_regime, "stance", "neutral"),
             downside_pct=downside_pct,
-            change_pct=float(item.change_pct or 0.0),
+            change_pct=change_pct,
             chart_analysis=chart_analysis,
         )
 
@@ -642,16 +782,16 @@ async def _build_next_day_focus_recommendation(
             sector=item.sector,
             country_code=country_code,
             radar_rank=item.rank,
-            current_price=round(current_price, 2),
-            profit_probability=round(float(forecast.up_probability or 0.0), 1),
-            expected_return_pct=round(float(forecast.predicted_return_pct or 0.0), 2),
-            expected_edge_pct=round(expected_edge_pct, 2),
-            selection_score=selection_score,
+            current_price=_safe_round(current_price, 2),
+            profit_probability=_safe_round(profit_probability, 1),
+            expected_return_pct=_safe_round(predicted_return_pct, 2),
+            expected_edge_pct=_safe_round(expected_edge_pct, 2),
+            selection_score=_safe_float(selection_score, 0.0),
             selection_summary=_focus_selection_summary_v2(
                 forecast=forecast,
                 trade_plan=short_plan,
                 expected_edge_pct=expected_edge_pct,
-                change_pct=float(item.change_pct or 0.0),
+                change_pct=change_pct,
                 chart_analysis=chart_analysis,
             ),
             thesis=thesis,
@@ -1124,7 +1264,10 @@ async def get_market_opportunities(
                 asyncio.wait_for(yfinance_client.get_price_history(ticker, period="6mo"), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
                 asyncio.wait_for(yfinance_client.get_analyst_ratings(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
             )
-            current_price = float(info.get("current_price") or snapshot.get("current_price") or 0)
+            current_price = _safe_float(
+                info.get("current_price"),
+                _safe_float(snapshot.get("current_price"), 0.0),
+            )
             if current_price <= 0 or len(prices) < 40:
                 return None
 
@@ -1176,7 +1319,7 @@ async def get_market_opportunities(
                 market_regime=market_regime,
             )
 
-            prev_close = float(info.get("prev_close") or current_price)
+            prev_close = _safe_float(info.get("prev_close"), current_price)
             change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
             valuation_gap = ((buy_sell.fair_value / current_price) - 1.0) * 100.0 if current_price else 0.0
             scenario_snapshot = _scenario_snapshot(forecast)
@@ -1185,14 +1328,17 @@ async def get_market_opportunities(
                 horizon_days=20,
                 country_code=country_code,
             )
-            expected_return_pct_20d = float(horizon_20.get("expected_return_pct") or forecast.predicted_return_pct)
-            expected_excess_return_pct_20d = float(horizon_20.get("expected_excess_return_pct") or 0.0)
-            median_return_pct_20d = float(horizon_20.get("median_return_pct") or expected_return_pct_20d)
-            forecast_volatility_pct_20d = float(horizon_20.get("forecast_volatility_pct") or 0.0)
-            up_probability_20d = float(horizon_20.get("up_probability") or forecast.up_probability)
-            flat_probability_20d = float(horizon_20.get("flat_probability") or 0.0)
-            down_probability_20d = float(horizon_20.get("down_probability") or max(100.0 - up_probability_20d, 0.0))
-            distribution_confidence_20d = float(horizon_20.get("confidence") or forecast.confidence)
+            expected_return_pct_20d = _safe_float(
+                horizon_20.get("expected_return_pct"),
+                _safe_float(forecast.predicted_return_pct, 0.0),
+            )
+            expected_excess_return_pct_20d = _safe_float(horizon_20.get("expected_excess_return_pct"), 0.0)
+            median_return_pct_20d = _safe_float(horizon_20.get("median_return_pct"), expected_return_pct_20d)
+            forecast_volatility_pct_20d = _safe_float(horizon_20.get("forecast_volatility_pct"), 0.0)
+            up_probability_20d = _safe_float(horizon_20.get("up_probability"), _safe_float(forecast.up_probability, 0.0))
+            flat_probability_20d = _safe_float(horizon_20.get("flat_probability"), 0.0)
+            down_probability_20d = _safe_float(horizon_20.get("down_probability"), max(100.0 - up_probability_20d, 0.0))
+            distribution_confidence_20d = _safe_float(horizon_20.get("confidence"), _safe_float(forecast.confidence, 0.0))
             raw_confidence_20d = horizon_20.get("raw_confidence")
             calibrated_probability_20d = horizon_20.get("calibrated_probability")
             probability_edge_20d = horizon_20.get("probability_edge")
@@ -1234,12 +1380,24 @@ async def get_market_opportunities(
                 action=trade_plan.action,
                 execution_bias=forecast.execution_bias,
                 legacy_score=(
-                    float(quant_score.total)
+                    _safe_float(quant_score.total, 0.0)
                     + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 6.0
                     + max(_clip(valuation_gap, -20.0, 20.0), 0.0) * 0.12
                 ),
             )
-            opportunity_score = selection.score
+            opportunity_score = _safe_float(selection.score, 0.0)
+            price_q25_value = _safe_optional_round(price_q25_20d, 2)
+            price_q50_value = _safe_optional_round(price_q50_20d, 2)
+            price_q75_value = _safe_optional_round(price_q75_20d, 2)
+            bull_case_price = price_q75_value
+            if bull_case_price is None:
+                bull_case_price = _safe_optional_round(scenario_snapshot["bull_case_price"], 2)
+            base_case_price = price_q50_value
+            if base_case_price is None:
+                base_case_price = _safe_optional_round(scenario_snapshot["base_case_price"], 2)
+            bear_case_price = price_q25_value
+            if bear_case_price is None:
+                bear_case_price = _safe_optional_round(scenario_snapshot["bear_case_price"], 2)
 
             return OpportunityItem(
                 rank=0,
@@ -1247,38 +1405,38 @@ async def get_market_opportunities(
                 name=info.get("name") or snapshot.get("name") or ticker,
                 sector=sector,
                 country_code=country_code,
-                current_price=round(current_price, 2),
-                change_pct=round(change_pct, 2),
+                current_price=_safe_round(current_price, 2),
+                change_pct=_safe_round(change_pct, 2),
                 opportunity_score=opportunity_score,
-                quant_score=round(quant_score.total, 1),
-                up_probability=round(up_probability_20d, 1),
-                confidence=round(distribution_confidence_20d, 1),
-                predicted_return_pct=round(expected_return_pct_20d, 2),
+                quant_score=_safe_round(quant_score.total, 1),
+                up_probability=_safe_round(up_probability_20d, 1),
+                confidence=_safe_round(distribution_confidence_20d, 1),
+                predicted_return_pct=_safe_round(expected_return_pct_20d, 2),
                 target_horizon_days=20,
                 target_date_20d=horizon_20.get("target_date"),
-                expected_return_pct_20d=round(expected_return_pct_20d, 2),
-                expected_excess_return_pct_20d=round(expected_excess_return_pct_20d, 2),
-                median_return_pct_20d=round(median_return_pct_20d, 2),
-                forecast_volatility_pct_20d=round(forecast_volatility_pct_20d, 2),
-                up_probability_20d=round(up_probability_20d, 1),
-                flat_probability_20d=round(flat_probability_20d, 1),
-                down_probability_20d=round(down_probability_20d, 1),
-                distribution_confidence_20d=round(distribution_confidence_20d, 1),
-                raw_confidence_20d=round(float(raw_confidence_20d), 1) if raw_confidence_20d is not None else None,
-                calibrated_probability_20d=round(float(calibrated_probability_20d), 4) if calibrated_probability_20d is not None else None,
-                probability_edge_20d=round(float(probability_edge_20d), 4) if probability_edge_20d is not None else None,
-                analog_support_20d=round(float(analog_support_20d), 4) if analog_support_20d is not None else None,
-                regime_support_20d=round(float(regime_support_20d), 4) if regime_support_20d is not None else None,
-                agreement_support_20d=round(float(agreement_support_20d), 4) if agreement_support_20d is not None else None,
-                data_quality_support_20d=round(float(data_quality_support_20d), 4) if data_quality_support_20d is not None else None,
-                volatility_ratio_20d=round(float(volatility_ratio_20d), 4) if volatility_ratio_20d is not None else None,
+                expected_return_pct_20d=_safe_round(expected_return_pct_20d, 2),
+                expected_excess_return_pct_20d=_safe_round(expected_excess_return_pct_20d, 2),
+                median_return_pct_20d=_safe_round(median_return_pct_20d, 2),
+                forecast_volatility_pct_20d=_safe_round(forecast_volatility_pct_20d, 2),
+                up_probability_20d=_safe_round(up_probability_20d, 1),
+                flat_probability_20d=_safe_round(flat_probability_20d, 1),
+                down_probability_20d=_safe_round(down_probability_20d, 1),
+                distribution_confidence_20d=_safe_round(distribution_confidence_20d, 1),
+                raw_confidence_20d=_safe_optional_round(raw_confidence_20d, 1),
+                calibrated_probability_20d=_safe_optional_round(calibrated_probability_20d, 4),
+                probability_edge_20d=_safe_optional_round(probability_edge_20d, 4),
+                analog_support_20d=_safe_optional_round(analog_support_20d, 4),
+                regime_support_20d=_safe_optional_round(regime_support_20d, 4),
+                agreement_support_20d=_safe_optional_round(agreement_support_20d, 4),
+                data_quality_support_20d=_safe_optional_round(data_quality_support_20d, 4),
+                volatility_ratio_20d=_safe_optional_round(volatility_ratio_20d, 4),
                 confidence_calibrator_20d=confidence_calibrator_20d,
-                price_q25_20d=round(float(price_q25_20d), 2) if price_q25_20d is not None else None,
-                price_q50_20d=round(float(price_q50_20d), 2) if price_q50_20d is not None else None,
-                price_q75_20d=round(float(price_q75_20d), 2) if price_q75_20d is not None else None,
-                bull_case_price=round(float(price_q75_20d), 2) if price_q75_20d is not None else scenario_snapshot["bull_case_price"],
-                base_case_price=round(float(price_q50_20d), 2) if price_q50_20d is not None else scenario_snapshot["base_case_price"],
-                bear_case_price=round(float(price_q25_20d), 2) if price_q25_20d is not None else scenario_snapshot["bear_case_price"],
+                price_q25_20d=price_q25_value,
+                price_q50_20d=price_q50_value,
+                price_q75_20d=price_q75_value,
+                bull_case_price=bull_case_price,
+                base_case_price=base_case_price,
+                bear_case_price=bear_case_price,
                 bull_probability=round(up_probability_20d, 1),
                 base_probability=round(flat_probability_20d, 1),
                 bear_probability=round(down_probability_20d, 1),

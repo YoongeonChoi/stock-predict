@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 
 def clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
@@ -7,9 +9,12 @@ def clip(value: float, low: float, high: float) -> float:
 
 def safe_float(value: float | None, default: float = 0.0) -> float:
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return default
+    if not math.isfinite(parsed):
+        return default
+    return parsed
 
 
 def scenario_snapshot(forecast) -> dict:

@@ -10,12 +10,12 @@ interface Props {
 export default function SetupBacktestCard({ backtest }: Props) {
   return (
     <div className="card">
-      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-semibold">셋업 백테스트</h2>
           <p className="text-sm text-text-secondary mt-1 leading-relaxed">{backtest.summary}</p>
         </div>
-        <div className="text-right">
+        <div className="self-start text-left sm:text-right">
           <div className="text-xs text-text-secondary">셋업</div>
           <div className="font-medium">{backtest.setup_label}</div>
         </div>
@@ -42,7 +42,7 @@ export default function SetupBacktestCard({ backtest }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mt-3 text-sm">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5 text-sm">
         <div className="rounded-xl bg-border/20 p-3">
           <div className="text-xs text-text-secondary">중간값 수익률</div>
           <div className={`font-semibold mt-1 ${changeColor(backtest.median_return_pct)}`}>

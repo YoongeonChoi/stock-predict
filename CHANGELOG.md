@@ -2,6 +2,33 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.3 - 2026-04-10
+
+- `market/opportunities`의 `next_day_focus`와 기회 아이템 빌더를 다시 정리해, `NaN`/`inf`가 섞인 예측값·분위수·trade plan 값이 들어와도 JSON 직렬화가 깨지지 않고 안전한 기본값으로 내려가도록 보강했습니다.
+- `backend/tests/test_market_service.py`에 `allow_nan=False` 직렬화 회귀와 비정상 예측값 sanitize 테스트를 추가해, 실제로 실패했던 레이더 응답 경로를 다시 고정했습니다.
+- 분포 인코더, 시장 국면, 과거 패턴 예측, 공포·탐욕 점수, `yfinance` 수익률 추출의 로그 수익률 계산을 `0`/음수 가격 안전 경로로 정리해 `verify.py --skip-frontend --live-api-smoke` 기준 `RuntimeWarning`이 남지 않도록 보강했습니다.
+- `backend/tests/test_log_safety.py`를 추가해 비정상 가격이 섞여도 `price_encoder`, `market_regime`, `historical_pattern_forecast`, `fear_greed`, `get_historical_returns`가 `RuntimeWarning` 없이 유한값만 내도록 회귀를 고정했습니다.
+
+## v2.60.2 - 2026-04-10
+
+- `/api/briefing/daily`의 내부 레이더 로딩을 soft-timeout 방식으로 다시 묶었습니다. 이제 느린 quick 레이더 작업이 취소를 늦게 받거나 늦게 끝나도 브리핑 전체가 그 cleanup를 기다리며 오래 붙잡히지 않고, partial 요약 응답이 더 빨리 내려갑니다.
+- 브리핑 회귀 테스트를 확장해, 늦게 끝나는 레이더 작업이 있어도 서비스가 빠르게 partial로 복귀하는 동작을 고정했습니다.
+- `verify.py`에 workspace lock과 `--allow-parallel` 우회 옵션을 추가해, 같은 저장소에서 regression sweep를 겹쳐 실행할 때 unittest/cache probe가 서로 간섭하던 flaky 경로를 기본값에서 막았습니다.
+- `backend/tests/test_verify_runtime.py`를 확장해 active lock 차단과 stale lock 정리까지 회귀로 고정했습니다.
+
+## v2.60.1 - 2026-04-09
+
+- 모바일 상단 chrome과 `PageHeader`, `SearchBar`, `AuthStatus` 간격을 다시 조정해 `네비게이션 -> 검색 -> 계정 -> 본문` 흐름이 첫 화면에서 과하게 쌓이지 않도록 정리했습니다.
+- `/auth`, `/settings`, `/portfolio`, `/watchlist`, `/stock/[ticker]`의 모바일 레이아웃을 보강했습니다. segmented 전환, 입력/액션 래핑, 긴 이메일 줄바꿈, 모바일 카드 액션 정렬, 고정 폭 보조 패널 제거를 함께 맞췄습니다.
+- `/stock/[ticker]`는 차트 컨트롤 래핑을 정리하고, 최근 재무 스냅샷에 모바일 카드 요약을 추가해 좁은 화면에서는 summary-first, `md` 이상에서는 표 상세를 유지하도록 바꿨습니다.
+- `DESIGN_BIBLE.md`와 `README.md`를 갱신해 모바일 first viewport, dense action wrapping, dense table의 모바일 대체 규칙이 현재 구현과 같은 의미를 말하도록 동기화했습니다.
+- `PublicAuditStrip`와 `MetricValueCard`에 모바일 wrap 안전장치를 추가하고, `/settings`의 API 경로 표기와 `/stock/[ticker]`의 가이드·복합 점수 헤더를 더 느슨하게 재배치해 긴 메타와 값이 좁은 화면에서 잘리지 않도록 보강했습니다.
+- `/calendar`, `/watchlist/[ticker]`, `OpportunityRadarBoard`는 모바일 action row를 공용 래핑 규칙에 맞추고, 긴 운영 설명을 pill에서 본문 메모로 내려 디자인 기준의 `긴 문장을 pill 안에 넣지 않는다` 원칙과 같은 흐름으로 다시 정리했습니다.
+- `NextDayForecastCard`, `TradePlanCard`, `HistoricalPatternCard`, `SetupBacktestCard`는 상단 summary row와 5칸 metric strip을 모바일 우선 1열/2열 흐름으로 다시 배치해 종목 상세 내부 카드도 같은 반응형 리듬을 따르도록 맞췄습니다.
+- `dev_runtime.py`, `start.py`, `verify.py`의 실행기 해석 규칙을 통일했습니다. 이제 Python은 `repo-local venv -> 현재 Python -> Windows py -3`, 프론트 실행기는 `frontend/node_modules/.bin -> PATH npm/npx` 순서로 찾고, `verify.py --deployed-site-smoke`가 로컬 dev server를 불필요하게 띄우던 동작도 제거했습니다.
+- `verify.py`에 `--full-sweep`, backend requirements import probe, responsive viewport matrix 연결을 추가하고, `--skip-frontend`는 `start.py --check --skip-frontend`와 같은 의미로 동작하도록 맞췄습니다. 그래서 frontend toolchain이 없는 backend-only 점검과 missing dependency 실패가 더 짧고 분명하게 보입니다.
+- backend data 경로에서 이미 사용하던 `requests`를 `backend/requirements.txt`에 반영하고, 관련 런처/verify 회귀 테스트를 추가해 새 환경에서 requirements 누락 때문에 검증 루프가 불완전하게 깨지지 않도록 보강했습니다.
+
 ## v2.60.0 - 2026-04-08
 
 - 전역 UI 디자인 시스템을 `glass/card-heavy` 톤에서 `brutal editorial + less is more` 기준으로 다시 정리했습니다. 라이트 모드를 canonical theme로 두고 `IBM Plex Sans KR`와 `IBM Plex Mono`를 기준 글꼴로 맞췄습니다.
