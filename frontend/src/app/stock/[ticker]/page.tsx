@@ -10,6 +10,6 @@ export default async function StockPage({
   params: { ticker: string };
 }) {
   const initialTicker = decodeURIComponent(params.ticker);
-  const initialData = await timeboxServerPromise(() => getPublicStockDetail(initialTicker), 6500, null);
+  const initialData = await timeboxServerPromise(() => getPublicStockDetail(initialTicker), 3200, null);
   return <StockPageClient initialTicker={initialTicker} initialData={initialData} />;
 }

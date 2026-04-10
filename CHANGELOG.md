@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.10 - 2026-04-11
+
+- 메모리 hot cache에 `entry_count + total bytes + per-entry bytes` 상한을 함께 걸고, oversized payload는 SQLite에만 저장하고 in-memory cache에는 올리지 않도록 정리했습니다. Render memory-safe 모드에서는 캐시 상한을 더 보수적으로 적용해 `500MB` 서버에서 큰 partial/report payload가 deep copy와 함께 누적되는 경로를 줄였습니다.
+- `/api/diagnostics`는 `memory_diagnostics`를 함께 반환해 RSS/cgroup 사용량, cache entry 수, 추정 캐시 바이트, oversized write skip 횟수, memory pressure 상태를 바로 볼 수 있게 했습니다. accuracy/research archive probe도 병렬화해 진단 엔드포인트 자체의 응답 시간을 더 짧게 유지합니다.
+- 공개 지연 경로는 `market/opportunities` quick timeout, `stock detail` quick/full grace, 홈·레이더·스크리너·종목/관심종목 SSR timebox를 더 짧게 조정했습니다. fallback 구조는 유지하면서 first HTML과 quick partial 응답이 cold path를 오래 기다리지 않도록 다시 맞췄습니다.
+- `backend/tests/test_cache_and_universe.py`, `backend/tests/test_system_service.py`를 확장해 oversized memory cache skip과 diagnostics 병렬 probe를 회귀로 고정했고, `verify.py --skip-frontend`, `verify.py --skip-frontend --live-api-smoke`까지 다시 통과했습니다.
+
 ## v2.60.9 - 2026-04-10
 
 - `verify.py --deployed-site-smoke`가 하위 headless browser 프로세스에서 오래 멈추지 않도록 `browser_smoke.py`에 per-command timeout과 전체 deadline을 추가하고, `verify.py`도 같은 시간 예산을 넘겨 주도록 정리했습니다. 이제 배포 브라우저 스모크는 hang 대신 구조화된 실패로 빠르게 종료됩니다.

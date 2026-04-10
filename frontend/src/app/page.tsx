@@ -27,8 +27,8 @@ export default async function HomePage() {
     timeboxServerPromise(() => getPublicDailyBriefing(), 3200, null),
     timeboxServerPromise(() => getPublicHeatmap("KR"), 2600, null),
     timeboxServerPromise(() => getPublicMarketMovers("KR"), 2600, null),
-    timeboxServerPromise(() => getPublicOpportunities("KR", 12), 4200, null),
-    timeboxServerPromise(() => getPublicCountryReport("KR"), 3200, null),
+    timeboxServerPromise(() => getPublicOpportunities("KR", 12), 2800, null),
+    timeboxServerPromise(() => getPublicCountryReport("KR"), 2600, null),
   ]);
 
   return (

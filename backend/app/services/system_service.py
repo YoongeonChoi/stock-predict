@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import platform
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows fallback
+    resource = None
+
 from app.analysis.free_kr_forecast import MODEL_VERSION as FREE_KR_MODEL_VERSION
 from app.analysis.historical_pattern_forecast import MODEL_VERSION as HISTORICAL_MODEL_VERSION
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.config import get_settings
+from app.data import cache as data_cache
 from app.runtime import get_runtime_state
 from app.services import (
     archive_service,
@@ -98,27 +106,129 @@ def _empty_route_stability_summary() -> dict:
     }
 
 
+async def _run_best_effort_probe(loader, *, timeout_seconds: int) -> tuple[object | None, str | None]:
+    try:
+        result = await asyncio.wait_for(loader(), timeout=max(timeout_seconds, 1))
+        return result, None
+    except asyncio.TimeoutError:
+        return None, f"timeout after {max(timeout_seconds, 1)}s"
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _read_int_file(path: str) -> int | None:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = handle.read().strip()
+    except OSError:
+        return None
+    if not raw or raw == "max":
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _get_process_memory_snapshot(settings) -> dict:
+    rss_bytes = None
+    peak_rss_bytes = None
+    source = "unavailable"
+
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as handle:
+            status_lines = handle.readlines()
+        values: dict[str, int] = {}
+        for line in status_lines:
+            if ":" not in line:
+                continue
+            name, raw_value = line.split(":", 1)
+            parts = raw_value.strip().split()
+            if len(parts) >= 2 and parts[0].isdigit() and parts[1].lower() == "kb":
+                values[name] = int(parts[0]) * 1024
+        rss_bytes = values.get("VmRSS")
+        peak_rss_bytes = values.get("VmHWM")
+        if rss_bytes is not None or peak_rss_bytes is not None:
+            source = "proc_status"
+    except OSError:
+        pass
+
+    if rss_bytes is None:
+        try:
+            if resource is None:
+                raise RuntimeError("resource module unavailable")
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            factor = 1 if platform.system() == "Darwin" else 1024
+            peak_rss_bytes = int(usage.ru_maxrss) * factor
+            rss_bytes = peak_rss_bytes
+            source = "resource"
+        except Exception:
+            pass
+
+    cgroup_current_bytes = (
+        _read_int_file("/sys/fs/cgroup/memory.current")
+        or _read_int_file("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+    )
+    cgroup_limit_bytes = (
+        _read_int_file("/sys/fs/cgroup/memory.max")
+        or _read_int_file("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    )
+    cache_stats = data_cache.get_memory_cache_stats()
+
+    configured_budget_bytes = max(1, int(settings.runtime_memory_budget_mb)) * 1024 * 1024
+    resolved_budget_bytes = cgroup_limit_bytes or configured_budget_bytes
+    observed_bytes = cgroup_current_bytes or rss_bytes or 0
+    pressure_ratio = (observed_bytes / resolved_budget_bytes) if resolved_budget_bytes else 0.0
+    pressure_state = "ok"
+    if pressure_ratio >= 0.9:
+        pressure_state = "critical"
+    elif pressure_ratio >= 0.75:
+        pressure_state = "warning"
+
+    return {
+        "source": source,
+        "rss_bytes": rss_bytes,
+        "rss_mb": round((rss_bytes or 0) / (1024 * 1024), 2) if rss_bytes is not None else None,
+        "peak_rss_bytes": peak_rss_bytes,
+        "peak_rss_mb": round((peak_rss_bytes or 0) / (1024 * 1024), 2) if peak_rss_bytes is not None else None,
+        "cgroup_current_bytes": cgroup_current_bytes,
+        "cgroup_current_mb": round((cgroup_current_bytes or 0) / (1024 * 1024), 2) if cgroup_current_bytes is not None else None,
+        "cgroup_limit_bytes": cgroup_limit_bytes,
+        "cgroup_limit_mb": round((cgroup_limit_bytes or 0) / (1024 * 1024), 2) if cgroup_limit_bytes is not None else None,
+        "configured_budget_mb": int(settings.runtime_memory_budget_mb),
+        "resolved_budget_mb": round(resolved_budget_bytes / (1024 * 1024), 2) if resolved_budget_bytes else None,
+        "pressure_ratio": round(pressure_ratio, 4),
+        "pressure_state": pressure_state,
+        "memory_cache": cache_stats,
+        "render_memory_safe_mode": bool(settings.startup_memory_safe_mode),
+    }
+
+
 async def get_diagnostics() -> dict:
     settings = get_settings()
     runtime_state = get_runtime_state()
+    diagnostics_probe_timeout_seconds = max(
+        1,
+        int(
+            getattr(
+                settings,
+                "effective_diagnostics_probe_timeout_seconds",
+                getattr(settings, "diagnostics_probe_timeout_seconds", 3),
+            )
+        ),
+    )
 
-    accuracy = None
-    accuracy_error = None
-    research_archive = None
-    research_archive_error = None
+    (accuracy, accuracy_error), (research_archive, research_archive_error) = await asyncio.gather(
+        _run_best_effort_probe(
+            lambda: archive_service.get_accuracy(refresh=False),
+            timeout_seconds=diagnostics_probe_timeout_seconds,
+        ),
+        _run_best_effort_probe(
+            lambda: research_archive_service.get_public_research_status(refresh_if_missing=False),
+            timeout_seconds=diagnostics_probe_timeout_seconds,
+        ),
+    )
     calibration_profiles = None
-    try:
-        accuracy = await archive_service.get_accuracy(refresh=False)
-    except Exception as exc:
-        accuracy_error = str(exc)
-
-    try:
-        research_archive = await research_archive_service.get_public_research_status(
-            refresh_if_missing=False
-        )
-    except Exception as exc:
-        research_archive_error = str(exc)
-
     try:
         calibration_profiles = confidence_calibration_service.get_profile_summary()
     except Exception:
@@ -208,12 +318,14 @@ async def get_diagnostics() -> dict:
     status = runtime_state["status"]
     if (accuracy_error or research_archive_error) and status == "ok":
         status = "degraded"
+    memory_diagnostics = _get_process_memory_snapshot(settings)
 
     return {
         "status": status,
         "version": APP_VERSION,
         "started_at": runtime_state["started_at"],
         "startup_tasks": runtime_state["startup_tasks"],
+        "memory_diagnostics": memory_diagnostics,
         "data_sources": data_sources,
         "forecast_models": [
             {

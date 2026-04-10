@@ -9,10 +9,15 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.9`
+현재 릴리즈: `v2.60.10`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
+
+- 메모리 캐시는 이제 전체 엔트리 수와 총 용량뿐 아니라 `per-entry` 상한도 함께 적용합니다. 큰 리포트·대시보드 payload는 SQLite에는 계속 저장하되 in-memory hot cache에는 올리지 않아, `500MB` Render 인스턴스에서 deep copy 기반 메모리 누적이 커지는 구간을 더 강하게 막습니다.
+- `/api/diagnostics`는 `memory_diagnostics`를 함께 내려 현재 RSS/cgroup 사용량, 메모리 압박 상태, hot memory cache 엔트리 수와 추정 바이트, oversized cache write skip 횟수를 같이 보여줍니다. accuracy/research archive probe도 병렬로 돌려 진단 엔드포인트 자체가 느려지는 구간을 줄였습니다.
+- 공개 지연 경로는 `quick` fallback 기준을 더 짧게 조정했습니다. `market/opportunities` quick timeout과 `stock detail` quick/full grace를 줄였고, 홈·레이더·스크리너·종목 상세 SSR은 클라이언트 hydration 재요청이 있는 화면부터 timebox를 더 낮춰 첫 HTML이 backend cold path를 오래 기다리지 않도록 정리했습니다.
+- `scripts/latency_probe.py`를 운영/로컬 지연 재현용으로 정리해 프론트 HTML, 핵심 공개 API, `/api/diagnostics`의 route latency와 `memory_diagnostics`를 같은 형식으로 다시 측정할 수 있게 했습니다.
 
 - `verify.py --deployed-site-smoke`가 하위 headless browser 프로세스에서 오래 멈추지 않도록 브라우저 스모크에 명시적 command timeout과 전체 deadline을 추가했습니다. 이제 배포 검증은 hang 대신 구조화된 실패로 빠르게 돌아와 다음 회귀를 이어서 잡을 수 있습니다.
 - `country report` timeout 테스트는 `last_success`/archived cache 오염에 흔들리지 않도록 분리했고, SQLite schema bootstrap은 import 시점과 startup에서 두 번 돌지 않도록 1회 보장으로 정리했습니다. 그래서 배포 검증 루프는 더 안정적으로 반복되고, cold start 때 health 공개 전 불필요한 초기화 비용도 줄였습니다.

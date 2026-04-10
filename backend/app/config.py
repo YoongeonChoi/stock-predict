@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     cache_ttl_report: int = 21600
     cache_ttl_forecast: int = 21600
     cache_ttl_fear_greed: int = 3600
+    cache_memory_max_entries: int = 256
+    cache_memory_max_mb: int = 64
+    cache_memory_max_entry_mb: int = 8
+    diagnostics_probe_timeout_seconds: int = 3
+    runtime_memory_budget_mb: int = 500
 
     model_config = {
         "env_file": ".env",
@@ -158,6 +163,34 @@ class Settings(BaseSettings):
         if self.startup_memory_safe_mode:
             return 1
         return max(1, int(self.startup_background_task_concurrency))
+
+    @property
+    def effective_cache_memory_max_entries(self) -> int:
+        configured = max(1, int(self.cache_memory_max_entries))
+        if self.startup_memory_safe_mode:
+            return min(configured, 96)
+        return configured
+
+    @property
+    def effective_cache_memory_max_mb(self) -> int:
+        configured = max(1, int(self.cache_memory_max_mb))
+        if self.startup_memory_safe_mode:
+            return min(configured, 24)
+        return configured
+
+    @property
+    def effective_cache_memory_max_entry_mb(self) -> int:
+        configured = max(1, int(self.cache_memory_max_entry_mb))
+        if self.startup_memory_safe_mode:
+            return min(configured, 2)
+        return configured
+
+    @property
+    def effective_diagnostics_probe_timeout_seconds(self) -> int:
+        configured = max(1, int(self.diagnostics_probe_timeout_seconds))
+        if self.startup_memory_safe_mode:
+            return min(configured, 2)
+        return configured
 
     @property
     def effective_stock_detail_background_refresh(self) -> bool:

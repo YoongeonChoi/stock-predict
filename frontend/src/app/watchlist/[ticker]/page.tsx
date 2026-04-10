@@ -10,6 +10,6 @@ export default async function WatchlistTrackingPage({
   params: { ticker: string };
 }) {
   const initialTicker = decodeURIComponent(params.ticker);
-  const initialData = await timeboxServerPromise(() => getPublicStockDetail(initialTicker), 6500, null);
+  const initialData = await timeboxServerPromise(() => getPublicStockDetail(initialTicker), 3200, null);
   return <WatchlistTrackingPageClient initialTicker={initialTicker} initialData={initialData} />;
 }

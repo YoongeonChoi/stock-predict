@@ -33,9 +33,9 @@ from app.utils import build_route_trace
 router = APIRouter(prefix="/api", tags=["stock"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
-STOCK_DETAIL_TIMEOUT_SECONDS = 12.0
-STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 24.0
-STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 4.0
+STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
+STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
+STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 
 
