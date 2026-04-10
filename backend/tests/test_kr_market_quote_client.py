@@ -1,6 +1,9 @@
+import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from app.data import cache
 from app.data import kr_market_quote_client
 
 
@@ -28,6 +31,9 @@ SAMPLE_HTML = """
 
 
 class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        await cache.invalidate("kr_market_quotes:representative:%")
+
     def test_parse_market_page_quotes_extracts_tickers(self):
         last_page, quotes = kr_market_quote_client._parse_market_page_quotes(
             SAMPLE_HTML,
@@ -173,6 +179,108 @@ class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
             quotes = await kr_market_quote_client.get_kr_representative_quotes(limit=2)
 
         self.assertEqual(list(quotes.keys()), ["005930.KS", "000660.KS"])
+
+    async def test_representative_quotes_return_last_success_without_waiting_for_slow_refresh(self):
+        session_token = "2026-03-27"
+        cache_key = f"kr_market_quotes:representative:1:{session_token}"
+        last_success_key = f"{cache_key}:last_success"
+        stale_quotes = {
+            "005930.KS": {"ticker": "005930.KS", "current_price": 179700.0},
+        }
+        fresh_quotes = {
+            "000660.KS": {"ticker": "000660.KS", "current_price": 922000.0},
+        }
+        started = asyncio.Event()
+
+        class DummyAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        async def slow_fetch_market_page(*args, **kwargs):
+            started.set()
+            await asyncio.sleep(0.05)
+            return 1, fresh_quotes
+
+        await cache.set(last_success_key, stale_quotes, ttl=60)
+
+        with (
+            patch("app.data.kr_market_quote_client.market_session_cache_token", return_value=session_token),
+            patch(
+                "app.data.kr_market_quote_client.get_settings",
+                return_value=SimpleNamespace(cache_ttl_price=900),
+            ),
+            patch(
+                "app.data.kr_market_quote_client.KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS",
+                0.001,
+            ),
+            patch("app.data.kr_market_quote_client.httpx.AsyncClient", DummyAsyncClient),
+            patch(
+                "app.data.kr_market_quote_client._fetch_market_page",
+                side_effect=slow_fetch_market_page,
+            ),
+        ):
+            quotes = await kr_market_quote_client._fetch_representative_kr_market_quotes()
+            await started.wait()
+            await asyncio.sleep(0.16)
+            cached_quotes = await cache.get(cache_key)
+            refreshed_last_success = await cache.get(last_success_key)
+
+        self.assertEqual(quotes, stale_quotes)
+        self.assertEqual(cached_quotes, fresh_quotes)
+        self.assertEqual(refreshed_last_success, fresh_quotes)
+
+    async def test_representative_quotes_return_empty_placeholder_on_first_timeout(self):
+        session_token = "2026-03-27"
+        cache_key = f"kr_market_quotes:representative:1:{session_token}"
+        fresh_quotes = {
+            "005380.KS": {"ticker": "005380.KS", "current_price": 248000.0},
+        }
+        started = asyncio.Event()
+
+        class DummyAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        async def slow_fetch_market_page(*args, **kwargs):
+            started.set()
+            await asyncio.sleep(0.05)
+            return 1, fresh_quotes
+
+        with (
+            patch("app.data.kr_market_quote_client.market_session_cache_token", return_value=session_token),
+            patch(
+                "app.data.kr_market_quote_client.get_settings",
+                return_value=SimpleNamespace(cache_ttl_price=900),
+            ),
+            patch(
+                "app.data.kr_market_quote_client.KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS",
+                0.001,
+            ),
+            patch("app.data.kr_market_quote_client.httpx.AsyncClient", DummyAsyncClient),
+            patch(
+                "app.data.kr_market_quote_client._fetch_market_page",
+                side_effect=slow_fetch_market_page,
+            ),
+        ):
+            quotes = await kr_market_quote_client._fetch_representative_kr_market_quotes()
+            await started.wait()
+            await asyncio.sleep(0.16)
+            cached_quotes = await cache.get(cache_key)
+
+        self.assertEqual(quotes, {})
+        self.assertEqual(cached_quotes, fresh_quotes)
 
 
 if __name__ == "__main__":

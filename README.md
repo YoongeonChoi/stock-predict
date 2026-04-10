@@ -9,11 +9,12 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.5`
+현재 릴리즈: `v2.60.6`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 공개 `screener`의 KR representative quote 캐시는 이제 짧은 `wait_timeout` 뒤에 최근 정상 `last_success`를 우선 다시 쓰고, 그것도 없으면 빈 placeholder로 바로 복귀한 뒤 background refresh를 이어 갑니다. 그래서 운영 cold request에서도 `partial` warming 응답이 대표 시세 fetch를 끝까지 기다리며 10초 넘게 늘어지는 구간을 더 줄였습니다.
 - 공개 `country report`는 이제 최근 정상 캐시가 있으면 그 응답을 바로 내리고, 캐시가 없어도 최근 아카이브가 있으면 stale public fallback을 즉시 내려줍니다. 최신 정밀 계산은 백그라운드 refresh로 계속 갱신해서, 운영에서는 느린 국가 리포트 계산 때문에 첫 응답이 20초 이상 붙잡히는 구간을 더 줄였습니다.
 - 공개 `country report`는 정밀 계산 timeout과 export timeout을 분리했습니다. 운영 공개 경로는 더 이른 시점에 archived report/시장 스냅샷 fallback으로 내려가고, PDF/CSV export는 기존 여유 시간을 유지해 배포 스모크의 15초 기준과 내보내기 안정성을 같이 맞춥니다.
 - `country report` fallback은 최근 정상 아카이브에 이미 `top_stocks`가 있으면 quick 후보 조회를 다시 돌지 않도록 순서를 정리했습니다. 그래서 운영에서 느린 공개 요청이 fallback 단계에서 추가로 1초 이상 더 붙잡히는 경로를 줄였습니다.

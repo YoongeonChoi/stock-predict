@@ -6,6 +6,7 @@ to yfinance for any remaining KR tickers such as KONEX names.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
@@ -33,6 +34,7 @@ KR_BULK_QUOTE_TTL = 900
 KR_REMAINDER_FALLBACK_LIMIT = 180
 KR_SMALL_REQUEST_FAST_PATH_LIMIT = 120
 KR_REPRESENTATIVE_MARKET_PAGES = 1
+KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS = 1.0
 KR_RADAR_KOSPI_LIMIT = 190
 KR_RADAR_KOSDAQ_LIMIT = 10
 NAVER_MARKET_SUM_PAGE_SIZE = 50
@@ -209,6 +211,9 @@ async def _fetch_representative_kr_market_quotes(*, pages_per_market: int = KR_R
     session_token = market_session_cache_token(country_code="KR")
     settings = get_settings()
     page_count = max(1, int(pages_per_market))
+    cache_ttl = min(max(settings.cache_ttl_price, 300), KR_BULK_QUOTE_TTL)
+    cache_key = f"kr_market_quotes:representative:{page_count}:{session_token}"
+    last_success_key = f"{cache_key}:last_success"
 
     async def _fetch():
         merged: dict[str, dict] = {}
@@ -226,12 +231,32 @@ async def _fetch_representative_kr_market_quotes(*, pages_per_market: int = KR_R
                         market_label=market_label,
                     )
                     merged.update(quotes)
+        if merged:
+            await cache.set(last_success_key, merged, cache_ttl)
         return merged
 
+    async def _timeout_fallback() -> dict[str, dict]:
+        last_success = await cache.get(last_success_key)
+        if last_success:
+            logging.info(
+                "KR representative quote refresh timed out after %.1fs; serving last_success cache for %s",
+                KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS,
+                cache_key,
+            )
+            return last_success
+        logging.info(
+            "KR representative quote refresh timed out after %.1fs with no last_success cache; returning empty placeholder for %s",
+            KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS,
+            cache_key,
+        )
+        return {}
+
     return await cache.get_or_fetch(
-        f"kr_market_quotes:representative:{page_count}:{session_token}",
+        cache_key,
         _fetch,
-        min(max(settings.cache_ttl_price, 300), KR_BULK_QUOTE_TTL),
+        cache_ttl,
+        wait_timeout=KR_REPRESENTATIVE_FETCH_WAIT_TIMEOUT_SECONDS,
+        timeout_fallback=_timeout_fallback,
     )
 
 

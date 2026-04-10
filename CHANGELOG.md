@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.6 - 2026-04-10
+
+- `kr_market_quote_client`의 representative quote 캐시에 짧은 `wait_timeout`과 `last_success` fallback을 추가했습니다. 이제 공개 `/api/screener?country=KR&limit=20`의 cold partial 경로가 느린 대표 시세 fetch를 끝까지 기다리지 않고, 최근 정상 시세가 있으면 바로 그 값을 재사용하며 없을 때도 빈 placeholder로 빨리 복귀한 뒤 background refresh를 이어 갑니다.
+- `backend/tests/test_kr_market_quote_client.py`, `backend/tests/test_public_dashboard_timeouts.py`를 확장해 대표 시세 refresh timeout 시 stale cache 즉시 응답, 첫 timeout의 empty placeholder 복귀, screener bulk partial fallback 경로를 회귀로 고정했습니다.
+
 ## v2.60.5 - 2026-04-10
 
 - 공개 `/api/country/{code}/report`는 최근 정상 `last_success` 캐시가 있으면 그 응답을 먼저 내리고, 캐시가 없더라도 최근 아카이브가 있으면 stale public fallback을 즉시 내려주도록 바꿨습니다. 최신 정밀 계산은 background refresh로 계속 이어 가기 때문에 운영에서 첫 응답이 `20초+`로 늘어지는 구간을 더 줄였습니다.
