@@ -38,6 +38,7 @@ settings = get_settings()
 STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
+STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 
@@ -90,6 +91,17 @@ def _schedule_stock_detail_persist(detail: dict, ticker: str) -> bool:
         label=f"stock detail persist {ticker}",
         trim_reason="stock_detail_post",
     )
+
+
+async def _timed_stock_cache_lookup(job: Awaitable[Any], *, label: str) -> Any | None:
+    try:
+        return await asyncio.wait_for(job, timeout=STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning("%s timed out after %.2fs; continuing as cache miss.", label, STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS)
+        return None
+    except Exception as exc:
+        logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+        return None
 
 
 def _record_stock_detail_trace(
@@ -317,7 +329,10 @@ async def get_stock_detail(
 ):
     started_at = time.perf_counter()
     ticker = _resolve_kr_ticker(ticker)
-    cached = await get_cached_stock_detail(ticker, refresh_quote=False)
+    cached = await _timed_stock_cache_lookup(
+        get_cached_stock_detail(ticker, refresh_quote=False),
+        label=f"stock full cache lookup {ticker}",
+    )
     if cached:
         _record_stock_detail_trace(
             started_at,
@@ -333,7 +348,10 @@ async def get_stock_detail(
         )
         return _build_stock_success_response(cached, trim_reason="stock_detail")
 
-    cached_quick = await get_cached_quick_stock_detail(ticker)
+    cached_quick = await _timed_stock_cache_lookup(
+        get_cached_quick_stock_detail(ticker),
+        label=f"stock quick cache lookup {ticker}",
+    )
     quick_fallback = cached_quick
     if cached_quick:
         return await _serve_quick_stock_detail(
@@ -363,7 +381,10 @@ async def get_stock_detail(
             )
         detail = await asyncio.wait_for(analyze_stock(ticker), timeout=detail_timeout)
     except asyncio.TimeoutError:
-        cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
+        cached_quick = quick_fallback or await _timed_stock_cache_lookup(
+            get_cached_quick_stock_detail(ticker),
+            label=f"stock quick cache lookup after timeout {ticker}",
+        )
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
@@ -382,7 +403,10 @@ async def get_stock_detail(
                 prefer_full,
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
-        cached = await get_cached_stock_detail(ticker, refresh_quote=False)
+        cached = await _timed_stock_cache_lookup(
+            get_cached_stock_detail(ticker, refresh_quote=False),
+            label=f"stock full cache lookup after timeout {ticker}",
+        )
         if cached:
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
@@ -412,7 +436,10 @@ async def get_stock_detail(
         _maybe_trim_public_route_memory("stock_detail")
         return JSONResponse(status_code=504, content=err.to_dict())
     except Exception as e:
-        cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
+        cached_quick = quick_fallback or await _timed_stock_cache_lookup(
+            get_cached_quick_stock_detail(ticker),
+            label=f"stock quick cache lookup after error {ticker}",
+        )
         if cached_quick:
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
@@ -432,7 +459,10 @@ async def get_stock_detail(
                 str(e)[:200],
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
-        cached = await get_cached_stock_detail(ticker, refresh_quote=False)
+        cached = await _timed_stock_cache_lookup(
+            get_cached_stock_detail(ticker, refresh_quote=False),
+            label=f"stock full cache lookup after error {ticker}",
+        )
         if cached:
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,

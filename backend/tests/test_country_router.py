@@ -394,6 +394,37 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         payload = json.loads(response.body.decode("utf-8"))
         self.assertTrue(payload["partial"])
 
+    async def test_get_country_report_skips_slow_cached_lookups(self):
+        report = {
+            "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
+            "market_summary": "summary",
+            "macro_claims": [],
+            "key_news": [],
+            "institutional_analysis": {"policy_institutions": [], "sell_side": [], "policy_sellside_aligned": False, "consensus_count": 0, "consensus_summary": ""},
+            "top_stocks": [],
+            "fear_greed": {"value": 50.0, "label": "neutral", "summary": ""},
+            "forecast": {"index_ticker": "KS11", "index_name": "KOSPI", "current_price": 1.0, "fair_value": 1.0, "scenarios": [], "confidence_note": ""},
+            "market_data": {"KOSPI": {"price": 2500.0, "change_pct": 0.1}},
+            "generated_at": "2026-04-04T00:00:00",
+        }
+
+        async def _slow_cached(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return report
+
+        with (
+            patch("app.routers.country.COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(side_effect=_slow_cached)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(side_effect=_slow_cached)),
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, False))) as loader,
+            patch("app.routers.country.archive_service.save_report", new=AsyncMock()),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        loader.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.16 - 2026-04-11
+
+- 공개 `country report`와 `stock detail`은 cached/archive lookup 자체에도 짧은 timeout을 적용합니다. SQLite/cache 조회가 지연되면 오래 붙잡히지 않고 즉시 miss로 간주해 fallback/quick path로 내려가도록 바꿔, 운영에서 보인 `report는 partial인데도 10초 이상 늦는` 구간을 더 줄였습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 slow cached lookup을 timeout으로 건너뛰고 정상 응답을 유지하는 회귀를 추가했습니다.
+
 ## v2.60.15 - 2026-04-11
 
 - 공개 `country report`와 `stock detail`이 응답 직전에 prediction capture / archive save를 동기식으로 기다리던 경로를 정리했습니다. 이제 full report는 응답을 먼저 반환하고 저장성 후처리는 분리해, 운영에서 보이던 `SP-9999 / No response returned` 500과 첫 응답 지연 가능성을 줄였습니다.

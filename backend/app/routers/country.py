@@ -27,6 +27,8 @@ router = APIRouter(prefix="/api", tags=["country"])
 settings = get_settings()
 COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 8
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
+COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
 COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 1.0
 OPPORTUNITY_TIMEOUT_SECONDS = 8
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 4
@@ -428,6 +430,17 @@ def _schedule_country_report_persist(report: dict, code: str) -> bool:
         label=f"country report persist {code}",
         trim_reason="country_report_post",
     )
+
+
+async def _timed_country_lookup(job: Awaitable[Any], *, timeout_seconds: float, label: str) -> Any | None:
+    try:
+        return await asyncio.wait_for(job, timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logging.warning("%s timed out after %.2fs; continuing without cached state.", label, timeout_seconds)
+        return None
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, exc, exc_info=True)
+        return None
 
 
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
@@ -1088,13 +1101,21 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
-    cached_success = await _load_latest_cached_country_report(code)
+    cached_success = await _timed_country_lookup(
+        _load_latest_cached_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country cached report lookup {code}",
+    )
     if cached_success:
         _spawn_country_report_refresh(code)
         _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(cached_success)
 
-    archived_report = await _load_latest_archived_country_report(code)
+    archived_report = await _timed_country_lookup(
+        _load_latest_archived_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country archived report lookup {code}",
+    )
     if archived_report:
         _spawn_country_report_refresh(code)
         report = await _build_country_report_fallback(

@@ -9,12 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.15`
+현재 릴리즈: `v2.60.16`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
 - 공개 `country report`와 `stock detail`은 응답 직전에 예측 캡처/아카이브 저장을 동기식으로 기다리던 경로를 정리했습니다. 이제 사용자 응답은 먼저 반환하고, 비핵심 후처리는 별도 경로로 넘겨 `No response returned` 형태의 500과 응답 지연을 줄입니다.
+- 공개 `country report`와 `stock detail`의 cached lookup도 짧은 timeout 안에서만 조회합니다. SQLite/cache 조회가 잠기면 오래 붙잡히지 않고 즉시 miss로 간주해 fallback/quick path로 내려가도록 맞췄습니다.
 - Render `500MB` memory-safe 모드에서는 후처리성 공개 작업도 현재 메모리 압박이 높으면 과감히 건너뜁니다. 서비스 가용성과 첫 화면 응답을 우선하고, 메모리 경고 상태에서 prediction/archive 부가 작업이 다시 메모리를 밀어 올리는 경로를 줄였습니다.
 - Render `500MB` memory-safe 모드에서는 `/api/countries`, `/api/screener`도 cold start에 오래 붙잡히지 않도록 shell-first 응답을 더 강화했습니다. `countries`는 캐시가 비어 있으면 즉시 fallback을 반환하고 백그라운드에서 다시 채우며, `screener`는 representative snapshot이 늦을 때 짧은 seed cache와 safe-mode shell partial로 먼저 응답합니다.
 - `/api/diagnostics`는 `memory_diagnostics`를 함께 내려 현재 RSS/cgroup 사용량, 메모리 압박 상태, hot memory cache 엔트리 수와 추정 바이트, oversized cache write skip 횟수를 같이 보여줍니다. accuracy/research archive probe도 병렬로 돌려 진단 엔드포인트 자체가 느려지는 구간을 줄였습니다.
