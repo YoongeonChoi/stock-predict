@@ -427,6 +427,61 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         loader.assert_awaited_once()
 
+    async def test_get_country_report_returns_memory_guard_fallback_before_heavy_analysis_under_pressure(self):
+        fallback_payload = {
+            "country": {"code": "KR"},
+            "market_summary": "메모리 보호 모드 fallback",
+            "partial": True,
+            "fallback_reason": "country_report_memory_guard",
+            "errors": [],
+        }
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)) as builder,
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(side_effect=AssertionError("heavy analysis path should be skipped"))),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "country_report_memory_guard")
+        builder.assert_awaited_once()
+
+    async def test_market_opportunities_returns_memory_guard_placeholder_without_live_quick_fetch(self):
+        placeholder_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-04-11T08:00:00",
+            "market_regime": None,
+            "universe_size": 0,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "memory guard placeholder",
+            "opportunities": [],
+        }
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("live quick fetch should be skipped"))),
+        ):
+            response = await country.get_market_opportunities("KR", limit=12)
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "opportunity_memory_guard")
+        self.assertEqual(response["fallback_tier"], "placeholder")
+
     async def test_country_report_fallback_timeboxes_snapshot_and_quick_candidate_lookups_under_pressure(self):
         async def _slow_lookup(*args, **kwargs):
             await asyncio.sleep(0.05)

@@ -9,17 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-import pandas as pd
-from ta.trend import SMAIndicator, EMAIndicator, MACD, ADXIndicator, CCIIndicator
-from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
-from ta.volatility import BollingerBands
 from app.config import get_settings
-from app.analysis.stock_analyzer import (
-    analyze_stock,
-    build_quick_stock_detail,
-    get_cached_quick_stock_detail,
-    get_cached_stock_detail,
-)
 from app.data import yfinance_client, cache
 from app.services import (
     archive_service,
@@ -40,8 +30,34 @@ STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
+STOCK_MEMORY_GUARD_INFO_TIMEOUT_SECONDS = 0.35
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
+PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+
+
+async def analyze_stock(ticker: str) -> dict:
+    from app.analysis.stock_analyzer import analyze_stock as _analyze_stock
+
+    return await _analyze_stock(ticker)
+
+
+async def build_quick_stock_detail(ticker: str) -> dict | None:
+    from app.analysis.stock_analyzer import build_quick_stock_detail as _build_quick_stock_detail
+
+    return await _build_quick_stock_detail(ticker)
+
+
+async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
+    from app.analysis.stock_analyzer import get_cached_quick_stock_detail as _get_cached_quick_stock_detail
+
+    return await _get_cached_quick_stock_detail(ticker)
+
+
+async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
+    from app.analysis.stock_analyzer import get_cached_stock_detail as _get_cached_stock_detail
+
+    return await _get_cached_stock_detail(ticker, refresh_quote=refresh_quote)
 
 
 def _maybe_trim_public_route_memory(reason: str) -> None:
@@ -59,6 +75,20 @@ def _should_skip_public_side_effects() -> bool:
     except Exception:
         return False
     return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+def _public_memory_pressure_ratio() -> float:
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception:
+        return 0.0
+    return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+def _should_use_ultra_fast_public_fallback() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
 
 
 def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
@@ -162,6 +192,171 @@ def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallbac
     partial["fallback_reason"] = fallback_reason
     partial["generated_at"] = partial.get("generated_at") or datetime.now(timezone.utc).isoformat()
     return partial
+
+
+def _blank_score_detail(max_score: float = 20.0) -> dict:
+    return {
+        "total": 0.0,
+        "max_score": max_score,
+        "items": [],
+    }
+
+
+def _blank_stock_score() -> dict:
+    return {
+        "total": 0.0,
+        "fundamental": _blank_score_detail(),
+        "valuation": _blank_score_detail(),
+        "growth_momentum": _blank_score_detail(),
+        "analyst": _blank_score_detail(),
+        "risk": _blank_score_detail(),
+    }
+
+
+def _blank_composite_score() -> dict:
+    return {
+        "total": 0.0,
+        "total_raw": 0.0,
+        "max_raw": 100.0,
+        "fundamental": _blank_score_detail(),
+        "valuation": _blank_score_detail(),
+        "growth_momentum": _blank_score_detail(),
+        "analyst": _blank_score_detail(),
+        "risk": _blank_score_detail(),
+        "technical": _blank_score_detail(),
+    }
+
+
+def _blank_technical_indicators() -> dict:
+    return {
+        "ma_20": [],
+        "ma_60": [],
+        "rsi_14": [],
+        "macd": [],
+        "macd_signal": [],
+        "macd_hist": [],
+        "dates": [],
+    }
+
+
+async def _build_stock_memory_guard_shell(ticker: str) -> dict:
+    info: dict[str, Any] = {}
+    try:
+        info = await asyncio.wait_for(
+            yfinance_client.get_stock_info(ticker),
+            timeout=STOCK_MEMORY_GUARD_INFO_TIMEOUT_SECONDS,
+        ) or {}
+    except Exception:
+        info = {}
+
+    metadata = ticker_resolver_service.get_ticker_metadata(ticker)
+    current_price = round(float(info.get("current_price") or 0.0), 2)
+    fallback_summary = (
+        "현재 서버 메모리 보호 구간이라 정밀 종목 분석 대신 최소 상세 스냅샷을 먼저 제공합니다. "
+        "잠시 뒤 다시 조회하면 quick 또는 full 캐시 결과가 보일 수 있습니다."
+    )
+    payload = {
+        "ticker": ticker,
+        "name": info.get("name") or ticker,
+        "country_code": metadata.get("country_code") or "KR",
+        "sector": info.get("sector") or metadata.get("sector") or "Unknown",
+        "industry": info.get("industry") or "N/A",
+        "market_cap": float(info.get("market_cap") or 0.0),
+        "current_price": current_price,
+        "change_pct": round(float(info.get("change_pct") or 0.0), 2),
+        "financials": [],
+        "pe_ratio": info.get("pe_ratio"),
+        "pb_ratio": info.get("pb_ratio"),
+        "ev_ebitda": info.get("ev_ebitda"),
+        "peg_ratio": info.get("peg_ratio"),
+        "week52_high": info.get("52w_high"),
+        "week52_low": info.get("52w_low"),
+        "peer_comparisons": [],
+        "dividend": {
+            "dividend_yield": info.get("dividend_yield"),
+            "payout_ratio": info.get("payout_ratio"),
+            "dividend_growth_5y": None,
+        },
+        "analyst_ratings": {
+            "buy": 0,
+            "hold": 0,
+            "sell": 0,
+            "target_mean": None,
+            "target_median": None,
+            "target_high": None,
+            "target_low": None,
+        },
+        "earnings_history": [],
+        "price_history": [],
+        "technical": _blank_technical_indicators(),
+        "score": _blank_stock_score(),
+        "composite_score": _blank_composite_score(),
+        "buy_sell_guide": {
+            "buy_zone_low": current_price,
+            "buy_zone_high": current_price,
+            "fair_value": current_price,
+            "sell_zone_low": current_price,
+            "sell_zone_high": current_price,
+            "risk_reward_ratio": 0.0,
+            "confidence_grade": "대기",
+            "methodology": [],
+            "summary": "정밀 매매 가이드는 이번 응답에서 생략했습니다.",
+        },
+        "next_day_forecast": None,
+        "free_kr_forecast": None,
+        "historical_pattern_forecast": None,
+        "setup_backtest": None,
+        "market_regime": {
+            "label": "KR 기본 스냅샷",
+            "stance": "neutral",
+            "trend": "range",
+            "volatility": "normal",
+            "breadth": "mixed",
+            "score": 48.0,
+            "conviction": 28.0,
+            "summary": "메모리 보호 구간이라 시장 국면은 기본 스냅샷으로 유지합니다.",
+            "playbook": ["현재 응답은 최소 상세 스냅샷입니다. 잠시 뒤 다시 조회해 정밀 지표를 확인합니다."],
+            "warnings": ["정밀 종목 분석이 이번 요청에서는 보류되었습니다."],
+            "signals": [],
+        },
+        "trade_plan": {
+            "setup_label": "대기",
+            "action": "wait_pullback",
+            "conviction": 24.0,
+            "entry_low": current_price or None,
+            "entry_high": current_price or None,
+            "stop_loss": None,
+            "take_profit_1": None,
+            "take_profit_2": None,
+            "expected_holding_days": 5,
+            "risk_reward_estimate": 0.0,
+            "thesis": ["정밀 종목 분석을 기다리는 동안 최소 시세 스냅샷만 제공합니다."],
+            "invalidation": "정밀 종목 분석이 다시 가능해지면 계획을 갱신합니다.",
+        },
+        "public_summary": {
+            "summary": fallback_summary,
+            "evidence_for": [],
+            "evidence_against": [],
+            "why_not_buy_now": ["현재 응답은 메모리 보호 모드에서 생성된 최소 스냅샷입니다."],
+            "thesis_breakers": ["정밀 분석이 회복되기 전에는 이 요약만으로 매수 결정을 내리기 어렵습니다."],
+            "data_quality": "가격·기본 메타데이터 중심 최소 응답",
+            "confidence_note": "정밀 예측과 기술 지표 계산은 이번 요청에서 생략했습니다.",
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "partial": True,
+        "fallback_reason": "stock_memory_guard",
+        "llm_available": False,
+        "errors": [],
+        "analysis_summary": fallback_summary,
+        "key_risks": ["서버 메모리 보호 구간이라 이번 요청에서는 정밀 종목 분석을 이어가지 않았습니다."],
+        "key_catalysts": [],
+    }
+    await cache.set(
+        f"stock_detail:quick-v1:{ticker}",
+        payload,
+        ttl=min(get_settings().cache_ttl_report, 120),
+    )
+    return payload
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -384,6 +579,7 @@ async def get_stock_detail(
 ):
     started_at = time.perf_counter()
     ticker = _resolve_kr_ticker(ticker)
+    detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
     cached = await _timed_stock_cache_lookup(
         get_cached_stock_detail(ticker, refresh_quote=False),
         label=f"stock full cache lookup {ticker}",
@@ -409,6 +605,16 @@ async def get_stock_detail(
     )
     quick_fallback = cached_quick
     if cached_quick:
+        if prefer_full and _should_use_ultra_fast_public_fallback():
+            partial_payload = _build_traced_partial_stock_detail(
+                started_at,
+                cached=cached_quick,
+                cache_state="sqlite_hit",
+                timeout_budget_seconds=detail_timeout,
+                error_code=None,
+                fallback_reason="stock_memory_guard",
+            )
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         return await _serve_quick_stock_detail(
             started_at,
             ticker=ticker,
@@ -418,7 +624,19 @@ async def get_stock_detail(
             source_label="cached quick snapshot",
         )
 
-    detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
+    if _should_use_ultra_fast_public_fallback():
+        shell_payload = await _build_stock_memory_guard_shell(ticker)
+        _record_stock_detail_trace(
+            started_at,
+            request_phase="shell",
+            cache_state="miss",
+            timeout_budget_seconds=detail_timeout,
+            payload=shell_payload,
+            fallback_reason="stock_memory_guard",
+            served_state="degraded",
+        )
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+
     try:
         if quick_fallback is None:
             quick_fallback = await asyncio.wait_for(
@@ -484,6 +702,18 @@ async def get_stock_detail(
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         err = SP_5018(f"Stock detail timed out for {ticker}")
         err.log()
+        if _should_use_ultra_fast_public_fallback():
+            shell_payload = await _build_stock_memory_guard_shell(ticker)
+            _record_stock_detail_trace(
+                started_at,
+                request_phase="shell",
+                cache_state="miss",
+                timeout_budget_seconds=detail_timeout,
+                payload=shell_payload,
+                fallback_reason="stock_memory_guard",
+                served_state="degraded",
+            )
+            return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
         _record_stock_detail_trace(
             started_at,
             request_phase="full",
@@ -542,6 +772,18 @@ async def get_stock_detail(
         err = SP_3003(ticker)
         err.detail = str(e)[:200]
         err.log()
+        if _should_use_ultra_fast_public_fallback():
+            shell_payload = await _build_stock_memory_guard_shell(ticker)
+            _record_stock_detail_trace(
+                started_at,
+                request_phase="shell",
+                cache_state="miss",
+                timeout_budget_seconds=detail_timeout if "detail_timeout" in locals() else STOCK_DETAIL_TIMEOUT_SECONDS,
+                payload=shell_payload,
+                fallback_reason="stock_memory_guard",
+                served_state="degraded",
+            )
+            return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
         _record_stock_detail_trace(
             started_at,
             request_phase="full",
@@ -607,6 +849,11 @@ async def get_technical_summary(ticker: str):
         return cached
 
     try:
+        import pandas as pd
+        from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
+        from ta.trend import SMAIndicator, EMAIndicator, MACD, ADXIndicator, CCIIndicator
+        from ta.volatility import BollingerBands
+
         prices = await yfinance_client.get_price_history(ticker, "6mo")
         if not prices:
             err = SP_2005(ticker)

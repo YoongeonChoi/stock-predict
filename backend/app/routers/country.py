@@ -11,8 +11,6 @@ from fastapi.responses import JSONResponse, Response
 from app.config import get_settings
 from app.models.country import COUNTRY_REGISTRY
 from app.data import kr_market_quote_client, yfinance_client
-from app.analysis.country_analyzer import analyze_country
-from app.analysis.forecast_engine import forecast_index
 from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.runtime import get_or_create_background_job
@@ -60,6 +58,18 @@ COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+
+
+async def analyze_country(code: str) -> dict:
+    from app.analysis.country_analyzer import analyze_country as _analyze_country
+
+    return await _analyze_country(code)
+
+
+async def forecast_index(*args, **kwargs):
+    from app.analysis.forecast_engine import forecast_index as _forecast_index
+
+    return await _forecast_index(*args, **kwargs)
 
 
 def _sanitize_json_value(value: Any) -> Any:
@@ -375,6 +385,13 @@ def _country_report_stale_detail(code: str) -> str:
     return (
         f"{code} 국가 리포트 최신 계산은 이번 응답에서 안전한 경로로 보류하고, "
         "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다. 다음 재조회에서 정밀 리포트를 다시 시도합니다."
+    )
+
+
+def _country_report_memory_guard_detail(code: str) -> str:
+    return (
+        f"{code} 국가 리포트는 현재 서버 메모리 보호 구간이라 1차 보고서를 먼저 제공합니다. "
+        "이번 응답에서는 무거운 정밀 계산을 요청 안에서 이어가지 않고, 캐시와 대표 스냅샷 중심으로 안전하게 응답합니다."
     )
 
 
@@ -1169,6 +1186,16 @@ async def get_country_report(code: str):
         _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(report)
 
+    if _should_use_ultra_fast_public_fallback():
+        report = await _build_country_report_fallback(
+            code,
+            reason="country_report_memory_guard",
+            error_code=None,
+            detail=_country_report_memory_guard_detail(code),
+        )
+        _maybe_trim_public_route_memory("country_report")
+        return _build_country_success_response(report)
+
     try:
         report, partial = await _load_country_report_with_fallback(
             code,
@@ -1494,6 +1521,26 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 f"{_opportunity_refresh_followup_sentence()}"
             ),
             fallback_tier="cached_quick",
+        )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return payload
+
+    if _should_use_ultra_fast_public_fallback():
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=market_service.build_market_opportunities_placeholder(
+                code,
+                note=(
+                    f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
+                    "이번 요청에서 무거운 quick 계산을 생략하고 안전한 placeholder를 먼저 제공합니다. "
+                    "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
+                ),
+            ),
+            request_phase="shell",
+            cache_state="miss",
+            fallback_reason="opportunity_memory_guard",
+            served_state="degraded",
+            fallback_tier="placeholder",
         )
         _maybe_trim_public_route_memory("market_opportunities")
         return payload

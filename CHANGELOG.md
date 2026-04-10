@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.18 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `stock detail`이 캐시 미스 시에도 요청 안에서 무거운 full/quick 계산을 계속 시도하던 경로를 더 강하게 줄였습니다. 메모리 압박이 높은 운영 구간에서는 `country report`는 memory-guard fallback을, `market opportunities`는 placeholder partial을, `stock detail`은 프론트 계약을 유지하는 최소 shell 상세를 바로 반환하도록 바꿔 first-hit 10~20초대 지연과 peak RSS를 함께 줄이는 방향으로 맞췄습니다.
+- `backend/app/routers/country.py`, `backend/app/routers/stock.py`의 무거운 분석 import를 lazy import로 옮겼습니다. Render cold start와 `/api/health` 초기 응답이 불필요한 분석 모듈 적재 때문에 더 느려지고 메모리를 더 점유하던 구간을 완화하는 목적입니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 high-pressure memory guard fallback과 placeholder/shell 응답 회귀를 추가해, 압박 구간에서 heavy analysis path를 타지 않는 동작을 자동 검증으로 고정했습니다.
+
 ## v2.60.17 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 공개 route가 실제 메모리 압박을 잘못 읽어 non-critical side effect를 계속 이어가던 버그를 수정했습니다. memory pressure snapshot이 실제 budget bytes를 기준으로 계산되도록 바로잡아, 고압 상태에서 archive/prediction capture 같은 후처리가 더 보수적으로 건너뛰어지도록 맞췄습니다.
