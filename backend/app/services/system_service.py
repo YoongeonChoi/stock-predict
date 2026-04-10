@@ -326,6 +326,7 @@ async def get_diagnostics() -> dict:
         "status": status,
         "version": APP_VERSION,
         "started_at": runtime_state["started_at"],
+        "render_memory_safe_mode": bool(settings.startup_memory_safe_mode),
         "startup_tasks": runtime_state["startup_tasks"],
         "memory_diagnostics": memory_diagnostics,
         "data_sources": data_sources,

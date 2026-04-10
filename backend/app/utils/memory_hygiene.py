@@ -14,7 +14,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_TRIM_COOLDOWN_SECONDS = 10.0
+_TRIM_COOLDOWN_SECONDS = 2.0
 _TRIM_MIN_PRESSURE_RATIO = 0.7
 _TRIM_LOCK = threading.Lock()
 _LAST_TRIM_MONOTONIC = 0.0
@@ -29,6 +29,7 @@ _TRIM_STATS: dict[str, Any] = {
     "last_pressure_ratio_after": None,
     "last_malloc_trim_applied": False,
     "last_gc_collected": 0,
+    "last_cooldown_bypassed": False,
 }
 
 
@@ -120,6 +121,7 @@ def reset_memory_trim_state() -> None:
                 "last_pressure_ratio_after": None,
                 "last_malloc_trim_applied": False,
                 "last_gc_collected": 0,
+                "last_cooldown_bypassed": False,
             }
         )
 
@@ -148,8 +150,9 @@ def maybe_trim_process_memory(reason: str, *, min_pressure_ratio: float = _TRIM_
 
     with _TRIM_LOCK:
         now = time.monotonic()
-        cooldown_remaining = _TRIM_COOLDOWN_SECONDS - (now - _LAST_TRIM_MONOTONIC)
-        if cooldown_remaining > 0:
+        cooldown_seconds = 0.0 if before_ratio >= 0.9 else _TRIM_COOLDOWN_SECONDS
+        cooldown_remaining = cooldown_seconds - (now - _LAST_TRIM_MONOTONIC)
+        if cooldown_seconds > 0 and cooldown_remaining > 0:
             return {
                 "attempted": False,
                 "trimmed": False,
@@ -181,6 +184,7 @@ def maybe_trim_process_memory(reason: str, *, min_pressure_ratio: float = _TRIM_
                 "last_pressure_ratio_after": round(after_ratio, 4),
                 "last_malloc_trim_applied": malloc_trim_applied,
                 "last_gc_collected": int(collected),
+                "last_cooldown_bypassed": cooldown_seconds == 0.0,
             }
         )
 
@@ -204,4 +208,5 @@ def maybe_trim_process_memory(reason: str, *, min_pressure_ratio: float = _TRIM_
         "pressure_ratio_after": round(after_ratio, 4),
         "malloc_trim_applied": malloc_trim_applied,
         "gc_collected": int(collected),
+        "cooldown_bypassed": cooldown_seconds == 0.0,
     }

@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.13 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 trim이 실제로 너무 드문 간격으로만 실행돼, 운영 실측상 pressure가 `critical`인데도 `/api/health`, `/api/country/KR/report`, 일부 종목 상세가 다시 오래 붙잡히는 문제가 있었습니다. 이번 패치에서는 공개 API GET 요청 진입 전에 pre-request trim을 먼저 시도하고, `stock detail`, `daily briefing`, `market sessions`까지 공개 heavy route trim 경로를 넓혔습니다.
+- memory trim cooldown은 기본 `2초`로 줄이고, pressure가 이미 `critical`이면 cooldown을 우회해 연속 요청에서도 메모리 완화를 다시 시도합니다. `/api/diagnostics`는 최상단 `render_memory_safe_mode` 플래그까지 같이 내려 운영 판독 혼선도 줄였습니다.
+- `backend/tests/test_main_memory_hygiene.py`, `backend/tests/test_memory_hygiene.py`, `backend/tests/test_system_service.py`를 확장해 pre-request trim 미들웨어, critical 상태 cooldown bypass, diagnostics 플래그 노출을 회귀로 고정했습니다.
+
 ## v2.60.12 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 공개 heavy route(`countries`, `country report`, `heatmap`, `market opportunities`, `screener`) 응답 뒤에 메모리 압박 비율이 `70%` 이상이면 `gc.collect() + malloc_trim(0)` 기반 trim을 짧은 cooldown으로 시도하도록 추가했습니다. 큰 pandas/HTML/JSON 작업 뒤에 RSS가 OS로 잘 반환되지 않아 압박이 누적되던 구간을 운영 환경에서 직접 낮추는 목적입니다.

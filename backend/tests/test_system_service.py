@@ -148,6 +148,7 @@ class SystemServiceTests(unittest.IsolatedAsyncioTestCase):
             diagnostics = await system_service.get_diagnostics()
 
         self.assertEqual(diagnostics["memory_diagnostics"], memory_snapshot)
+        self.assertTrue(diagnostics["render_memory_safe_mode"])
 
     async def test_get_diagnostics_runs_best_effort_probes_concurrently(self):
         route_summary = {

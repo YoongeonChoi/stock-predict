@@ -37,6 +37,7 @@ from app.services import (
     market_service,
     research_archive_service,
 )
+from app.utils.memory_hygiene import maybe_trim_process_memory
 from app.version import APP_VERSION
 
 logging.basicConfig(
@@ -302,6 +303,25 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+
+def _memory_hygiene_request_reason(request: Request) -> str:
+    normalized = request.url.path.removeprefix("/api/").strip("/") or "health"
+    return normalized.replace("/", ":")[:96]
+
+
+@app.middleware("http")
+async def public_api_memory_hygiene_middleware(request: Request, call_next):
+    if settings.startup_memory_safe_mode and request.method in {"GET", "HEAD"} and request.url.path.startswith("/api/"):
+        try:
+            maybe_trim_process_memory(f"pre:{_memory_hygiene_request_reason(request)}")
+        except Exception as exc:  # pragma: no cover - best effort guard
+            logging.getLogger("stock_predict.memory").debug(
+                "pre-request memory trim skipped for %s: %s",
+                request.url.path,
+                exc,
+            )
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)

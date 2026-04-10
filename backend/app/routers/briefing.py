@@ -7,9 +7,17 @@ from fastapi.responses import JSONResponse
 from app.errors import SP_5011, SP_5012, SP_5018
 from app.services import briefing_service, market_session_service, route_stability_service
 from app.utils import build_route_trace
+from app.utils.memory_hygiene import maybe_trim_process_memory
 
 router = APIRouter(prefix="/api", tags=["briefing"])
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 12
+
+
+def _maybe_trim_public_route_memory(reason: str) -> None:
+    try:
+        maybe_trim_process_memory(reason)
+    except Exception:
+        pass
 
 
 @router.get("/briefing/daily")
@@ -32,6 +40,7 @@ async def get_daily_briefing():
                 payload=payload,
             ),
         )
+        _maybe_trim_public_route_memory("daily_briefing")
         return payload
     except asyncio.TimeoutError:
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
@@ -52,6 +61,7 @@ async def get_daily_briefing():
                 fallback_reason="daily_briefing_timeout",
             ),
         )
+        _maybe_trim_public_route_memory("daily_briefing")
         return payload
     except Exception as exc:
         err = SP_5011(str(exc)[:200])
@@ -73,6 +83,7 @@ async def get_daily_briefing():
                 served_state="partial",
             ),
         )
+        _maybe_trim_public_route_memory("daily_briefing")
         return payload
 
 
@@ -92,6 +103,7 @@ async def get_market_sessions():
                 payload=payload,
             ),
         )
+        _maybe_trim_public_route_memory("market_sessions")
         return payload
     except Exception as exc:
         err = SP_5012(str(exc)[:200])
@@ -108,4 +120,5 @@ async def get_market_sessions():
                 served_state="degraded",
             ),
         )
+        _maybe_trim_public_route_memory("market_sessions")
         return JSONResponse(status_code=500, content=err.to_dict())

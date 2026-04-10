@@ -9,12 +9,12 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.12`
+현재 릴리즈: `v2.60.13`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
-- Render `500MB` memory-safe 모드에서 공개 대시보드·리포트 라우트가 압박 비율 `70%` 이상에 도달하면 `gc.collect() + malloc_trim(0)` 기반 memory trim을 짧은 cooldown으로 시도하도록 정리했습니다. `countries`, `country report`, `heatmap`, `market opportunities`, `screener` 응답 뒤에만 제한적으로 동작하고, `/api/diagnostics`의 `memory_trim` 항목에서 최근 trim 사유와 전후 메모리 변화를 같이 확인할 수 있습니다.
+- Render `500MB` memory-safe 모드에서는 공개 API GET 요청이 들어오기 전에도 현재 압박 상태를 먼저 확인하고, `stock detail`, `daily briefing`, `market sessions`까지 포함해 더 넓은 공개 경로에서 memory trim을 다시 시도하도록 보강했습니다. `critical` 압박에서는 trim cooldown도 사실상 우회해 다음 요청이 `health`나 `diagnostics`마저 오래 붙잡지 않도록 조정했고, `/api/diagnostics` 최상단에도 `render_memory_safe_mode`를 같이 표기합니다.
 - Render `500MB` memory-safe 모드에서는 공개 `country report`, `market opportunities`, `screener` partial 응답 뒤에 무거운 background refresh를 바로 이어 붙이지 않도록 정리했습니다. 이제 공개 fallback은 실제 동작과 맞게 “다음 재조회에서 정밀 계산을 다시 시도한다”는 문구를 사용하고, 작은 인스턴스에서 공개 요청이 다시 공개 background 계산을 증폭시켜 재시작으로 이어지는 경로를 줄였습니다.
 - 메모리 캐시는 이제 전체 엔트리 수와 총 용량뿐 아니라 `per-entry` 상한도 함께 적용합니다. 큰 리포트·대시보드 payload는 SQLite에는 계속 저장하되 in-memory hot cache에는 올리지 않아, `500MB` Render 인스턴스에서 deep copy 기반 메모리 누적이 커지는 구간을 더 강하게 막습니다.
 - `/api/diagnostics`는 `memory_diagnostics`를 함께 내려 현재 RSS/cgroup 사용량, 메모리 압박 상태, hot memory cache 엔트리 수와 추정 바이트, oversized cache write skip 횟수를 같이 보여줍니다. accuracy/research archive probe도 병렬로 돌려 진단 엔드포인트 자체가 느려지는 구간을 줄였습니다.

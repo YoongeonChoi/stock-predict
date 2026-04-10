@@ -1045,6 +1045,7 @@ export interface SystemDiagnostics {
   status: "ok" | "degraded" | "starting";
   version: string;
   started_at: string;
+  render_memory_safe_mode?: boolean | null;
   startup_tasks: StartupTaskStatus[];
   data_sources: DataSourceStatus[];
   forecast_models: ForecastModelSummary[];

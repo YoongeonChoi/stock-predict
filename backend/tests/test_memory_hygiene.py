@@ -86,6 +86,40 @@ class MemoryHygieneTests(unittest.TestCase):
         stats = memory_hygiene.get_memory_trim_stats()
         self.assertEqual(stats["attempts"], 1)
 
+    def test_trim_bypasses_cooldown_when_pressure_is_critical(self):
+        critical_before = {
+            "current_bytes": 490 * 1024 * 1024,
+            "rss_bytes": 490 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 490 * 1024 * 1024,
+            "pressure_ratio": 490 / 512,
+        }
+        critical_after = {
+            "current_bytes": 470 * 1024 * 1024,
+            "rss_bytes": 470 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 470 * 1024 * 1024,
+            "pressure_ratio": 470 / 512,
+        }
+        with (
+            patch("app.utils.memory_hygiene.get_settings", return_value=self._settings(safe_mode=True)),
+            patch(
+                "app.utils.memory_hygiene._get_pressure_snapshot",
+                side_effect=[critical_before, critical_after, critical_before, critical_after],
+            ),
+            patch("app.utils.memory_hygiene.gc.collect", return_value=5),
+            patch("app.utils.memory_hygiene._try_malloc_trim", return_value=True),
+        ):
+            first = memory_hygiene.maybe_trim_process_memory("critical-a")
+            second = memory_hygiene.maybe_trim_process_memory("critical-b")
+
+        self.assertTrue(first["attempted"])
+        self.assertTrue(second["attempted"])
+        self.assertTrue(second["cooldown_bypassed"])
+        stats = memory_hygiene.get_memory_trim_stats()
+        self.assertEqual(stats["attempts"], 2)
+        self.assertTrue(stats["last_cooldown_bypassed"])
+
 
 if __name__ == "__main__":
     unittest.main()

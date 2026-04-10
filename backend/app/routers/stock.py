@@ -29,6 +29,7 @@ from app.services import (
 )
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
 from app.utils import build_route_trace
+from app.utils.memory_hygiene import maybe_trim_process_memory
 
 router = APIRouter(prefix="/api", tags=["stock"])
 logger = logging.getLogger(__name__)
@@ -37,6 +38,13 @@ STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
+
+
+def _maybe_trim_public_route_memory(reason: str) -> None:
+    try:
+        maybe_trim_process_memory(reason)
+    except Exception:
+        pass
 
 
 def _record_stock_detail_trace(
@@ -95,9 +103,12 @@ def _sanitize_json_value(value: Any) -> Any:
     return value
 
 
-def _build_stock_success_response(payload: dict) -> JSONResponse:
+def _build_stock_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
     encoded = jsonable_encoder(payload)
-    return JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+    response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+    if trim_reason:
+        _maybe_trim_public_route_memory(trim_reason)
+    return response
 
 
 def _stock_detail_upgrade_timeout_seconds() -> float:
@@ -143,7 +154,7 @@ async def _finalize_stock_detail_response(detail: dict, ticker: str, *, prefer_f
         cache_state,
         prefer_full,
     )
-    return _build_stock_success_response(detail)
+    return _build_stock_success_response(detail, trim_reason="stock_detail")
 
 
 async def _archive_stock_report(detail: dict, ticker: str) -> None:
@@ -220,7 +231,7 @@ async def _serve_quick_stock_detail(
                 cache_state,
                 prefer_full,
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         except Exception as exc:
             await prediction_capture_service.schedule_stock_distributional_capture(ticker)
             partial_payload = _build_traced_partial_stock_detail(
@@ -238,7 +249,7 @@ async def _serve_quick_stock_detail(
                 prefer_full,
                 str(exc)[:200],
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
 
     _schedule_stock_detail_refresh(ticker)
     await prediction_capture_service.schedule_stock_distributional_capture(ticker)
@@ -256,7 +267,7 @@ async def _serve_quick_stock_detail(
         cache_state,
         prefer_full,
     )
-    return _build_stock_success_response(partial_payload)
+    return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
 
 
 @router.get("/stock/{ticker}/detail")
@@ -281,7 +292,7 @@ async def get_stock_detail(
             ticker,
             prefer_full,
         )
-        return _build_stock_success_response(cached)
+        return _build_stock_success_response(cached, trim_reason="stock_detail")
 
     cached_quick = await get_cached_quick_stock_detail(ticker)
     quick_fallback = cached_quick
@@ -331,7 +342,7 @@ async def get_stock_detail(
                 ticker,
                 prefer_full,
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
             partial_payload = _build_traced_partial_stock_detail(
@@ -348,7 +359,7 @@ async def get_stock_detail(
                 ticker,
                 prefer_full,
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         err = SP_5018(f"Stock detail timed out for {ticker}")
         err.log()
         _record_stock_detail_trace(
@@ -359,6 +370,7 @@ async def get_stock_detail(
             fallback_reason="stock_detail_timeout",
             served_state="degraded",
         )
+        _maybe_trim_public_route_memory("stock_detail")
         return JSONResponse(status_code=504, content=err.to_dict())
     except Exception as e:
         cached_quick = quick_fallback or await get_cached_quick_stock_detail(ticker)
@@ -380,7 +392,7 @@ async def get_stock_detail(
                 prefer_full,
                 str(e)[:200],
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         cached = await get_cached_stock_detail(ticker, refresh_quote=False)
         if cached:
             partial_payload = _build_traced_partial_stock_detail(
@@ -398,7 +410,7 @@ async def get_stock_detail(
                 prefer_full,
                 str(e)[:200],
             )
-            return _build_stock_success_response(partial_payload)
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         err = SP_3003(ticker)
         err.detail = str(e)[:200]
         err.log()
@@ -410,6 +422,7 @@ async def get_stock_detail(
             fallback_reason="stock_detail_error",
             served_state="degraded",
         )
+        _maybe_trim_public_route_memory("stock_detail")
         return JSONResponse(status_code=500, content=err.to_dict())
 
     _record_stock_detail_trace(
