@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.19 - 2026-04-11
+
+- backend startup import footprint를 더 줄였습니다. `app.main`과 공개/상세 핵심 라우터는 이제 `market_service`, `archive_service`, `prediction_capture_service`, `yfinance_client`, `sector_analyzer`, `stock_scorer` 같은 무거운 모듈을 import 시점이 아니라 실제 사용 시점에 로드합니다. Render cold start에서 `/api/health`와 첫 공개 요청이 불필요한 `pandas/yfinance/ta` 적재를 먼저 하지 않도록 바꿔, 500MB 메모리 한도와 cold latency를 함께 낮추는 방향으로 정리했습니다.
+- `app.utils` 패키지는 더 이상 import만으로 `market_calendar`와 `pandas_market_calendars`를 끌어오지 않습니다. `next_trading_day`는 lazy wrapper로 노출해, route trace나 async util만 쓰는 경로가 달력 계산 모듈까지 함께 적재하지 않도록 정리했습니다.
+- `backend/tests/test_import_footprint.py`를 추가하고, `test_main_startup`, `test_country_router`, `test_stock_router`, `test_public_dashboard_timeouts`, `test_market_route_stability`, `test_watchlist_router`, `test_portfolio_recommendations`, `test_api_error_contracts`를 다시 돌려 import proxy 전환이 실제 기능 회귀 없이 startup footprint만 줄인다는 점을 고정했습니다.
+
 ## v2.60.18 - 2026-04-11
 
 - Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `stock detail`이 캐시 미스 시에도 요청 안에서 무거운 full/quick 계산을 계속 시도하던 경로를 더 강하게 줄였습니다. 메모리 압박이 높은 운영 구간에서는 `country report`는 memory-guard fallback을, `market opportunities`는 placeholder partial을, `stock detail`은 프론트 계약을 유지하는 최소 shell 상세를 바로 반환하도록 바꿔 first-hit 10~20초대 지연과 peak RSS를 함께 줄이는 방향으로 맞췄습니다.

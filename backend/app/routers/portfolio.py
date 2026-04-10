@@ -5,10 +5,15 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.auth import AuthenticatedUser, get_current_user
 from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_5017, SP_6009, SP_6013
-from app.services import ideal_portfolio_service, portfolio_event_service, portfolio_recommendation_service, portfolio_service, route_stability_service
-from app.utils import build_route_trace
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
+ideal_portfolio_service = LazyModuleProxy("app.services.ideal_portfolio_service")
+portfolio_event_service = LazyModuleProxy("app.services.portfolio_event_service")
+portfolio_recommendation_service = LazyModuleProxy("app.services.portfolio_recommendation_service")
+portfolio_service = LazyModuleProxy("app.services.portfolio_service")
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
 
 
 class HoldingCreate(BaseModel):

@@ -10,21 +10,21 @@ from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from app.config import get_settings
-from app.data import yfinance_client, cache
-from app.services import (
-    archive_service,
-    forecast_monitor_service,
-    prediction_capture_service,
-    route_stability_service,
-    ticker_resolver_service,
-)
+from app.data import cache
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
-from app.utils import build_route_trace
+from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["stock"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
+archive_service = LazyModuleProxy("app.services.archive_service")
+forecast_monitor_service = LazyModuleProxy("app.services.forecast_monitor_service")
+prediction_capture_service = LazyModuleProxy("app.services.prediction_capture_service")
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+ticker_resolver_service = LazyModuleProxy("app.services.ticker_resolver_service")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5

@@ -3,9 +3,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.errors import SP_5006
-from app.services import route_stability_service, system_service
+from app.utils.lazy_module import LazyModuleProxy
 
 router = APIRouter(prefix="/api", tags=["system"])
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+system_service = LazyModuleProxy("app.services.system_service")
 
 
 class DiagnosticsEvent(BaseModel):

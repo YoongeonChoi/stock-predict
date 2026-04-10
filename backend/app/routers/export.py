@@ -1,9 +1,11 @@
 ﻿from fastapi import APIRouter
 from fastapi.responses import Response, JSONResponse
-from app.services import archive_service, export_service
+from app.utils.lazy_module import LazyModuleProxy
 from app.errors import SP_6005, SP_6006, SP_5004
 
 router = APIRouter(prefix="/api", tags=["export"])
+archive_service = LazyModuleProxy("app.services.archive_service")
+export_service = LazyModuleProxy("app.services.export_service")
 
 
 @router.get("/export/{fmt}/{report_id}")

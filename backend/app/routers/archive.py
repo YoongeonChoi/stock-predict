@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from app.errors import SP_5009, SP_6005, SP_6008
-from app.services import archive_service, research_archive_service
+from app.utils.lazy_module import LazyModuleProxy
 
 router = APIRouter(prefix="/api", tags=["archive"])
+archive_service = LazyModuleProxy("app.services.archive_service")
+research_archive_service = LazyModuleProxy("app.services.research_archive_service")
 
 
 @router.get("/archive")

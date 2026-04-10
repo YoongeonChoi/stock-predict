@@ -31,12 +31,7 @@ from app.routers import (
     watchlist,
 )
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
-from app.services import (
-    archive_service,
-    learned_fusion_profile_service,
-    market_service,
-    research_archive_service,
-)
+from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import maybe_trim_process_memory
 from app.version import APP_VERSION
 
@@ -47,6 +42,10 @@ logging.basicConfig(
 )
 
 startup_log = logging.getLogger("stock_predict.startup")
+archive_service = LazyModuleProxy("app.services.archive_service")
+learned_fusion_profile_service = LazyModuleProxy("app.services.learned_fusion_profile_service")
+market_service = LazyModuleProxy("app.services.market_service")
+research_archive_service = LazyModuleProxy("app.services.research_archive_service")
 
 
 @dataclass(frozen=True)

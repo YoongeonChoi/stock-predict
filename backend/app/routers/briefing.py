@@ -5,11 +5,14 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.errors import SP_5011, SP_5012, SP_5018
-from app.services import briefing_service, market_session_service, route_stability_service
-from app.utils import build_route_trace
+from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import maybe_trim_process_memory
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["briefing"])
+briefing_service = LazyModuleProxy("app.services.briefing_service")
+market_session_service = LazyModuleProxy("app.services.market_session_service")
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 12
 
 

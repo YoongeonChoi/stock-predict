@@ -9,10 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.18`
+현재 릴리즈: `v2.60.19`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
+
+- backend startup import footprint를 다시 줄였습니다. `main`과 주요 공개/상세 라우터는 이제 `market_service`, `archive_service`, `prediction_capture_service`, `yfinance_client`, `sector_analyzer`, `stock_scorer` 같은 무거운 모듈을 import 시점이 아니라 실제 요청 시점에 로드합니다. Render cold start에서 `/api/health`가 불필요한 `pandas/yfinance/ta` 적재를 먼저 하지 않도록 바꿔, 500MB 메모리 한도와 첫 요청 지연을 함께 낮추는 방향으로 맞췄습니다.
+- `app.utils` 패키지는 더 이상 import만으로 `market_calendar`와 `pandas_market_calendars`를 끌어오지 않습니다. `next_trading_day` 노출은 lazy wrapper로 바꿔, route trace나 async util만 쓰는 경로가 달력 계산 모듈까지 함께 적재하지 않도록 정리했습니다.
+- `backend/tests/test_import_footprint.py`를 추가해 `app.main`과 `app.routers.country` import가 `market_service`, `yfinance_client`, `stock_analyzer`, `pandas_market_calendars`를 즉시 로드하지 않는다는 회귀를 고정했습니다.
 
 - Render `500MB` memory-safe 모드에서 공개 `country report`, `opportunity radar`, `stock detail`은 고압박 구간이면 요청 안의 무거운 full/quick 계산을 더 과감히 건너뜁니다. 이제 `country report`는 캐시/대표 스냅샷 기반 1차 보고서를 먼저 주고, `opportunity radar`는 안전한 placeholder를, `stock detail`은 프론트 계약을 유지하는 최소 shell 상세를 먼저 반환해 10~20초대 first-hit 지연과 peak RSS를 줄이는 쪽으로 맞췄습니다.
 - `country`와 `stock` 라우터의 무거운 분석 import는 lazy import로 옮겼습니다. Render cold start와 `/api/health` 초기 응답이 불필요한 분석 모듈 로딩 때문에 같이 무거워지지 않도록, 실제 계산이 필요한 시점까지 메모리 적재를 늦췄습니다.

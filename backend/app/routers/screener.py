@@ -3,16 +3,17 @@ import logging
 from fastapi import APIRouter, Query
 from fastapi.params import Param
 from app.config import get_settings
-from app.data import cache, kr_market_quote_client, yfinance_client
-from app.data.universe_data import get_universe
+from app.data import cache
 from app.errors import SP_5018
 from app.runtime import get_or_create_background_job
-from app.scoring.stock_scorer import score_stock
 from app.utils.async_tools import gather_limited
+from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import maybe_trim_process_memory
 
 router = APIRouter(prefix="/api", tags=["screener"])
 settings = get_settings()
+kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
 PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS = 2.0
 SCREENER_RESPONSE_CACHE_TTL = 600
@@ -24,6 +25,18 @@ SCREENER_MAX_PER_SECTOR = 4
 SCREENER_CONCURRENCY = 4
 SCREENER_ENRICHMENT_BUDGET = 12
 SCREENER_COLD_START_KR_CANDIDATES = 10
+
+
+async def get_universe(*args, **kwargs):
+    from app.data.universe_data import get_universe as _get_universe
+
+    return await _get_universe(*args, **kwargs)
+
+
+def score_stock(*args, **kwargs):
+    from app.scoring.stock_scorer import score_stock as _score_stock
+
+    return _score_stock(*args, **kwargs)
 
 ALLOWED_SORT_FIELDS = {
     "market_cap",

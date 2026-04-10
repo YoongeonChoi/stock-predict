@@ -2,9 +2,10 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from app.errors import SP_5007
-from app.services import research_service
+from app.utils.lazy_module import LazyModuleProxy
 
 router = APIRouter(prefix="/api/research", tags=["research"])
+research_service = LazyModuleProxy("app.services.research_service")
 
 
 @router.get("/predictions")

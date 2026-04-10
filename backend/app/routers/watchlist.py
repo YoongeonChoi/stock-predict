@@ -3,13 +3,14 @@ import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from app.auth import AuthenticatedUser, get_current_user
-from app.services import watchlist_service
-from app.services import watchlist_tracking_service
 from app.errors import SP_5003, SP_6017
-from app.services import route_stability_service
-from app.utils import build_route_trace
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["watchlist"])
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+watchlist_service = LazyModuleProxy("app.services.watchlist_service")
+watchlist_tracking_service = LazyModuleProxy("app.services.watchlist_tracking_service")
 
 
 def _record_watchlist_write_trace(

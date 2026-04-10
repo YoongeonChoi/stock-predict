@@ -9,20 +9,25 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from app.config import get_settings
-from app.models.country import COUNTRY_REGISTRY
-from app.data import kr_market_quote_client, yfinance_client
-from app.scoring.country_scorer import build_country_score
-from app.scoring.fear_greed import calculate_fear_greed
-from app.runtime import get_or_create_background_job
-from app.services import archive_service, export_service, market_service, prediction_capture_service, route_stability_service
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
+from app.models.country import COUNTRY_REGISTRY
+from app.runtime import get_or_create_background_job
+from app.scoring.country_scorer import build_country_score
 from app.utils.async_tools import gather_limited
+from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
-from app.utils import build_route_trace
-from app.utils.market_calendar import market_session_cache_token
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["country"])
 settings = get_settings()
+archive_service = LazyModuleProxy("app.services.archive_service")
+export_service = LazyModuleProxy("app.services.export_service")
+kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
+market_service = LazyModuleProxy("app.services.market_service")
+prediction_capture_service = LazyModuleProxy("app.services.prediction_capture_service")
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
+_market_calendar = LazyModuleProxy("app.utils.market_calendar")
 COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 8
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
 COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
@@ -58,6 +63,16 @@ COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+
+
+def market_session_cache_token(*args, **kwargs):
+    return _market_calendar.market_session_cache_token(*args, **kwargs)
+
+
+def calculate_fear_greed(*args, **kwargs):
+    from app.scoring.fear_greed import calculate_fear_greed as _calculate_fear_greed
+
+    return _calculate_fear_greed(*args, **kwargs)
 
 
 async def analyze_country(code: str) -> dict:
