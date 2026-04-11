@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 
@@ -140,7 +141,80 @@ def local_frontend_runner(command_name: str, *args: str) -> list[str] | None:
     candidate = FRONTEND_BIN_DIR / f"{command_name}{suffix}"
     if not candidate.exists():
         return None
+    if IS_WINDOWS:
+        shim_command = resolve_windows_cmd_shim(candidate, *args)
+        if shim_command:
+            return shim_command
     return [display_path(candidate), *args]
+
+
+def standard_windows_node_install_dirs() -> tuple[Path, ...]:
+    if not IS_WINDOWS:
+        return ()
+
+    candidates = (
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "nodejs",
+        Path(os.environ.get("LocalAppData", "")) / "Programs" / "nodejs",
+    )
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        rendered = normalize_windows_path(candidate)
+        if not rendered or rendered in seen:
+            continue
+        seen.add(rendered)
+        deduped.append(normalized_path(candidate))
+    return tuple(deduped)
+
+
+def standard_windows_node_runner(command_name: str, *args: str) -> list[str] | None:
+    if not IS_WINDOWS:
+        return None
+
+    cli_name = {"npm": "npm-cli.js", "npx": "npx-cli.js"}.get(command_name)
+    for install_dir in standard_windows_node_install_dirs():
+        node_exe = install_dir / "node.exe"
+        wrapper = install_dir / f"{command_name}.cmd"
+        if cli_name:
+            cli_script = install_dir / "node_modules" / "npm" / "bin" / cli_name
+            if node_exe.exists() and cli_script.exists():
+                return [display_path(node_exe), display_path(cli_script), *args]
+        if wrapper.exists():
+            return [display_path(wrapper), *args]
+    return None
+
+
+def resolve_windows_cmd_shim(script_path: Path, *args: str) -> list[str] | None:
+    if not IS_WINDOWS or script_path.suffix.lower() != ".cmd" or not script_path.exists():
+        return None
+
+    try:
+        content = script_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
+    match = re.search(r'"%dp0%\\\.\.\\([^"]+)"', content)
+    if not match:
+        return None
+
+    target_rel = match.group(1).replace("\\", os.sep)
+    target_script = normalized_path(script_path.parent.parent / target_rel)
+    if not target_script.exists():
+        return None
+
+    node_exe = script_path.with_name("node.exe")
+    if not node_exe.exists():
+        for install_dir in standard_windows_node_install_dirs():
+            candidate = install_dir / "node.exe"
+            if candidate.exists():
+                node_exe = candidate
+                break
+
+    if not node_exe.exists():
+        return None
+
+    return [display_path(node_exe), display_path(target_script), *args]
 
 
 def resolve_node_runner(command_name: str, *args: str) -> list[str] | None:
@@ -150,7 +224,7 @@ def resolve_node_runner(command_name: str, *args: str) -> list[str] | None:
         script_path = find_command(command_name)
 
     if not script_path:
-        return None
+        return standard_windows_node_runner(command_name, *args)
 
     if IS_WINDOWS:
         script = normalized_path(script_path)

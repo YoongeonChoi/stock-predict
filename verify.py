@@ -246,12 +246,12 @@ def main(argv: list[str] | None = None) -> int:
             if not build_command:
                 raise SystemExit(
                     "Could not resolve the frontend build command. "
-                    "Resolution order is frontend/node_modules/.bin -> PATH npm."
+                    "Resolution order is frontend/node_modules/.bin -> PATH npm -> standard Windows nodejs install."
                 )
             if not typecheck_command:
                 raise SystemExit(
                     "Could not resolve the frontend typecheck command. "
-                    "Resolution order is frontend/node_modules/.bin -> PATH npx."
+                    "Resolution order is frontend/node_modules/.bin -> PATH npx -> standard Windows nodejs install."
                 )
             run_step("Frontend build", build_command, ROOT / "frontend")
             run_step("Frontend typecheck", typecheck_command, ROOT / "frontend")

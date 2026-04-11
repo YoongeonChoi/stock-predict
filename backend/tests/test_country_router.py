@@ -440,7 +440,10 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
             patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
             patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
-            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country._load_latest_archived_country_report",
+                new=AsyncMock(side_effect=AssertionError("archived lookup should be skipped")),
+            ) as archived_lookup,
             patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)) as builder,
             patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(side_effect=AssertionError("heavy analysis path should be skipped"))),
         ):
@@ -451,6 +454,9 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "country_report_memory_guard")
         builder.assert_awaited_once()
+        archived_lookup.assert_not_awaited()
+        self.assertFalse(builder.await_args.kwargs["include_archived_report"])
+        self.assertFalse(builder.await_args.kwargs["include_quick_candidates"])
 
     async def test_market_opportunities_returns_memory_guard_placeholder_without_live_quick_fetch(self):
         placeholder_payload = {
@@ -511,6 +517,39 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(response["partial"])
         self.assertEqual(response["fallback_reason"], "country_report_timeout")
+        self.assertEqual(response["top_stocks"], [])
+
+    async def test_country_report_memory_guard_fallback_skips_archived_and_quick_candidate_lookups(self):
+        with (
+            patch("app.data.cache.get", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country._load_latest_archived_country_report",
+                new=AsyncMock(side_effect=AssertionError("archived lookup should be skipped")),
+            ),
+            patch(
+                "app.routers.country.market_service.get_cached_market_opportunities",
+                new=AsyncMock(side_effect=AssertionError("cached opportunities should be skipped")),
+            ),
+            patch(
+                "app.routers.country.market_service.get_cached_market_opportunities_quick",
+                new=AsyncMock(side_effect=AssertionError("cached quick opportunities should be skipped")),
+            ),
+            patch(
+                "app.routers.country.market_service.get_market_opportunities_quick",
+                new=AsyncMock(side_effect=AssertionError("live quick opportunities should be skipped")),
+            ),
+        ):
+            response = await country._build_country_report_fallback(
+                "KR",
+                reason="country_report_memory_guard",
+                error_code=None,
+                detail="메모리 보호 응답입니다.",
+                include_archived_report=False,
+                include_quick_candidates=False,
+            )
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "country_report_memory_guard")
         self.assertEqual(response["top_stocks"], [])
 
     async def test_load_country_report_with_fallback_returns_without_waiting_for_cancellation_cleanup(self):

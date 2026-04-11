@@ -872,6 +872,8 @@ async def _build_country_report_fallback(
     reason: str,
     error_code: str | None,
     detail: str,
+    include_archived_report: bool = True,
+    include_quick_candidates: bool = True,
 ) -> dict:
     country = COUNTRY_REGISTRY[code]
     primary_index = country.indices[0]
@@ -928,13 +930,15 @@ async def _build_country_report_fallback(
         "signals": [],
     }
 
-    archived_report = await _timed_country_lookup(
-        _load_latest_archived_country_report(code),
-        timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
-        label=f"country fallback archived report lookup {code}",
-    )
+    archived_report = None
+    if include_archived_report:
+        archived_report = await _timed_country_lookup(
+            _load_latest_archived_country_report(code),
+            timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+            label=f"country fallback archived report lookup {code}",
+        )
     quick_opportunities: list[dict] = []
-    if not archived_report or not archived_report.get("top_stocks"):
+    if include_quick_candidates and (not archived_report or not archived_report.get("top_stocks")):
         try:
             quick_response = await _timed_country_lookup(
                 market_service.get_cached_market_opportunities(code, limit=5),
@@ -1202,6 +1206,18 @@ async def get_country_report(code: str):
         _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(cached_success)
 
+    if _should_use_ultra_fast_public_fallback():
+        report = await _build_country_report_fallback(
+            code,
+            reason="country_report_memory_guard",
+            error_code=None,
+            detail=_country_report_memory_guard_detail(code),
+            include_archived_report=False,
+            include_quick_candidates=False,
+        )
+        _maybe_trim_public_route_memory("country_report")
+        return _build_country_success_response(report)
+
     archived_report = await _timed_country_lookup(
         _load_latest_archived_country_report(code),
         timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
@@ -1210,16 +1226,6 @@ async def get_country_report(code: str):
     if archived_report:
         _spawn_country_report_refresh(code)
         report = _build_stale_archived_country_report(code, archived_report)
-        _maybe_trim_public_route_memory("country_report")
-        return _build_country_success_response(report)
-
-    if _should_use_ultra_fast_public_fallback():
-        report = await _build_country_report_fallback(
-            code,
-            reason="country_report_memory_guard",
-            error_code=None,
-            detail=_country_report_memory_guard_detail(code),
-        )
         _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(report)
 

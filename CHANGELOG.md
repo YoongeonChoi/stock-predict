@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.22 - 2026-04-11
+
+- 공개 `country report`의 memory-guard 경로를 더 공격적으로 가볍게 줄였습니다. 고압박 `500MB` 구간에서는 archived report 재조회와 quick 후보 탐색을 먼저 붙잡지 않고, 대표 지수 스냅샷 중심 1차 응답을 바로 반환하도록 바꿔 `country_report_memory_guard` 응답이 보호 모드인데도 9~10초까지 늘어지던 문제를 줄이는 방향으로 정리했습니다.
+- `get_country_report`는 이제 memory guard 판단을 archived report 조회보다 먼저 수행합니다. 최근 성공 캐시가 없더라도 고압박 순간에 archive/service lookup 때문에 추가 지연과 메모리 churn이 생기지 않도록 순서를 바꿨습니다.
+- `dev_runtime.py`, `start.py`, `verify.py`는 Windows에서 PATH의 `node/npm/npx`가 비어 있어도 표준 `nodejs` 설치 경로와 로컬 `.cmd` shim을 해석해 같은 런처 규칙으로 프론트 build/typecheck를 계속 실행합니다. 회귀 루프 자체가 `node is not recognized`류 환경 문제로 끊기지 않도록 정리했습니다.
+- `test_country_router`, `test_dev_runtime` 회귀를 보강해 memory guard fallback의 초경량 경로와 Windows node launcher fallback을 각각 고정했습니다.
+
 ## v2.60.21 - 2026-04-11
 
 - 공개 `stock detail`의 cached full/quick lookup 경로를 import-light로 다시 정리했습니다. 이제 라우터가 `stock_analyzer` 전체를 import하기 전에 cache key를 직접 읽어 cached/shell 응답을 먼저 만들 수 있으므로, cold 첫 요청에서 `pandas`, `ta`, 분포 엔진 적재 비용 때문에 20초 가까이 밀리던 구간을 더 줄일 수 있습니다.

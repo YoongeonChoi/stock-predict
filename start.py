@@ -203,7 +203,7 @@ def run_check(*, skip_frontend: bool = False) -> int:
     else:
         failures.append(
             "프론트 실행 명령을 만들 수 없습니다. "
-            "우선순위는 `frontend/node_modules/.bin -> PATH npm/npx` 입니다."
+            "우선순위는 `frontend/node_modules/.bin -> PATH npm/npx -> 표준 Windows nodejs 설치 경로` 입니다."
         )
 
     if backend_env.exists():
