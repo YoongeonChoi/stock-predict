@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.24 - 2026-04-11
+
+- backend `market_service`는 이제 `yfinance_client`, `stock_scorer`, `stock_analyzer`, `distributional_return_engine` 같은 무거운 공개 레이더 의존성을 실제 계산 시점까지 지연 로드합니다. `market_service` import footprint 자체를 줄여 quick radar first-hit에서 `pandas/yfinance/ta`가 무조건 함께 올라오지 않도록 정리했습니다.
+- Render memory-safe 구간에서는 quick `opportunity radar`가 `1일 포커스` 정밀 계산을 잠시 생략하고 1차 후보 목록을 먼저 반환합니다. 프론트는 이미 `next_day_focus=null`을 안전하게 처리하므로, `500MB` 한도 근처에서 focus 계산 때문에 quick 응답까지 늦어지던 구간을 더 줄이는 방향으로 맞췄습니다.
+- `test_import_footprint`와 `test_market_service` 회귀를 보강해 `market_service` import가 `numpy/pandas/yfinance/ta`를 eager load하지 않는지, 그리고 메모리 보호 구간에서 quick radar가 focus enrichment를 건너뛰는지를 고정했습니다.
+
 ## v2.60.23 - 2026-04-11
 
 - backend `app.analysis.llm_client`는 이제 `openai` SDK를 실제 호출 시점에만 import합니다. 공개 route startup과 Render cold wake가 불필요한 SDK 메모리를 먼저 점유하지 않도록 바꿔, `500MB` 한도 근처에서 startup RSS를 더 낮추는 방향으로 정리했습니다.

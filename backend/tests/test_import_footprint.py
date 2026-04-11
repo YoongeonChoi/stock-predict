@@ -49,6 +49,17 @@ class ImportFootprintTests(unittest.TestCase):
         self.assertNotIn("yfinance", imported)
         self.assertNotIn("pandas_market_calendars", imported)
 
+    def test_market_service_import_defers_heavy_analysis_and_yfinance_modules(self):
+        imported = _imported_modules("app.services.market_service")
+
+        self.assertNotIn("app.analysis.distributional_return_engine", imported)
+        self.assertNotIn("app.analysis.stock_analyzer", imported)
+        self.assertNotIn("app.data.yfinance_client", imported)
+        self.assertNotIn("numpy", imported)
+        self.assertNotIn("pandas", imported)
+        self.assertNotIn("yfinance", imported)
+        self.assertNotIn("ta", imported)
+
 
 if __name__ == "__main__":
     unittest.main()

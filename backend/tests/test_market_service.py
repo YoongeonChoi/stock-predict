@@ -1014,6 +1014,46 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["next_day_focus"]["trade_plan"]["expected_holding_days"], 1)
         self.assertIn("1차 시세 스캔 후보", result["universe_note"])
 
+    async def test_get_market_opportunities_quick_skips_focus_enrichment_under_memory_pressure(self):
+        fallback_selection = market_service.UniverseSelection(
+            sectors={"Information Technology": ["005930.KS", "000660.KS"]},
+            source="fallback",
+            note="검증된 한국 기본 종목군으로 추천 중입니다.",
+        )
+        fallback_screen = {
+            "universe_size": 2,
+            "scanned_count": 2,
+            "quote_available_count": 2,
+            "ranked": [
+                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
+                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
+            ],
+        }
+
+        with (
+            patch("app.services.market_service.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch(
+                "app.services.market_service._resolve_quick_opportunity_universe",
+                new=AsyncMock(return_value=fallback_selection),
+            ),
+            patch(
+                "app.services.market_service._build_quote_screen",
+                new=AsyncMock(return_value=fallback_screen),
+            ),
+            patch("app.services.market_service._should_skip_next_day_focus_enrichment", return_value=True),
+            patch(
+                "app.services.market_service._build_next_day_focus_recommendation",
+                new=AsyncMock(side_effect=AssertionError("focus enrichment should be skipped")),
+            ),
+        ):
+            result = await market_service.get_market_opportunities_quick("KR", limit=2)
+
+        self.assertEqual(result["country_code"], "KR")
+        self.assertEqual(result["fallback_tier"], "quick")
+        self.assertEqual(result["quote_available_count"], 2)
+        self.assertIsNone(result["next_day_focus"])
+        self.assertIn("1일 포커스 정밀 계산을 잠시 생략", result["universe_note"])
+
     async def test_get_market_opportunities_quick_falls_back_to_curated_universe_when_top200_quotes_are_empty(self):
         fallback_screen = {
             "universe_size": 2,

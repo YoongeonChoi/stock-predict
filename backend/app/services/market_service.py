@@ -7,14 +7,8 @@ import math
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from app.analysis.distributional_return_engine import build_distributional_forecast
-from app.analysis.chart_setup import build_short_horizon_chart_analysis
-from app.analysis.market_regime import build_market_regime
-from app.analysis.next_day_forecast import forecast_next_day
-from app.analysis.trade_planner import build_short_horizon_trade_plan, build_trade_plan
-from app.analysis.valuation_blend import build_quick_buy_sell
-from app.analysis.stock_analyzer import _calc_technicals
-from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, yfinance_client
+from app.config import get_settings
+from app.data import cache
 from app.data.universe_data import (
     UNIVERSE,
     UniverseSelection,
@@ -52,9 +46,24 @@ from app.services.market.universe import (
     group_ranked_quotes_by_sector as _group_ranked_quotes_by_sector,
     sample_universe_pairs as _sample_universe_pairs,
 )
-from app.scoring.stock_scorer import score_stock
-from app.services.portfolio_optimizer import build_horizon_snapshot
 from app.utils.async_tools import gather_limited
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.memory_hygiene import get_memory_pressure_snapshot
+
+settings = get_settings()
+ecos_client = LazyModuleProxy("app.data.ecos_client")
+kosis_client = LazyModuleProxy("app.data.kosis_client")
+kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
+_distributional_return_engine = LazyModuleProxy("app.analysis.distributional_return_engine")
+_chart_setup = LazyModuleProxy("app.analysis.chart_setup")
+_market_regime = LazyModuleProxy("app.analysis.market_regime")
+_next_day_forecast = LazyModuleProxy("app.analysis.next_day_forecast")
+_trade_planner = LazyModuleProxy("app.analysis.trade_planner")
+_valuation_blend = LazyModuleProxy("app.analysis.valuation_blend")
+_stock_analyzer = LazyModuleProxy("app.analysis.stock_analyzer")
+_stock_scorer = LazyModuleProxy("app.scoring.stock_scorer")
+_portfolio_optimizer = LazyModuleProxy("app.services.portfolio_optimizer")
 
 OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 6
 OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 4
@@ -80,6 +89,57 @@ RADAR_FOCUS_CANDIDATE_LIMIT = 6
 RADAR_FOCUS_CONCURRENCY = 3
 RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS = 2.4
 RADAR_FOCUS_TOTAL_TIMEOUT_SECONDS = 5.2
+RADAR_FOCUS_SKIP_PRESSURE_RATIO = 0.82
+
+
+def build_distributional_forecast(*args, **kwargs):
+    return _distributional_return_engine.build_distributional_forecast(*args, **kwargs)
+
+
+def build_short_horizon_chart_analysis(*args, **kwargs):
+    return _chart_setup.build_short_horizon_chart_analysis(*args, **kwargs)
+
+
+def build_market_regime(*args, **kwargs):
+    return _market_regime.build_market_regime(*args, **kwargs)
+
+
+def forecast_next_day(*args, **kwargs):
+    return _next_day_forecast.forecast_next_day(*args, **kwargs)
+
+
+def build_short_horizon_trade_plan(*args, **kwargs):
+    return _trade_planner.build_short_horizon_trade_plan(*args, **kwargs)
+
+
+def build_trade_plan(*args, **kwargs):
+    return _trade_planner.build_trade_plan(*args, **kwargs)
+
+
+def build_quick_buy_sell(*args, **kwargs):
+    return _valuation_blend.build_quick_buy_sell(*args, **kwargs)
+
+
+def _calc_technicals(*args, **kwargs):
+    return _stock_analyzer._calc_technicals(*args, **kwargs)
+
+
+def score_stock(*args, **kwargs):
+    return _stock_scorer.score_stock(*args, **kwargs)
+
+
+def build_horizon_snapshot(*args, **kwargs):
+    return _portfolio_optimizer.build_horizon_snapshot(*args, **kwargs)
+
+
+def _should_skip_next_day_focus_enrichment() -> bool:
+    if not settings.startup_memory_safe_mode:
+        return False
+    try:
+        snapshot = get_memory_pressure_snapshot(settings)
+    except Exception:
+        return False
+    return float(snapshot.get("pressure_ratio") or 0.0) >= RADAR_FOCUS_SKIP_PRESSURE_RATIO
 
 
 def _optional_finite_float(value: float | None) -> float | None:
@@ -1666,11 +1726,14 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             [*focus_quote_only_ranked, *ranked],
             limit=RADAR_FOCUS_SOURCE_LIMIT,
         )
-        next_day_focus = await _build_next_day_focus_recommendation(
-            source_items=focus_source_items or ranked,
-            country_code=country_code,
-            market_regime=market_regime,
-        )
+        skip_next_day_focus = _should_skip_next_day_focus_enrichment()
+        next_day_focus = None
+        if not skip_next_day_focus:
+            next_day_focus = await _build_next_day_focus_recommendation(
+                source_items=focus_source_items or ranked,
+                country_code=country_code,
+                market_regime=market_regime,
+            )
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         note_parts = [universe_selection.note.strip()]
@@ -1683,6 +1746,8 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
                 f"코스피 상위 {KR_RADAR_KOSPI_LIMIT}개와 코스닥 상위 {KR_RADAR_KOSDAQ_LIMIT}개 대표 종목 중 실제 시세를 확보한 {representative_scanned_count}개를 먼저 정렬했습니다."
             )
         note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
+        if skip_next_day_focus:
+            note_parts.append("서버 메모리 보호 구간에서는 1일 포커스 정밀 계산을 잠시 생략하고 후보 목록을 먼저 표시합니다.")
         note_parts.append("같은 화면을 다시 열면 fresh quick 스냅샷과 정밀 후보 계산을 새로 시도합니다.")
         resolved_universe_note = " ".join(part for part in note_parts if part).strip()
         resolved_quote_available_count = int(quote_screen.get("quote_available_count") or 0)
