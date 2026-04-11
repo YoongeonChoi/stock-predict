@@ -270,6 +270,37 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
 
+    def test_stock_detail_cache_lookup_timeout_does_not_wait_for_cancellation_cleanup(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_cached(*args, **kwargs):
+            try:
+                await asyncio.sleep(0.2)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+            return _cached_snapshot()
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(side_effect=_slow_cached)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+            patch("app.routers.stock._try_schedule_distributional_capture", new=AsyncMock(return_value=False)),
+        ):
+            with patched_client() as client:
+                started = time.perf_counter()
+                response = client.get("/api/stock/005930/detail")
+                elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.05)
+
     def test_stock_detail_prefer_full_records_full_trace_when_cached_quick_upgrades_successfully(self):
         quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
         full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)

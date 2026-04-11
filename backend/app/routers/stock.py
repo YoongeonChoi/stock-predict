@@ -178,10 +178,34 @@ def _schedule_stock_detail_persist(detail: dict, ticker: str) -> bool:
     )
 
 
+def _consume_timeboxed_stock_task_result(task: asyncio.Task[Any]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
+async def _run_timeboxed_stock_job(job: Awaitable[Any], *, timeout_seconds: float) -> tuple[Any | None, bool]:
+    task = asyncio.ensure_future(job)
+    task.add_done_callback(_consume_timeboxed_stock_task_result)
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=max(timeout_seconds, 0.01))
+        return result, False
+    except asyncio.TimeoutError:
+        task.cancel()
+        return None, True
+
+
 async def _timed_stock_cache_lookup(job: Awaitable[Any], *, label: str) -> Any | None:
     try:
-        return await asyncio.wait_for(job, timeout=STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+        result, timed_out = await _run_timeboxed_stock_job(
+            job,
+            timeout_seconds=STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        )
+        if not timed_out:
+            return result
         logger.warning("%s timed out after %.2fs; continuing as cache miss.", label, STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS)
         return None
     except Exception as exc:
@@ -191,9 +215,12 @@ async def _timed_stock_cache_lookup(job: Awaitable[Any], *, label: str) -> Any |
 
 async def _timed_stock_cache_write(job: Awaitable[Any], *, label: str) -> bool:
     try:
-        await asyncio.wait_for(job, timeout=STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS)
-        return True
-    except asyncio.TimeoutError:
+        _, timed_out = await _run_timeboxed_stock_job(
+            job,
+            timeout_seconds=STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS,
+        )
+        if not timed_out:
+            return True
         logger.warning(
             "%s timed out after %.2fs; continuing without blocking the response.",
             label,

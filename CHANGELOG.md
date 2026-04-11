@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.6 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 full/quick cache lookup timebox는 이제 `shield + explicit cancel`로 동작합니다. 그래서 SQLite cache lookup이 취소 이후 정리까지 오래 붙잡히더라도, public first-hit은 cache miss로 더 빨리 넘기고 `stock_memory_guard` 또는 quick partial 응답으로 이어지게 정리했습니다.
+- `backend/tests/test_stock_router.py`에는 stock cache lookup timeout이 취소 cleanup을 기다리지 않고 quick partial로 바로 내려가는 회귀를 추가했습니다. 앞으로는 종목 상세 first-hit cache miss 경로가 다시 SQLite cancel cleanup 때문에 길어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.5 - 2026-04-12
 
 - backend `/api/stock/{ticker}/detail`의 `stock_memory_guard` shell은 이제 quick cache seed를 메모리에만 남기고 SQLite persistent cache write는 건너뜁니다. 그래서 Render safe mode의 cold first-hit이 이미 가벼운 partial 응답으로 끝났는데도 보호용 shell cache write가 로컬 DB I/O에 붙잡혀 수십 초까지 늘어지는 경로를 더 짧게 끊었습니다.
