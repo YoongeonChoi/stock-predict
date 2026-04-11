@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.12 - 2026-04-12
+
+- backend `/api/market/indicators`는 startup guard 중 `last_success`가 비어 있으면 즉시 fallback만 주고 끝내지 않고, dedupe된 백그라운드 warm-up을 한 번 시작합니다. 그래서 Render cold start 직후 첫 실시간 요청이 30초 이상 지연되며 cold fetch 비용을 전부 떠안던 문제를 줄였습니다.
+- 같은 경로는 memory guard 중에는 warm-up을 시작하지 않도록 유지했고, `backend/tests/test_public_dashboard_timeouts.py`에 startup guard warm-up / memory guard no-warmup 회귀를 추가했습니다.
+
 ## v2.61.11 - 2026-04-12
 
 - backend `app.data.yfinance_client.get_index_quote()`는 이제 `index:v2:*` cache key를 사용하고, `price/prev_close`가 모두 0인 payload는 내부 index cache에 저장하지 않습니다. 그래서 `/api/market/indicators` 라우트 shared cache를 비워도 안쪽 quote cache가 stale zero 응답을 다시 뿌리던 경로까지 같이 정리했습니다.

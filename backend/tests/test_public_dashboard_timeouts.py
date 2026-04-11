@@ -361,6 +361,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.country._build_market_indicators_payload",
                 new=AsyncMock(side_effect=AssertionError("startup guard should not invoke live indicator fetch")),
             ),
+            patch("app.routers.country._spawn_market_indicators_warmup") as warmup,
             patched_client() as client,
         ):
             response = client.get("/api/market/indicators")
@@ -375,6 +376,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 {"name": "Bitcoin", "price": 0, "change_pct": 0},
             ],
         )
+        warmup.assert_called_once()
 
     def test_market_indicators_memory_guard_prefers_last_success_without_live_fetch(self):
         last_success_payload = [
@@ -394,12 +396,45 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.country._build_market_indicators_payload",
                 new=AsyncMock(side_effect=AssertionError("memory guard should not invoke live indicator fetch")),
             ),
+            patch("app.routers.country._spawn_market_indicators_warmup") as warmup,
             patched_client() as client,
         ):
             response = client.get("/api/market/indicators")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), last_success_payload)
+        warmup.assert_not_called()
+
+    def test_market_indicators_memory_guard_without_last_success_skips_warmup(self):
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=True),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
+            patch("app.data.cache.get", new=AsyncMock(return_value=None)),
+            patch(
+                "app.data.cache.get_or_fetch",
+                new=AsyncMock(side_effect=AssertionError("memory guard should bypass shared cache fetch")),
+            ),
+            patch(
+                "app.routers.country._build_market_indicators_payload",
+                new=AsyncMock(side_effect=AssertionError("memory guard should not invoke live indicator fetch")),
+            ),
+            patch("app.routers.country._spawn_market_indicators_warmup") as warmup,
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/indicators")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {"name": "USD/KRW", "price": 0, "change_pct": 0},
+                {"name": "Gold", "price": 0, "change_pct": 0},
+                {"name": "Oil (WTI)", "price": 0, "change_pct": 0},
+                {"name": "Bitcoin", "price": 0, "change_pct": 0},
+            ],
+        )
+        warmup.assert_not_called()
 
     def test_market_indicators_item_timeout_does_not_block_full_response(self):
         async def _indicator_side_effect(ticker: str):

@@ -563,6 +563,32 @@ def _spawn_country_public_side_effect(job: Awaitable[Any], *, label: str, trim_r
     return True
 
 
+def _spawn_market_indicators_warmup(fetcher, *, cache_key: str, label: str = "Market indicators warmup") -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory("market_indicators_warmup:skip")
+        return False
+
+    async def _warm() -> None:
+        from app.data import cache as data_cache
+
+        try:
+            payload = await fetcher()
+            if _market_indicators_have_values(payload):
+                await data_cache.set(cache_key, payload, MARKET_INDICATORS_CACHE_TTL_SECONDS)
+        finally:
+            _maybe_trim_public_route_memory("market_indicators_warmup")
+
+    task, created = get_or_create_background_job("market_indicators:warmup", _warm)
+    if not created:
+        logging.info("%s already running; reusing the existing warmup task.", label)
+        return False
+    task.add_done_callback(
+        lambda task_, warm_label=label: _log_background_completion(task_, label=warm_label)
+    )
+    return True
+
+
 def _schedule_country_report_persist(report: dict, code: str) -> bool:
     return _spawn_country_public_side_effect(
         archive_service.save_report("country", report, country_code=code),
@@ -1635,12 +1661,6 @@ async def get_market_indicators():
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
 
-    if pressure_guard or startup_guard:
-        cached_success = await data_cache.get(last_success_key)
-        if _market_indicators_have_values(cached_success):
-            return cached_success
-        return _build_market_indicators_fallback()
-
     async def _fetch_indicators():
         try:
             payload = await asyncio.wait_for(
@@ -1662,6 +1682,14 @@ async def get_market_indicators():
             if _market_indicators_have_values(cached_success):
                 return cached_success
             return _build_market_indicators_fallback()
+
+    if pressure_guard or startup_guard:
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        if startup_guard and not pressure_guard:
+            _spawn_market_indicators_warmup(_fetch_indicators, cache_key=cache_key)
+        return _build_market_indicators_fallback()
 
     async def _timeout_indicator_fallback():
         cached_success = await data_cache.get(last_success_key)
