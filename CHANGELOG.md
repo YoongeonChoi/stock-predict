@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.42 - 2026-04-11
+
+- backend `/api/country/KR/heatmap`은 이제 startup/memory guard 구간에서 `cache` import나 live/universe fallback 전체를 다시 타지 않고, `COUNTRY_REGISTRY`만으로 만든 중립 섹터 shell을 즉시 반환합니다. 그래서 메모리 warning 구간에서도 히트맵 guard 응답이 다시 수초 이상 끌리는 회귀를 줄였고, 홈 대시보드도 완전히 빈 state card 대신 최소한의 섹터 레이아웃을 먼저 유지합니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 heatmap startup guard가 live builder, fallback builder, cache fetch를 모두 건너뛰고 neutral shell만 반환하는 회귀를 고정합니다. 그래서 보호 구간에서 히트맵이 다시 cache/bootstrap이나 live fallback을 먼저 타며 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.41 - 2026-04-11
 
 - backend `/api/screener`는 이제 KR quick partial 경로에서 cache lookup, partial seed write, `last_success` persist를 짧게 timebox합니다. representative quote나 safe shell payload는 이미 준비됐는데도 SQLite cache I/O가 함께 늘어지면서 `/api/screener` first-usable 응답이 10초 이상 밀리던 회귀를 줄였습니다.

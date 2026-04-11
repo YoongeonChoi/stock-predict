@@ -120,7 +120,7 @@ export default function StockHeatmap({ data, loading }: Props) {
     <div className="space-y-3">
       {neutralFallback ? (
         <div className="rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 text-sm text-text-secondary">
-          실시간 등락률 분포가 아직 도착하지 않아 시가총액 배치만 먼저 보여주고 있습니다.
+          실시간 등락률 분포가 아직 도착하지 않아 중립 섹터 배치를 먼저 보여주고 있습니다.
         </div>
       ) : null}
       <div className="h-[420px] w-full cursor-pointer">

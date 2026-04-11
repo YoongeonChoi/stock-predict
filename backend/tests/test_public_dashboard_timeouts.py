@@ -736,7 +736,6 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         warmup.assert_called_once()
 
     def test_heatmap_startup_guard_returns_partial_fallback_without_live_build(self):
-        fallback_payload = {"children": [], "partial": True, "fallback_reason": "live_snapshot_timeout"}
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
             patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.12}),
@@ -745,7 +744,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
             ),
             patch("app.routers.country._build_heatmap_payload", new=AsyncMock(side_effect=AssertionError("live heatmap build should be skipped during startup guard"))),
-            patch("app.routers.country._build_heatmap_fallback", new=AsyncMock(return_value=fallback_payload)),
+            patch("app.routers.country._build_heatmap_fallback", new=AsyncMock(side_effect=AssertionError("fallback builder should be skipped during startup guard"))),
             patch("app.data.cache.get_or_fetch", new=AsyncMock(side_effect=AssertionError("cache fetch should be skipped during startup guard"))),
             patched_client() as client,
         ):
@@ -754,6 +753,10 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "heatmap_startup_guard")
+        self.assertGreater(len(response.json()["children"]), 0)
+        first_tile = response.json()["children"][0]["children"][0]
+        self.assertEqual(first_tile["change"], 0.0)
+        self.assertEqual(first_tile["ticker"], "")
 
     def test_screener_partial_does_not_schedule_cache_warmup_in_render_safe_mode(self):
         sector_map = {

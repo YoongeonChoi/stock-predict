@@ -290,6 +290,39 @@ async def _build_heatmap_fallback(code: str) -> dict:
     }
 
 
+def _build_heatmap_guard_shell(code: str) -> dict:
+    country = COUNTRY_REGISTRY[code]
+    sector_aliases = {
+        "Consumer Discretionary": "Cons. Disc.",
+        "Consumer Staples": "Cons. Staples",
+        "Health Care": "Health Care",
+        "Information Technology": "IT",
+        "Communication Services": "Comm. Svcs.",
+        "Real Estate": "Real Estate",
+    }
+    sector_count = max(len(country.sectors_gics), 1)
+    sectors = []
+    for index, sector_name in enumerate(country.sectors_gics, start=1):
+        sectors.append(
+            {
+                "name": sector_name,
+                "children": [
+                    {
+                        "name": sector_aliases.get(sector_name, sector_name),
+                        "ticker": "",
+                        "fullName": f"{sector_name} 보호 스냅샷",
+                        "size": round(((sector_count - index + 1) / sector_count) * 1_000_000_000, 2),
+                        "change": 0.0,
+                    }
+                ],
+            }
+        )
+    return {
+        "children": sectors,
+        "partial": True,
+    }
+
+
 def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
     if task.cancelled():
         logging.info("%s background task was cancelled.", label)
@@ -1394,14 +1427,10 @@ async def get_heatmap(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
-    from app.data import cache as data_cache
-    cache_key = f"heatmap:v3:{code}"
-    last_success_key = f"heatmap:last_success:{code}"
-
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
-        response = dict(await _build_heatmap_fallback(code))
+        response = dict(_build_heatmap_guard_shell(code))
         response["partial"] = True
         response["fallback_reason"] = (
             "heatmap_memory_guard" if pressure_guard else "heatmap_startup_guard"
@@ -1409,6 +1438,10 @@ async def get_heatmap(code: str):
         response["generated_at"] = datetime.now().isoformat()
         _maybe_trim_public_route_memory("country_heatmap")
         return response
+
+    from app.data import cache as data_cache
+    cache_key = f"heatmap:v3:{code}"
+    last_success_key = f"heatmap:last_success:{code}"
 
     async def _fetch_heatmap():
         try:

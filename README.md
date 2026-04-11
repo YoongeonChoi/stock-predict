@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.41`
+현재 릴리즈: `v2.60.42`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/country/KR/heatmap`은 이제 startup/memory guard 구간에서 `cache` import나 live/universe fallback 전체를 다시 타지 않고, `COUNTRY_REGISTRY`만으로 만든 중립 섹터 shell을 즉시 반환합니다. 그래서 메모리 경고 구간에서도 히트맵 guard 응답이 다시 수초 이상 끌리는 회귀를 줄였고, 홈 대시보드도 완전히 빈 state card 대신 최소한의 섹터 레이아웃을 먼저 유지합니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 heatmap startup guard가 live builder, fallback builder, cache fetch를 모두 건너뛰고 neutral shell만 반환하는 회귀를 고정합니다. 앞으로는 보호 구간에서 히트맵이 다시 cache/bootstrap이나 live fallback을 먼저 타며 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/screener`는 이제 KR quick partial 경로에서 cache lookup, seed write, `last_success` persist를 짧게 timebox합니다. 그래서 representative quote나 safe shell 자체는 이미 준비됐는데도 SQLite cache I/O가 같이 늘어지면서 첫 usable 응답이 10초 이상 밀리던 회귀를 줄였습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 `screener`가 느린 cache lookup을 miss로 처리하고, cache persist가 막혀도 partial 응답을 먼저 반환하는 회귀를 추가했습니다. 앞으로는 Render cold cache/lock 구간에서 screener partial path가 다시 cache I/O까지 동기 대기하는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/briefing/daily`는 이제 timeout, startup guard, memory guard에 걸리면 `sessions/calendar/archive`를 다시 읽는 서비스 fallback까지 기다리지 않고 라우트 안에서 초경량 shell payload를 즉시 반환합니다. 그래서 브리핑이 partial 상태로 내려갈 때도 하위 의존 하나가 늦어지는 바람에 다시 15초 budget을 넘기는 경로를 더 확실히 잘랐습니다.
