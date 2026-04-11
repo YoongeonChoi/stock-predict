@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.23 - 2026-04-12
+
+- backend `country` startup guard는 이제 최대 300초 고정이 아니라, 최소 보호 시간이 지난 뒤 `public_dashboard_prewarm=ok`이고 메모리 압박이 낮으면 조기 해제됩니다. 그래서 Render memory-safe startup에서 메모리는 이미 안정적인데도 `/api/country/KR/report`, `/api/country/KR/heatmap`, `/api/market/opportunities/KR`가 너무 오래 startup guard partial에만 머무는 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`에는 startup guard 조기 해제와 고압 메모리 유지 조건을 함께 확인하는 회귀를 추가했습니다.
+
 ## v2.61.22 - 2026-04-12
 
 - Render memory-safe startup `public_dashboard_prewarm`이 이제 캘린더 월간 shell seed도 함께 데웁니다. 그래서 배포 직후 첫 `/api/calendar/KR` 호출이 외부 일정 feed cold fetch를 응답 경로에서 바로 떠안지 않고, 짧은 TTL의 월간 핵심 일정 partial cache를 먼저 재사용하도록 정리했습니다.

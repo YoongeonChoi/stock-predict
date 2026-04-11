@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.22`
+현재 릴리즈: `v2.61.23`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `country` startup guard는 이제 최대 300초를 그대로 고정하지 않고, 최소 보호 시간 이후 `public_dashboard_prewarm=ok`이며 메모리 압박이 낮은 경우 조기 해제됩니다. 그래서 Render memory-safe startup에서도 배포 후 한동안 메모리는 이미 안정적인데 `/api/country/KR/report`, `/api/country/KR/heatmap`, `/api/market/opportunities/KR`가 너무 오래 startup guard partial에만 머무는 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`에는 이 조기 해제 조건과 고압 메모리일 때는 guard가 계속 유지되는 회귀를 추가했습니다. 앞으로는 startup guard가 다시 “무조건 5분 고정”으로 되돌아가거나, 반대로 메모리 여유가 없는데 너무 빨리 풀리는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - Render memory-safe startup의 `public_dashboard_prewarm`은 이제 캘린더 월간 shell seed도 함께 데웁니다. 그래서 배포 직후 첫 `/api/calendar/KR` 호출이 외부 일정 공급원의 cold fetch를 응답 경로에서 바로 떠안지 않고, 짧은 TTL의 월간 핵심 일정 seed를 먼저 재사용해 첫 usable 응답을 더 빠르게 보여주도록 맞췄습니다.
 - `backend/app/services/calendar_service.py`에는 `prewarm_public_calendar_cache_seed()`를 추가하고, `backend/tests/test_main_startup.py`와 `backend/tests/test_calendar_service.py`에는 이 startup seed가 실제로 실행되며 외부 earnings/economic feed를 건드리지 않고 짧은 TTL의 partial shell만 기록하는 회귀를 추가했습니다. 앞으로는 Render 500MB 운영 한도 안에서 배포 직후 캘린더 첫 진입이 다시 5초대 cold hit으로 튀는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - Render memory-safe startup의 `public_dashboard_prewarm`은 이제 `시장 지표 -> 데일리 브리핑 -> 기본 screener safe-shell seed`까지 함께 데웁니다. 그래서 운영 첫 진입에서 `/api/screener?country=KR&limit=20`가 `universe_data` lazy import와 safe-shell seed 생성을 요청 경로에서 한꺼번에 떠안던 구간을 startup 쪽으로 당겨, 첫 deployed hit 지연을 더 줄이는 방향으로 맞췄습니다.

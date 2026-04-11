@@ -14,6 +14,40 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         reset_runtime_state()
 
+    async def test_startup_guard_releases_early_after_public_dashboard_prewarm_when_pressure_is_low(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS + 15)
+                    ).isoformat(),
+                    "startup_tasks": [{"name": "public_dashboard_prewarm", "status": "ok"}],
+                },
+            ),
+            patch("app.routers.country._public_memory_pressure_ratio", return_value=0.32),
+        ):
+            self.assertFalse(country._should_use_startup_public_route_guard())
+
+    async def test_startup_guard_stays_enabled_when_memory_pressure_is_not_low(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS + 15)
+                    ).isoformat(),
+                    "startup_tasks": [{"name": "public_dashboard_prewarm", "status": "ok"}],
+                },
+            ),
+            patch("app.routers.country._public_memory_pressure_ratio", return_value=0.61),
+        ):
+            self.assertTrue(country._should_use_startup_public_route_guard())
+
     async def test_build_country_success_response_defers_memory_trim_until_background_task(self):
         payload = {"country": {"code": "KR"}, "market_summary": "ok"}
 

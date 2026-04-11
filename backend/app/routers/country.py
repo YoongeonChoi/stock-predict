@@ -68,6 +68,8 @@ COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 PUBLIC_STARTUP_GUARD_SECONDS = 300
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS = 180
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO = 0.5
 
 
 def market_session_cache_token(*args, **kwargs):
@@ -539,7 +541,25 @@ def _should_use_startup_public_route_guard() -> bool:
             return False
         started_at = datetime.fromisoformat(started_at_raw)
         now = datetime.now(started_at.tzinfo or timezone.utc)
-        return (now - started_at).total_seconds() <= PUBLIC_STARTUP_GUARD_SECONDS
+        elapsed_seconds = (now - started_at).total_seconds()
+        if elapsed_seconds > PUBLIC_STARTUP_GUARD_SECONDS:
+            return False
+        if elapsed_seconds < PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS:
+            return True
+
+        startup_tasks = runtime_state.get("startup_tasks") or []
+        public_dashboard_prewarm_ok = any(
+            str(task.get("name") or "") == "public_dashboard_prewarm"
+            and str(task.get("status") or "") == "ok"
+            for task in startup_tasks
+            if isinstance(task, dict)
+        )
+        if (
+            public_dashboard_prewarm_ok
+            and _public_memory_pressure_ratio() < PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO
+        ):
+            return False
+        return True
     except Exception:
         return False
 
