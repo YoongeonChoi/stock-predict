@@ -1233,6 +1233,8 @@ async def _load_country_report_with_fallback(
                     reason="country_report_timeout",
                     error_code="SP-5018",
                     detail=timeout_detail,
+                    include_archived_report=False,
+                    include_quick_candidates=False,
                 ),
                 True,
             )
@@ -1244,6 +1246,8 @@ async def _load_country_report_with_fallback(
                     reason="country_report_error",
                     error_code=error_code,
                     detail=error_detail,
+                    include_archived_report=False,
+                    include_quick_candidates=False,
                 ),
                 True,
             )

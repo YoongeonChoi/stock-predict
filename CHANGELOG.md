@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.3 - 2026-04-12
+
+- backend `/api/country/{code}/report`는 이제 public timeout fallback에서 이미 앞단이 확인한 archived report/quick 후보 lookup을 다시 반복하지 않습니다. 최근 정상 캐시와 archived report를 먼저 확인한 뒤에도 정밀 계산이 늦으면, 응답 경로는 더 가벼운 `country_report_timeout` shell로 바로 닫고 background refresh만 계속 유지해 partial 응답이 10초대까지 늘어지던 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`에는 background refresh를 유지한 public timeout fallback이 archived/quick 재조회를 다시 붙잡지 않고 lightweight fallback으로 바로 내려가는 회귀를 추가했습니다. 앞으로는 국가 리포트 timeout 응답이 다시 fallback 재조회 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.2 - 2026-04-12
 
 - backend `/api/stock/{ticker}/detail`는 Render safe mode에서 full/quick cache가 모두 비어 있는 첫 공개 진입일 때 quick builder를 응답 경로에서 기다리지 않습니다. 기본 경로는 즉시 `stock_memory_guard` shell을 먼저 반환하고, quick snapshot warm은 백그라운드에서 따로 진행해 배포 직후 cold-hit 한 번 때문에 `stock-detail` smoke가 15초 timeout까지 밀리는 구간을 줄였습니다.
