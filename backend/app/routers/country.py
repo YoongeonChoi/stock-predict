@@ -1283,6 +1283,11 @@ async def _build_sector_performance_payload(code: str) -> list[dict]:
 
 @router.get("/countries")
 async def list_countries():
+    if _should_use_ultra_fast_public_fallback() or _should_use_startup_public_route_guard():
+        response = _build_countries_fallback()
+        _maybe_trim_public_route_memory("countries")
+        return response
+
     from app.data import cache as data_cache
 
     cached_response = await data_cache.get(COUNTRIES_CACHE_KEY)

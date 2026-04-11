@@ -9,13 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.33`
+현재 릴리즈: `v2.60.34`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
-- backend `country report`, `heatmap`, `market/opportunities`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 같은 `startup guard` fast fallback 규칙을 공유합니다. 새 프로세스는 메모리 비율이 낮아도 cold first-hit가 길어질 수 있었는데, 이번에는 국가 요약은 대표 시장 스냅샷으로, 히트맵은 대표 종목 기준 shell로, 기회 레이더는 안전한 placeholder로 먼저 내려 first-usable 응답을 더 빨리 내는 쪽으로 정리했습니다.
-- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`에는 최근 startup window 동안 heavy heatmap/live quick path를 건너뛰고 startup guard fallback으로 바로 내려가는 회귀를 추가했습니다. 앞으로는 새 프로세스 초반에 다시 무거운 full path로 들어가는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- backend `countries`, `country report`, `heatmap`, `market/opportunities`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 같은 `startup guard` fast fallback 규칙을 공유합니다. 새 프로세스는 메모리 비율이 낮아도 cold first-hit가 길어질 수 있었는데, 이번에는 국가 목록도 캐시 lookup보다 fallback shell을 먼저 내려 첫 usable 응답을 더 빨리 닫는 쪽으로 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`에는 최근 startup window 동안 countries cache lookup과 heavy heatmap/live quick path를 건너뛰고 startup guard fallback으로 바로 내려가는 회귀를 추가했습니다. 앞으로는 새 프로세스 초반에 다시 무거운 full path로 들어가는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - frontend `public-audit`에는 `heatmap_startup_guard`, `heatmap_memory_guard`, `opportunity_startup_guard`, `opportunity_memory_guard` 라벨/요약을 추가해, 히트맵과 기회 레이더 fallback 이유도 raw code 대신 자연스러운 한국어로 보이도록 맞췄습니다.
 - `.github/workflows/render-keepalive.yml`을 추가해 GitHub Actions가 10분마다 `api/health`와 `api/country/KR/report`를 호출하도록 했습니다. Vercel Hobby cron으로는 분 단위 keepalive가 불가능해서, Render cold wake로 20~35초까지 튀던 첫 요청 지연을 완화하는 운영 keepalive를 저장소 안에서 관리하도록 옮겼습니다.
 - `backend/tests/test_keepalive_workflow.py`를 추가해 keepalive workflow가 스케줄과 대상 URL을 유지하는지 회귀로 고정했습니다. 앞으로는 workflow가 빠지거나 warm 대상이 바뀌는 회귀를 테스트에서 바로 잡을 수 있습니다.

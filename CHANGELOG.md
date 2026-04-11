@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.34 - 2026-04-11
+
+- backend `/api/countries`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 캐시 lookup보다 fallback shell을 먼저 반환합니다. 새 프로세스 초반에는 `app.data.cache` 경유 lookup 자체가 첫 usable 응답을 늦출 수 있었는데, 이번에는 startup guard 구간에서 국가 목록도 바로 기본 shell을 내려 country list first-hit를 더 짧게 닫는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`에는 countries startup guard가 cache lookup을 건너뛰고 fallback shell을 바로 반환하는 회귀를 추가했습니다. startup 직후 국가 목록이 다시 cache/bootstrap 경로를 먼저 밟는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.33 - 2026-04-11
 
 - backend `heatmap`과 `market/opportunities`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 `startup guard` fast fallback을 먼저 사용합니다. 새 프로세스는 메모리 비율이 낮아도 live heatmap build와 quick opportunity fetch가 8~30초대까지 늘어질 수 있었는데, 이번에는 `heatmap_startup_guard`, `opportunity_startup_guard`로 대표 스냅샷과 placeholder를 먼저 내려 first-usable 응답을 더 빨리 닫도록 정리했습니다.

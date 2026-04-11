@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, PropertyMock, patch
 
@@ -292,6 +292,16 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         background_task = unittest.mock.Mock()
         with (
             patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country_router.PUBLIC_STARTUP_GUARD_SECONDS + 30)
+                    ).isoformat(),
+                    "startup_tasks": [],
+                },
+            ),
             patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
             patch("app.data.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.country.get_or_create_background_job", return_value=(background_task, True)) as background_job,

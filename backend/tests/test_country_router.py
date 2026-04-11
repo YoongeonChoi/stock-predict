@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -142,6 +142,25 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response[0]["indices"][0]["price"], 0)
         self.assertEqual(response[0]["indices"][0]["change_pct"], 0)
 
+    async def test_list_countries_startup_guard_skips_cache_lookup_and_returns_fallback(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.12}),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
+            ),
+            patch(
+                "app.data.cache.get",
+                new=AsyncMock(side_effect=AssertionError("countries startup guard should skip cache lookups")),
+            ),
+        ):
+            response = await country.list_countries()
+
+        self.assertTrue(response)
+        self.assertEqual(response[0]["indices"][0]["price"], 0)
+        self.assertEqual(response[0]["indices"][0]["change_pct"], 0)
+
     async def test_list_countries_safe_mode_reuses_last_success_without_spawning_refresh(self):
         last_success = [
             {
@@ -155,6 +174,16 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_SECONDS + 30)
+                    ).isoformat(),
+                    "startup_tasks": [],
+                },
+            ),
             patch("app.data.cache.get", new=AsyncMock(side_effect=[None, last_success])),
             patch("app.data.cache.set", new=AsyncMock()) as cache_set,
             patch(
@@ -170,6 +199,16 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_countries_safe_mode_seeds_fallback_without_spawning_refresh(self):
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_SECONDS + 30)
+                    ).isoformat(),
+                    "startup_tasks": [],
+                },
+            ),
             patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
             patch("app.data.cache.set", new=AsyncMock()) as cache_set,
             patch(
