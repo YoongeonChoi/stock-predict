@@ -403,20 +403,49 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(payload["current_price"], 0.0)
         self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
 
-    def test_stock_detail_returns_500_when_quick_and_full_fail_without_cache(self):
+    def test_stock_detail_returns_minimal_shell_when_quick_and_full_fail_without_cache(self):
         with (
             patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
             patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=RuntimeError("boom"))),
         ):
             with patched_client() as client:
                 response = client.get("/api/stock/005930/detail")
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["error_code"], "SP-3003")
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
+        self.assertIn("SP-3003", payload["errors"])
+        self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
+
+    def test_stock_detail_returns_minimal_shell_when_timeout_and_no_cache_available(self):
+        async def _slow_full(_ticker):
+            await asyncio.sleep(0.05)
+            return _cached_snapshot()
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.STOCK_DETAIL_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
+        self.assertIn("SP-5018", payload["errors"])
 
 
 if __name__ == "__main__":

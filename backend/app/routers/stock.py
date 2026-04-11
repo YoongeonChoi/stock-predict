@@ -368,6 +368,39 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
     return payload
 
 
+async def _build_stock_minimal_shell(
+    ticker: str,
+    *,
+    fallback_reason: str,
+    summary: str,
+    error_code: str | None = None,
+) -> dict:
+    payload = await _build_stock_memory_guard_shell(ticker)
+    payload["fallback_reason"] = fallback_reason
+    payload["analysis_summary"] = summary
+    payload["key_risks"] = [summary]
+    payload["trade_plan"] = {
+        **dict(payload.get("trade_plan") or {}),
+        "thesis": [summary],
+        "invalidation": "정밀 종목 분석이 다시 가능해지면 계획을 갱신합니다.",
+    }
+    payload["public_summary"] = {
+        **dict(payload.get("public_summary") or {}),
+        "summary": summary,
+        "why_not_buy_now": [summary],
+        "thesis_breakers": [
+            "정밀 종목 분석이 회복될 때까지 최소 스냅샷만으로는 판단 근거가 충분하지 않습니다."
+        ],
+        "data_quality": "티커·기본 메타데이터 중심 최소 응답",
+        "confidence_note": "정밀 예측과 기술 지표 계산은 이번 요청에서 생략했습니다.",
+    }
+    errors = list(payload.get("errors") or [])
+    if error_code and error_code not in errors:
+        errors.append(error_code)
+    payload["errors"] = errors
+    return payload
+
+
 def _sanitize_json_value(value: Any) -> Any:
     if isinstance(value, float):
         return value if math.isfinite(value) else None
@@ -728,15 +761,25 @@ async def get_stock_detail(
                 served_state="degraded",
             )
             return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+        shell_payload = await _build_stock_minimal_shell(
+            ticker,
+            fallback_reason="stock_minimal_shell",
+            summary=(
+                "상세 종목 분석이 지연돼 이번 요청에서는 최소 상세 스냅샷을 먼저 제공합니다. "
+                "잠시 뒤 다시 조회하면 quick 또는 full 캐시 결과가 보일 수 있습니다."
+            ),
+            error_code="SP-5018",
+        )
         _record_stock_detail_trace(
             started_at,
-            request_phase="full",
+            request_phase="shell",
             cache_state="miss",
             timeout_budget_seconds=detail_timeout,
-            fallback_reason="stock_detail_timeout",
+            payload=shell_payload,
+            fallback_reason="stock_minimal_shell",
             served_state="degraded",
         )
-        return _build_stock_error_response(504, err.to_dict(), trim_reason="stock_detail")
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
     except Exception as e:
         cached_quick = quick_fallback or await _timed_stock_cache_lookup(
             get_cached_quick_stock_detail(ticker),
@@ -797,15 +840,25 @@ async def get_stock_detail(
                 served_state="degraded",
             )
             return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+        shell_payload = await _build_stock_minimal_shell(
+            ticker,
+            fallback_reason="stock_minimal_shell",
+            summary=(
+                "상세 종목 분석을 완료하지 못해 이번 요청에서는 최소 상세 스냅샷을 먼저 제공합니다. "
+                "잠시 뒤 다시 조회하면 quick 또는 full 캐시 결과가 보일 수 있습니다."
+            ),
+            error_code="SP-3003",
+        )
         _record_stock_detail_trace(
             started_at,
-            request_phase="full",
+            request_phase="shell",
             cache_state="miss",
             timeout_budget_seconds=detail_timeout if "detail_timeout" in locals() else STOCK_DETAIL_TIMEOUT_SECONDS,
-            fallback_reason="stock_detail_error",
+            payload=shell_payload,
+            fallback_reason="stock_minimal_shell",
             served_state="degraded",
         )
-        return _build_stock_error_response(500, err.to_dict(), trim_reason="stock_detail")
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
 
     _record_stock_detail_trace(
         started_at,
