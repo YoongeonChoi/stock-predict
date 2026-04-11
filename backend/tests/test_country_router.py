@@ -276,8 +276,13 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             },
         }
 
+        async def _get_universe(code: str, *, prefer_fallback: bool = False):
+            self.assertEqual(code, "KR")
+            self.assertTrue(prefer_fallback)
+            return {"Information Technology": ["005930.KS", "000660.KS"]}
+
         with (
-            patch("app.data.universe_data.get_universe", new=AsyncMock(return_value={"Information Technology": ["005930.KS", "000660.KS"]})),
+            patch("app.data.universe_data.get_universe", new=AsyncMock(side_effect=_get_universe)),
             patch("app.routers.country._load_cached_kr_representative_quotes", new=AsyncMock(return_value=representative_quotes)),
         ):
             response = await country._build_heatmap_fallback("KR")

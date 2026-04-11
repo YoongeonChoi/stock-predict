@@ -241,7 +241,7 @@ def _build_heatmap_children_from_quotes(universe: dict[str, list[str]], quotes: 
 async def _build_heatmap_fallback(code: str) -> dict:
     from app.data.universe_data import get_universe
 
-    universe = await get_universe(code)
+    universe = await get_universe(code, prefer_fallback=True)
     if code == "KR":
         representative_quotes = await _load_cached_kr_representative_quotes()
         if not representative_quotes:

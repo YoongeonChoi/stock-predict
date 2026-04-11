@@ -2,6 +2,10 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.39 - 2026-04-11
+
+- backend `/api/country/KR/heatmap` fallback은 이제 timeout 이후에도 동적 FMP 유니버스를 다시 조회하지 않고 즉시 fallback 유니버스를 사용합니다. 그래서 히트맵이 느린 live build에서 partial로 내려갈 때 fallback 단계가 다시 외부 의존을 타며 15초 budget을 넘기는 회귀를 줄였습니다.
+
 ## v2.60.38 - 2026-04-11
 
 - backend `/api/briefing/daily`는 이제 timeout, startup guard, memory guard에 걸리면 `sessions/calendar/archive`를 다시 읽는 서비스 fallback까지 기다리지 않고 라우트 안에서 초경량 shell payload를 즉시 반환합니다. 그래서 브리핑이 partial 상태로 내려갈 때도 하위 의존 하나가 늦어지는 바람에 다시 15초 budget을 넘기는 경로를 더 확실히 잘랐습니다.
