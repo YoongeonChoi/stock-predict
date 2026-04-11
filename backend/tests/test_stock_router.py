@@ -348,7 +348,7 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
-            patch("app.routers.stock.yfinance_client.get_stock_info", new=AsyncMock(return_value={"name": "삼성전자", "current_price": 70000.0, "change_pct": 1.2})),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
             patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
         ):
             with patched_client() as client:
@@ -358,9 +358,9 @@ class StockRouterTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
-        self.assertEqual(payload["name"], "삼성전자")
-        self.assertEqual(payload["current_price"], 70000.0)
-        self.assertEqual(payload["public_summary"]["data_quality"], "가격·기본 메타데이터 중심 최소 응답")
+        self.assertEqual(payload["name"], "005930.KS")
+        self.assertEqual(payload["current_price"], 0.0)
+        self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
 
     def test_stock_detail_returns_500_when_quick_and_full_fail_without_cache(self):
         with (

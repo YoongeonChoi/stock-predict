@@ -30,7 +30,6 @@ STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
-STOCK_MEMORY_GUARD_INFO_TIMEOUT_SECONDS = 0.35
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
@@ -240,41 +239,32 @@ def _blank_technical_indicators() -> dict:
 
 
 async def _build_stock_memory_guard_shell(ticker: str) -> dict:
-    info: dict[str, Any] = {}
-    try:
-        info = await asyncio.wait_for(
-            yfinance_client.get_stock_info(ticker),
-            timeout=STOCK_MEMORY_GUARD_INFO_TIMEOUT_SECONDS,
-        ) or {}
-    except Exception:
-        info = {}
-
     metadata = ticker_resolver_service.get_ticker_metadata(ticker)
-    current_price = round(float(info.get("current_price") or 0.0), 2)
+    current_price = 0.0
     fallback_summary = (
         "현재 서버 메모리 보호 구간이라 정밀 종목 분석 대신 최소 상세 스냅샷을 먼저 제공합니다. "
-        "잠시 뒤 다시 조회하면 quick 또는 full 캐시 결과가 보일 수 있습니다."
+        "외부 가격 조회도 이번 응답에서는 건너뛰며, 잠시 뒤 다시 조회하면 quick 또는 full 캐시 결과가 보일 수 있습니다."
     )
     payload = {
         "ticker": ticker,
-        "name": info.get("name") or ticker,
+        "name": ticker,
         "country_code": metadata.get("country_code") or "KR",
-        "sector": info.get("sector") or metadata.get("sector") or "Unknown",
-        "industry": info.get("industry") or "N/A",
-        "market_cap": float(info.get("market_cap") or 0.0),
+        "sector": metadata.get("sector") or "Unknown",
+        "industry": "N/A",
+        "market_cap": 0.0,
         "current_price": current_price,
-        "change_pct": round(float(info.get("change_pct") or 0.0), 2),
+        "change_pct": 0.0,
         "financials": [],
-        "pe_ratio": info.get("pe_ratio"),
-        "pb_ratio": info.get("pb_ratio"),
-        "ev_ebitda": info.get("ev_ebitda"),
-        "peg_ratio": info.get("peg_ratio"),
-        "week52_high": info.get("52w_high"),
-        "week52_low": info.get("52w_low"),
+        "pe_ratio": None,
+        "pb_ratio": None,
+        "ev_ebitda": None,
+        "peg_ratio": None,
+        "week52_high": None,
+        "week52_low": None,
         "peer_comparisons": [],
         "dividend": {
-            "dividend_yield": info.get("dividend_yield"),
-            "payout_ratio": info.get("payout_ratio"),
+            "dividend_yield": None,
+            "payout_ratio": None,
             "dividend_growth_5y": None,
         },
         "analyst_ratings": {
@@ -339,7 +329,7 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
             "evidence_against": [],
             "why_not_buy_now": ["현재 응답은 메모리 보호 모드에서 생성된 최소 스냅샷입니다."],
             "thesis_breakers": ["정밀 분석이 회복되기 전에는 이 요약만으로 매수 결정을 내리기 어렵습니다."],
-            "data_quality": "가격·기본 메타데이터 중심 최소 응답",
+            "data_quality": "티커·기본 메타데이터 중심 최소 응답",
             "confidence_note": "정밀 예측과 기술 지표 계산은 이번 요청에서 생략했습니다.",
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),

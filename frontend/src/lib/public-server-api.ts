@@ -16,6 +16,7 @@ import type { CountryListItem, CountryReport, OpportunityRadarResponse, StockDet
 
 const API_BASE_URL = (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const DEFAULT_PUBLIC_FETCH_TIMEOUT_MS = Number.parseInt(process.env.PUBLIC_SERVER_FETCH_TIMEOUT_MS || "8000", 10);
+const HIBERNATE_WAKE_RETRY_DELAY_MS = Number.parseInt(process.env.PUBLIC_SERVER_HIBERNATE_RETRY_DELAY_MS || "900", 10);
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
@@ -26,11 +27,17 @@ async function getPublicJson<T>(path: string, revalidate: number, timeoutMs = DE
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(apiUrl(path), {
+    const requestInit = {
       next: { revalidate },
       headers: { Accept: "application/json" },
       signal: controller.signal,
-    });
+    };
+    let response = await fetch(apiUrl(path), requestInit);
+    const renderRouting = response.headers.get("x-render-routing") || "";
+    if (response.status === 503 && renderRouting.startsWith("hibernate-") && HIBERNATE_WAKE_RETRY_DELAY_MS > 0) {
+      await new Promise((resolve) => setTimeout(resolve, HIBERNATE_WAKE_RETRY_DELAY_MS));
+      response = await fetch(apiUrl(path), requestInit);
+    }
     if (!response.ok) {
       throw new Error(`${path} -> ${response.status}`);
     }

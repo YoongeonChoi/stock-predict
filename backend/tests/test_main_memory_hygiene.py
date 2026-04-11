@@ -6,7 +6,7 @@ from tests.client_helpers import patched_client
 
 
 class MainMemoryHygieneMiddlewareTests(unittest.TestCase):
-    def test_public_api_get_triggers_pre_request_trim(self):
+    def test_health_check_does_not_trigger_pre_request_trim(self):
         with (
             patch("app.main.maybe_trim_process_memory") as trim,
             patch.object(type(app_settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
@@ -15,8 +15,7 @@ class MainMemoryHygieneMiddlewareTests(unittest.TestCase):
                 response = client.get("/api/health")
 
         self.assertEqual(response.status_code, 200)
-        trim.assert_called_once()
-        self.assertTrue(trim.call_args.args[0].startswith("pre:health"))
+        trim.assert_not_called()
 
     def test_non_api_request_does_not_trigger_pre_request_trim(self):
         with (

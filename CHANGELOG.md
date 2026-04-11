@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.20 - 2026-04-11
+
+- `/api/health`는 memory-safe 모드의 pre-request memory trim 대상에서 제외했습니다. Render wake/readiness 확인은 가능한 한 가벼워야 하므로, health 요청이 `gc.collect()`/`malloc_trim()` 비용을 같이 지불하지 않도록 분리했습니다.
+- 공개 `country report`의 stale archived path를 짧게 정리했습니다. archived 리포트를 이미 찾은 경우 fallback 빌더에서 archived/opportunity lookup을 다시 반복하지 않고, stale 안내와 `partial/fallback_reason`만 붙여 바로 반환합니다.
+- 공개 `stock detail` memory-guard shell은 더 이상 `yfinance_client.get_stock_info()`를 호출하지 않습니다. 고압박 500MB 구간에서는 외부 가격 조회를 생략하고 티커·기본 메타데이터 중심 최소 응답을 먼저 반환해, shell 경로가 다시 heavy import/external IO를 유발하지 않게 고정했습니다.
+- Vercel server fetch는 Render `hibernate-*` 503을 한 번만 짧게 재시도합니다. wake 순간의 일시적 503은 한 번 흡수하고, 그래도 실패하면 기존 페이지 fallback 흐름으로 내려가 사용자 화면이 멈추지 않도록 했습니다.
+- `test_main_memory_hygiene`, `test_public_dashboard_timeouts`, `test_stock_router`를 갱신해 health trim 예외, country stale 중복 lookup 제거, stock memory-guard shell의 heavy builder 우회를 회귀로 고정했습니다.
+
 ## v2.60.19 - 2026-04-11
 
 - backend startup import footprint를 더 줄였습니다. `app.main`과 공개/상세 핵심 라우터는 이제 `market_service`, `archive_service`, `prediction_capture_service`, `yfinance_client`, `sector_analyzer`, `stock_scorer` 같은 무거운 모듈을 import 시점이 아니라 실제 사용 시점에 로드합니다. Render cold start에서 `/api/health`와 첫 공개 요청이 불필요한 `pandas/yfinance/ta` 적재를 먼저 하지 않도록 바꿔, 500MB 메모리 한도와 cold latency를 함께 낮추는 방향으로 정리했습니다.

@@ -849,6 +849,23 @@ def _spawn_country_report_refresh(code: str) -> None:
     )
 
 
+def _build_stale_archived_country_report(code: str, archived_report: dict) -> dict:
+    country = COUNTRY_REGISTRY[code]
+    response = dict(archived_report)
+    existing_summary = str(response.get("market_summary") or "").strip()
+    fallback_lead = f"{country.name_local} 실시간 리포트 계산이 길어져 최근 정상 리포트를 먼저 보여주고 있습니다."
+    detail = _country_report_stale_detail(code).strip()
+    response["market_summary"] = " ".join(
+        part for part in [fallback_lead, detail, existing_summary] if part
+    ).strip()
+    response["errors"] = list(response.get("errors") or [])
+    response["llm_available"] = False
+    response["partial"] = True
+    response["fallback_reason"] = "country_report_stale_public"
+    response["generated_at"] = datetime.now().isoformat()
+    return response
+
+
 async def _build_country_report_fallback(
     code: str,
     *,
@@ -1192,12 +1209,7 @@ async def get_country_report(code: str):
     )
     if archived_report:
         _spawn_country_report_refresh(code)
-        report = await _build_country_report_fallback(
-            code,
-            reason="country_report_stale_public",
-            error_code=None,
-            detail=_country_report_stale_detail(code),
-        )
+        report = _build_stale_archived_country_report(code, archived_report)
         _maybe_trim_public_route_memory("country_report")
         return _build_country_success_response(report)
 

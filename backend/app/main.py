@@ -311,7 +311,12 @@ def _memory_hygiene_request_reason(request: Request) -> str:
 
 @app.middleware("http")
 async def public_api_memory_hygiene_middleware(request: Request, call_next):
-    if settings.startup_memory_safe_mode and request.method in {"GET", "HEAD"} and request.url.path.startswith("/api/"):
+    if (
+        settings.startup_memory_safe_mode
+        and request.method in {"GET", "HEAD"}
+        and request.url.path.startswith("/api/")
+        and request.url.path != "/api/health"
+    ):
         try:
             maybe_trim_process_memory(f"pre:{_memory_hygiene_request_reason(request)}")
         except Exception as exc:  # pragma: no cover - best effort guard
