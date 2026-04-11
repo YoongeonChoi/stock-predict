@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.13 - 2026-04-12
+
+- backend `startup_guard` 공개 경로는 이제 `country report`에서 최근 cached/archived 리포트를 짧게 먼저 확인하고, 있으면 placeholder 대신 실제 최근 리포트를 우선 보여줍니다. 그래서 배포 직후에도 이미 저장된 국가 리포트가 있으면 본문 내용을 더 빨리 복구할 수 있습니다.
+- 같은 guard는 `market opportunities`에서 cached full/quick payload를 먼저 확인해, usable 후보가 남아 있으면 placeholder 대신 최근 후보 목록을 우선 반환합니다. `backend/tests/test_public_dashboard_timeouts.py`에는 두 startup guard 회귀를 추가했습니다.
+
 ## v2.61.12 - 2026-04-12
 
 - backend `/api/market/indicators`는 startup guard 중 `last_success`가 비어 있으면 즉시 fallback만 주고 끝내지 않고, dedupe된 백그라운드 warm-up을 한 번 시작합니다. 그래서 Render cold start 직후 첫 실시간 요청이 30초 이상 지연되며 cold fetch 비용을 전부 떠안던 문제를 줄였습니다.

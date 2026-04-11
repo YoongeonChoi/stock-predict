@@ -36,6 +36,7 @@ COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
 COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS = 0.2
 COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
 COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
+OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 OPPORTUNITY_TIMEOUT_SECONDS = 8
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 4
 HEATMAP_TIMEOUT_SECONDS = 10
@@ -1435,6 +1436,24 @@ async def get_country_report(code: str):
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
+        if startup_guard and not pressure_guard:
+            cached_success = await _timed_country_lookup(
+                _load_latest_cached_country_report(code),
+                timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"country startup cached report lookup {code}",
+            )
+            if cached_success:
+                return _build_country_success_response(cached_success, trim_reason="country_report")
+
+            archived_report = await _timed_country_lookup(
+                _load_latest_archived_country_report(code),
+                timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"country startup archived report lookup {code}",
+            )
+            if archived_report:
+                report = _build_stale_archived_country_report(code, archived_report)
+                return _build_country_success_response(report, trim_reason="country_report")
+
         guard_reason = "country_report_memory_guard" if pressure_guard else "country_report_startup_guard"
         guard_detail = (
             _country_report_memory_guard_detail(code)
@@ -1818,6 +1837,43 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
+        if startup_guard and not pressure_guard:
+            cached_full = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities(code, limit),
+                timeout_seconds=OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"opportunity startup cached full {code}",
+            )
+            if _is_usable_opportunity_payload(cached_full):
+                _record_market_opportunities_trace(
+                    started_at,
+                    request_phase="full",
+                    cache_state="sqlite_hit",
+                    payload=cached_full,
+                )
+                _maybe_trim_public_route_memory("market_opportunities")
+                return cached_full
+
+            cached_quick = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities_quick(code, limit),
+                timeout_seconds=OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"opportunity startup cached quick {code}",
+            )
+            if _is_usable_opportunity_payload(cached_quick):
+                payload = _build_traced_opportunity_partial(
+                    started_at,
+                    payload=cached_quick,
+                    request_phase="quick",
+                    cache_state="sqlite_hit",
+                    fallback_reason="opportunity_cached_quick_response",
+                    note=(
+                        "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                        f"{_opportunity_refresh_followup_sentence()}"
+                    ),
+                    fallback_tier="cached_quick",
+                )
+                _maybe_trim_public_route_memory("market_opportunities")
+                return payload
+
         payload = _build_traced_opportunity_partial(
             started_at,
             payload=market_service.build_market_opportunities_placeholder(

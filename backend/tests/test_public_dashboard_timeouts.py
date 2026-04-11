@@ -98,6 +98,34 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         cached_quick_opportunities.assert_not_awaited()
         live_quick_opportunities.assert_not_awaited()
 
+    def test_country_report_startup_guard_prefers_archived_report_before_placeholder(self):
+        archived_payload = {
+            "market_summary": "최근 정상 리포트입니다.",
+            "top_stocks": [],
+        }
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=True),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=archived_payload)),
+            patch(
+                "app.routers.country._build_country_report_fallback",
+                new=AsyncMock(side_effect=AssertionError("startup guard should prefer archived report before placeholder")),
+            ),
+            patch(
+                "app.routers.country.analyze_country",
+                new=AsyncMock(side_effect=AssertionError("startup guard should not invoke live report build")),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/country/KR/report")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "country_report_stale_public")
+        self.assertIn("최근 정상 리포트", response.json()["market_summary"])
+
     def test_country_report_safe_mode_uses_public_error_code_without_background_job(self):
         with (
             patch("app.routers.country._allow_public_background_refresh", return_value=False),
@@ -247,6 +275,57 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertIn("다음 재조회", response.json()["universe_note"])
         self.assertNotIn("백그라운드", response.json()["universe_note"])
         background_job.assert_not_called()
+
+    def test_market_opportunities_startup_guard_prefers_cached_quick_before_placeholder(self):
+        cached_quick_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "최근 usable 후보를 먼저 제공합니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "opportunities": [
+                {
+                    "ticker": "005930.KS",
+                    "name": "Samsung Electronics",
+                    "score": 77.5,
+                    "current_price": 70100.0,
+                    "target_price": 73600.0,
+                    "stop_loss": 68200.0,
+                }
+            ],
+            "quote_available_count": 12,
+            "detailed_scanned_count": 0,
+            "total_scanned": 60,
+            "universe_note": "최근 usable 후보를 먼저 표시합니다.",
+        }
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=True),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=cached_quick_payload)),
+            patch(
+                "app.routers.country.market_service.build_market_opportunities_placeholder",
+                side_effect=AssertionError("startup guard should prefer cached quick payload before placeholder"),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
+        self.assertIn("다음 재조회", response.json()["universe_note"])
 
     def test_market_opportunities_returns_placeholder_when_quick_times_out_and_no_cache_exists(self):
         placeholder_payload = {
