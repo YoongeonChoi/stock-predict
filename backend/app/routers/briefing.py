@@ -71,13 +71,45 @@ def _should_use_startup_public_route_guard() -> bool:
         return False
 
 
+def _build_daily_briefing_shell(note: str, *, fallback_reason: str = "briefing_timeout") -> dict:
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "partial": True,
+        "fallback_reason": fallback_reason,
+        "sessions": [],
+        "market_view": [
+            {
+                "country_code": "KR",
+                "label": "브리핑 지연",
+                "stance": "neutral",
+                "conviction": 0.0,
+                "actionable_count": 0,
+                "bullish_count": 0,
+                "summary": note,
+            }
+        ],
+        "focus_cards": [],
+        "upcoming_events": [],
+        "research_archive": {
+            "todays_reports": 0,
+            "total_reports": 0,
+            "source_count": 0,
+            "last_synced_at": None,
+        },
+        "priorities": [
+            note,
+            "브리핑 상세는 같은 화면을 다시 열거나 잠시 뒤 새로고침하면 순차적으로 다시 채워집니다.",
+        ],
+    }
+
+
 @router.get("/briefing/daily")
 async def get_daily_briefing():
     started_at = time.perf_counter()
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
-        payload = await briefing_service.get_daily_briefing_fallback(
+        payload = _build_daily_briefing_shell(
             "브리핑 전체 계산을 잠시 건너뛰고 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
         )
         route_stability_service.record_route_trace(
@@ -118,7 +150,7 @@ async def get_daily_briefing():
     except asyncio.TimeoutError:
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
-        payload = await briefing_service.get_daily_briefing_fallback(
+        payload = _build_daily_briefing_shell(
             "브리핑 전체 계산이 길어져 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
         )
         route_stability_service.record_route_trace(
@@ -139,7 +171,7 @@ async def get_daily_briefing():
     except Exception as exc:
         err = SP_5011(str(exc)[:200])
         err.log()
-        payload = await briefing_service.get_daily_briefing_fallback(
+        payload = _build_daily_briefing_shell(
             "브리핑 계산 중 오류가 발생해 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
         )
         route_stability_service.record_route_trace(

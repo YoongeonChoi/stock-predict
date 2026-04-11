@@ -32,6 +32,7 @@ SAMPLE_HTML = """
 
 class KrMarketQuoteClientTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        cache.reset_memory_cache_state()
         await cache.invalidate("kr_market_quotes:representative:%")
 
     def test_parse_market_page_quotes_extracts_tickers(self):

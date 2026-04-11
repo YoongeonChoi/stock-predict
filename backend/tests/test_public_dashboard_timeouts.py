@@ -393,7 +393,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_response)),
-            patch("app.routers.briefing.briefing_service.get_daily_briefing_fallback", new=AsyncMock(return_value=fallback_payload)),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
             response = client.get("/api/briefing/daily")
@@ -427,10 +427,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.briefing.briefing_service.get_daily_briefing",
                 new=AsyncMock(side_effect=AssertionError("startup guard should bypass full briefing fetch")),
             ),
-            patch(
-                "app.routers.briefing.briefing_service.get_daily_briefing_fallback",
-                new=AsyncMock(return_value=fallback_payload),
-            ),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
             response = client.get("/api/briefing/daily")
@@ -459,10 +456,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.briefing.briefing_service.get_daily_briefing",
                 new=AsyncMock(side_effect=AssertionError("memory guard should bypass full briefing fetch")),
             ),
-            patch(
-                "app.routers.briefing.briefing_service.get_daily_briefing_fallback",
-                new=AsyncMock(return_value=fallback_payload),
-            ),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
             response = client.get("/api/briefing/daily")

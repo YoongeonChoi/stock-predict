@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.38 - 2026-04-11
+
+- backend `/api/briefing/daily`는 이제 timeout, startup guard, memory guard에 걸리면 `sessions/calendar/archive`를 다시 읽는 서비스 fallback까지 기다리지 않고 라우트 안에서 초경량 shell payload를 즉시 반환합니다. 그래서 브리핑이 partial 상태로 내려갈 때도 하위 의존 하나가 늦어지는 바람에 다시 15초 budget을 넘기는 경로를 더 확실히 잘랐습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 브리핑 timeout/startup/memory guard 경로가 route-local shell builder로 바로 닫히는지 회귀로 고정합니다. 새 프로세스 초반이나 보호 구간에서 브리핑 라우트가 다시 서비스 fallback 전체를 기다리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.37 - 2026-04-11
 
 - backend `/api/briefing/daily`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후나 메모리 압박 구간이면 full 브리핑 계산을 바로 건너뛰고 partial fallback을 먼저 반환합니다. 기존에는 12초 대기 뒤 fallback과 동기 메모리 trim까지 같은 요청 안에서 이어져 운영 smoke 15초 예산을 넘길 수 있었는데, 이번에는 startup/memory guard와 더 짧은 timeout budget, 비동기 trim으로 first-usable 응답을 더 빨리 닫도록 정리했습니다.
