@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.50`
+현재 릴리즈: `v2.60.51`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/stock/{ticker}/detail`은 이제 Render `startup_memory_safe_mode`에서 `stock_analyzer`가 아직 cold import 상태면 uncached quick/full 분석을 바로 시작하지 않고 `stock_memory_guard` shell로 먼저 내려갑니다. 로컬 기준 `stock_analyzer` 첫 import만으로도 RSS가 약 `+136MB` 커지는 구간을 확인했고, 운영에서는 이 cold import가 첫 종목 상세 요청 뒤 memory pressure를 critical까지 끌어올리며 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서도 cold stock analysis import를 피하고 memory guard shell/background refresh skip으로 끝나는 회귀를 추가했습니다. 앞으로는 Render 500MB 한도에서 종목 상세가 다시 uncached first hit만으로 무거운 분석 스택을 깨우는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/screener`는 이제 Render safe mode에서 `last_success` seed나 `safe shell` partial을 내려준 뒤 추가 cache warmup background job을 다시 만들지 않습니다. 그래서 partial 응답은 이미 끝났는데 뒤에서 KR bulk snapshot warmup이 계속 돌며 memory pressure와 다음 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode shell fallback과 last-success seed가 모두 cache warmup background job 없이 끝나는 회귀를 추가했습니다. 앞으로는 Render 500MB 보호 구간에서 screener partial 응답 뒤에 후속 warmup이 다시 살아나 운영 smoke 직후 메모리와 지연을 밀어 올리는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `memory_hygiene`는 이제 Render safe mode에서 `pressure_ratio 0.8` 이상의 elevated warning 구간이면 trim cooldown을 건너뛰고 바로 한 번 더 정리를 시도합니다. 그래서 public smoke 직후 cgroup 사용량이 500MB 한도 바로 아래 warning band에 머무를 때도 다음 요청이 쿨다운에 막혀 손을 놓고 있지 않도록 조정했습니다.

@@ -425,10 +425,42 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(payload["current_price"], 0.0)
         self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
 
+    def test_stock_detail_cold_import_guard_returns_memory_shell_even_at_low_pressure(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+
     def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
         with (
             patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
             patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.6}),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
+
+    def test_stock_detail_background_refresh_skips_when_stock_analysis_module_is_cold(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
             patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
         ):
             result = stock_router._schedule_stock_detail_refresh("005930.KS")

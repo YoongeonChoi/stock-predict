@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.51 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 `stock_analyzer`가 아직 cold import 상태면 uncached quick/full 분석을 시작하지 않고 `stock_memory_guard` shell로 먼저 내려갑니다. 로컬 측정 기준 `stock_analyzer` 첫 import만으로도 RSS가 약 `+136MB` 커져, 첫 종목 상세 요청 뒤 memory pressure가 critical까지 올라가던 경로를 운영 fallback으로 바로 끊도록 정리했습니다.
+- stock detail background refresh도 같은 cold-import guard를 공유해, safe mode 저압 구간에서도 응답 뒤에 stock analyzer를 새로 깨우는 background refresh가 다시 붙지 않도록 막았습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간의 cold import guard와 background refresh skip 회귀를 추가했습니다. 앞으로는 Render 500MB 한도에서 uncached stock detail first hit가 다시 무거운 분석 스택을 깨우는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.50 - 2026-04-11
 
 - backend `/api/screener`는 이제 Render safe mode에서 `last_success` seed나 `safe shell` partial을 내려준 뒤 추가 cache warmup background job을 다시 만들지 않습니다. 그래서 partial 응답 뒤에 KR bulk snapshot warmup이 계속 돌며 운영 smoke 직후 memory pressure와 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.

@@ -3,6 +3,7 @@ from collections.abc import Awaitable
 from datetime import datetime, timezone
 import logging
 import math
+import sys
 import time
 from typing import Any
 
@@ -111,9 +112,21 @@ def _should_use_ultra_fast_public_fallback() -> bool:
     return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
 
 
+def _is_stock_analysis_module_warm() -> bool:
+    return "app.analysis.stock_analyzer" in sys.modules
+
+
+def _should_avoid_cold_stock_analysis_import() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_stock_analysis_module_warm()
+
+
 def _should_skip_public_stock_full_analysis() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
+    if _should_avoid_cold_stock_analysis_import():
+        return True
     return _public_memory_pressure_ratio() >= PUBLIC_STOCK_FULL_ANALYSIS_SKIP_PRESSURE_RATIO
 
 
@@ -543,6 +556,12 @@ async def _archive_stock_report(detail: dict, ticker: str) -> None:
 def _schedule_stock_detail_refresh(ticker: str) -> bool:
     if not settings.effective_stock_detail_background_refresh:
         return False
+    if _should_avoid_cold_stock_analysis_import():
+        logger.info(
+            "Skipping stock detail background refresh for %s because Render safe mode avoids cold stock analysis import.",
+            ticker,
+        )
+        return False
     if _should_skip_public_stock_full_analysis():
         logger.info(
             "Skipping stock detail background refresh for %s because Render memory pressure is elevated.",
@@ -722,6 +741,22 @@ async def get_stock_detail(
         )
 
     if _should_use_ultra_fast_public_fallback():
+        shell_payload = await _build_stock_memory_guard_shell(ticker)
+        _record_stock_detail_trace(
+            started_at,
+            request_phase="shell",
+            cache_state="miss",
+            timeout_budget_seconds=detail_timeout,
+            payload=shell_payload,
+            fallback_reason="stock_memory_guard",
+            served_state="degraded",
+        )
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+    if _should_avoid_cold_stock_analysis_import():
+        logger.info(
+            "Serving stock memory guard shell for %s because Render safe mode avoids cold stock analysis import.",
+            ticker,
+        )
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
