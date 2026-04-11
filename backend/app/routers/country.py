@@ -48,8 +48,8 @@ COUNTRIES_CONCURRENCY = 4
 MARKET_MOVERS_TIMEOUT_SECONDS = 6
 MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_CACHE_TTL_SECONDS = 300
-MARKET_INDICATORS_TIMEOUT_SECONDS = 5
-MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 2.0
+MARKET_INDICATORS_TIMEOUT_SECONDS = 3
+MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 1.0
 MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
 HEATMAP_LAST_SUCCESS_TTL_SECONDS = 3600
 MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS = 1800
@@ -1529,6 +1529,14 @@ async def get_market_indicators():
     from app.data import cache as data_cache
     cache_key = "market_indicators:v2"
     last_success_key = "market_indicators:last_success"
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+
+    if pressure_guard or startup_guard:
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
 
     async def _fetch_indicators():
         try:
