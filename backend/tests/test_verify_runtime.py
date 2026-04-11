@@ -80,6 +80,26 @@ class VerifyRuntimeTests(unittest.TestCase):
         )
         self.assertIn("--viewport-matrix", command)
 
+    def test_deployed_site_smoke_command_uses_contract_friendly_timeouts(self) -> None:
+        command = verify_runner.build_deployed_site_smoke_command(["python"])
+
+        api_timeout_index = command.index("--api-timeout")
+        frontend_timeout_index = command.index("--frontend-timeout")
+        max_total_index = command.index("--max-total-seconds")
+        self.assertEqual(
+            command[api_timeout_index + 1],
+            str(verify_runner.DEPLOYED_SITE_SMOKE_API_TIMEOUT_SECONDS),
+        )
+        self.assertEqual(
+            command[frontend_timeout_index + 1],
+            str(verify_runner.DEPLOYED_SITE_SMOKE_FRONTEND_TIMEOUT_SECONDS),
+        )
+        self.assertEqual(
+            command[max_total_index + 1],
+            str(verify_runner.DEPLOYED_SITE_SMOKE_MAX_TOTAL_SECONDS),
+        )
+        self.assertIn("--fail-fast", command)
+
     def test_warm_browser_routes_command_targets_requested_base_url(self) -> None:
         command = verify_runner.build_warm_browser_routes_command(["python"], "https://www.yoongeon.xyz")
 

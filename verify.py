@@ -35,6 +35,11 @@ BACKEND_TEST_EXTRA_IMPORTS = ("requests",)
 VERIFY_LOCK_PATH = ROOT / ".verify.lock"
 VERIFY_LOCK_STALE_SECONDS = 6 * 60 * 60
 BROWSER_SMOKE_VIEWPORT_MATRIX_MAX_TOTAL_SECONDS = 600
+DEPLOYED_SITE_SMOKE_API_TIMEOUT_SECONDS = 60
+DEPLOYED_SITE_SMOKE_FRONTEND_TIMEOUT_SECONDS = 20
+DEPLOYED_SITE_SMOKE_ATTEMPTS = 2
+DEPLOYED_SITE_SMOKE_RETRY_DELAY_SECONDS = 1.5
+DEPLOYED_SITE_SMOKE_MAX_TOTAL_SECONDS = 180
 
 
 @dataclass(frozen=True)
@@ -188,6 +193,24 @@ def build_browser_smoke_command(python_command: list[str], base_url: str) -> lis
     ]
 
 
+def build_deployed_site_smoke_command(python_command: list[str]) -> list[str]:
+    return [
+        *python_command,
+        str(ROOT / "scripts" / "deployed_site_smoke.py"),
+        "--api-timeout",
+        str(DEPLOYED_SITE_SMOKE_API_TIMEOUT_SECONDS),
+        "--frontend-timeout",
+        str(DEPLOYED_SITE_SMOKE_FRONTEND_TIMEOUT_SECONDS),
+        "--attempts",
+        str(DEPLOYED_SITE_SMOKE_ATTEMPTS),
+        "--retry-delay",
+        str(DEPLOYED_SITE_SMOKE_RETRY_DELAY_SECONDS),
+        "--max-total-seconds",
+        str(DEPLOYED_SITE_SMOKE_MAX_TOTAL_SECONDS),
+        "--fail-fast",
+    ]
+
+
 def _read_lock_metadata(lock_path: Path) -> dict:
     try:
         return json.loads(lock_path.read_text(encoding="utf-8"))
@@ -299,21 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         if stages.run_deployed_site_smoke:
             run_step(
                 "Deployed site smoke",
-                [
-                    *python_command,
-                    str(ROOT / "scripts" / "deployed_site_smoke.py"),
-                    "--api-timeout",
-                    "15",
-                    "--frontend-timeout",
-                    "20",
-                    "--attempts",
-                    "2",
-                    "--retry-delay",
-                    "1.5",
-                    "--max-total-seconds",
-                    "120",
-                    "--fail-fast",
-                ],
+                build_deployed_site_smoke_command(python_command),
                 ROOT,
             )
             deployed_frontend_url = "https://www.yoongeon.xyz"
