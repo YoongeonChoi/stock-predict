@@ -939,6 +939,38 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         background_job.assert_not_called()
         self.assertGreaterEqual(cache_set.await_count, 1)
 
+    def test_screener_safe_mode_cold_quote_import_returns_shell_for_small_limit(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=False),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=AsyncMock(side_effect=AssertionError("cold safe-mode path should not fetch representative quotes")),
+            ),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(side_effect=AssertionError("cold safe-mode path should not fetch bulk quotes")),
+            ),
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        background_job.assert_not_called()
+        self.assertGreaterEqual(cache_set.await_count, 1)
+
     def test_screener_safe_mode_last_success_seed_skips_cache_warmup(self):
         sector_map = {
             f"Sector {index}": [f"{index:06d}.KS"]

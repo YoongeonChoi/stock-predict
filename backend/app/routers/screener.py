@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from fastapi import APIRouter, Query
 from fastapi.params import Param
 from app.config import get_settings
@@ -28,6 +29,16 @@ SCREENER_MAX_PER_SECTOR = 4
 SCREENER_CONCURRENCY = 4
 SCREENER_ENRICHMENT_BUDGET = 12
 SCREENER_COLD_START_KR_CANDIDATES = 10
+
+
+def _is_kr_market_quote_module_warm() -> bool:
+    return "app.data.kr_market_quote_client" in sys.modules
+
+
+def _should_avoid_cold_kr_quote_import() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_kr_market_quote_module_warm()
 
 
 async def get_universe(*args, **kwargs):
@@ -485,6 +496,17 @@ async def _build_snapshot_fallback(
     selected = _select_candidate_tickers(universe, sector)[: max(limit, 10)]
 
     if country == "KR":
+        if _should_avoid_cold_kr_quote_import():
+            return _build_safe_mode_shell_response(
+                tickers=selected,
+                universe=universe,
+                sector=sector,
+                country=country,
+                sort_by="market_cap",
+                sort_dir="desc",
+                limit=limit,
+                fallback_reason="kr_timeout_shell",
+            )
         results = (await _build_kr_bulk_snapshot_results(
             tickers=selected,
             universe=universe,
@@ -552,6 +574,37 @@ async def _build_timeout_shell_response(
         limit=limit,
         fallback_reason=fallback_reason,
     )
+
+
+async def _build_seeded_safe_mode_shell_response(
+    *,
+    cache_key: str,
+    tickers: list[str],
+    universe: dict[str, list[str]],
+    sector: str | None,
+    country: str,
+    sort_by: str,
+    sort_dir: str,
+    limit: int,
+    log_message: str,
+) -> dict:
+    response = _build_safe_mode_shell_response(
+        tickers=tickers,
+        universe=universe,
+        sector=sector,
+        country=country,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+        fallback_reason="kr_safe_shell_warming",
+    )
+    await _timed_screener_cache_write(
+        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+        label=f"screener safe-shell cache write {cache_key}",
+    )
+    logging.info(log_message, cache_key)
+    _maybe_trim_public_route_memory("screener")
+    return response
 
 
 @router.get("/screener")
@@ -855,6 +908,44 @@ async def screen_stocks(
         if use_direct_kr_quick_path:
             current_universe = await _load_universe()
             selected_tickers = _select_candidate_tickers(current_universe, sector)
+            if _should_avoid_cold_kr_quote_import():
+                cached_response = await _timed_screener_cache_lookup(
+                    cache.get(cache_key),
+                    label=f"screener cache lookup {cache_key}",
+                )
+                if cached_response is not None:
+                    _maybe_trim_public_route_memory("screener")
+                    return cached_response
+                last_success_response = await _timed_screener_cache_lookup(
+                    _load_screener_last_success(cache_key),
+                    label=f"screener last_success lookup {cache_key}",
+                )
+                if last_success_response is not None:
+                    response = _with_screener_partial(
+                        dict(last_success_response),
+                        fallback_reason="kr_last_success_snapshot",
+                    )
+                    await _timed_screener_cache_write(
+                        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+                        label=f"screener partial seed write {cache_key}",
+                    )
+                    logging.info(
+                        "Skipping screener cold quote import for %s because Render safe mode can reuse last_success seed.",
+                        cache_key,
+                    )
+                    _maybe_trim_public_route_memory("screener")
+                    return response
+                return await _build_seeded_safe_mode_shell_response(
+                    cache_key=cache_key,
+                    tickers=selected_tickers,
+                    universe=current_universe,
+                    sector=sector,
+                    country=country,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    limit=limit,
+                    log_message="Serving screener safe shell for %s because Render safe mode avoids cold KR quote import.",
+                )
             should_use_cold_start_partial = limit > SCREENER_COLD_START_KR_CANDIDATES and len(selected_tickers) > SCREENER_COLD_START_KR_CANDIDATES
             if should_use_cold_start_partial:
                 cached_response = await _timed_screener_cache_lookup(
@@ -944,7 +1035,8 @@ async def screen_stocks(
                     _maybe_trim_public_route_memory("screener")
                     return response
                 if settings.startup_memory_safe_mode:
-                    response = _build_safe_mode_shell_response(
+                    return await _build_seeded_safe_mode_shell_response(
+                        cache_key=cache_key,
                         tickers=selected_tickers,
                         universe=current_universe,
                         sector=sector,
@@ -952,18 +1044,8 @@ async def screen_stocks(
                         sort_by=sort_by,
                         sort_dir=sort_dir,
                         limit=limit,
-                        fallback_reason="kr_safe_shell_warming",
+                        log_message="Skipping screener cache warmup for %s because Render safe mode is active and shell fallback already served.",
                     )
-                    await _timed_screener_cache_write(
-                        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
-                        label=f"screener safe-shell cache write {cache_key}",
-                    )
-                    logging.info(
-                        "Skipping screener cache warmup for %s because Render safe mode is active and shell fallback already served.",
-                        cache_key,
-                    )
-                    _maybe_trim_public_route_memory("screener")
-                    return response
                 response, response_timed_out = await _run_screener_timeboxed(
                     _build_response(
                         candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,

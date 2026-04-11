@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.54 - 2026-04-11
+
+- backend `/api/screener`는 이제 Render `startup_memory_safe_mode`에서 KR quick path가 `kr_market_quote_client`를 아직 cold import 상태로 깨우지 않습니다. 캐시나 `last_success`가 없더라도 작은 limit 요청까지 바로 `kr_safe_shell_warming` seed로 닫아, 로컬 측정 기준 첫 import만으로 약 `+132MB`가 붙는 quote client 때문에 screener first hit 뒤 프로세스 메모리가 한 번에 warning band로 점프하던 경로를 더 보수적으로 막았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode + cold KR quote import에서 작은 limit 요청도 representative/bulk quote fetch 없이 shell로 바로 닫히는 회귀를 추가했습니다. 앞으로는 기본 screener 요청이 다시 cold quote client를 깨우며 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.53 - 2026-04-11
 
 - backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서는 cached full 결과가 이미 있을 때만 full detail을 그대로 내려주고, `prefer_full=true`를 포함한 새 inline full 분석은 시작하지 않습니다. 그래서 운영 smoke나 stock detail full probe가 모듈이 이미 warm이고 pressure가 낮아 보일 때도 다시 heavy analyzer stack을 깨워 RSS를 `450MB+` warning band로 밀어 올리던 경로를 더 보수적으로 끊었습니다.
