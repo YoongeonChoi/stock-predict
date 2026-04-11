@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.44 - 2026-04-11
+
+- backend `stock detail`은 이제 Render `startup_memory_safe_mode`에서 pressure가 중간 이상으로 올라가면 public quick 경로의 background refresh와 inline full upgrade를 더 일찍 건너뜁니다. 그래서 quick 호출 뒤 숨어서 돌던 full 분석이 RSS를 400MB대 후반까지 끌어올리고, 이어지는 `prefer_full` 호출이 10초대 후반까지 튀거나 `stock_memory_guard`로 늦게 떨어지던 회귀를 더 보수적으로 막습니다.
+- `backend/tests/test_stock_router.py`에는 elevated pressure에서 background refresh와 inline full analyze를 건너뛰는 회귀를 추가했습니다. 그래서 Render 500MB 보호 구간에서 public stock detail이 다시 full 분석을 무리하게 시작하며 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.43 - 2026-04-11
 
 - backend `stock detail`은 이제 quick snapshot 대기 예산을 더 짧게 고정하고, memory guard shell/quick cache persist를 짧게 timebox합니다. 그래서 Render cold cache나 SQLite lock 구간에서도 `/api/stock/{ticker}/detail` first-usable 응답이 느린 cache write까지 같이 기다리며 6초 이상 끌리는 회귀를 더 줄였습니다.

@@ -193,6 +193,28 @@ class StockRouterTests(unittest.TestCase):
         analyze_stock.assert_awaited()
         schedule_refresh.assert_not_called()
 
+    def test_stock_detail_prefer_full_skips_inline_full_analysis_when_pressure_is_elevated(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.6}),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(return_value=True)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        schedule_refresh.assert_not_called()
+
     def test_stock_detail_cached_full_skips_inline_prediction_capture(self):
         with (
             patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
@@ -402,6 +424,16 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(payload["name"], "005930.KS")
         self.assertEqual(payload["current_price"], 0.0)
         self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
+
+    def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.6}),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
 
     def test_stock_detail_memory_guard_shell_does_not_wait_for_slow_cache_write(self):
         async def _slow_cache_set(*args, **kwargs):

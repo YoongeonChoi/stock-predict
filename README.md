@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.43`
+현재 릴리즈: `v2.60.44`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `stock detail`은 이제 Render `startup_memory_safe_mode`에서 pressure가 중간 이상으로 올라가면 public quick 경로의 background refresh와 inline full upgrade를 더 일찍 건너뜁니다. 그래서 quick 호출 뒤 숨어서 돌던 full 분석이 RSS를 400MB대 후반까지 끌어올리고, 이어지는 `prefer_full` 호출이 10초대 후반까지 튀거나 `stock_memory_guard`로 늦게 떨어지던 회귀를 더 보수적으로 막습니다.
+- `backend/tests/test_stock_router.py`에는 elevated pressure에서 background refresh와 inline full analyze를 건너뛰는 회귀를 추가했습니다. 앞으로는 Render 500MB 보호 구간에서 public stock detail이 다시 full 분석을 무리하게 시작하며 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `stock detail`은 이제 quick snapshot 대기 예산을 더 짧게 고정하고, memory guard shell/quick cache persist를 짧게 timebox합니다. 그래서 Render cold cache나 SQLite lock 구간에서도 `/api/stock/{ticker}/detail` first-usable 응답이 느린 cache write까지 같이 기다리며 6초 이상 끌리는 회귀를 더 줄였습니다.
 - `backend/tests/test_stock_router.py`, `backend/tests/test_stock_analyzer.py`에는 memory guard shell과 quick cache persist가 느린 cache write에 막히지 않고 빠르게 복귀하는 회귀를 추가했습니다. 앞으로는 종목 상세 fallback이 다시 cache I/O에 동기 대기하며 first-usable 응답을 늦추는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/country/KR/heatmap`은 이제 startup/memory guard 구간에서 `cache` import나 live/universe fallback 전체를 다시 타지 않고, `COUNTRY_REGISTRY`만으로 만든 중립 섹터 shell을 즉시 반환합니다. 그래서 메모리 경고 구간에서도 히트맵 guard 응답이 다시 수초 이상 끌리는 회귀를 줄였고, 홈 대시보드도 완전히 빈 state card 대신 최소한의 섹터 레이아웃을 먼저 유지합니다.

@@ -35,6 +35,7 @@ STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+PUBLIC_STOCK_FULL_ANALYSIS_SKIP_PRESSURE_RATIO = 0.5
 
 
 async def analyze_stock(ticker: str) -> dict:
@@ -108,6 +109,12 @@ def _should_use_ultra_fast_public_fallback() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
+
+
+def _should_skip_public_stock_full_analysis() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return _public_memory_pressure_ratio() >= PUBLIC_STOCK_FULL_ANALYSIS_SKIP_PRESSURE_RATIO
 
 
 def _log_background_completion(task: asyncio.Task, *, label: str) -> None:
@@ -536,6 +543,12 @@ async def _archive_stock_report(detail: dict, ticker: str) -> None:
 def _schedule_stock_detail_refresh(ticker: str) -> bool:
     if not settings.effective_stock_detail_background_refresh:
         return False
+    if _should_skip_public_stock_full_analysis():
+        logger.info(
+            "Skipping stock detail background refresh for %s because Render memory pressure is elevated.",
+            ticker,
+        )
+        return False
 
     existing = _STOCK_DETAIL_REFRESH_TASKS.get(ticker)
     if existing and not existing.done():
@@ -564,6 +577,23 @@ async def _serve_quick_stock_detail(
     source_label: str,
 ) -> JSONResponse:
     if prefer_full:
+        if _should_skip_public_stock_full_analysis():
+            await _try_schedule_distributional_capture(ticker)
+            partial_payload = _build_traced_partial_stock_detail(
+                started_at,
+                cached=quick_snapshot,
+                cache_state=cache_state,
+                timeout_budget_seconds=_stock_detail_upgrade_timeout_seconds(),
+                error_code=None,
+                fallback_reason="stock_memory_guard",
+            )
+            logger.info(
+                "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s fallback_reason=stock_memory_guard",
+                ticker,
+                cache_state,
+                prefer_full,
+            )
+            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
         try:
             detail = await _run_timed_stock_analysis(
@@ -719,6 +749,18 @@ async def get_stock_detail(
                 cache_state="miss",
                 source_label="fresh quick snapshot",
             )
+        if _should_skip_public_stock_full_analysis():
+            shell_payload = await _build_stock_memory_guard_shell(ticker)
+            _record_stock_detail_trace(
+                started_at,
+                request_phase="shell",
+                cache_state="miss",
+                timeout_budget_seconds=detail_timeout,
+                payload=shell_payload,
+                fallback_reason="stock_memory_guard",
+                served_state="degraded",
+            )
+            return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
         detail = await _run_timed_stock_analysis(
             ticker,
             timeout_seconds=detail_timeout,
