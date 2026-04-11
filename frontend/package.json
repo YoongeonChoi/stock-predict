@@ -1,6 +1,6 @@
 {
   "name": "stock-predict-frontend",
-  "version": "2.61.6",
+  "version": "2.61.7",
   "private": true,
   "scripts": {
     "dev": "next dev",

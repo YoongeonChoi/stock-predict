@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.7 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`는 `prefer_full=false`인 public 경로에서 Render safe mode의 `stock_memory_guard` 조건이 잡히면, full/quick SQLite cache lookup 전에 바로 최소 shell을 반환하도록 조정했습니다. cold import 회피나 고압 메모리 구간에서 첫 응답이 cache timeout에 묶이지 않도록 줄인 패치입니다.
+- `backend/tests/test_stock_router.py`에 cold import guard가 non-full 요청에서 cache lookup 자체를 건너뛰는 회귀 테스트를 추가했습니다.
+
 ## v2.61.6 - 2026-04-12
 
 - backend `/api/stock/{ticker}/detail`의 full/quick cache lookup timebox는 이제 `shield + explicit cancel`로 동작합니다. 그래서 SQLite cache lookup이 취소 이후 정리까지 오래 붙잡히더라도, public first-hit은 cache miss로 더 빨리 넘기고 `stock_memory_guard` 또는 quick partial 응답으로 이어지게 정리했습니다.

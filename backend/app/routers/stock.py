@@ -778,6 +778,18 @@ async def get_stock_detail(
     started_at = time.perf_counter()
     ticker = _resolve_kr_ticker(ticker)
     detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
+    if not prefer_full and (_should_use_ultra_fast_public_fallback() or _should_avoid_cold_stock_analysis_import()):
+        shell_payload = await _build_stock_memory_guard_shell(ticker)
+        _record_stock_detail_trace(
+            started_at,
+            request_phase="shell",
+            cache_state="skipped",
+            timeout_budget_seconds=detail_timeout,
+            payload=shell_payload,
+            fallback_reason="stock_memory_guard",
+            served_state="degraded",
+        )
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
     cached = await _timed_stock_cache_lookup(
         get_cached_stock_detail(ticker, refresh_quote=False),
         label=f"stock full cache lookup {ticker}",
