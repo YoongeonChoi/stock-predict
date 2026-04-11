@@ -1,19 +1,25 @@
 import asyncio
+from datetime import datetime, timezone
 import time
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from app.config import get_settings
 from app.errors import SP_5011, SP_5012, SP_5018
+from app.runtime import get_runtime_state
 from app.utils.lazy_module import LazyModuleProxy
-from app.utils.memory_hygiene import maybe_trim_process_memory
+from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
 from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["briefing"])
+settings = get_settings()
 briefing_service = LazyModuleProxy("app.services.briefing_service")
 market_session_service = LazyModuleProxy("app.services.market_session_service")
 route_stability_service = LazyModuleProxy("app.services.route_stability_service")
-PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 12
+PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 6.0
+PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+PUBLIC_STARTUP_GUARD_SECONDS = 300
 
 
 def _maybe_trim_public_route_memory(reason: str) -> None:
@@ -23,9 +29,73 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         pass
 
 
+async def _run_deferred_public_route_memory_trim(reason: str) -> None:
+    await asyncio.to_thread(_maybe_trim_public_route_memory, reason)
+
+
+def _schedule_public_route_memory_trim(reason: str | None) -> None:
+    if not reason:
+        return
+    try:
+        asyncio.create_task(_run_deferred_public_route_memory_trim(reason))
+    except RuntimeError:
+        _maybe_trim_public_route_memory(reason)
+
+
+def _public_memory_pressure_ratio() -> float:
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception:
+        return 0.0
+    return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+def _should_use_ultra_fast_public_fallback() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
+
+
+def _should_use_startup_public_route_guard() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        runtime_state = get_runtime_state()
+        started_at_raw = str(runtime_state.get("started_at") or "").strip()
+        if not started_at_raw:
+            return False
+        started_at = datetime.fromisoformat(started_at_raw)
+        now = datetime.now(started_at.tzinfo or timezone.utc)
+        return (now - started_at).total_seconds() <= PUBLIC_STARTUP_GUARD_SECONDS
+    except Exception:
+        return False
+
+
 @router.get("/briefing/daily")
 async def get_daily_briefing():
     started_at = time.perf_counter()
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        payload = await briefing_service.get_daily_briefing_fallback(
+            "브리핑 전체 계산을 잠시 건너뛰고 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
+        )
+        route_stability_service.record_route_trace(
+            "daily_briefing",
+            build_route_trace(
+                route_key="daily_briefing",
+                request_phase="shell",
+                cache_state="miss",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                timeout_budget_ms=PUBLIC_ENDPOINT_TIMEOUT_SECONDS * 1000.0,
+                upstream_source="briefing_service",
+                payload=payload,
+                fallback_reason="daily_briefing_memory_guard" if pressure_guard else "daily_briefing_startup_guard",
+                served_state="partial",
+            ),
+        )
+        _schedule_public_route_memory_trim("daily_briefing")
+        return payload
     try:
         payload = await asyncio.wait_for(
             briefing_service.get_daily_briefing(),
@@ -43,7 +113,7 @@ async def get_daily_briefing():
                 payload=payload,
             ),
         )
-        _maybe_trim_public_route_memory("daily_briefing")
+        _schedule_public_route_memory_trim("daily_briefing")
         return payload
     except asyncio.TimeoutError:
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
@@ -64,7 +134,7 @@ async def get_daily_briefing():
                 fallback_reason="daily_briefing_timeout",
             ),
         )
-        _maybe_trim_public_route_memory("daily_briefing")
+        _schedule_public_route_memory_trim("daily_briefing")
         return payload
     except Exception as exc:
         err = SP_5011(str(exc)[:200])
@@ -86,7 +156,7 @@ async def get_daily_briefing():
                 served_state="partial",
             ),
         )
-        _maybe_trim_public_route_memory("daily_briefing")
+        _schedule_public_route_memory_trim("daily_briefing")
         return payload
 
 

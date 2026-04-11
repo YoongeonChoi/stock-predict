@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, PropertyMock, patch
 
+from app.routers import briefing as briefing_router
 from app.routers import country as country_router
 from client_helpers import patched_client
 
@@ -393,6 +394,75 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_response)),
             patch("app.routers.briefing.briefing_service.get_daily_briefing_fallback", new=AsyncMock(return_value=fallback_payload)),
+            patched_client() as client,
+        ):
+            response = client.get("/api/briefing/daily")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+
+    def test_daily_briefing_startup_guard_returns_partial_fallback_without_full_fetch(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "sessions": [],
+            "market_view": [],
+            "focus_cards": [],
+            "upcoming_events": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["세션 상태와 핵심 일정만 먼저 표시합니다."],
+        }
+        with (
+            patch.object(type(briefing_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch(
+                "app.routers.briefing.get_runtime_state",
+                return_value={
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "startup_tasks": [],
+                },
+            ),
+            patch(
+                "app.routers.briefing.briefing_service.get_daily_briefing",
+                new=AsyncMock(side_effect=AssertionError("startup guard should bypass full briefing fetch")),
+            ),
+            patch(
+                "app.routers.briefing.briefing_service.get_daily_briefing_fallback",
+                new=AsyncMock(return_value=fallback_payload),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/briefing/daily")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+
+    def test_daily_briefing_memory_guard_returns_partial_fallback_without_full_fetch(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "sessions": [],
+            "market_view": [],
+            "focus_cards": [],
+            "upcoming_events": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["세션 상태와 핵심 일정만 먼저 표시합니다."],
+        }
+        with (
+            patch.object(type(briefing_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.briefing._should_use_ultra_fast_public_fallback", return_value=True),
+            patch("app.routers.briefing._should_use_startup_public_route_guard", return_value=False),
+            patch(
+                "app.routers.briefing.briefing_service.get_daily_briefing",
+                new=AsyncMock(side_effect=AssertionError("memory guard should bypass full briefing fetch")),
+            ),
+            patch(
+                "app.routers.briefing.briefing_service.get_daily_briefing_fallback",
+                new=AsyncMock(return_value=fallback_payload),
+            ),
             patched_client() as client,
         ):
             response = client.get("/api/briefing/daily")

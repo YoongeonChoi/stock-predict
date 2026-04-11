@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.37 - 2026-04-11
+
+- backend `/api/briefing/daily`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후나 메모리 압박 구간이면 full 브리핑 계산을 바로 건너뛰고 partial fallback을 먼저 반환합니다. 기존에는 12초 대기 뒤 fallback과 동기 메모리 trim까지 같은 요청 안에서 이어져 운영 smoke 15초 예산을 넘길 수 있었는데, 이번에는 startup/memory guard와 더 짧은 timeout budget, 비동기 trim으로 first-usable 응답을 더 빨리 닫도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `daily briefing`이 startup/memory guard 상태에서 full 브리핑 fetch를 건너뛰고 partial fallback으로 바로 내려가는 회귀를 추가했습니다. 새 프로세스 초반이나 보호 구간에서 브리핑 라우트가 다시 느린 full path를 먼저 붙잡는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.36 - 2026-04-11
 
 - `.github/workflows/render-keepalive.yml`은 이제 `main` push에서도 즉시 한 번 실행됩니다. public GitHub Actions 페이지 기준으로 keepalive workflow run이 `0`건이던 상태를 bootstrapping하기 위해, 배포 직후 warm-up과 workflow 활성 확인을 같은 경로로 묶었습니다.
