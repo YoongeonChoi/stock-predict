@@ -3,6 +3,7 @@ from collections.abc import Awaitable
 from datetime import datetime, timezone
 import logging
 import math
+import re
 import sys
 import time
 from typing import Any
@@ -258,8 +259,16 @@ def _record_stock_detail_trace(
     )
 
 
-def _resolve_kr_ticker(ticker: str) -> str:
-    return ticker_resolver_service.resolve_ticker(ticker, "KR")["ticker"] or ticker.upper()
+def _resolve_kr_ticker(ticker: str, *, allow_fast_path: bool = False) -> str:
+    normalized = str(ticker or "").strip().replace(" ", "").upper()
+    if not normalized:
+        return ""
+    if allow_fast_path:
+        if normalized.endswith((".KS", ".KQ", ".KR")):
+            return normalized
+        if re.fullmatch(r"\d{6}", normalized):
+            return f"{normalized}.KS"
+    return ticker_resolver_service.resolve_ticker(normalized, "KR")["ticker"] or normalized
 
 
 def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallback_reason: str) -> dict:
@@ -776,9 +785,9 @@ async def get_stock_detail(
     prefer_full: bool = Query(default=False, description="partial snapshot 이후 full detail 업그레이드를 우선 시도합니다."),
 ):
     started_at = time.perf_counter()
-    ticker = _resolve_kr_ticker(ticker)
     detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
     if not prefer_full and (_should_use_ultra_fast_public_fallback() or _should_avoid_cold_stock_analysis_import()):
+        ticker = _resolve_kr_ticker(ticker, allow_fast_path=True)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
@@ -790,6 +799,7 @@ async def get_stock_detail(
             served_state="degraded",
         )
         return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+    ticker = _resolve_kr_ticker(ticker)
     cached = await _timed_stock_cache_lookup(
         get_cached_stock_detail(ticker, refresh_quote=False),
         label=f"stock full cache lookup {ticker}",

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.8 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 public non-full `stock_memory_guard` 경로는 이제 숫자 KR 티커를 `005930 -> 005930.KS` 식으로 fast path 정규화한 뒤 바로 shell을 반환합니다. 그래서 cold start에서 `ticker_resolver_service` 전체 import/map build에 묶이지 않고 먼저 응답하도록 정리했습니다.
+- `backend/tests/test_stock_router.py`에 cold import guard가 cache lookup뿐 아니라 `ticker_resolver_service.resolve_ticker()` 호출도 건너뛰는 회귀 테스트를 추가했습니다.
+
 ## v2.61.7 - 2026-04-12
 
 - backend `/api/stock/{ticker}/detail`는 `prefer_full=false`인 public 경로에서 Render safe mode의 `stock_memory_guard` 조건이 잡히면, full/quick SQLite cache lookup 전에 바로 최소 shell을 반환하도록 조정했습니다. cold import 회피나 고압 메모리 구간에서 첫 응답이 cache timeout에 묶이지 않도록 줄인 패치입니다.
