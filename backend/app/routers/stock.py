@@ -26,10 +26,11 @@ prediction_capture_service = LazyModuleProxy("app.services.prediction_capture_se
 route_stability_service = LazyModuleProxy("app.services.route_stability_service")
 ticker_resolver_service = LazyModuleProxy("app.services.ticker_resolver_service")
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
-STOCK_DETAIL_TIMEOUT_SECONDS = 6.0
+STOCK_DETAIL_TIMEOUT_SECONDS = 3.0
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
-STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 2.5
+STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 1.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
@@ -168,6 +169,22 @@ async def _timed_stock_cache_lookup(job: Awaitable[Any], *, label: str) -> Any |
     except Exception as exc:
         logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
         return None
+
+
+async def _timed_stock_cache_write(job: Awaitable[Any], *, label: str) -> bool:
+    try:
+        await asyncio.wait_for(job, timeout=STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS)
+        return True
+    except asyncio.TimeoutError:
+        logger.warning(
+            "%s timed out after %.2fs; continuing without blocking the response.",
+            label,
+            STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS,
+        )
+        return False
+    except Exception as exc:
+        logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+        return False
 
 
 def _record_stock_detail_trace(
@@ -360,10 +377,13 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
         "key_risks": ["서버 메모리 보호 구간이라 이번 요청에서는 정밀 종목 분석을 이어가지 않았습니다."],
         "key_catalysts": [],
     }
-    await cache.set(
-        f"stock_detail:quick-v1:{ticker}",
-        payload,
-        ttl=min(get_settings().cache_ttl_report, 120),
+    await _timed_stock_cache_write(
+        cache.set(
+            f"stock_detail:quick-v1:{ticker}",
+            payload,
+            ttl=min(get_settings().cache_ttl_report, 120),
+        ),
+        label=f"stock guard-shell cache write {ticker}",
     )
     return payload
 

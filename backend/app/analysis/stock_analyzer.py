@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+import logging
 import re
 
 import numpy as np
@@ -60,8 +61,10 @@ from app.utils.async_tools import gather_limited
 STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS = 8.0
 EVENT_CONTEXT_TIMEOUT_SECONDS = 8.0
 STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
-STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 5.0
+STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 2.25
+STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS = 900
+logger = logging.getLogger(__name__)
 
 
 async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
@@ -76,6 +79,22 @@ async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -
 async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
     cached = await cache.get(stock_detail_quick_cache_key(ticker))
     return dict(cached) if cached else None
+
+
+async def _timebox_quick_stock_cache_write(job, *, label: str) -> bool:
+    try:
+        await asyncio.wait_for(job, timeout=STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS)
+        return True
+    except asyncio.TimeoutError:
+        logger.warning(
+            "%s timed out after %.2fs; continuing with uncached quick snapshot.",
+            label,
+            STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS,
+        )
+        return False
+    except Exception as exc:
+        logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+        return False
 
 
 async def build_quick_stock_detail(ticker: str) -> dict | None:
@@ -219,10 +238,13 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
     result["key_risks"] = []
     result["key_catalysts"] = []
     result["public_summary"] = public_summary.model_dump()
-    await cache.set(
-        stock_detail_quick_cache_key(ticker),
-        result,
-        min(get_settings().cache_ttl_report, STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS),
+    await _timebox_quick_stock_cache_write(
+        cache.set(
+            stock_detail_quick_cache_key(ticker),
+            result,
+            min(get_settings().cache_ttl_report, STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS),
+        ),
+        label=f"stock quick cache write {ticker}",
     )
     return result
 
