@@ -61,6 +61,32 @@ class DeployedSiteSmokeTests(unittest.TestCase):
                     deadline=time.monotonic() - 1,
                 )
 
+    def test_fetch_with_retry_reports_attempt_count_and_final_attempt_elapsed(self):
+        with (
+            patch.object(
+                deployed_smoke,
+                "fetch",
+                side_effect=[
+                    (503, "retry later", {}),
+                    (200, '{"ok": true}', {}),
+                ],
+            ),
+            patch.object(deployed_smoke.time, "monotonic", side_effect=[100.0, 100.1, 100.3, 101.0, 101.25, 101.4]),
+            patch.object(deployed_smoke.time, "sleep"),
+            patch("builtins.print"),
+        ):
+            outcome = deployed_smoke.fetch_with_retry(
+                "https://api.example.com/health",
+                attempts=2,
+                timeout=10,
+                retry_delay=0.5,
+            )
+
+        self.assertEqual(outcome.status, 200)
+        self.assertEqual(outcome.attempts, 2)
+        self.assertAlmostEqual(outcome.total_elapsed_seconds, 1.4)
+        self.assertAlmostEqual(outcome.final_attempt_elapsed_seconds, 0.25)
+
     def test_summarize_api_payload_includes_partial_and_memory_diagnostics(self):
         check = deployed_smoke.ApiSmokeCheck(name="diagnostics", method="GET", path="/api/diagnostics")
         payload = {
@@ -86,12 +112,19 @@ class DeployedSiteSmokeTests(unittest.TestCase):
     def test_main_success_output_includes_elapsed_and_payload_summary(self):
         check = deployed_smoke.ApiSmokeCheck(name="stock-detail", method="GET", path="/api/stock/003670/detail")
         body = '{"partial": true, "fallback_reason": "stock_quick_detail"}'
+        outcome = deployed_smoke.FetchOutcome(
+            status=200,
+            body=body,
+            headers={},
+            attempts=1,
+            total_elapsed_seconds=0.25,
+            final_attempt_elapsed_seconds=0.25,
+        )
 
         with (
             patch.object(deployed_smoke, "build_api_checks", return_value=[(check, "https://api.example.com/api/stock/003670/detail")]),
             patch.object(deployed_smoke, "build_frontend_checks", return_value=[]),
-            patch.object(deployed_smoke, "fetch_with_retry", return_value=(200, body, {})),
-            patch.object(deployed_smoke.time, "monotonic", side_effect=[100.0, 100.25]),
+            patch.object(deployed_smoke, "fetch_with_retry", return_value=outcome),
             patch("builtins.print") as print_mock,
         ):
             exit_code = deployed_smoke.main([])
@@ -102,6 +135,32 @@ class DeployedSiteSmokeTests(unittest.TestCase):
         self.assertIn("in 0.25s", printed)
         self.assertIn("partial=True", printed)
         self.assertIn("fallback=stock_quick_detail", printed)
+
+    def test_main_success_output_includes_retry_breakdown_when_request_retried(self):
+        check = deployed_smoke.ApiSmokeCheck(name="stock-detail", method="GET", path="/api/stock/003670/detail")
+        body = '{"partial": true, "fallback_reason": "stock_memory_guard"}'
+        outcome = deployed_smoke.FetchOutcome(
+            status=200,
+            body=body,
+            headers={},
+            attempts=2,
+            total_elapsed_seconds=42.79,
+            final_attempt_elapsed_seconds=0.46,
+        )
+
+        with (
+            patch.object(deployed_smoke, "build_api_checks", return_value=[(check, "https://api.example.com/api/stock/003670/detail")]),
+            patch.object(deployed_smoke, "build_frontend_checks", return_value=[]),
+            patch.object(deployed_smoke, "fetch_with_retry", return_value=outcome),
+            patch("builtins.print") as print_mock,
+        ):
+            exit_code = deployed_smoke.main([])
+
+        self.assertEqual(exit_code, 0)
+        printed = " ".join(" ".join(str(arg) for arg in call.args) for call in print_mock.call_args_list)
+        self.assertIn("attempts=2", printed)
+        self.assertIn("final_attempt=0.46s", printed)
+        self.assertIn("in 42.79s", printed)
 
     def test_main_fail_fast_stops_after_first_api_failure(self):
         first = deployed_smoke.ApiSmokeCheck(name="health", method="GET", path="/api/health")

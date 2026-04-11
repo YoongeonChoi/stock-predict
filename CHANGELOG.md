@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.4 - 2026-04-12
+
+- backend `/api/country/{code}/report`의 public 정밀 대기 budget을 `8초 -> 5초`로 더 낮췄습니다. 최근 정상 캐시와 archived report가 없는 경우에도 공개 첫 진입은 더 빨리 `country_report_timeout` partial로 닫고 background refresh를 이어 가게 조정해, 운영 smoke 기준 10초 안팎까지 늘어지던 국가 리포트 첫 usable 응답을 더 짧게 줄였습니다.
+- `scripts/deployed_site_smoke.py`는 이제 성공 시간에 재시도 누적과 마지막 성공 시도를 함께 표시합니다. 그래서 배포 smoke가 느린 응답 하나와 “첫 시도 실패 후 재시도 성공” 케이스를 같은 숫자로 섞어 보여 주지 않게 했고, `backend/tests/test_deployed_site_smoke.py`에 해당 회귀를 추가했습니다.
+
 ## v2.61.3 - 2026-04-12
 
 - backend `/api/country/{code}/report`는 이제 public timeout fallback에서 이미 앞단이 확인한 archived report/quick 후보 lookup을 다시 반복하지 않습니다. 최근 정상 캐시와 archived report를 먼저 확인한 뒤에도 정밀 계산이 늦으면, 응답 경로는 더 가벼운 `country_report_timeout` shell로 바로 닫고 background refresh만 계속 유지해 partial 응답이 10초대까지 늘어지던 구간을 줄였습니다.

@@ -35,6 +35,16 @@ class FrontendRouteCheck:
     timeout: int = 45
 
 
+@dataclass(frozen=True)
+class FetchOutcome:
+    status: int
+    body: str
+    headers: dict[str, str]
+    attempts: int
+    total_elapsed_seconds: float
+    final_attempt_elapsed_seconds: float
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check deployed frontend and API health")
     parser.add_argument(
@@ -122,9 +132,11 @@ def fetch_with_retry(
     timeout: int = 30,
     retry_delay: float = 4.0,
     deadline: float | None = None,
-) -> tuple[int, str, dict[str, str]]:
+) -> FetchOutcome:
     last_error: Exception | None = None
     last_response: tuple[int, str, dict[str, str]] | None = None
+    overall_started = time.monotonic()
+    last_attempt_elapsed = 0.0
 
     for attempt in range(1, max(attempts, 1) + 1):
         remaining = remaining_budget_seconds(deadline)
@@ -133,26 +145,58 @@ def fetch_with_retry(
         attempt_timeout = timeout
         if remaining is not None:
             attempt_timeout = max(1, min(timeout, int(remaining)))
+        attempt_started = time.monotonic()
         try:
             response = fetch(url, timeout=attempt_timeout)
+            last_attempt_elapsed = time.monotonic() - attempt_started
             status = response[0]
             if status not in RETRYABLE_STATUSES or attempt >= attempts:
-                return response
-            print(f"[retry] {url} -> {status}, attempt {attempt}/{attempts}", flush=True)
+                return FetchOutcome(
+                    status=status,
+                    body=response[1],
+                    headers=response[2],
+                    attempts=attempt,
+                    total_elapsed_seconds=time.monotonic() - overall_started,
+                    final_attempt_elapsed_seconds=last_attempt_elapsed,
+                )
+            print(
+                f"[retry] {url} -> {status}, attempt {attempt}/{attempts} attempt_elapsed={last_attempt_elapsed:.2f}s",
+                flush=True,
+            )
             last_response = response
         except Exception as exc:
+            last_attempt_elapsed = time.monotonic() - attempt_started
             last_error = exc
             if attempt >= attempts:
                 raise
-            print(f"[retry] {url} -> {exc}, attempt {attempt}/{attempts}", flush=True)
+            print(
+                f"[retry] {url} -> {exc}, attempt {attempt}/{attempts} attempt_elapsed={last_attempt_elapsed:.2f}s",
+                flush=True,
+            )
 
         time.sleep(retry_delay * attempt)
 
     if last_response is not None:
-        return last_response
+        return FetchOutcome(
+            status=last_response[0],
+            body=last_response[1],
+            headers=last_response[2],
+            attempts=max(attempts, 1),
+            total_elapsed_seconds=time.monotonic() - overall_started,
+            final_attempt_elapsed_seconds=last_attempt_elapsed,
+        )
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"{url} returned no usable response")
+
+
+def format_elapsed_summary(outcome: FetchOutcome) -> str:
+    if outcome.attempts <= 1:
+        return f"in {outcome.final_attempt_elapsed_seconds:.2f}s"
+    return (
+        f"in {outcome.total_elapsed_seconds:.2f}s "
+        f"(attempts={outcome.attempts}, final_attempt={outcome.final_attempt_elapsed_seconds:.2f}s)"
+    )
 
 
 def preview(text: str, limit: int = 180) -> str:
@@ -242,9 +286,8 @@ def main(argv: list[str] | None = None) -> int:
             f"[check] {check.name:24} {url} timeout={timeout}s attempts={max(1, args.attempts)}",
             flush=True,
         )
-        started = time.monotonic()
         try:
-            status, body, _headers = fetch_with_retry(
+            outcome = fetch_with_retry(
                 url,
                 attempts=max(1, args.attempts),
                 timeout=timeout,
@@ -252,17 +295,19 @@ def main(argv: list[str] | None = None) -> int:
                 deadline=deadline,
             )
         except Exception as exc:
-            elapsed = time.monotonic() - started
             failures.append(f"{check.name}: {exc}")
-            print(f"[FAIL] {check.name:24} {url} -> {exc} in {elapsed:.2f}s", flush=True)
+            print(f"[FAIL] {check.name:24} {url} -> {exc}", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
-        elapsed = time.monotonic() - started
+        status, body = outcome.status, outcome.body
 
         if status != check.expected_status:
             failures.append(f"{check.name}: expected {check.expected_status}, got {status} ({preview(body)})")
-            print(f"[FAIL] {check.name:24} {url} -> {status} ({preview(body)}) in {elapsed:.2f}s", flush=True)
+            print(
+                f"[FAIL] {check.name:24} {url} -> {status} ({preview(body)}) {format_elapsed_summary(outcome)}",
+                flush=True,
+            )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
@@ -271,7 +316,10 @@ def main(argv: list[str] | None = None) -> int:
             payload = json.loads(body)
         except json.JSONDecodeError:
             failures.append(f"{check.name}: invalid JSON ({preview(body)})")
-            print(f"[FAIL] {check.name:24} {url} -> invalid JSON in {elapsed:.2f}s", flush=True)
+            print(
+                f"[FAIL] {check.name:24} {url} -> invalid JSON {format_elapsed_summary(outcome)}",
+                flush=True,
+            )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
@@ -293,7 +341,10 @@ def main(argv: list[str] | None = None) -> int:
 
         payload_summary = summarize_api_payload(check, payload)
         suffix = f" {payload_summary}" if payload_summary else ""
-        print(f"[OK]   {check.name:24} {url} -> {status} in {elapsed:.2f}s{suffix}", flush=True)
+        print(
+            f"[OK]   {check.name:24} {url} -> {status} {format_elapsed_summary(outcome)}{suffix}",
+            flush=True,
+        )
 
     for check, url in build_frontend_checks(frontend_url):
         timeout = clamp_timeout(check.timeout, args.frontend_timeout)
@@ -301,9 +352,8 @@ def main(argv: list[str] | None = None) -> int:
             f"[check] frontend-{check.contract.key:15} {url} timeout={timeout}s attempts={max(1, args.attempts)}",
             flush=True,
         )
-        started = time.monotonic()
         try:
-            status, body, _headers = fetch_with_retry(
+            outcome = fetch_with_retry(
                 url,
                 attempts=max(1, args.attempts),
                 timeout=timeout,
@@ -311,20 +361,19 @@ def main(argv: list[str] | None = None) -> int:
                 deadline=deadline,
             )
         except Exception as exc:
-            elapsed = time.monotonic() - started
             failures.append(f"frontend-{check.contract.key}: {exc}")
-            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {exc} in {elapsed:.2f}s", flush=True)
+            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {exc}", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
-        elapsed = time.monotonic() - started
+        status, body = outcome.status, outcome.body
 
         if status != check.expected_status:
             failures.append(
                 f"frontend-{check.contract.key}: expected {check.expected_status}, got {status} ({preview(body)})"
             )
             print(
-                f"[FAIL] frontend-{check.contract.key:15} {url} -> {status} ({preview(body)}) in {elapsed:.2f}s",
+                f"[FAIL] frontend-{check.contract.key:15} {url} -> {status} ({preview(body)}) {format_elapsed_summary(outcome)}",
                 flush=True,
             )
             if args.fail_fast:
@@ -335,14 +384,17 @@ def main(argv: list[str] | None = None) -> int:
         if validation_error:
             failures.append(f"frontend-{check.contract.key}: {validation_error}")
             print(
-                f"[FAIL] frontend-{check.contract.key:15} {url} -> {validation_error} in {elapsed:.2f}s",
+                f"[FAIL] frontend-{check.contract.key:15} {url} -> {validation_error} {format_elapsed_summary(outcome)}",
                 flush=True,
             )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
 
-        print(f"[OK]   frontend-{check.contract.key:15} {url} -> {status} in {elapsed:.2f}s", flush=True)
+        print(
+            f"[OK]   frontend-{check.contract.key:15} {url} -> {status} {format_elapsed_summary(outcome)}",
+            flush=True,
+        )
 
     if args.expected_version and health_payload:
         current_version = str(health_payload.get("version", ""))
