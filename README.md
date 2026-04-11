@@ -9,11 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.56`
+현재 릴리즈: `v2.61.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- `기회 레이더` 상위 10개 후보를 기준일마다 별도 cohort로 저장하고, `/lab`에서 `1D / 5D / 20D` 방향 적중률, 20거래일 밴드 적중률, 최근 miss/hit 복기, tag별 분해를 함께 보도록 확장했습니다.
+- 레이더 점수는 이제 실측 cohort를 바탕으로 bounded empirical post-score 조정을 함께 반영합니다. 최근 45일 표본을 decay로 읽어 `모멘텀 / 수급 / 실적 / 밸류 / 업황 / 퀄리티` feature별 보정 방향을 계산하되, 점수 가산은 최대 `±6점`으로 제한해 500MB 운영 한도에서도 보수적으로 작동하게 맞췄습니다.
+- `/calendar`, `/archive`, `/watchlist`, `/portfolio`, `/stock/[ticker]`, `/lab`에 남아 있던 버튼/세그먼트 누락을 공용 `button hierarchy + responsive segmented control`로 다시 흡수했습니다. 좁은 화면에서도 액션 버튼이 토글 chip처럼 보이거나 한 줄에서 깨지는 구간을 줄였습니다.
 - backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 quick partial 응답 뒤 `prediction_capture_service`를 전혀 건드리지 않습니다. 그래서 first hit이 이미 `stock_quick_detail`로 충분히 응답했는데도 distributional capture scheduling이 cold `stock_analyzer + db` import를 다시 깨우며 10초대 지연과 추가 메모리 압박을 만들던 경로를 더 보수적으로 끊었습니다.
 - `backend/tests/test_stock_router.py`에는 safe mode quick partial이 distributional capture scheduling 자체를 건너뛰는 회귀를 추가했습니다. 앞으로는 stock detail quick 응답이 다시 숨은 side effect import 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/country/KR/heatmap`는 이제 Render `startup_memory_safe_mode`에서 `yfinance_client`가 아직 cold import 상태면 live heatmap build 자체를 시작하지 않고, 먼저 cache/last-success를 확인한 뒤 그것도 없으면 `heatmap_cold_import_guard` shell로 바로 닫습니다. 그래서 heatmap first hit 하나만으로 `yfinance` 스택을 새로 깨우며 워커 메모리를 다시 `470MB+` critical band로 밀어 올리던 경로를 더 보수적으로 막았습니다.
@@ -616,6 +619,14 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 4. calibration profile refresh
 5. `/lab`과 diagnostics에 반영
 
+### 기회 레이더 cohort 저장
+
+1. `market/opportunities`가 usable payload를 만들면 상위 10개 후보를 `opportunity_radar_snapshots`에 함께 저장
+2. 기준일 기준 `1D / 5D / 20D` target date를 같이 고정
+3. target date 이후 실제 가격을 다시 조회해 방향 적중, 20D 밴드 적중, 실현 수익률을 평가
+4. 최근 cohort를 묶어 tag별 성과와 feature별 empirical adjustment profile을 갱신
+5. `/lab`에서 cohort metric, 최근 miss/hit review queue, 현재 보정 방향을 노출
+
 추가 규칙:
 
 - `stock` quick detail이 먼저 내려가더라도 필요하면 background distributional capture를 다시 걸어 5D/20D 표본을 복구합니다.
@@ -831,8 +842,10 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 ### `/lab`
 
 - accuracy summary
+- 기회 레이더 cohort accuracy summary
 - failure patterns
 - review queue
+- 레이더 miss/hit review queue
 - calibration 관련 메타데이터
 
 ## 어려웠던 점과 해결 과정

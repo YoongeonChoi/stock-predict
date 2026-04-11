@@ -236,12 +236,17 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
           </>
         }
         actions={COUNTRIES.length > 1 ? (
-          <div className="ui-inline-actions">
+          <div className="ui-segmented-control-responsive">
             {COUNTRIES.map((item) => (
               <button
                 key={item.code}
                 onClick={() => setCountry(item.code)}
-                className={country === item.code ? "action-chip-primary" : "action-chip-secondary"}
+                className={[
+                  "ui-segmented-option",
+                  country === item.code && "ui-segmented-option-active",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {item.flag} {item.label}
               </button>
@@ -374,14 +379,14 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                   <h2 className="section-title">{formatMonthLabel(currentMonthDate)}</h2>
                   <p className="section-copy">{data.summary.note}</p>
                 </div>
-                <div className="ui-inline-actions">
-                  <button onClick={() => moveMonth(-1)} className="action-chip-secondary">
+                <div className="ui-button-cluster">
+                  <button onClick={() => moveMonth(-1)} className="ui-button-secondary px-4">
                     이전 달
                   </button>
-                  <button onClick={resetToToday} className="action-chip-primary">
+                  <button onClick={resetToToday} className="ui-button-primary px-4">
                     오늘
                   </button>
-                  <button onClick={() => moveMonth(1)} className="action-chip-secondary">
+                  <button onClick={() => moveMonth(1)} className="ui-button-secondary px-4">
                     다음 달
                   </button>
                 </div>

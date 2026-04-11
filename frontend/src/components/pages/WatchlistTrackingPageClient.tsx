@@ -72,13 +72,13 @@ export default function WatchlistTrackingPageClient({
         }
         actions={
           <div className="ui-inline-actions">
-            <Link href={`/stock/${encodeURIComponent(initialTicker)}`} className="action-chip-secondary">
+            <Link href={`/stock/${encodeURIComponent(initialTicker)}`} className="ui-button-secondary px-4">
               종목 상세 보기
             </Link>
             {session && detail ? (
               <button
                 onClick={() => void toggleTracking(detail.tracking_state !== "active")}
-                className={detail.tracking_state === "active" ? "action-chip-primary" : "action-chip-secondary"}
+                className={detail.tracking_state === "active" ? "ui-button-secondary px-4" : "ui-button-primary px-4"}
               >
                 {detail.tracking_state === "active" ? "심화 추적 중지" : "심화 추적 시작"}
               </button>
@@ -162,7 +162,7 @@ export default function WatchlistTrackingPageClient({
               title="로그인 후 심화 추적 데이터를 이어서 볼 수 있습니다"
               message="이 화면은 공개 shell을 먼저 보여드리고, 로그인 후에는 관심종목 기준의 최근 예측 변화와 적중 기록을 이어서 불러옵니다."
               aside={
-                <Link href={`/auth?next=${encodeURIComponent(`/watchlist/${initialTicker}`)}`} className="action-chip-primary">
+                <Link href={`/auth?next=${encodeURIComponent(`/watchlist/${initialTicker}`)}`} className="ui-button-primary px-4">
                   로그인하기
                 </Link>
               }

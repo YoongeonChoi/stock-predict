@@ -13,6 +13,7 @@ from app.services import (
     archive_service,
     confidence_calibration_service,
     learned_fusion_profile_service,
+    opportunity_radar_lab_service,
     prediction_capture_service,
 )
 
@@ -696,6 +697,26 @@ def _empty_backfill_summary() -> dict:
     }
 
 
+def _empty_radar_cohort_summary() -> dict:
+    return {
+        "stored_snapshots": 0,
+        "capture_days": 0,
+        "latest_reference_date": None,
+        "last_evaluated_at": None,
+        "direction_accuracy_1d": 0.0,
+        "direction_accuracy_5d": 0.0,
+        "direction_accuracy_20d": 0.0,
+        "band_hit_rate_20d": 0.0,
+        "avg_return_pct_5d": 0.0,
+        "avg_return_pct_20d": 0.0,
+        "pending_20d": 0,
+        "tag_breakdown": [],
+        "recent_cohorts": [],
+        "review_queue": [],
+        "profile": opportunity_radar_lab_service.get_profile_summary(),
+    }
+
+
 def _build_pipeline_health(
     *,
     horizon_accuracy: list[dict],
@@ -865,7 +886,7 @@ async def _build_prediction_lab_fallback(
     reason: str,
 ) -> dict:
     accuracy = await archive_service.get_accuracy(refresh=False)
-    stats_5d, stats_20d, scope_coverage_rows, prediction_type_coverage_rows, model_coverage_rows, activity_summary = await asyncio.gather(
+    stats_5d, stats_20d, scope_coverage_rows, prediction_type_coverage_rows, model_coverage_rows, activity_summary, radar_summary_result = await asyncio.gather(
         _safe_prediction_stats("distributional_5d"),
         _safe_prediction_stats("distributional_20d"),
         _safe_prediction_query(
@@ -888,11 +909,17 @@ async def _build_prediction_lab_fallback(
             _empty_prediction_activity_summary(),
             timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
         ),
+        _safe_prediction_query(
+            lambda: opportunity_radar_lab_service.get_lab_summary(limit=300),
+            _empty_radar_cohort_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
     )
     scope_coverage, _ = scope_coverage_rows
     prediction_type_coverage, _ = prediction_type_coverage_rows
     model_coverage, _ = model_coverage_rows
     activity_summary_payload, _ = activity_summary
+    radar_summary, _ = radar_summary_result
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
     runtime_summary_map = _runtime_summary_map()
@@ -953,6 +980,7 @@ async def _build_prediction_lab_fallback(
         "fusion_profiles": fusion_profiles,
         "graph_context_summary": graph_context_summary,
         "fusion_status_summary": fusion_status_summary,
+        "radar_cohorts": radar_summary,
         "breakdown": {
             "by_country": [],
             "by_scope": [],
@@ -1014,6 +1042,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         coverage_prediction_type_result,
         coverage_model_result,
         activity_summary_result,
+        radar_summary_result,
     ) = await asyncio.gather(
         _safe_prediction_query(lambda: db.prediction_stats("next_day"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_stats("distributional_5d"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
@@ -1032,6 +1061,11 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             _empty_prediction_activity_summary(),
             timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
         ),
+        _safe_prediction_query(
+            lambda: opportunity_radar_lab_service.get_lab_summary(limit=300),
+            _empty_radar_cohort_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
     )
     accuracy, accuracy_reason = accuracy_result
     stats_5d, stats_5d_reason = stats_5d_result
@@ -1046,6 +1080,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
     coverage_prediction_type_rows, coverage_prediction_type_reason = coverage_prediction_type_result
     coverage_model_rows, coverage_model_reason = coverage_model_result
     activity_summary, activity_summary_reason = activity_summary_result
+    radar_summary, radar_summary_reason = radar_summary_result
     partial_reasons = [
         reason
         for reason in (
@@ -1064,6 +1099,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             coverage_prediction_type_reason,
             coverage_model_reason,
             activity_summary_reason,
+            radar_summary_reason,
         )
         if reason
     ]
@@ -1145,6 +1181,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         "fusion_profiles": fusion_profiles,
         "graph_context_summary": graph_context_summary,
         "fusion_status_summary": fusion_status_summary,
+        "radar_cohorts": radar_summary,
         "breakdown": {
             "by_country": by_country,
             "by_scope": by_scope,
@@ -1179,7 +1216,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v7:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v8:{limit_recent}:{int(refresh)}"
 
     async def _fetch_prediction_lab():
         try:

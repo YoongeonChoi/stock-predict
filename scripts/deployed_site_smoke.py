@@ -159,6 +159,35 @@ def preview(text: str, limit: int = 180) -> str:
     return " ".join(text.split())[:limit]
 
 
+def summarize_api_payload(check: ApiSmokeCheck, payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+
+    details: list[str] = []
+    if "partial" in payload:
+        details.append(f"partial={payload.get('partial')}")
+    fallback_reason = payload.get("fallback_reason")
+    if fallback_reason:
+        details.append(f"fallback={fallback_reason}")
+
+    memory = payload.get("memory_diagnostics") or payload.get("memory")
+    if check.name == "diagnostics" and isinstance(memory, dict):
+        rss_mb = memory.get("rss_mb")
+        cgroup_mb = memory.get("cgroup_current_mb")
+        pressure = memory.get("pressure_ratio")
+        state = memory.get("pressure_state")
+        if rss_mb is not None:
+            details.append(f"rss={rss_mb}MB")
+        if cgroup_mb is not None:
+            details.append(f"cgroup={cgroup_mb}MB")
+        if pressure is not None:
+            details.append(f"pressure={pressure}")
+        if state:
+            details.append(f"state={state}")
+
+    return " ".join(details)
+
+
 def build_api_checks(api_url: str) -> list[tuple[ApiSmokeCheck, str]]:
     return [
         (check, urljoin(f"{api_url}/", check.path.lstrip("/")))
@@ -213,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[check] {check.name:24} {url} timeout={timeout}s attempts={max(1, args.attempts)}",
             flush=True,
         )
+        started = time.monotonic()
         try:
             status, body, _headers = fetch_with_retry(
                 url,
@@ -222,15 +252,17 @@ def main(argv: list[str] | None = None) -> int:
                 deadline=deadline,
             )
         except Exception as exc:
+            elapsed = time.monotonic() - started
             failures.append(f"{check.name}: {exc}")
-            print(f"[FAIL] {check.name:24} {url} -> {exc}", flush=True)
+            print(f"[FAIL] {check.name:24} {url} -> {exc} in {elapsed:.2f}s", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
+        elapsed = time.monotonic() - started
 
         if status != check.expected_status:
             failures.append(f"{check.name}: expected {check.expected_status}, got {status} ({preview(body)})")
-            print(f"[FAIL] {check.name:24} {url} -> {status} ({preview(body)})", flush=True)
+            print(f"[FAIL] {check.name:24} {url} -> {status} ({preview(body)}) in {elapsed:.2f}s", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
@@ -239,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = json.loads(body)
         except json.JSONDecodeError:
             failures.append(f"{check.name}: invalid JSON ({preview(body)})")
-            print(f"[FAIL] {check.name:24} {url} -> invalid JSON", flush=True)
+            print(f"[FAIL] {check.name:24} {url} -> invalid JSON in {elapsed:.2f}s", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
@@ -251,12 +283,17 @@ def main(argv: list[str] | None = None) -> int:
             not isinstance(payload, dict) or payload.get("error_code") != check.expected_error_code
         ):
             failures.append(f"{check.name}: expected error_code {check.expected_error_code}, got {payload}")
-            print(f"[FAIL] {check.name:24} {url} -> missing error_code {check.expected_error_code}", flush=True)
+            print(
+                f"[FAIL] {check.name:24} {url} -> missing error_code {check.expected_error_code} in {elapsed:.2f}s",
+                flush=True,
+            )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
 
-        print(f"[OK]   {check.name:24} {url} -> {status}", flush=True)
+        payload_summary = summarize_api_payload(check, payload)
+        suffix = f" {payload_summary}" if payload_summary else ""
+        print(f"[OK]   {check.name:24} {url} -> {status} in {elapsed:.2f}s{suffix}", flush=True)
 
     for check, url in build_frontend_checks(frontend_url):
         timeout = clamp_timeout(check.timeout, args.frontend_timeout)
@@ -264,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[check] frontend-{check.contract.key:15} {url} timeout={timeout}s attempts={max(1, args.attempts)}",
             flush=True,
         )
+        started = time.monotonic()
         try:
             status, body, _headers = fetch_with_retry(
                 url,
@@ -273,17 +311,22 @@ def main(argv: list[str] | None = None) -> int:
                 deadline=deadline,
             )
         except Exception as exc:
+            elapsed = time.monotonic() - started
             failures.append(f"frontend-{check.contract.key}: {exc}")
-            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {exc}", flush=True)
+            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {exc} in {elapsed:.2f}s", flush=True)
             if args.fail_fast:
                 return _report_failures(failures)
             continue
+        elapsed = time.monotonic() - started
 
         if status != check.expected_status:
             failures.append(
                 f"frontend-{check.contract.key}: expected {check.expected_status}, got {status} ({preview(body)})"
             )
-            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {status} ({preview(body)})", flush=True)
+            print(
+                f"[FAIL] frontend-{check.contract.key:15} {url} -> {status} ({preview(body)}) in {elapsed:.2f}s",
+                flush=True,
+            )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
@@ -291,12 +334,15 @@ def main(argv: list[str] | None = None) -> int:
         validation_error = validate_frontend_html(check, body)
         if validation_error:
             failures.append(f"frontend-{check.contract.key}: {validation_error}")
-            print(f"[FAIL] frontend-{check.contract.key:15} {url} -> {validation_error}", flush=True)
+            print(
+                f"[FAIL] frontend-{check.contract.key:15} {url} -> {validation_error} in {elapsed:.2f}s",
+                flush=True,
+            )
             if args.fail_fast:
                 return _report_failures(failures)
             continue
 
-        print(f"[OK]   frontend-{check.contract.key:15} {url} -> {status}", flush=True)
+        print(f"[OK]   frontend-{check.contract.key:15} {url} -> {status} in {elapsed:.2f}s", flush=True)
 
     if args.expected_version and health_payload:
         current_version = str(health_payload.get("version", ""))

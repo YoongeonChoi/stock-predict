@@ -67,6 +67,9 @@ class OpportunityItem(BaseModel):
     current_price: float
     change_pct: float
     opportunity_score: float
+    base_opportunity_score: float | None = None
+    empirical_adjustment_points: float | None = None
+    empirical_adjustment_reason: str | None = None
     quant_score: float
     up_probability: float
     confidence: float

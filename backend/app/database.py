@@ -110,6 +110,44 @@ ON prediction_records(country_code, prediction_type, target_date DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_records_model
 ON prediction_records(model_version, prediction_type, target_date DESC);
 
+CREATE TABLE IF NOT EXISTS opportunity_radar_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country_code TEXT NOT NULL,
+    reference_date TEXT NOT NULL,
+    anchor_date TEXT,
+    target_date_1d TEXT,
+    target_date_5d TEXT,
+    target_date_20d TEXT,
+    rank INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    name TEXT,
+    sector TEXT,
+    reference_price REAL NOT NULL,
+    base_score REAL NOT NULL,
+    adjusted_score REAL,
+    up_probability_20d REAL,
+    confidence_20d REAL,
+    predicted_close_20d REAL,
+    predicted_low_20d REAL,
+    predicted_high_20d REAL,
+    thesis_json TEXT,
+    tags_json TEXT,
+    support_json TEXT,
+    evaluation_json TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    evaluated_at REAL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_unique
+ON opportunity_radar_snapshots(country_code, reference_date, symbol);
+
+CREATE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_reference
+ON opportunity_radar_snapshots(reference_date DESC, country_code, rank ASC);
+
+CREATE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_symbol
+ON opportunity_radar_snapshots(symbol, reference_date DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -1168,6 +1206,146 @@ class Database:
                 log.warning("prediction_confidence_buckets lock fallback for %s", prediction_type)
                 return []
             raise
+
+    async def opportunity_radar_snapshot_upsert(
+        self,
+        *,
+        country_code: str,
+        reference_date: str,
+        rank: int,
+        symbol: str,
+        name: str | None,
+        sector: str | None,
+        reference_price: float,
+        base_score: float,
+        adjusted_score: float | None,
+        up_probability_20d: float | None,
+        confidence_20d: float | None,
+        predicted_close_20d: float | None,
+        predicted_low_20d: float | None,
+        predicted_high_20d: float | None,
+        target_date_20d: str | None,
+        thesis_json: list[str] | None,
+        tags_json: list[str] | None,
+        support_json: dict | None,
+    ) -> None:
+        timestamp = time.time()
+        async with self._connect() as conn:
+            await conn.execute(
+                """
+                INSERT INTO opportunity_radar_snapshots (
+                    country_code, reference_date, rank, symbol, name, sector,
+                    reference_price, base_score, adjusted_score,
+                    up_probability_20d, confidence_20d,
+                    predicted_close_20d, predicted_low_20d, predicted_high_20d,
+                    target_date_20d, thesis_json, tags_json, support_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(country_code, reference_date, symbol)
+                DO UPDATE SET
+                    rank = excluded.rank,
+                    name = excluded.name,
+                    sector = excluded.sector,
+                    reference_price = excluded.reference_price,
+                    base_score = excluded.base_score,
+                    adjusted_score = excluded.adjusted_score,
+                    up_probability_20d = excluded.up_probability_20d,
+                    confidence_20d = excluded.confidence_20d,
+                    predicted_close_20d = excluded.predicted_close_20d,
+                    predicted_low_20d = excluded.predicted_low_20d,
+                    predicted_high_20d = excluded.predicted_high_20d,
+                    target_date_20d = excluded.target_date_20d,
+                    thesis_json = excluded.thesis_json,
+                    tags_json = excluded.tags_json,
+                    support_json = excluded.support_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    country_code,
+                    reference_date,
+                    rank,
+                    symbol,
+                    name,
+                    sector,
+                    reference_price,
+                    base_score,
+                    adjusted_score,
+                    up_probability_20d,
+                    confidence_20d,
+                    predicted_close_20d,
+                    predicted_low_20d,
+                    predicted_high_20d,
+                    target_date_20d,
+                    json.dumps(thesis_json, ensure_ascii=False, default=str) if thesis_json is not None else None,
+                    json.dumps(tags_json, ensure_ascii=False, default=str) if tags_json is not None else None,
+                    json.dumps(support_json, ensure_ascii=False, default=str) if support_json is not None else None,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            await conn.commit()
+
+    async def opportunity_radar_snapshot_recent(self, limit: int = 200) -> list[dict]:
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT *
+                    FROM opportunity_radar_snapshots
+                    ORDER BY reference_date DESC, rank ASC, updated_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("opportunity_radar_snapshot_recent lock fallback")
+                return []
+            raise
+
+    async def opportunity_radar_snapshot_update_evaluation(
+        self,
+        *,
+        record_id: int,
+        anchor_date: str | None,
+        target_date_1d: str | None,
+        target_date_5d: str | None,
+        target_date_20d: str | None,
+        evaluation_json: dict,
+        evaluation_complete: bool,
+    ) -> None:
+        evaluated_at = time.time() if evaluation_complete else None
+        async with self._connect() as conn:
+            await conn.execute(
+                """
+                UPDATE opportunity_radar_snapshots
+                SET anchor_date = ?,
+                    target_date_1d = ?,
+                    target_date_5d = ?,
+                    target_date_20d = ?,
+                    evaluation_json = ?,
+                    updated_at = ?,
+                    evaluated_at = CASE
+                        WHEN ? IS NOT NULL THEN ?
+                        ELSE evaluated_at
+                    END
+                WHERE id = ?
+                """,
+                (
+                    anchor_date,
+                    target_date_1d,
+                    target_date_5d,
+                    target_date_20d,
+                    json.dumps(evaluation_json, ensure_ascii=False, default=str),
+                    time.time(),
+                    evaluated_at,
+                    evaluated_at,
+                    record_id,
+                ),
+            )
+            await conn.commit()
 
 
     # ── portfolio ────────────────────────────────────────────

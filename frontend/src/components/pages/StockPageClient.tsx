@@ -199,7 +199,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           title={initialTicker.toUpperCase()}
           description="종목 상세 응답이 아직 도착하지 않아, 다시 불러오기로 최신 스냅샷을 재요청합니다."
           actions={
-            <Link href="/" className="action-chip-secondary">
+            <Link href="/" className="ui-button-secondary px-4">
               홈으로
             </Link>
           }

@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.0 - 2026-04-11
+
+- `기회 레이더` 상위 10개 후보를 기준일별 cohort로 저장하는 `opportunity_radar_snapshots` 흐름을 추가했습니다. `prediction_capture_service`가 usable radar payload를 만들면 상위 후보를 함께 적재하고, `archive_service.refresh_prediction_accuracy()`가 `1D / 5D / 20D` 실측 가격과 방향/밴드 적중 여부를 다시 평가하도록 연결했습니다.
+- `market_service`는 이제 레이더 후보별 `base_opportunity_score`, `empirical_adjustment_points`, `empirical_adjustment_reason`를 함께 계산합니다. 최근 cohort를 45일 decay로 읽는 bounded empirical profile을 써서 레이더 점수에 최대 `±6점`까지만 보정하고, `yfinance_client`는 lazy import로 유지해 import footprint와 메모리 급등 회귀를 막았습니다.
+- `/api/research/predictions`와 `/lab`은 `radar_cohorts` 요약을 함께 반환합니다. 예측 연구실 첫 화면에서 레이더 cohort 저장 건수, 기준일 수, `1D / 5D / 20D` 방향 적중률, 20D 밴드 적중률, 최근 cohort, tag breakdown, miss/hit review queue, 현재 가중 보정 방향을 같이 볼 수 있게 됐습니다.
+- `/calendar`, `/archive`, `/watchlist`, `/portfolio`, `/stock/[ticker]`, `/lab`의 버튼과 세그먼트 체계를 공용 `ui-button-*`, `ui-button-cluster`, `ui-segmented-control-responsive` 규칙으로 다시 묶었습니다. 실행 버튼과 상태 토글을 분리해 모바일에서도 줄바꿈과 비율이 무너지지 않도록 정리했습니다.
+- 회귀 테스트를 추가·갱신해 레이더 cohort 저장, 연구실 응답 계약, bounded score adjustment, market service import footprint를 고정했습니다.
+
 ## v2.60.56 - 2026-04-11
 
 - backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 quick partial 응답 뒤 `prediction_capture_service.schedule_stock_distributional_capture()`를 아예 호출하지 않습니다. 그래서 first hit이 이미 `stock_quick_detail`로 닫힌 뒤에도 distributional capture scheduling이 cold `stock_analyzer + db` import를 다시 깨우며 10초대 지연과 추가 메모리 압박을 만들던 경로를 더 보수적으로 끊었습니다.

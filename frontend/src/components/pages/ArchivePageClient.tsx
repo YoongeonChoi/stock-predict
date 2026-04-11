@@ -234,24 +234,27 @@ export default function ArchivePageClient({
               한국은행, KDI, Federal Reserve, ECB, BOJ 공식 리포트를 모아 둡니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {RESEARCH_REGIONS.map((region) => (
-              <button
-                key={region}
-                onClick={() => setResearchRegion(region)}
-                className={`${
-                  researchRegion === region
-                    ? "action-chip-primary"
-                    : "action-chip-secondary"
-                }`}
-              >
-                {REGION_LABELS[region]}
-              </button>
-            ))}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="ui-segmented-control-responsive">
+              {RESEARCH_REGIONS.map((region) => (
+                <button
+                  key={region}
+                  onClick={() => setResearchRegion(region)}
+                  className={[
+                    "ui-segmented-option",
+                    researchRegion === region && "ui-segmented-option-active",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {REGION_LABELS[region]}
+                </button>
+              ))}
+            </div>
             <button
               onClick={handleResearchRefresh}
               disabled={refreshingResearch}
-              className="ui-button-secondary px-4"
+              className="ui-button-secondary px-4 sm:shrink-0"
             >
               {refreshingResearch ? "새로고침 중..." : "기관 리포트 새로고침"}
             </button>

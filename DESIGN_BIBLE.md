@@ -120,6 +120,8 @@
 - 실행 버튼과 상태 선택 토글을 섞지 않는다
 - chip 계열은 `filter / segment / range / mode`처럼 상태를 고르는 토글에만 쓴다
 - 페이지 이동, 저장, 삭제, 새로고침, 다운로드처럼 결과를 발생시키는 CTA는 button primitive를 사용한다
+- action 버튼이 2개 이상 모이면 `ui-button-cluster`처럼 wrap 가능한 공용 row를 우선 쓰고, 모바일에서 한 줄 고집으로 폭을 밀어내지 않는다
+- 2~5개 정도의 동등한 선택지는 `ui-segmented-control-responsive`로 묶고, 모바일에서는 overflow 대신 자연스럽게 줄바꿈되게 둔다
 
 ### 3.6 Field Shell
 

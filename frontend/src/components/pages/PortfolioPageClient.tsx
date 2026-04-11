@@ -533,7 +533,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
               <h2 className="section-title">추천</h2>
               <p className="section-copy">계정 자산 요약이 늦어져도 추천 패널은 가능한 범위 안에서 따로 확인할 수 있습니다.</p>
             </div>
-            <Link href="/lab" className="action-chip-secondary">
+            <Link href="/lab" className="ui-button-secondary w-full px-4 sm:w-auto sm:shrink-0">
               검증 기준 보기
             </Link>
           </div>
@@ -813,8 +813,8 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <button onClick={() => startEdit(holding)} className="action-chip-secondary">수정</button>
-                        <button onClick={() => removeHolding(holding.id)} className="action-chip-secondary text-negative">삭제</button>
+                        <button onClick={() => startEdit(holding)} className="ui-button-secondary px-4">수정</button>
+                        <button onClick={() => removeHolding(holding.id)} className="ui-button-warning px-4">삭제</button>
                       </div>
                     </td>
                   </tr>
@@ -891,7 +891,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             <h2 className="section-title">추천</h2>
             <p className="section-copy">늘릴 종목과 방어 행동을 함께 보고, 검증 기준은 예측 연구실에서 같은 척도로 확인합니다.</p>
           </div>
-          <Link href="/lab" className="action-chip-secondary">
+          <Link href="/lab" className="ui-button-secondary w-full px-4 sm:w-auto sm:shrink-0">
             검증 기준 보기
           </Link>
         </div>

@@ -27,6 +27,59 @@ def _sample_price_history(days: int = 25) -> list[dict]:
     return rows
 
 
+def _sample_radar_summary() -> dict:
+    return {
+        "stored_snapshots": 10,
+        "capture_days": 2,
+        "latest_reference_date": "2026-04-07",
+        "last_evaluated_at": "2026-04-08T15:30:00",
+        "direction_accuracy_1d": 0.6,
+        "direction_accuracy_5d": 0.5,
+        "direction_accuracy_20d": 0.4,
+        "band_hit_rate_20d": 0.3,
+        "avg_return_pct_5d": 1.2,
+        "avg_return_pct_20d": 2.4,
+        "pending_20d": 4,
+        "tag_breakdown": [{"label": "모멘텀", "count": 4}],
+        "recent_cohorts": [
+            {
+                "reference_date": "2026-04-07",
+                "capture_count": 10,
+                "evaluated_count": 6,
+                "pending_count": 4,
+                "direction_accuracy_1d": 0.6,
+                "direction_accuracy_5d": 0.5,
+                "direction_accuracy_20d": 0.4,
+                "band_hit_rate_20d": 0.3,
+                "avg_return_pct_20d": 2.4,
+                "top_symbols": ["005930.KS", "000660.KS"],
+            }
+        ],
+        "review_queue": [
+            {
+                "reference_date": "2026-04-07",
+                "symbol": "005930.KS",
+                "name": "Samsung Electronics",
+                "rank": 1,
+                "kind": "clean-hit",
+                "summary": "20거래일 방향과 밴드를 함께 맞췄습니다.",
+                "detail": "모멘텀과 수급이 같이 받쳐 준 사례입니다.",
+                "return_pct_20d": 3.2,
+                "direction_hit_20d": True,
+                "within_band_20d": True,
+            }
+        ],
+        "profile": {
+            "status": "active",
+            "sample_count": 28,
+            "baseline_success_score": 0.58,
+            "updated_at": "2026-04-08T15:30:00",
+            "top_positive": [{"key": "tag_momentum", "label": "모멘텀", "delta": 0.05}],
+            "top_negative": [{"key": "support_data_quality_weak", "label": "데이터 품질 약함", "delta": -0.03}],
+        },
+    }
+
+
 class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
     def test_validate_portfolio_holding_input_normalizes_local_tickers(self):
         kr = portfolio_service.validate_portfolio_holding_input(
@@ -513,6 +566,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     },
                 ],
             ),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
@@ -539,6 +596,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["pipeline_health"]["backfill_updated_reports"], 1)
         self.assertEqual(result["coverage_breakdown"]["by_scope"][0]["label"], "stock")
         self.assertEqual(result["coverage_breakdown"]["by_prediction_type"][1]["label"], "distributional_5d")
+        self.assertEqual(result["radar_cohorts"]["recent_cohorts"][0]["reference_date"], "2026-04-07")
         self.assertTrue(any(item["key"] == "evaluation_delay" for item in result["pipeline_alerts"]))
 
     async def test_prediction_lab_uses_runtime_summary_when_recent_query_times_out(self):
@@ -609,6 +667,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             ),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
@@ -657,6 +719,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
             patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
             patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
 
@@ -701,6 +767,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
             patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
             patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
 

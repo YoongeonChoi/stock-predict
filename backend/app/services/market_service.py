@@ -25,6 +25,7 @@ from app.models.market import (
 )
 from app.models.stock import PricePoint, TechnicalIndicators
 from app.scoring.selection import regime_alignment_score, score_selection_candidate
+from app.services import opportunity_radar_lab_service
 from app.services.market.fallbacks import (
     build_placeholder_market_regime as _build_placeholder_market_regime,
     regime_tailwind_label as _regime_tailwind_label,
@@ -1445,7 +1446,24 @@ async def get_market_opportunities(
                     + max(_clip(valuation_gap, -20.0, 20.0), 0.0) * 0.12
                 ),
             )
-            opportunity_score = _safe_float(selection.score, 0.0)
+            base_opportunity_score = _safe_float(selection.score, 0.0)
+            support_snapshot = {
+                "confidence_20d": distribution_confidence_20d,
+                "probability_edge_20d": signal_profile["probability_edge"],
+                "regime_support_20d": regime_support_20d,
+                "analog_support_20d": analog_support_20d,
+                "data_quality_support_20d": data_quality_support_20d,
+                "risk_reward_estimate": trade_plan.risk_reward_estimate,
+                "action": trade_plan.action,
+                "execution_bias": forecast.execution_bias,
+            }
+            score_adjustment = opportunity_radar_lab_service.adjust_opportunity_score(
+                base_score=base_opportunity_score,
+                thesis=trade_plan.thesis,
+                sector=sector,
+                support_snapshot=support_snapshot,
+            )
+            opportunity_score = _safe_float(score_adjustment.get("adjusted_score"), base_opportunity_score)
             price_q25_value = _safe_optional_round(price_q25_20d, 2)
             price_q50_value = _safe_optional_round(price_q50_20d, 2)
             price_q75_value = _safe_optional_round(price_q75_20d, 2)
@@ -1468,6 +1486,9 @@ async def get_market_opportunities(
                 current_price=_safe_round(current_price, 2),
                 change_pct=_safe_round(change_pct, 2),
                 opportunity_score=opportunity_score,
+                base_opportunity_score=_safe_round(base_opportunity_score, 1),
+                empirical_adjustment_points=_safe_optional_round(score_adjustment.get("adjustment_points"), 2),
+                empirical_adjustment_reason=score_adjustment.get("reason"),
                 quant_score=_safe_round(quant_score.total, 1),
                 up_probability=_safe_round(up_probability_20d, 1),
                 confidence=_safe_round(distribution_confidence_20d, 1),

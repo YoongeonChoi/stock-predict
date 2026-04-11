@@ -7,7 +7,7 @@ from datetime import datetime
 from app.data import cache
 from app.data import yfinance_client
 from app.database import db
-from app.services import prediction_capture_service
+from app.services import opportunity_radar_lab_service, prediction_capture_service
 PREDICTION_ACCURACY_CACHE_TTL_SECONDS = 300
 PREDICTION_ACCURACY_WAIT_TIMEOUT_SECONDS = 2.0
 PREDICTION_ACCURACY_REFRESH_TIMEOUT_SECONDS = 8.0
@@ -121,6 +121,20 @@ async def refresh_prediction_accuracy(limit: int = 200) -> dict:
         await confidence_calibration_service.refresh_empirical_profiles()
         calibration_refreshed = True
 
+    radar_result = {
+        "updated_rows": 0,
+        "evaluated_rows": 0,
+        "partial_rows": 0,
+        "fetch_errors": 0,
+        "profile_status": "insufficient",
+        "profile_sample_count": 0,
+    }
+    radar_error_count = 0
+    try:
+        radar_result = await opportunity_radar_lab_service.refresh_opportunity_radar_accuracy(limit=limit)
+    except Exception:
+        radar_error_count = 1
+
     return {
         "checked_at": datetime.now().isoformat(),
         "due_pending_count": len(pending),
@@ -128,6 +142,13 @@ async def refresh_prediction_accuracy(limit: int = 200) -> dict:
         "unmatched_count": unmatched_count,
         "error_count": error_count,
         "calibration_refreshed": calibration_refreshed,
+        "radar_updated_rows": int(radar_result.get("updated_rows") or 0),
+        "radar_evaluated_rows": int(radar_result.get("evaluated_rows") or 0),
+        "radar_partial_rows": int(radar_result.get("partial_rows") or 0),
+        "radar_fetch_errors": int(radar_result.get("fetch_errors") or 0),
+        "radar_profile_status": radar_result.get("profile_status"),
+        "radar_profile_sample_count": int(radar_result.get("profile_sample_count") or 0),
+        "radar_error_count": radar_error_count,
     }
 
 

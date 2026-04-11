@@ -499,6 +499,31 @@ textarea:focus-visible {
   color: white;
 }
 
+.ui-segmented-control-responsive {
+  display: grid;
+  width: min(100%, 28rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(5.8rem, 100%), 1fr));
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, var(--surface));
+  padding: 0.35rem;
+}
+
+.ui-button-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, var(--surface));
+  padding: 0.3rem;
+}
+
+.ui-button-cluster > * {
+  flex: 1 1 auto;
+}
+
 .metric-strip,
 .metric-card {
   min-width: 0;
@@ -759,6 +784,11 @@ textarea:focus-visible {
   .ui-segmented-control {
     gap: 0.3rem;
     padding: 0.3rem;
+  }
+
+  .ui-segmented-control-responsive,
+  .ui-button-cluster {
+    width: 100%;
   }
 }
 

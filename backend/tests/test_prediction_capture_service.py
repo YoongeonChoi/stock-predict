@@ -41,7 +41,13 @@ class PredictionCaptureServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("app.services.prediction_capture_service.db.prediction_upsert", new=AsyncMock()) as prediction_upsert:
+        with (
+            patch("app.services.prediction_capture_service.db.prediction_upsert", new=AsyncMock()) as prediction_upsert,
+            patch(
+                "app.services.prediction_capture_service.opportunity_radar_lab_service.capture_opportunity_radar_snapshot",
+                new=AsyncMock(return_value={"captured_snapshots": 1, "reference_date": "2026-04-07"}),
+            ) as capture_snapshot,
+        ):
             result = await prediction_capture_service.capture_market_opportunity_predictions(
                 "KR",
                 payload,
@@ -50,9 +56,12 @@ class PredictionCaptureServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["captured_predictions"], 2)
         self.assertEqual(result["captured_focus"], 1)
         self.assertEqual(result["captured_opportunities"], 1)
+        self.assertEqual(result["captured_snapshots"], 1)
+        self.assertEqual(result["radar_snapshot_reference_date"], "2026-04-07")
         self.assertEqual(prediction_upsert.await_count, 2)
         self.assertEqual(prediction_upsert.await_args_list[0].kwargs["prediction_type"], "next_day")
         self.assertEqual(prediction_upsert.await_args_list[1].kwargs["prediction_type"], "distributional_20d")
+        capture_snapshot.assert_awaited_once()
 
     async def test_backfill_recent_archive_predictions_only_writes_missing_rows(self):
         archive_rows = [

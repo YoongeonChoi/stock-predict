@@ -61,6 +61,48 @@ class DeployedSiteSmokeTests(unittest.TestCase):
                     deadline=time.monotonic() - 1,
                 )
 
+    def test_summarize_api_payload_includes_partial_and_memory_diagnostics(self):
+        check = deployed_smoke.ApiSmokeCheck(name="diagnostics", method="GET", path="/api/diagnostics")
+        payload = {
+            "partial": True,
+            "fallback_reason": "stock_quick_detail",
+            "memory_diagnostics": {
+                "rss_mb": 207.61,
+                "cgroup_current_mb": 232.69,
+                "pressure_ratio": 0.4545,
+                "pressure_state": "ok",
+            },
+        }
+
+        summary = deployed_smoke.summarize_api_payload(check, payload)
+
+        self.assertIn("partial=True", summary)
+        self.assertIn("fallback=stock_quick_detail", summary)
+        self.assertIn("rss=207.61MB", summary)
+        self.assertIn("cgroup=232.69MB", summary)
+        self.assertIn("pressure=0.4545", summary)
+        self.assertIn("state=ok", summary)
+
+    def test_main_success_output_includes_elapsed_and_payload_summary(self):
+        check = deployed_smoke.ApiSmokeCheck(name="stock-detail", method="GET", path="/api/stock/003670/detail")
+        body = '{"partial": true, "fallback_reason": "stock_quick_detail"}'
+
+        with (
+            patch.object(deployed_smoke, "build_api_checks", return_value=[(check, "https://api.example.com/api/stock/003670/detail")]),
+            patch.object(deployed_smoke, "build_frontend_checks", return_value=[]),
+            patch.object(deployed_smoke, "fetch_with_retry", return_value=(200, body, {})),
+            patch.object(deployed_smoke.time, "monotonic", side_effect=[100.0, 100.25]),
+            patch("builtins.print") as print_mock,
+        ):
+            exit_code = deployed_smoke.main([])
+
+        self.assertEqual(exit_code, 0)
+        printed = " ".join(" ".join(str(arg) for arg in call.args) for call in print_mock.call_args_list)
+        self.assertIn("stock-detail", printed)
+        self.assertIn("in 0.25s", printed)
+        self.assertIn("partial=True", printed)
+        self.assertIn("fallback=stock_quick_detail", printed)
+
     def test_main_fail_fast_stops_after_first_api_failure(self):
         first = deployed_smoke.ApiSmokeCheck(name="health", method="GET", path="/api/health")
         second = deployed_smoke.ApiSmokeCheck(name="countries", method="GET", path="/api/countries")

@@ -315,6 +315,9 @@ export interface PortfolioModelItem {
   model_score: number;
   action: "new" | "add" | "hold" | "trim" | "exit" | "watch";
   priority: "high" | "medium" | "low";
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   target_horizon_days?: number | null;
   target_date_20d?: string | null;
   expected_return_pct_20d?: number | null;
@@ -410,6 +413,9 @@ export interface PortfolioRecommendationItem {
   delta_weight_pct: number;
   model_score: number;
   opportunity_score: number;
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   target_horizon_days?: number | null;
   target_date_20d?: string | null;
   expected_return_pct_20d?: number | null;
@@ -510,6 +516,9 @@ export interface DailyIdealPortfolioPosition {
   target_weight_pct: number;
   selection_score: number;
   opportunity_score: number;
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   expected_return_pct_20d?: number | null;
   expected_excess_return_pct_20d?: number | null;
   median_return_pct_20d?: number | null;
@@ -818,6 +827,64 @@ export interface PredictionLabReviewItem {
   stock_path?: string | null;
 }
 
+export interface PredictionLabRadarTagStat {
+  label: string;
+  count: number;
+}
+
+export interface PredictionLabRadarCohort {
+  reference_date: string;
+  capture_count: number;
+  evaluated_count: number;
+  pending_count: number;
+  direction_accuracy_1d: number;
+  direction_accuracy_5d: number;
+  direction_accuracy_20d: number;
+  band_hit_rate_20d: number;
+  avg_return_pct_20d: number;
+  top_symbols: string[];
+}
+
+export interface PredictionLabRadarReviewItem {
+  reference_date: string;
+  symbol: string;
+  name: string;
+  rank: number;
+  kind: string;
+  summary: string;
+  detail: string;
+  return_pct_20d: number;
+  direction_hit_20d?: boolean | null;
+  within_band_20d?: boolean | null;
+}
+
+export interface PredictionLabRadarProfile {
+  status: string;
+  sample_count: number;
+  baseline_success_score?: number | null;
+  updated_at?: string | null;
+  top_positive: Array<{ key: string; label: string; delta: number }>;
+  top_negative: Array<{ key: string; label: string; delta: number }>;
+}
+
+export interface PredictionLabRadarSummary {
+  stored_snapshots: number;
+  capture_days: number;
+  latest_reference_date?: string | null;
+  last_evaluated_at?: string | null;
+  direction_accuracy_1d: number;
+  direction_accuracy_5d: number;
+  direction_accuracy_20d: number;
+  band_hit_rate_20d: number;
+  avg_return_pct_5d: number;
+  avg_return_pct_20d: number;
+  pending_20d: number;
+  tag_breakdown: PredictionLabRadarTagStat[];
+  recent_cohorts: PredictionLabRadarCohort[];
+  review_queue: PredictionLabRadarReviewItem[];
+  profile: PredictionLabRadarProfile;
+}
+
 export interface PredictionLabResponse {
   generated_at: string;
   partial?: boolean;
@@ -954,6 +1021,7 @@ export interface PredictionLabResponse {
       status: string;
     }[];
   };
+  radar_cohorts?: PredictionLabRadarSummary;
   calibration: PredictionCalibrationBucket[];
   recent_trend: PredictionTrendPoint[];
   recent_records: (PredictionRecentRecord & {

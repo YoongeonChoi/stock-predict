@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from app.analysis.stock_analyzer import analyze_stock
 from app.database import db
 from app.runtime import get_or_create_background_job
+from app.services import opportunity_radar_lab_service
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ MULTI_HORIZON_PREDICTION_TYPES = {
     5: "distributional_5d",
     20: "distributional_20d",
 }
-OPPORTUNITY_CAPTURE_LIMIT = 6
+OPPORTUNITY_CAPTURE_LIMIT = 10
 ARCHIVE_BACKFILL_LIMIT = 25
 _stock_capture_semaphore: asyncio.Semaphore | None = None
 
@@ -258,7 +259,13 @@ async def capture_market_opportunity_predictions(
     limit: int = OPPORTUNITY_CAPTURE_LIMIT,
 ) -> dict:
     if not isinstance(payload, dict):
-        return {"captured_predictions": 0, "captured_focus": 0, "captured_opportunities": 0}
+        return {
+            "captured_predictions": 0,
+            "captured_focus": 0,
+            "captured_opportunities": 0,
+            "captured_snapshots": 0,
+            "radar_snapshot_reference_date": None,
+        }
 
     captured_focus = 0
     if isinstance(payload.get("next_day_focus"), dict):
@@ -266,10 +273,17 @@ async def capture_market_opportunity_predictions(
 
     rows = _build_opportunity_prediction_rows(country_code, payload, limit)
     captured_opportunities = await _upsert_prediction_rows(rows)
+    snapshot_result = await opportunity_radar_lab_service.capture_opportunity_radar_snapshot(
+        country_code,
+        payload,
+        limit=limit,
+    )
     return {
         "captured_predictions": captured_focus + captured_opportunities,
         "captured_focus": captured_focus,
         "captured_opportunities": captured_opportunities,
+        "captured_snapshots": int(snapshot_result.get("captured_snapshots") or 0),
+        "radar_snapshot_reference_date": snapshot_result.get("reference_date"),
     }
 
 
