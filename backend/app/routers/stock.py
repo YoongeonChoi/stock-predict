@@ -485,6 +485,12 @@ async def _run_timed_stock_analysis(ticker: str, *, timeout_seconds: float, labe
 
 
 async def _try_schedule_distributional_capture(ticker: str) -> bool:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        logger.info(
+            "Skipping stock distributional capture for %s because Render safe mode keeps public stock detail side effects off.",
+            ticker,
+        )
+        return False
     if _should_skip_public_side_effects():
         logger.info("Skipping stock distributional capture for %s because Render memory pressure is high.", ticker)
         return False

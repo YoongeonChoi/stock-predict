@@ -498,6 +498,27 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
 
+    def test_stock_detail_safe_mode_skips_distributional_capture_even_for_quick_partial(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service", new=SimpleNamespace(schedule_stock_distributional_capture=AsyncMock(side_effect=AssertionError("distributional capture should be skipped in safe mode")))),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock(return_value=False)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertEqual(payload["errors"], [])
+
     def test_stock_detail_memory_guard_shell_does_not_wait_for_slow_cache_write(self):
         async def _slow_cache_set(*args, **kwargs):
             await asyncio.sleep(0.2)

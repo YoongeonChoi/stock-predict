@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.56 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 quick partial 응답 뒤 `prediction_capture_service.schedule_stock_distributional_capture()`를 아예 호출하지 않습니다. 그래서 first hit이 이미 `stock_quick_detail`로 닫힌 뒤에도 distributional capture scheduling이 cold `stock_analyzer + db` import를 다시 깨우며 10초대 지연과 추가 메모리 압박을 만들던 경로를 더 보수적으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode quick partial이 distributional capture scheduling 자체를 건너뛰는 회귀를 추가했습니다. 앞으로는 종목 상세 quick 응답이 다시 숨은 side effect import 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.55 - 2026-04-11
 
 - backend `/api/country/KR/heatmap`는 이제 Render `startup_memory_safe_mode`에서 `yfinance_client`가 아직 cold import 상태면 live heatmap build를 시작하지 않고, 현재 cache/last-success만 확인한 뒤 그것도 없으면 `heatmap_cold_import_guard` shell로 바로 복귀합니다. 그래서 heatmap first hit 하나만으로 `yfinance` 스택을 새로 깨우며 워커 메모리를 다시 `470MB+` critical band까지 밀어 올리던 경로를 더 보수적으로 막았습니다.
