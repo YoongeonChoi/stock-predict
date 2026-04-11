@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.21 - 2026-04-11
+
+- 공개 `stock detail`의 cached full/quick lookup 경로를 import-light로 다시 정리했습니다. 이제 라우터가 `stock_analyzer` 전체를 import하기 전에 cache key를 직접 읽어 cached/shell 응답을 먼저 만들 수 있으므로, cold 첫 요청에서 `pandas`, `ta`, 분포 엔진 적재 비용 때문에 20초 가까이 밀리던 구간을 더 줄일 수 있습니다.
+- `app.analysis.stock_cache_keys`를 분리해 stock detail cache key 버전을 분석기와 라우터가 같은 기준으로 공유하게 했습니다. key 문자열 중복을 없애면서, 빠른 cached lookup 경로가 추후 버전 변경 때도 어긋나지 않도록 고정했습니다.
+- `test_stock_router`에 경량 cached lookup 회귀를 추가해, quick/full cached 조회가 `cache.get` 직접 경로를 유지하는지 고정했습니다.
+
 ## v2.60.20 - 2026-04-11
 
 - `/api/health`는 memory-safe 모드의 pre-request memory trim 대상에서 제외했습니다. Render wake/readiness 확인은 가능한 한 가벼워야 하므로, health 요청이 `gc.collect()`/`malloc_trim()` 비용을 같이 지불하지 않도록 분리했습니다.

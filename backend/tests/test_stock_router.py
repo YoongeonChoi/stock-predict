@@ -4,6 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.analysis.stock_cache_keys import stock_detail_latest_cache_key, stock_detail_quick_cache_key
+from app.routers import stock as stock_router
 from tests.client_helpers import patched_client
 
 
@@ -60,6 +62,26 @@ def _cached_snapshot(*, partial: bool = False, fallback_reason: str | None = Non
 
 
 class StockRouterTests(unittest.TestCase):
+    def test_get_cached_stock_detail_without_refresh_uses_lightweight_cache(self):
+        cached = _cached_snapshot()
+
+        with patch("app.routers.stock.cache.get", new=AsyncMock(return_value=cached)) as cache_get:
+            result = asyncio.run(stock_router.get_cached_stock_detail("005930.KS"))
+
+        cache_get.assert_awaited_once_with(stock_detail_latest_cache_key("005930.KS"))
+        self.assertEqual(result["ticker"], "005930.KS")
+        self.assertIsNot(result, cached)
+
+    def test_get_cached_quick_stock_detail_uses_lightweight_cache(self):
+        cached = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with patch("app.routers.stock.cache.get", new=AsyncMock(return_value=cached)) as cache_get:
+            result = asyncio.run(stock_router.get_cached_quick_stock_detail("005930.KS"))
+
+        cache_get.assert_awaited_once_with(stock_detail_quick_cache_key("005930.KS"))
+        self.assertEqual(result["fallback_reason"], "stock_quick_detail")
+        self.assertIsNot(result, cached)
+
     def test_stock_detail_returns_cached_full_immediately_when_available(self):
         cached_full = _cached_snapshot()
 

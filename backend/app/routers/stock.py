@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from app.analysis.stock_cache_keys import stock_detail_latest_cache_key, stock_detail_quick_cache_key
 from app.config import get_settings
 from app.data import cache
 from app.errors import SP_3003, SP_6003, SP_2005, SP_5002, SP_5010, SP_5014, SP_5018
@@ -48,15 +49,20 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
 
 
 async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
-    from app.analysis.stock_analyzer import get_cached_quick_stock_detail as _get_cached_quick_stock_detail
-
-    return await _get_cached_quick_stock_detail(ticker)
+    cached = await cache.get(stock_detail_quick_cache_key(ticker))
+    return dict(cached) if cached else None
 
 
 async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
+    cached = await cache.get(stock_detail_latest_cache_key(ticker))
+    if not cached:
+        return None
+    if not refresh_quote:
+        return dict(cached)
+
     from app.analysis.stock_analyzer import get_cached_stock_detail as _get_cached_stock_detail
 
-    return await _get_cached_stock_detail(ticker, refresh_quote=refresh_quote)
+    return await _get_cached_stock_detail(ticker, refresh_quote=True)
 
 
 def _maybe_trim_public_route_memory(reason: str) -> None:

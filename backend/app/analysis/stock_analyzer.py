@@ -9,6 +9,11 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 
+from app.analysis.stock_cache_keys import (
+    stock_detail_cache_key,
+    stock_detail_latest_cache_key,
+    stock_detail_quick_cache_key,
+)
 from app.analysis.distributional_return_engine import (
     EventFeatures,
     build_heuristic_event_context,
@@ -55,27 +60,12 @@ from app.utils.async_tools import gather_limited
 STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS = 8.0
 EVENT_CONTEXT_TIMEOUT_SECONDS = 8.0
 STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
-STOCK_DETAIL_CACHE_VERSION = "v9"
-STOCK_DETAIL_LATEST_CACHE_VERSION = "latest-v9"
-STOCK_DETAIL_QUICK_CACHE_VERSION = "quick-v1"
 STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 5.0
 STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS = 900
 
 
-def _stock_detail_cache_key(ticker: str, prices: list[dict]) -> str:
-    return f"stock_detail:{STOCK_DETAIL_CACHE_VERSION}:{ticker}:{_latest_price_stamp(prices)}"
-
-
-def _stock_detail_latest_cache_key(ticker: str) -> str:
-    return f"stock_detail:{STOCK_DETAIL_LATEST_CACHE_VERSION}:{ticker}"
-
-
-def _stock_detail_quick_cache_key(ticker: str) -> str:
-    return f"stock_detail:{STOCK_DETAIL_QUICK_CACHE_VERSION}:{ticker}"
-
-
 async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -> dict | None:
-    cached = await cache.get(_stock_detail_latest_cache_key(ticker))
+    cached = await cache.get(stock_detail_latest_cache_key(ticker))
     if not cached:
         return None
     if not refresh_quote:
@@ -84,7 +74,7 @@ async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -
 
 
 async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
-    cached = await cache.get(_stock_detail_quick_cache_key(ticker))
+    cached = await cache.get(stock_detail_quick_cache_key(ticker))
     return dict(cached) if cached else None
 
 
@@ -230,7 +220,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
     result["key_catalysts"] = []
     result["public_summary"] = public_summary.model_dump()
     await cache.set(
-        _stock_detail_quick_cache_key(ticker),
+        stock_detail_quick_cache_key(ticker),
         result,
         min(get_settings().cache_ttl_report, STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS),
     )
@@ -247,7 +237,7 @@ async def analyze_stock(ticker: str) -> dict:
         yfinance_client.get_price_history(ticker, period="2y"),
         yfinance_client.get_price_history(COUNTRY_REGISTRY[country_code].indices[0].ticker, period="2y"),
     )
-    cache_key = _stock_detail_cache_key(ticker, prices_full)
+    cache_key = stock_detail_cache_key(ticker, prices_full)
     cached = await cache.get(cache_key)
     if cached:
         return await _refresh_cached_stock_detail(cached, ticker)
@@ -520,8 +510,8 @@ async def analyze_stock(ticker: str) -> dict:
         result["historical_pattern_warning"] = historical_error
 
     await cache.set(cache_key, result, settings.cache_ttl_report)
-    await cache.set(_stock_detail_latest_cache_key(ticker), result, settings.cache_ttl_report)
-    await cache.invalidate(_stock_detail_quick_cache_key(ticker))
+    await cache.set(stock_detail_latest_cache_key(ticker), result, settings.cache_ttl_report)
+    await cache.invalidate(stock_detail_quick_cache_key(ticker))
     return result
 
 
@@ -854,12 +844,6 @@ def _build_public_confidence_note(*, next_day_forecast, trade_plan) -> str:
     if confidence >= 55:
         return "확률 우위는 있으나 한 번에 밀어붙이기보다 분할 대응이 더 어울립니다."
     return "신뢰 우위가 충분히 크지 않아 관찰과 재확인을 우선하는 해석이 적합합니다."
-
-
-def _latest_price_stamp(prices: list[dict]) -> str:
-    if not prices:
-        return datetime.now(timezone.utc).date().isoformat()
-    return str(prices[-1].get("date") or datetime.now(timezone.utc).date().isoformat())
 
 
 def _calc_technicals(prices: list[dict]) -> TechnicalIndicators:

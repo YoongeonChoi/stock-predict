@@ -9,13 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.20`
+현재 릴리즈: `v2.60.21`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
 - `/api/health`는 Render memory-safe 모드에서도 요청 전 `gc/malloc_trim`을 건너뜁니다. readiness 확인과 wake 확인 경로가 메모리 정리 작업 때문에 추가로 느려지지 않도록 분리했습니다.
 - 공개 `country report`는 이미 archived 리포트를 찾은 경우 fallback 빌더에서 archived/opportunity 조회를 다시 반복하지 않고, stale 안내를 붙인 archived 응답을 바로 반환합니다. 운영 cold path에서 10초 이상 붙잡히던 중복 조회 가능성을 줄였습니다.
+- 공개 `stock detail`의 cached full/quick lookup은 이제 `stock_analyzer`를 import하지 않고 라우터에서 바로 cache key를 읽습니다. 그래서 `pandas`, `ta`, 분포 엔진 적재 전에 cached/shell 응답을 먼저 낼 수 있어, cold first-hit에서 20초대까지 밀리던 구간을 더 짧게 줄이는 쪽으로 맞췄습니다.
 - 공개 `stock detail` memory-guard shell은 더 이상 `yfinance` 기본 정보 조회를 시도하지 않습니다. 500MB 압박 구간에서는 외부 가격 조회를 건너뛰고 티커·기본 메타데이터 중심 최소 응답을 먼저 주어 화면 계약을 유지합니다.
 - Vercel 서버 fetch는 Render가 `hibernate-*` 503을 반환하면 한 번만 짧게 재시도한 뒤 기존 fallback 흐름으로 내려갑니다. 사용자는 wake 순간의 일시적 503을 덜 보게 되고, 그래도 실패하면 페이지 fallback이 유지됩니다.
 
