@@ -513,6 +513,10 @@ def _is_kr_market_quote_module_warm() -> bool:
     return "app.data.kr_market_quote_client" in sys.modules
 
 
+def _is_country_analysis_module_warm() -> bool:
+    return "app.analysis.country_analyzer" in sys.modules
+
+
 def _should_avoid_cold_heatmap_live_build() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
@@ -589,6 +593,22 @@ def _spawn_market_indicators_warmup(fetcher, *, cache_key: str, label: str = "Ma
         lambda task_, warm_label=label: _log_background_completion(task_, label=warm_label)
     )
     return True
+
+
+def _allow_safe_mode_country_report_warmup() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    if _should_use_startup_public_route_guard():
+        return False
+    if _should_use_ultra_fast_public_fallback():
+        return False
+    if _should_skip_public_side_effects():
+        return False
+    return _is_country_analysis_module_warm()
+
+
+def _allow_country_report_background_refresh() -> bool:
+    return _allow_public_background_refresh() or _allow_safe_mode_country_report_warmup()
 
 
 def _schedule_country_report_persist(report: dict, code: str) -> bool:
@@ -1080,7 +1100,7 @@ async def _load_latest_cached_country_report(code: str) -> dict | None:
 
 
 def _spawn_country_report_refresh(code: str) -> None:
-    if not _allow_public_background_refresh():
+    if not _allow_country_report_background_refresh():
         return
     label = f"Country report refresh for {code}"
     task, created = get_or_create_background_job(
@@ -1274,7 +1294,8 @@ async def _load_country_report_with_fallback(
     keep_background: bool,
     fallback_context: str = "public",
 ) -> tuple[dict, bool]:
-    use_background_refresh = keep_background and _allow_public_background_refresh()
+    use_background_refresh = keep_background and _allow_country_report_background_refresh()
+    use_lightweight_timeout_fallback = use_background_refresh and _allow_public_background_refresh()
     if fallback_context == "export":
         timeout_detail = "내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
         error_detail = "내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
@@ -1309,8 +1330,8 @@ async def _load_country_report_with_fallback(
                     reason="country_report_timeout",
                     error_code="SP-5018",
                     detail=timeout_detail,
-                    include_archived_report=False,
-                    include_quick_candidates=False,
+                    include_archived_report=not use_lightweight_timeout_fallback,
+                    include_quick_candidates=not use_lightweight_timeout_fallback,
                 ),
                 True,
             )
@@ -1322,8 +1343,8 @@ async def _load_country_report_with_fallback(
                     reason="country_report_error",
                     error_code=error_code,
                     detail=error_detail,
-                    include_archived_report=False,
-                    include_quick_candidates=False,
+                    include_archived_report=not use_lightweight_timeout_fallback,
+                    include_quick_candidates=not use_lightweight_timeout_fallback,
                 ),
                 True,
             )

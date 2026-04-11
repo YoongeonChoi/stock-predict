@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.15 - 2026-04-12
+
+- backend `/api/country/{code}/report`는 이제 Render `startup_memory_safe_mode`에서도 `startup_guard`가 끝났고 메모리 압박이 아주 높지 않으며 `country_analyzer`가 이미 warm된 상태라면, timeout partial 이후 background refresh를 계속 살려 둡니다. 그래서 repeated `country_report_timeout` partial이 이어지던 구간에서 최근 archived/quick fallback을 유지한 채 다음 재조회 품질이 더 빨리 회복되도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 safe-mode warm-up이 timeout fallback의 archived/quick candidate 정보를 유지하면서 background refresh task를 계속 살려 두는지 확인하는 회귀를 추가했습니다.
+
 ## v2.61.14 - 2026-04-12
 
 - backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있어도 dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 첫 요청은 가벼운 `opportunity_startup_guard` partial로 바로 닫고, 다음 재조회부터는 usable quick 후보가 더 빨리 복구될 수 있게 정리했습니다.

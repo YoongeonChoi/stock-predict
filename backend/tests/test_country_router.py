@@ -821,6 +821,48 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             release_refresh.set()
             await asyncio.wait_for(report_task, timeout=0.2)
 
+    async def test_load_country_report_with_safe_mode_warmup_keeps_background_task_and_preserves_quick_fallback(self):
+        release_refresh = asyncio.Event()
+
+        async def _slow_report():
+            await release_refresh.wait()
+            return {"country": {"code": "KR"}, "market_summary": "ready"}
+
+        fallback_payload = {
+            "country": {"code": "KR"},
+            "market_summary": "fallback",
+            "partial": True,
+            "fallback_reason": "country_report_timeout",
+            "errors": ["SP-5018"],
+        }
+        report_task = asyncio.create_task(_slow_report())
+
+        try:
+            with (
+                patch("app.routers.country._allow_public_background_refresh", return_value=False),
+                patch("app.routers.country._allow_safe_mode_country_report_warmup", return_value=True),
+                patch(
+                    "app.routers.country.get_or_create_background_job",
+                    return_value=(report_task, True),
+                ),
+                patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)) as builder,
+            ):
+                response, partial = await country._load_country_report_with_fallback(
+                    "KR",
+                    timeout_seconds=0.01,
+                    keep_background=True,
+                )
+
+            self.assertTrue(partial)
+            self.assertEqual(response["fallback_reason"], "country_report_timeout")
+            self.assertFalse(report_task.done())
+            builder.assert_awaited_once()
+            self.assertTrue(builder.await_args.kwargs["include_archived_report"])
+            self.assertTrue(builder.await_args.kwargs["include_quick_candidates"])
+        finally:
+            release_refresh.set()
+            await asyncio.wait_for(report_task, timeout=0.2)
+
 
 if __name__ == "__main__":
     unittest.main()

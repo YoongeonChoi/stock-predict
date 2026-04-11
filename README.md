@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.14`
+현재 릴리즈: `v2.61.15`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/country/{code}/report`는 이제 Render `startup_memory_safe_mode`에서도 `startup_guard` 구간이 지나고 메모리 압박이 아주 높지 않으며 분석 모듈이 이미 warm된 상태라면, timeout partial을 내린 뒤 background refresh를 계속 살려 둡니다. 그래서 첫 재시도 이후에도 `country_report_timeout` partial만 반복되던 구간에서 최근 archived/quick fallback을 유지한 채 다음 조회 품질이 더 빨리 회복되도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 safe-mode warm-up이 켜진 경우 timeout fallback이 archived/quick candidate 정보를 계속 포함하면서 background refresh task도 살아 있는지 확인하는 회귀를 추가했습니다. 앞으로는 저압박 safe mode에서 country report가 다시 “빠르게 partial만 반환하고 갱신은 멈춰 버리는” 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있더라도 즉시 placeholder만 남기지 않고, dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 배포 직후 첫 요청은 가벼운 partial로 닫되, 다음 재조회부터는 usable quick 후보가 더 빨리 살아날 수 있게 정리했습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 quick warm-up을 예약하는 경우와, memory pressure guard에서는 그 warm-up마저 시작하지 않는 회귀를 함께 추가했습니다. 앞으로는 cold start 직후 기회 레이더가 다시 placeholder만 반복하고 다음 조회 품질이 회복되지 않는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/market/indicators`가 내부적으로 사용하는 `yfinance index quote cache`도 이제 `0값 payload`를 저장하지 않습니다. 그래서 라우트 쪽 shared cache를 비웠더라도 안쪽 `index:*` 캐시에 남아 있던 stale zero 응답을 다시 재사용하던 경로까지 함께 차단했습니다.
