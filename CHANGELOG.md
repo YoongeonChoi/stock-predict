@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.10 - 2026-04-12
+
+- backend `/api/market/indicators`는 이제 `shared cache`에 `all-zero fallback` payload를 저장하지 않습니다. 그래서 배포 직후나 외부 시세 일시 지연 때 한 번 내려간 `0값 strip`이 TTL 동안 그대로 굳어 버리던 문제를 줄이고, 다음 요청에서 정상 지표를 다시 채울 수 있게 정리했습니다.
+- 같은 경로는 cache key를 `v3`로 올리고 indicator item timebox를 `0.75s -> 1.5s`로 넓혔습니다. 그래서 직전 배포에서 이미 굳어 있던 stale zero payload를 비우고, 너무 공격적인 개별 제한 때문에 정상값까지 같이 포기하던 구간을 완화했습니다.
+- `backend/app/data/cache.py`에는 fetch 결과별 `should_cache` predicate를 추가했고, `backend/tests/test_cache_and_universe.py` / `backend/tests/test_public_dashboard_timeouts.py`에 invalid payload non-cache와 market indicator zero-payload 회귀를 함께 고정했습니다.
+
 ## v2.61.9 - 2026-04-12
 
 - backend `/api/market/indicators`는 이제 `USD/KRW / Gold / Oil / Bitcoin` 각 지표 fetch를 개별 timebox로 감쌉니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않고, 늦은 항목만 `0값 fallback`으로 떨어뜨린 채 먼저 응답하도록 정리했습니다.

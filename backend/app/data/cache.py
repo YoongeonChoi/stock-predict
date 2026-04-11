@@ -206,6 +206,7 @@ async def get_or_fetch(
     *,
     wait_timeout: float | None = None,
     timeout_fallback: Callable[[], Any] | Callable[[], Awaitable[Any]] | None = None,
+    should_cache: Callable[[Any], bool] | None = None,
 ):
     cached = await get(key)
     if cached is not None:
@@ -227,7 +228,14 @@ async def get_or_fetch(
         try:
             value = await fetcher()
             if value is not None:
-                await set(key, value, ttl)
+                should_store = True
+                if should_cache is not None:
+                    try:
+                        should_store = bool(should_cache(value))
+                    except Exception:
+                        should_store = True
+                if should_store:
+                    await set(key, value, ttl)
             return value
         finally:
             _INFLIGHT_FETCHES.pop(key, None)

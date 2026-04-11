@@ -436,6 +436,42 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(usdkrw["price"], 123.4)
         self.assertEqual(usdkrw["change_pct"], 1.2)
 
+    def test_market_indicators_all_zero_payload_is_not_cached_as_shared_success(self):
+        cache_get = AsyncMock(return_value=None)
+        cache_set = AsyncMock(return_value=None)
+
+        with (
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
+            patch("app.data.cache.get", new=cache_get),
+            patch("app.data.cache.set", new=cache_set),
+            patch(
+                "app.data.yfinance_client.get_index_quote",
+                new=AsyncMock(
+                    side_effect=[
+                        {"ticker": "USDKRW=X", "price": 0.0, "change_pct": 0.0},
+                        {"ticker": "GC=F", "price": 0.0, "change_pct": 0.0},
+                        {"ticker": "CL=F", "price": 0.0, "change_pct": 0.0},
+                        {"ticker": "BTC-USD", "price": 0.0, "change_pct": 0.0},
+                    ]
+                ),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/indicators")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {"name": "USD/KRW", "price": 0.0, "change_pct": 0.0},
+                {"name": "Gold", "price": 0.0, "change_pct": 0.0},
+                {"name": "Oil (WTI)", "price": 0.0, "change_pct": 0.0},
+                {"name": "Bitcoin", "price": 0.0, "change_pct": 0.0},
+            ],
+        )
+        cache_set.assert_not_awaited()
+
     def test_daily_briefing_timeout_returns_partial_fallback(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",

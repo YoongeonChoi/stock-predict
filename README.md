@@ -9,12 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.9`
+현재 릴리즈: `v2.61.10`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
-- backend `/api/market/indicators`는 이제 `USD/KRW / Gold / Oil / Bitcoin` 각 지표 fetch를 개별 timebox로 감쌉니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않고, 늦은 항목만 `0값 fallback`으로 떨어뜨린 채 먼저 응답하도록 정리했습니다.
+- backend `/api/market/indicators`는 이제 `shared cache`에 `all-zero fallback` payload를 저장하지 않습니다. 그래서 배포 직후나 외부 시세 일시 지연 때 한 번 내려간 `0값 strip`이 5분 TTL 동안 그대로 굳어 버리던 문제를 줄이고, 다음 요청에서 정상 시세를 다시 채울 수 있게 정리했습니다.
+- backend `/api/market/indicators`의 개별 지표 fetch는 더 여유 있는 item budget 안에서 계속 timebox됩니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않으면서, 직전 패치보다 실제 정상값을 다시 복구할 가능성은 더 높였습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 개별 indicator timeout이 cancellation cleanup을 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 공개 대시보드 상단 지표가 다시 single-source stall 때문에 첫 usable 응답을 놓치는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - repo 루트에서 `python -m unittest discover -s backend/tests ...`를 바로 실행해도 `app.*` import가 깨지지 않도록 root package shim과 회귀 테스트를 추가했습니다. 이제 수동 기능 루프나 verify 보조 명령을 어느 cwd에서 실행하든 같은 방식으로 백엔드 테스트를 재현할 수 있습니다.
 

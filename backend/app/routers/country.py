@@ -51,7 +51,7 @@ MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_CACHE_TTL_SECONDS = 300
 MARKET_INDICATORS_TIMEOUT_SECONDS = 3
 MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 1.0
-MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS = 0.75
+MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS = 1.5
 MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
 HEATMAP_LAST_SUCCESS_TTL_SECONDS = 3600
 MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS = 1800
@@ -1630,7 +1630,7 @@ async def get_country_forecast(code: str):
 async def get_market_indicators():
     """Korean market indicators for the dashboard."""
     from app.data import cache as data_cache
-    cache_key = "market_indicators:v2"
+    cache_key = "market_indicators:v3"
     last_success_key = "market_indicators:last_success"
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
@@ -1675,6 +1675,7 @@ async def get_market_indicators():
         ttl=MARKET_INDICATORS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=_timeout_indicator_fallback,
+        should_cache=_market_indicators_have_values,
     )
 
 

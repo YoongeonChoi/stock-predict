@@ -82,6 +82,20 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback, {"value": 3})
         self.assertEqual(cached, {"value": 19})
 
+    async def test_get_or_fetch_can_skip_cache_write_for_invalid_payloads(self):
+        payload = {"value": 0, "valid": False}
+
+        result = await cache.get_or_fetch(
+            "unit_test:skip_invalid_cache",
+            AsyncMock(return_value=payload),
+            ttl=60,
+            should_cache=lambda item: bool(item.get("valid")),
+        )
+        cached = await cache.get("unit_test:skip_invalid_cache")
+
+        self.assertEqual(result, payload)
+        self.assertIsNone(cached)
+
     async def test_memory_cache_serves_recent_value_without_database_roundtrip(self):
         await cache.set("unit_test:memory_hot", {"value": 23}, ttl=60)
 
