@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.28`
+현재 릴리즈: `v2.60.29`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `country report`는 memory guard가 켜진 순간 `last_success` cache lookup도 먼저 시도하지 않고, 바로 초경량 fallback으로 내려갑니다. `app.data.cache`/`app.database` cold import와 SQLite bootstrap이 보호 모드의 첫 응답 자체를 늦출 수 있는 경로를 잘라, 메모리 압박 구간에서는 “최근 캐시보다 first-usable 속도”를 우선하도록 순서를 고정했습니다.
+- `backend/tests/test_country_router.py`에는 memory guard 진입 시 `cached report lookup`까지 건너뛰는 회귀를 추가했습니다. 앞으로는 보호 응답 앞에서 다시 cache import/bootstrap을 먼저 타는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `country report` memory-guard fallback은 이제 `countries` cache 조회와 `fear_greed`/`country score` helper를 아예 건너뛰고, 초경량 중립 payload를 바로 반환합니다. 최근 배포에서 메모리는 `500MB` 한도 안으로 안정됐지만 `country_report_memory_guard` 자체가 10초 안팎으로 늦게 닫히던 구간을 더 짧게 줄이는 방향으로 정리했습니다.
 - `backend/tests/test_country_router.py`에는 memory-guard fallback이 archived/quick candidate lookup뿐 아니라 `countries` cache lookup과 scoring helper까지 호출하지 않는 회귀를 추가했습니다. 앞으로는 보호 응답이 다시 무거운 import나 cache 경로를 밟는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `country report`와 `stock detail`은 이제 응답 직전 동기 `gc/malloc_trim`을 수행하지 않고, 별도 `asyncio` background trim으로 넘깁니다. `Response.background` 경로에서 배포 런타임이 `No response returned` 500으로 깨지지 않도록 수정하면서도, Render `500MB` 보호 구간에서 fallback/cached 응답이 마지막 메모리 정리 때문에 더 늦게 닫히지 않도록 유지했습니다.

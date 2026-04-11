@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.29 - 2026-04-11
+
+- backend `country report`는 memory guard가 켜진 순간 `last_success` cache lookup도 먼저 시도하지 않고, 바로 초경량 fallback으로 내려갑니다. `app.data.cache`/`app.database` cold import와 SQLite bootstrap이 보호 모드의 첫 응답을 붙잡을 수 있는 경로를 잘라, 메모리 압박 구간에서는 최근 캐시보다 first-usable 속도를 우선하도록 순서를 고정했습니다.
+- `backend/tests/test_country_router.py`에는 memory guard 진입 시 cached report lookup까지 건너뛰는 회귀를 추가했습니다. 보호 응답 앞에서 cache import/bootstrap이 다시 선행되는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.28 - 2026-04-11
 
 - backend `country report` memory-guard fallback은 이제 `countries` cache 조회와 `fear_greed`/`country score` helper를 건너뛰고, 초경량 중립 payload를 바로 반환합니다. 메모리 보호 응답이 archived/quick lookup은 생략해도 여전히 cache import와 scoring helper 때문에 느려지던 구간을 더 줄여, `country_report_memory_guard` first-usable latency를 추가로 낮추는 방향으로 정리했습니다.

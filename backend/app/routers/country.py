@@ -1304,15 +1304,6 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
-    cached_success = await _timed_country_lookup(
-        _load_latest_cached_country_report(code),
-        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
-        label=f"country cached report lookup {code}",
-    )
-    if cached_success:
-        _spawn_country_report_refresh(code)
-        return _build_country_success_response(cached_success, trim_reason="country_report")
-
     if _should_use_ultra_fast_public_fallback():
         report = await _build_country_report_fallback(
             code,
@@ -1323,6 +1314,15 @@ async def get_country_report(code: str):
             include_quick_candidates=False,
         )
         return _build_country_success_response(report, trim_reason="country_report")
+
+    cached_success = await _timed_country_lookup(
+        _load_latest_cached_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country cached report lookup {code}",
+    )
+    if cached_success:
+        _spawn_country_report_refresh(code)
+        return _build_country_success_response(cached_success, trim_reason="country_report")
 
     archived_report = await _timed_country_lookup(
         _load_latest_archived_country_report(code),

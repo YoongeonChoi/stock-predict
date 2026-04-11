@@ -499,7 +499,10 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
             patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
-            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country._load_latest_cached_country_report",
+                new=AsyncMock(side_effect=AssertionError("cached report lookup should be skipped")),
+            ),
             patch(
                 "app.routers.country._load_latest_archived_country_report",
                 new=AsyncMock(side_effect=AssertionError("archived lookup should be skipped")),
