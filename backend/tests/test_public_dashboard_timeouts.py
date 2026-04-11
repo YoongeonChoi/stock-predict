@@ -1,4 +1,5 @@
 import asyncio
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -17,6 +18,11 @@ async def _slow_response(*args, **kwargs):
 async def _slow_list_response(*args, **kwargs):
     await asyncio.sleep(0.05)
     return []
+
+
+async def _very_slow_response(*args, **kwargs):
+    await asyncio.sleep(0.2)
+    return {}
 
 
 async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
@@ -604,6 +610,89 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
         representative_quotes.assert_awaited_once_with(limit=20)
+        warmup.assert_called_once()
+
+    def test_screener_default_kr_path_treats_slow_cache_lookup_as_miss(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        representative_quotes = AsyncMock(
+            return_value={
+                "000001.KS": {
+                    "ticker": "000001.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
+        with (
+            patch("app.routers.screener.SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_very_slow_response)),
+            patch("app.routers.screener._spawn_screener_cache_warmup") as warmup,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=representative_quotes,
+            ),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/screener?country=KR&limit=20")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
+        self.assertLess(elapsed, 0.15)
+        representative_quotes.assert_awaited_once_with(limit=20)
+        warmup.assert_called_once()
+
+    def test_screener_default_kr_path_returns_partial_even_when_cache_persist_stalls(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        representative_quotes = AsyncMock(
+            return_value={
+                "000001.KS": {
+                    "ticker": "000001.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
+        slow_cache_set = AsyncMock(side_effect=_very_slow_response)
+        slow_persist = AsyncMock(side_effect=_very_slow_response)
+        with (
+            patch("app.routers.screener.SCREENER_CACHE_WRITE_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.routers.screener.cache.set", new=slow_cache_set),
+            patch("app.routers.screener._persist_screener_last_success", new=slow_persist),
+            patch("app.routers.screener._spawn_screener_cache_warmup") as warmup,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=representative_quotes,
+            ),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/screener?country=KR&limit=20")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
+        self.assertLess(elapsed, 0.15)
+        slow_cache_set.assert_awaited()
+        slow_persist.assert_awaited()
         warmup.assert_called_once()
 
     def test_screener_default_kr_path_falls_back_to_bulk_partial_when_representative_quotes_are_empty(self):

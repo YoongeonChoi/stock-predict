@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.41 - 2026-04-11
+
+- backend `/api/screener`는 이제 KR quick partial 경로에서 cache lookup, partial seed write, `last_success` persist를 짧게 timebox합니다. representative quote나 safe shell payload는 이미 준비됐는데도 SQLite cache I/O가 함께 늘어지면서 `/api/screener` first-usable 응답이 10초 이상 밀리던 회귀를 줄였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener`가 느린 cache lookup을 miss로 처리하고, cache persist가 막혀도 partial 응답을 먼저 반환하는 회귀를 추가했습니다. 그래서 Render cold cache/lock 구간에서 screener partial path가 다시 cache I/O까지 동기 대기하는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.40 - 2026-04-11
 
 - backend `/api/market/opportunities/{code}`는 이제 memory/startup guard 구간에서 cached full/quick 조회까지 먼저 기다리지 않고 즉시 placeholder 응답으로 내려갑니다. 그래서 Render 메모리 warning 구간에서 캐시 I/O 때문에 quick fallback조차 늦어지던 회귀를 줄였습니다.

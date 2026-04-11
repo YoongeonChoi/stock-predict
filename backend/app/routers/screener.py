@@ -16,6 +16,8 @@ kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
 PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS = 2.0
+SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+SCREENER_CACHE_WRITE_TIMEOUT_SECONDS = 0.35
 SCREENER_RESPONSE_CACHE_TTL = 600
 SCREENER_LAST_SUCCESS_TTL = 1800
 SCREENER_SAFE_MODE_SEED_TTL = 180
@@ -248,6 +250,34 @@ def _screener_last_success_key(cache_key: str) -> str:
     return f"{cache_key}:last_success"
 
 
+async def _timed_screener_cache_lookup(job, *, label: str):
+    try:
+        return await asyncio.wait_for(job, timeout=SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logging.warning(
+            "%s timed out after %.2fs; continuing as cache miss.",
+            label,
+            SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        )
+        return None
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+        return None
+
+
+async def _timed_screener_cache_write(job, *, label: str) -> None:
+    try:
+        await asyncio.wait_for(job, timeout=SCREENER_CACHE_WRITE_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logging.warning(
+            "%s timed out after %.2fs; continuing without waiting for cache persistence.",
+            label,
+            SCREENER_CACHE_WRITE_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+
+
 async def _load_screener_last_success(cache_key: str) -> dict | None:
     payload = await cache.get(_screener_last_success_key(cache_key))
     if not isinstance(payload, dict):
@@ -331,8 +361,14 @@ def _spawn_screener_cache_warmup(cache_key: str, fetcher, *, allow_safe_mode: bo
             payload = await fetcher()
             if payload is not None:
                 ttl = SCREENER_SAFE_MODE_SEED_TTL if allow_safe_mode else SCREENER_RESPONSE_CACHE_TTL
-                await cache.set(cache_key, payload, ttl)
-                await _persist_screener_last_success(cache_key, payload)
+                await _timed_screener_cache_write(
+                    cache.set(cache_key, payload, ttl),
+                    label=f"screener warmup cache write {cache_key}",
+                )
+                await _timed_screener_cache_write(
+                    _persist_screener_last_success(cache_key, payload),
+                    label=f"screener warmup last_success write {cache_key}",
+                )
         except Exception as exc:
             logging.warning("screener cache warmup failed for %s: %s", cache_key, exc)
         finally:
@@ -768,18 +804,27 @@ async def screen_stocks(
             selected_tickers = _select_candidate_tickers(current_universe, sector)
             should_use_cold_start_partial = limit > SCREENER_COLD_START_KR_CANDIDATES and len(selected_tickers) > SCREENER_COLD_START_KR_CANDIDATES
             if should_use_cold_start_partial:
-                cached_response = await cache.get(cache_key)
+                cached_response = await _timed_screener_cache_lookup(
+                    cache.get(cache_key),
+                    label=f"screener cache lookup {cache_key}",
+                )
                 if cached_response is not None:
                     _maybe_trim_public_route_memory("screener")
                     return cached_response
                 if settings.startup_memory_safe_mode:
-                    last_success_response = await _load_screener_last_success(cache_key)
+                    last_success_response = await _timed_screener_cache_lookup(
+                        _load_screener_last_success(cache_key),
+                        label=f"screener last_success lookup {cache_key}",
+                    )
                     if last_success_response is not None:
                         response = _with_screener_partial(
                             dict(last_success_response),
                             fallback_reason="kr_last_success_snapshot",
                         )
-                        await cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL)
+                        await _timed_screener_cache_write(
+                            cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+                            label=f"screener partial seed write {cache_key}",
+                        )
                         _spawn_screener_cache_warmup(
                             cache_key,
                             lambda: _build_response(
@@ -831,12 +876,18 @@ async def screen_stocks(
                         },
                         fallback_reason="kr_representative_snapshot_warming",
                     )
-                    await cache.set(
-                        cache_key,
-                        response,
-                        SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+                    await _timed_screener_cache_write(
+                        cache.set(
+                            cache_key,
+                            response,
+                            SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+                        ),
+                        label=f"screener representative cache write {cache_key}",
                     )
-                    await _persist_screener_last_success(cache_key, response)
+                    await _timed_screener_cache_write(
+                        _persist_screener_last_success(cache_key, response),
+                        label=f"screener representative last_success write {cache_key}",
+                    )
                     _spawn_screener_cache_warmup(cache_key, _build_response)
                     _maybe_trim_public_route_memory("screener")
                     return response
@@ -851,7 +902,10 @@ async def screen_stocks(
                         limit=limit,
                         fallback_reason="kr_safe_shell_warming",
                     )
-                    await cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL)
+                    await _timed_screener_cache_write(
+                        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+                        label=f"screener safe-shell cache write {cache_key}",
+                    )
                     _spawn_screener_cache_warmup(
                         cache_key,
                         lambda: _build_response(
@@ -894,12 +948,18 @@ async def screen_stocks(
         return response
 
     if use_direct_kr_quick_path:
-        await cache.set(
-            cache_key,
-            response,
-            SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+        await _timed_screener_cache_write(
+            cache.set(
+                cache_key,
+                response,
+                SCREENER_SAFE_MODE_SEED_TTL if settings.startup_memory_safe_mode else SCREENER_RESPONSE_CACHE_TTL,
+            ),
+            label=f"screener final cache write {cache_key}",
         )
         if response.get("fallback_reason") != "kr_safe_shell_warming":
-            await _persist_screener_last_success(cache_key, response)
+            await _timed_screener_cache_write(
+                _persist_screener_last_success(cache_key, response),
+                label=f"screener final last_success write {cache_key}",
+            )
     _maybe_trim_public_route_memory("screener")
     return response
