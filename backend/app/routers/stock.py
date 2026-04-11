@@ -400,6 +400,7 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
             f"stock_detail:quick-v1:{ticker}",
             payload,
             ttl=min(get_settings().cache_ttl_report, 120),
+            persist=False,
         ),
         label=f"stock guard-shell cache write {ticker}",
     )

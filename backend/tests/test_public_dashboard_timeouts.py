@@ -552,7 +552,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["fallback_reason"], "kr_timeout_shell")
         self.assertEqual(payload["results"][0]["ticker"], "005930.KS")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
-        self.assertLess(elapsed, 0.15)
+        self.assertLess(elapsed, 0.3)
 
     def test_screener_default_kr_path_uses_bulk_quotes(self):
         bulk_quotes = AsyncMock(

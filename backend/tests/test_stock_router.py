@@ -546,6 +546,8 @@ class StockRouterTests(unittest.TestCase):
         async def _slow_cache_set(*args, **kwargs):
             await asyncio.sleep(0.2)
 
+        cache_set = AsyncMock(side_effect=_slow_cache_set)
+
         with (
             patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
             patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
@@ -556,7 +558,7 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
             patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
-            patch("app.routers.stock.cache.set", new=AsyncMock(side_effect=_slow_cache_set)),
+            patch("app.routers.stock.cache.set", new=cache_set),
         ):
             started_at = time.perf_counter()
             with patched_client() as client:
@@ -568,6 +570,7 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
         self.assertLess(elapsed, 0.08)
+        self.assertFalse(cache_set.await_args.kwargs["persist"])
 
     def test_stock_detail_returns_minimal_shell_when_quick_and_full_fail_without_cache(self):
         with (

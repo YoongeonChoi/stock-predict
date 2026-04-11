@@ -175,9 +175,11 @@ async def get(key: str):
     return await db.cache_get(key)
 
 
-async def set(key: str, value, ttl: int | None = None):
+async def set(key: str, value, ttl: int | None = None, *, persist: bool = True):
     ttl = ttl or get_settings().cache_ttl_price
     _memory_set(key, value, ttl)
+    if not persist:
+        return
     await db.cache_set(key, value, ttl)
 
 

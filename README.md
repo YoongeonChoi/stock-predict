@@ -9,17 +9,19 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.4`
+현재 릴리즈: `v2.61.5`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/stock/{ticker}/detail`의 `stock_memory_guard` shell은 이제 quick cache seed를 메모리에만 남기고 SQLite persistent cache write는 건너뜁니다. 그래서 Render safe mode의 cold first-hit이 이미 가벼운 partial 응답으로 끝났는데도 background-safe shell write가 로컬 DB I/O에 붙잡혀 수십 초까지 늘어지는 경로를 더 짧게 끊었습니다.
 - backend `/api/country/{code}/report`의 public 정밀 대기 budget을 `8초 -> 5초`로 더 낮췄습니다. 최근 정상 캐시와 archived report가 없더라도, 공개 첫 진입은 더 빨리 `country_report_timeout` partial로 닫고 background refresh를 이어 가도록 조정해 운영 smoke 기준 10초 안팎까지 늘어지던 국가 리포트 첫 usable 응답을 더 짧게 줄이는 방향으로 맞췄습니다.
 - `scripts/deployed_site_smoke.py`는 이제 성공 시간에 재시도 누적과 마지막 성공 시도를 함께 표시합니다. 그래서 이후 루프에서는 “정말 한 번의 응답이 느린지”와 “첫 시도가 실패한 뒤 재시도로 회복됐는지”를 시간을 섞지 않고 바로 읽을 수 있습니다.
 - backend `/api/country/{code}/report`는 이제 공개 timeout fallback이 이미 확인한 archived report/quick 후보 조회를 다시 반복하지 않습니다. 최근 정상 캐시와 아카이브를 먼저 확인한 뒤에도 정밀 계산이 늦으면, 응답 경로에서는 더 가벼운 `country_report_timeout` shell을 바로 반환하고 background refresh만 계속 유지해 partial 응답이 10초대까지 다시 늘어지는 구간을 줄였습니다.
 - `backend/tests/test_country_router.py`에는 background refresh를 유지한 public timeout fallback이 lightweight 경로로 바로 내려가는 회귀를 추가했습니다. 앞으로는 국가 리포트 timeout 응답이 다시 archived/quick fallback 재조회까지 끌고 가며 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/stock/{ticker}/detail`는 이제 Render safe mode에서 full/quick cache가 모두 비어 있는 첫 공개 진입일 때 quick 빌더를 응답 경로에서 기다리지 않습니다. 기본 경로는 즉시 `stock_memory_guard` shell을 보여 주고, quick snapshot warm은 백그라운드에서 따로 진행해 배포 직후 cold-hit 한 번 때문에 15초 timeout까지 밀리는 구간을 줄였습니다.
 - `backend/tests/test_stock_router.py`에는 safe mode cache miss가 `stock_memory_guard`를 바로 반환하면서 quick warm 스케줄만 남기는 회귀를 추가했습니다. 앞으로는 public stock detail 첫 진입이 다시 quick builder I/O에 붙잡혀 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- `backend/tests/test_stock_router.py`에는 `stock_memory_guard` shell cache seed가 persistent DB cache write 없이 메모리 seed만 남기는 회귀도 추가했습니다. 앞으로는 safe mode 보호 응답이 다시 SQLite cache I/O 때문에 오래 붙잡히는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/research/predictions`와 `/lab`의 기본 진입(`refresh=false`)은 이제 적중률 재계산과 due prediction backfill을 응답 경로에서 기다리지 않고 백그라운드 유지보수 작업으로 넘깁니다. 그래서 첫 진입이 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추는 대신, 현재 준비된 연구실 데이터를 즉시 보여 주고 후속 보강은 뒤에서 이어가도록 정리했습니다.
 - `backend/tests/test_research_and_portfolio.py`에는 prediction lab 기본 진입이 background maintenance를 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 `/lab` 첫 화면이 다시 accuracy refresh/backfill 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - `기회 레이더` 상위 10개 후보를 기준일마다 별도 cohort로 저장하고, `/lab`에서 `1D / 5D / 20D` 방향 적중률, 20거래일 밴드 적중률, 최근 miss/hit 복기, tag별 분해를 함께 보도록 확장했습니다.

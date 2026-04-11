@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.5 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 `stock_memory_guard` shell은 이제 quick cache seed를 메모리에만 남기고 SQLite persistent cache write는 건너뜁니다. 그래서 Render safe mode의 cold first-hit이 이미 가벼운 partial 응답으로 끝났는데도 보호용 shell cache write가 로컬 DB I/O에 붙잡혀 수십 초까지 늘어지는 경로를 더 짧게 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode의 `stock_memory_guard` shell cache seed가 persistent cache write 없이 끝나는 회귀를 추가했습니다. 앞으로는 종목 상세 보호 응답이 다시 SQLite cache write 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.4 - 2026-04-12
 
 - backend `/api/country/{code}/report`의 public 정밀 대기 budget을 `8초 -> 5초`로 더 낮췄습니다. 최근 정상 캐시와 archived report가 없는 경우에도 공개 첫 진입은 더 빨리 `country_report_timeout` partial로 닫고 background refresh를 이어 가게 조정해, 운영 smoke 기준 10초 안팎까지 늘어지던 국가 리포트 첫 usable 응답을 더 짧게 줄였습니다.
