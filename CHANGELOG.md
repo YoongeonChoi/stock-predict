@@ -4,6 +4,11 @@ All notable changes to this project are tracked here.
 
 ## v2.61.23 - 2026-04-12
 
+## v2.61.25 - 2026-04-12
+
+- Render memory-safe 운영의 `/api/country/KR/report`는 이제 background refresh 허용 여부와 관계없이 safe-mode 공개 timeout budget을 짧게 유지합니다. 그래서 일부 요청만 2초 안쪽으로 줄고 다른 요청은 다시 5~8초로 튀던 편차를 줄이고, country report partial 응답 latency를 더 일관되게 낮추도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 background refresh가 꺼진 경우에도 safe-mode 단축 timeout budget이 유지되는 회귀를 추가했습니다.
+
 ## v2.61.24 - 2026-04-12
 
 - Render memory-safe 운영에서 `/api/country/KR/report`는 이제 cached/archived 리포트가 아직 없더라도, background refresh를 유지할 수 있는 safe-mode 구간이면 공개 timeout budget을 더 짧게 사용합니다. 그래서 cold/full 계산이 매번 5초를 다 쓰고 `country_report_timeout` partial로 떨어지던 구간을 줄이고, 첫 응답 latency를 더 빨리 partial로 닫으면서 다음 조회를 위한 background warm-up은 그대로 살리도록 정리했습니다.

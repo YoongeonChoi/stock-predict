@@ -518,7 +518,7 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(loader.await_args.kwargs["timeout_seconds"], country.COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS)
         self.assertTrue(loader.await_args.kwargs["keep_background"])
 
-    async def test_get_country_report_uses_shorter_safe_mode_timeout_when_background_refresh_can_continue(self):
+    async def test_get_country_report_uses_shorter_safe_mode_timeout_even_when_background_refresh_is_unavailable(self):
         report = {
             "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
             "market_summary": "summary",
@@ -536,7 +536,7 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
             patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
             patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
-            patch("app.routers.country._allow_country_report_background_refresh", return_value=True),
+            patch("app.routers.country._allow_country_report_background_refresh", return_value=False),
             patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
             patch("app.routers.country._load_latest_archived_country_report", new=AsyncMock(return_value=None)),
             patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(return_value=(report, False))) as loader,

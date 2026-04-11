@@ -676,14 +676,12 @@ def _allow_country_report_background_refresh() -> bool:
 
 
 def _resolve_country_report_public_timeout_seconds() -> float:
-    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
-        return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
-    if not _allow_country_report_background_refresh():
-        return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
-    return min(
-        COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
-        COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS,
-    )
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(
+            COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
+            COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS,
+        )
+    return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
 
 
 def _schedule_country_report_persist(report: dict, code: str) -> bool:
