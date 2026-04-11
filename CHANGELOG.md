@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.27 - 2026-04-12
+
+- backend `country` startup guard 조기 해제는 이제 `public_dashboard_prewarm=ok` 이후 메모리 pressure가 임계값 바로 근처에서 흔들릴 때 작은 jitter 완충 구간을 둡니다. 그래서 `/api/country/KR/heatmap`과 `/api/market/opportunities/KR`가 같은 배포 인스턴스에서 `startup_guard`와 live fallback 사이를 번갈아 오가던 플래핑을 줄이고, 첫 usable 응답이 더 일관되게 유지되도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 조기 해제 pressure 임계값 바로 위의 작은 jitter에서도 startup guard가 계속 풀리는 회귀를 추가했습니다.
+
 ## v2.61.26 - 2026-04-12
 
 - Render memory-safe 운영의 `/api/country/KR/heatmap`은 이제 safe-mode에서 shared cache `wait_timeout`과 KR 대표 시세 fallback timeout을 함께 더 짧게 사용합니다. 그래서 partial 응답이 기본 2.5초 대기를 거의 다 쓰고 3초대로 밀리던 구간을 줄이고, usable heatmap fallback을 더 빨리 반환하면서 백그라운드 캐시 복구는 그대로 유지하도록 정리했습니다.

@@ -48,6 +48,26 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertTrue(country._should_use_startup_public_route_guard())
 
+    async def test_startup_guard_releases_with_small_pressure_jitter_after_prewarm(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS + 15)
+                    ).isoformat(),
+                    "startup_tasks": [{"name": "public_dashboard_prewarm", "status": "ok"}],
+                },
+            ),
+            patch(
+                "app.routers.country._public_memory_pressure_ratio",
+                return_value=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO + 0.0002,
+            ),
+        ):
+            self.assertFalse(country._should_use_startup_public_route_guard())
+
     async def test_build_country_success_response_defers_memory_trim_until_background_task(self):
         payload = {"country": {"code": "KR"}, "market_summary": "ok"}
 

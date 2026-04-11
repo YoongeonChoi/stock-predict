@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.26`
+현재 릴리즈: `v2.61.27`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `country` startup guard 조기 해제는 이제 `public_dashboard_prewarm=ok` 이후 메모리 pressure가 임계값 바로 위아래에서 소수점 단위로 흔들릴 때도 작은 jitter 완충 구간을 둡니다. 그래서 `/api/country/KR/heatmap`과 `/api/market/opportunities/KR`가 같은 인스턴스에서 몇 초 간격으로 `startup_guard`와 live fallback 사이를 번갈아 오가던 플래핑을 줄이고, 사용자에게 더 일관된 첫 usable 상태를 보여 주도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 `public_dashboard_prewarm` 이후 pressure가 release 임계값에 아주 근접한 경우에도 startup guard가 안정적으로 풀리는 회귀를 추가했습니다. 앞으로는 메모리 pressure가 `0.500x` 부근에서 흔들릴 때 공개 라우트가 다시 startup guard로 튀는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - Render memory-safe 운영의 `/api/country/KR/heatmap`은 이제 safe-mode에서 공유 캐시 `wait_timeout`과 KR 대표 시세 fallback timeout을 함께 더 짧게 사용합니다. 그래서 첫 partial 응답이 내부 timeout budget 2.5초를 그대로 다 쓴 뒤 3초대로 밀리던 구간을 줄이고, heatmap usable 응답을 더 빨리 닫으면서 백그라운드 계산과 캐시 복구는 계속 이어 가도록 정리했습니다.
 - `backend/tests/test_country_router.py`에는 safe-mode heatmap이 더 짧은 `wait_timeout`과 대표 시세 fallback timeout을 실제로 쓰는 회귀를 추가했습니다. 앞으로는 Render 500MB 운영 한도에서 `/api/country/KR/heatmap` partial 응답이 다시 2.5초 기본 대기를 다 쓰는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - Render memory-safe 운영의 `/api/country/KR/report`는 이제 cached/archived 리포트가 비어 있는 동안 background refresh 가능 여부와 관계없이 공개 timeout budget을 더 짧게 사용합니다. 그래서 safe-mode 내부 조건이 흔들릴 때마다 어떤 요청은 2초 안쪽, 어떤 요청은 다시 5~8초대로 튀던 편차를 줄이고, 사용자 입장에서는 partial 응답이 더 일관되게 빨리 보이도록 정리했습니다.

@@ -74,6 +74,7 @@ PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 PUBLIC_STARTUP_GUARD_SECONDS = 300
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS = 180
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO = 0.5
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO = 0.02
 
 
 def market_session_cache_token(*args, **kwargs):
@@ -575,7 +576,11 @@ def _should_use_startup_public_route_guard() -> bool:
         )
         if (
             public_dashboard_prewarm_ok
-            and _public_memory_pressure_ratio() < PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO
+            and _public_memory_pressure_ratio()
+            <= (
+                PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO
+                + PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO
+            )
         ):
             return False
         return True
