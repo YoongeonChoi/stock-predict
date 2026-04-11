@@ -56,6 +56,35 @@ class MemoryHygieneTests(unittest.TestCase):
         self.assertEqual(stats["successes"], 1)
         self.assertEqual(stats["last_reason"], "country_report")
 
+    def test_trim_runs_at_warning_pressure_before_crossing_critical(self):
+        before = {
+            "current_bytes": 330 * 1024 * 1024,
+            "rss_bytes": 330 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 330 * 1024 * 1024,
+            "pressure_ratio": 330 / 512,
+        }
+        after = {
+            "current_bytes": 300 * 1024 * 1024,
+            "rss_bytes": 300 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 300 * 1024 * 1024,
+            "pressure_ratio": 300 / 512,
+        }
+        with (
+            patch("app.utils.memory_hygiene.get_settings", return_value=self._settings(safe_mode=True)),
+            patch("app.utils.memory_hygiene._get_pressure_snapshot", side_effect=[before, after]),
+            patch("app.utils.memory_hygiene.gc.collect", return_value=11) as collect,
+            patch("app.utils.memory_hygiene._try_malloc_trim", return_value=True) as malloc_trim,
+        ):
+            result = memory_hygiene.maybe_trim_process_memory("warning_band")
+
+        self.assertTrue(result["attempted"])
+        self.assertEqual(result["before_mb"], 330.0)
+        self.assertEqual(result["after_mb"], 300.0)
+        collect.assert_called_once()
+        malloc_trim.assert_called_once()
+
     def test_trim_respects_cooldown(self):
         snapshot = {
             "current_bytes": 420 * 1024 * 1024,

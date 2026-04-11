@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.45 - 2026-04-11
+
+- backend `memory_hygiene`는 이제 Render safe mode에서 trim 시작 기준을 `pressure_ratio 0.6`부터 적용합니다. 그래서 메모리가 이미 warning band에 들어왔는데도 0.7을 넘길 때까지 기다리며 public smoke 한 바퀴 뒤 cgroup 사용량이 500MB 한도 바로 아래에 오래 붙어 있던 구간을 더 일찍 눌러보도록 조정했습니다.
+- `backend/tests/test_memory_hygiene.py`에는 warning pressure band에서도 trim이 실제로 시도되는 회귀를 추가했습니다. 그래서 trim 시작 기준이 다시 너무 늦어져 memory-safe 모드가 사실상 critical 직전에서만 작동하는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.44 - 2026-04-11
 
 - backend `stock detail`은 이제 Render `startup_memory_safe_mode`에서 pressure가 중간 이상으로 올라가면 public quick 경로의 background refresh와 inline full upgrade를 더 일찍 건너뜁니다. 그래서 quick 호출 뒤 숨어서 돌던 full 분석이 RSS를 400MB대 후반까지 끌어올리고, 이어지는 `prefer_full` 호출이 10초대 후반까지 튀거나 `stock_memory_guard`로 늦게 떨어지던 회귀를 더 보수적으로 막습니다.

@@ -15,7 +15,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _TRIM_COOLDOWN_SECONDS = 2.0
-_TRIM_MIN_PRESSURE_RATIO = 0.7
+_TRIM_MIN_PRESSURE_RATIO = 0.6
 _TRIM_LOCK = threading.Lock()
 _LAST_TRIM_MONOTONIC = 0.0
 _TRIM_STATS: dict[str, Any] = {
