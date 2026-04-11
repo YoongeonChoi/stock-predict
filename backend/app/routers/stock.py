@@ -36,7 +36,6 @@ STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
-PUBLIC_STOCK_FULL_ANALYSIS_SKIP_PRESSURE_RATIO = 0.5
 
 
 async def analyze_stock(ticker: str) -> dict:
@@ -125,9 +124,7 @@ def _should_avoid_cold_stock_analysis_import() -> bool:
 def _should_skip_public_stock_full_analysis() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
-    if _should_avoid_cold_stock_analysis_import():
-        return True
-    return _public_memory_pressure_ratio() >= PUBLIC_STOCK_FULL_ANALYSIS_SKIP_PRESSURE_RATIO
+    return True
 
 
 def _log_background_completion(task: asyncio.Task, *, label: str) -> None:

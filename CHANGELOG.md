@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.53 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서는 cached full 결과가 이미 있을 때만 full detail을 그대로 내려주고, `prefer_full=true`를 포함한 새 inline full 분석은 시작하지 않습니다. 그래서 운영 smoke나 stock detail full probe가 모듈이 이미 warm이고 pressure가 낮아 보일 때도 다시 heavy analyzer stack을 깨워 RSS를 `450MB+` warning band로 밀어 올리던 경로를 더 보수적으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서 cached quick snapshot이 있어도 `prefer_full=true`가 full upgrade를 다시 시도하지 않는 회귀를 추가했습니다. 앞으로는 Render 500MB 한도 환경에서 stock detail full probe가 다시 analyzer를 깨우는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.52 - 2026-04-11
 
 - backend `/api/stock/{ticker}/detail` quick public 경로는 이제 Render `startup_memory_safe_mode`에서 background full refresh를 시작하지 않습니다. 실제 운영에서 기본 종목 상세 호출 뒤 숨은 full refresh가 RSS를 `450MB+` warning band까지 밀어 올리고, 이어지는 diagnostics와 screener 지연을 다시 키우던 경로를 quick-only 정책으로 끊었습니다.
