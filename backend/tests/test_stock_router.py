@@ -467,6 +467,17 @@ class StockRouterTests(unittest.TestCase):
 
         self.assertFalse(result)
 
+    def test_stock_detail_background_refresh_skips_in_safe_mode_even_when_pressure_is_low(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=True),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
+
     def test_stock_detail_memory_guard_shell_does_not_wait_for_slow_cache_write(self):
         async def _slow_cache_set(*args, **kwargs):
             await asyncio.sleep(0.2)

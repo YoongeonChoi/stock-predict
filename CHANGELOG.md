@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.52 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail` quick public 경로는 이제 Render `startup_memory_safe_mode`에서 background full refresh를 시작하지 않습니다. 실제 운영에서 기본 종목 상세 호출 뒤 숨은 full refresh가 RSS를 `450MB+` warning band까지 밀어 올리고, 이어지는 diagnostics와 screener 지연을 다시 키우던 경로를 quick-only 정책으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서도 stock detail background refresh가 다시 살아나지 않는 회귀를 추가했습니다. 앞으로는 quick 응답 뒤에 full 분석 background job이 다시 붙어 메모리를 밀어 올리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.51 - 2026-04-11
 
 - backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 `stock_analyzer`가 아직 cold import 상태면 uncached quick/full 분석을 시작하지 않고 `stock_memory_guard` shell로 먼저 내려갑니다. 로컬 측정 기준 `stock_analyzer` 첫 import만으로도 RSS가 약 `+136MB` 커져, 첫 종목 상세 요청 뒤 memory pressure가 critical까지 올라가던 경로를 운영 fallback으로 바로 끊도록 정리했습니다.

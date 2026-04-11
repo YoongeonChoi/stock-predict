@@ -556,6 +556,12 @@ async def _archive_stock_report(detail: dict, ticker: str) -> None:
 def _schedule_stock_detail_refresh(ticker: str) -> bool:
     if not settings.effective_stock_detail_background_refresh:
         return False
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        logger.info(
+            "Skipping stock detail background refresh for %s because Render safe mode keeps public stock detail on the quick-only path.",
+            ticker,
+        )
+        return False
     if _should_avoid_cold_stock_analysis_import():
         logger.info(
             "Skipping stock detail background refresh for %s because Render safe mode avoids cold stock analysis import.",
