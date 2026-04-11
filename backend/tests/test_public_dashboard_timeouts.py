@@ -695,7 +695,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         }
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_response)),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
@@ -719,7 +719,42 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         }
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_cancel_cleanup_response)),
+            patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_cancel_cleanup_response)),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/briefing/daily")
+            elapsed = time.perf_counter() - started
+            time.sleep(0.07)
+
+        self.assertLess(elapsed, 0.04)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+
+    def test_daily_briefing_timeout_skips_slow_lazy_import_before_partial(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "market_view": [],
+            "focus_cards": [],
+            "upcoming_events": [],
+            "sessions": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["기본 시장 스냅샷 먼저 표시"],
+        }
+
+        module = SimpleNamespace(get_daily_briefing=AsyncMock(return_value={"generated_at": "2026-03-29T09:00:00"}))
+
+        def _slow_import(module_name: str):
+            time.sleep(0.05)
+            return module
+
+        with (
+            patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing.import_module", side_effect=_slow_import),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
@@ -755,7 +790,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 },
             ),
             patch(
-                "app.routers.briefing.briefing_service.get_daily_briefing",
+                "app.routers.briefing._load_daily_briefing_payload",
                 new=AsyncMock(side_effect=AssertionError("startup guard should bypass full briefing fetch")),
             ),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
@@ -784,7 +819,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             patch("app.routers.briefing._should_use_ultra_fast_public_fallback", return_value=True),
             patch("app.routers.briefing._should_use_startup_public_route_guard", return_value=False),
             patch(
-                "app.routers.briefing.briefing_service.get_daily_briefing",
+                "app.routers.briefing._load_daily_briefing_payload",
                 new=AsyncMock(side_effect=AssertionError("memory guard should bypass full briefing fetch")),
             ),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from importlib import import_module
 import logging
 import time
 
@@ -15,7 +16,6 @@ from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["briefing"])
 settings = get_settings()
-briefing_service = LazyModuleProxy("app.services.briefing_service")
 market_session_service = LazyModuleProxy("app.services.market_session_service")
 route_stability_service = LazyModuleProxy("app.services.route_stability_service")
 log = logging.getLogger("stock_predict.briefing_route")
@@ -50,6 +50,11 @@ def _public_memory_pressure_ratio() -> float:
     except Exception:
         return 0.0
     return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+async def _load_daily_briefing_payload() -> dict:
+    module = await asyncio.to_thread(import_module, "app.services.briefing_service")
+    return await module.get_daily_briefing()
 
 
 def _observe_briefing_task(task: asyncio.Task, label: str) -> None:
@@ -144,7 +149,7 @@ async def get_daily_briefing():
         return payload
     briefing_task: asyncio.Task | None = None
     try:
-        briefing_task = asyncio.create_task(briefing_service.get_daily_briefing())
+        briefing_task = asyncio.create_task(_load_daily_briefing_payload())
         payload = await asyncio.wait_for(
             asyncio.shield(briefing_task),
             timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.17 - 2026-04-12
+
+- backend `/api/briefing/daily`는 이제 `briefing_service` lazy import도 비동기 helper 안에서 로드합니다. 그래서 첫 브리핑 요청이 무거운 모듈 import 때문에 timeout 바깥에서 오래 묶이는 경로를 줄이고, 공개 timeout budget이 실제 import 비용까지 포함해 적용되도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 느린 lazy import를 기다리지 않고 즉시 partial로 내려가는 회귀를 추가했습니다.
+
 ## v2.61.16 - 2026-04-12
 
 - backend `/api/briefing/daily`는 이제 공개 timeout을 `shielded background task` 기준으로 적용합니다. 그래서 Render cold wake 직후 브리핑 전체 계산이 늦더라도 timeout 이후 늦은 cancellation cleanup을 기다리며 30~40초까지 붙잡히지 않고, 1차 partial을 더 빨리 반환하면서 백그라운드 계산은 계속 살아 cache 복구를 이어 가도록 정리했습니다.
