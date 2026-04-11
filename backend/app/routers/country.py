@@ -524,6 +524,84 @@ def _empty_institutional_analysis() -> dict:
     }
 
 
+def _is_lightweight_country_report_memory_guard(
+    *,
+    reason: str,
+    include_archived_report: bool,
+    include_quick_candidates: bool,
+) -> bool:
+    return (
+        reason == "country_report_memory_guard"
+        and not include_archived_report
+        and not include_quick_candidates
+    )
+
+
+def _build_static_country_market_data(country) -> dict[str, dict[str, float]]:
+    return {
+        idx.name: {"price": 0.0, "change_pct": 0.0}
+        for idx in country.indices
+    }
+
+
+def _build_static_country_score_payload() -> dict[str, object]:
+    fallback_note = "정밀 국가 점수 계산이 지연돼 기본 중립 점수를 먼저 제공합니다."
+    return {
+        "total": 50.0,
+        "monetary_policy": {
+            "name": "Monetary Policy",
+            "score": 10.0,
+            "max_score": 20.0,
+            "description": fallback_note,
+        },
+        "economic_growth": {
+            "name": "Economic Growth",
+            "score": 10.0,
+            "max_score": 20.0,
+            "description": fallback_note,
+        },
+        "market_valuation": {
+            "name": "Market Valuation",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "earnings_momentum": {
+            "name": "Earnings Momentum",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "institutional_consensus": {
+            "name": "Institutional Consensus",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "risk_assessment": {
+            "name": "Risk Assessment",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+    }
+
+
+def _build_static_fear_greed_payload(code: str) -> dict[str, object]:
+    return {
+        "score": 50.0,
+        "label": "Neutral",
+        "components": [
+            {"name": "Market Momentum", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Price Strength", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Volatility", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Safe Haven Demand", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "News Sentiment", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+        ],
+        "country_code": code,
+    }
+
+
 def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
     refs: list[dict] = []
     for rank, item in enumerate(opportunities[:5], start=1):
@@ -896,34 +974,45 @@ async def _build_country_report_fallback(
 ) -> dict:
     country = COUNTRY_REGISTRY[code]
     primary_index = country.indices[0]
-    from app.data import cache as data_cache
-
-    countries_snapshot = await _timed_country_lookup(
-        data_cache.get(COUNTRIES_CACHE_KEY),
-        timeout_seconds=COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS,
-        label=f"country fallback countries snapshot {code}",
+    lightweight_memory_guard = _is_lightweight_country_report_memory_guard(
+        reason=reason,
+        include_archived_report=include_archived_report,
+        include_quick_candidates=include_quick_candidates,
     )
-    market_data = {}
-    if isinstance(countries_snapshot, list):
-        current = next((item for item in countries_snapshot if item.get("code") == code), None)
-        if current:
-            for idx, quote in zip(country.indices, current.get("indices", [])):
-                market_data[idx.name] = {
-                    "price": float(quote.get("price") or quote.get("current_price") or 0.0),
-                    "change_pct": float(quote.get("change_pct") or 0.0),
-                }
-    if not market_data:
-        market_data = {
-            idx.name: {"price": 0.0, "change_pct": 0.0}
-            for idx in country.indices
-        }
+
+    market_data = _build_static_country_market_data(country)
+    if not lightweight_memory_guard:
+        from app.data import cache as data_cache
+
+        countries_snapshot = await _timed_country_lookup(
+            data_cache.get(COUNTRIES_CACHE_KEY),
+            timeout_seconds=COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS,
+            label=f"country fallback countries snapshot {code}",
+        )
+        if isinstance(countries_snapshot, list):
+            current = next((item for item in countries_snapshot if item.get("code") == code), None)
+            if current:
+                for idx, quote in zip(country.indices, current.get("indices", [])):
+                    market_data[idx.name] = {
+                        "price": float(quote.get("price") or quote.get("current_price") or 0.0),
+                        "change_pct": float(quote.get("change_pct") or 0.0),
+                    }
 
     primary_price = float(
         market_data.get(primary_index.name, {}).get("price")
         or market_data.get(primary_index.name, {}).get("current_price")
         or 0.0
     )
-    fear_greed = calculate_fear_greed([], country_code=code)
+    fear_greed = (
+        _build_static_fear_greed_payload(code)
+        if lightweight_memory_guard
+        else calculate_fear_greed([], country_code=code).model_dump()
+    )
+    score_payload = (
+        _build_static_country_score_payload()
+        if lightweight_memory_guard
+        else build_country_score({}).model_dump()
+    )
     forecast = {
         "index_ticker": primary_index.ticker,
         "index_name": primary_index.name,
@@ -1009,13 +1098,13 @@ async def _build_country_report_fallback(
 
     return {
         "country": country.model_dump(),
-        "score": build_country_score({}).model_dump(),
+        "score": score_payload,
         "market_summary": market_summary,
         "macro_claims": [],
         "key_news": [],
         "institutional_analysis": _empty_institutional_analysis(),
         "top_stocks": _build_top_stock_refs(quick_opportunities),
-        "fear_greed": fear_greed.model_dump(),
+        "fear_greed": fear_greed,
         "forecast": forecast,
         "next_day_forecast": None,
         "market_regime": market_regime,

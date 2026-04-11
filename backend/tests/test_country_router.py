@@ -581,7 +581,10 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_country_report_memory_guard_fallback_skips_archived_and_quick_candidate_lookups(self):
         with (
-            patch("app.data.cache.get", new=AsyncMock(return_value=None)),
+            patch(
+                "app.data.cache.get",
+                new=AsyncMock(side_effect=AssertionError("countries cache lookup should be skipped")),
+            ),
             patch(
                 "app.routers.country._load_latest_archived_country_report",
                 new=AsyncMock(side_effect=AssertionError("archived lookup should be skipped")),
@@ -598,6 +601,14 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
                 "app.routers.country.market_service.get_market_opportunities_quick",
                 new=AsyncMock(side_effect=AssertionError("live quick opportunities should be skipped")),
             ),
+            patch(
+                "app.routers.country.calculate_fear_greed",
+                side_effect=AssertionError("fear greed helper should be skipped"),
+            ),
+            patch(
+                "app.routers.country.build_country_score",
+                side_effect=AssertionError("country score helper should be skipped"),
+            ),
         ):
             response = await country._build_country_report_fallback(
                 "KR",
@@ -611,6 +622,8 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["partial"])
         self.assertEqual(response["fallback_reason"], "country_report_memory_guard")
         self.assertEqual(response["top_stocks"], [])
+        self.assertEqual(response["fear_greed"]["label"], "Neutral")
+        self.assertEqual(response["score"]["total"], 50.0)
 
     async def test_load_country_report_with_fallback_returns_without_waiting_for_cancellation_cleanup(self):
         started = asyncio.Event()

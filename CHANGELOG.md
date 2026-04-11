@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.28 - 2026-04-11
+
+- backend `country report` memory-guard fallback은 이제 `countries` cache 조회와 `fear_greed`/`country score` helper를 건너뛰고, 초경량 중립 payload를 바로 반환합니다. 메모리 보호 응답이 archived/quick lookup은 생략해도 여전히 cache import와 scoring helper 때문에 느려지던 구간을 더 줄여, `country_report_memory_guard` first-usable latency를 추가로 낮추는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`에는 memory-guard fallback이 archived/quick candidate lookup뿐 아니라 `countries` cache lookup과 scoring helper까지 호출하지 않는 회귀를 추가했습니다. 보호 응답이 다시 무거운 import/calc 경로를 밟아 500MB 보호 구간에서 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.27 - 2026-04-11
 
 - backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 별도 `asyncio` background trim으로 미뤘습니다. first-usable latency 개선 방향은 유지하면서도 `Response.background` 경로에서 배포 런타임이 `No response returned`로 500을 내던 문제를 피하도록 수정했습니다.
