@@ -16,6 +16,7 @@ kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 PUBLIC_SCREENER_TIMEOUT_SECONDS = 10
 PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS = 2.0
+PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS = 2.0
 SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 SCREENER_CACHE_WRITE_TIMEOUT_SECONDS = 0.35
 SCREENER_RESPONSE_CACHE_TTL = 600
@@ -501,6 +502,30 @@ async def _build_snapshot_fallback(
     )
 
 
+async def _build_timeout_shell_response(
+    *,
+    country: str,
+    sector: str | None,
+    limit: int,
+    sort_by: str,
+    sort_dir: str,
+    universe: dict[str, list[str]] | None,
+    fallback_reason: str,
+) -> dict:
+    current_universe = universe or await get_universe(country, prefer_fallback=(country == "KR"))
+    selected_tickers = _select_candidate_tickers(current_universe, sector)
+    return _build_safe_mode_shell_response(
+        tickers=selected_tickers,
+        universe=current_universe,
+        sector=sector,
+        country=country,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+        fallback_reason=fallback_reason,
+    )
+
+
 @router.get("/screener")
 async def screen_stocks(
     country: str = Query("KR", description="Country code: KR"),
@@ -943,7 +968,37 @@ async def screen_stocks(
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
-        response = await _build_snapshot_fallback(country=country, sector=sector, limit=limit)
+        try:
+            response = await asyncio.wait_for(
+                _build_snapshot_fallback(country=country, sector=sector, limit=limit),
+                timeout=PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "screener fallback timed out after %.1fs for %s; returning shell response instead.",
+                PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
+                cache_key,
+            )
+            response = await _build_timeout_shell_response(
+                country=country,
+                sector=sector,
+                limit=limit,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                universe=universe,
+                fallback_reason="kr_timeout_shell" if country == "KR" else "screener_timeout_shell",
+            )
+        except Exception as exc:
+            logging.warning("screener fallback build failed for %s: %s", cache_key, exc)
+            response = await _build_timeout_shell_response(
+                country=country,
+                sector=sector,
+                limit=limit,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                universe=universe,
+                fallback_reason="kr_timeout_shell" if country == "KR" else "screener_timeout_shell",
+            )
         _maybe_trim_public_route_memory("screener")
         return response
 

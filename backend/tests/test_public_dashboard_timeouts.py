@@ -506,6 +506,36 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "kr_bulk_snapshot_only")
         bulk_quotes.assert_awaited_once_with(["005930.KS"], skip_full_market_fallback=True)
 
+    def test_screener_timeout_shell_returns_when_snapshot_fallback_also_stalls(self):
+        async def _slow_gather(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return []
+
+        sector_map = {"Information Technology": ["005930.KS"]}
+        with (
+            patch("app.routers.screener.PUBLIC_SCREENER_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch("app.routers.screener.gather_limited", new=AsyncMock(side_effect=_slow_gather)),
+            patch(
+                "app.routers.screener._build_snapshot_fallback",
+                new=AsyncMock(side_effect=_very_slow_response),
+            ),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/screener?country=KR&score_min=60")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_timeout_shell")
+        self.assertEqual(payload["results"][0]["ticker"], "005930.KS")
+        self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        self.assertLess(elapsed, 0.15)
+
     def test_screener_default_kr_path_uses_bulk_quotes(self):
         bulk_quotes = AsyncMock(
             return_value={

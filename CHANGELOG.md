@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.46 - 2026-04-11
+
+- backend `/api/screener`는 이제 본문 10초 timeout 뒤 들어가는 snapshot fallback에도 `2초` 상한을 둡니다. 그래서 본 경로가 이미 timeout된 뒤 fallback까지 다시 `yfinance` 배치 다운로드를 오래 기다리며 운영 smoke에서 15초를 넘기던 회귀를 더 짧은 shell partial로 끊습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener`의 snapshot fallback도 stall될 때 `kr_timeout_shell`로 빠르게 복귀하는 회귀를 추가했습니다. 그래서 timeout 뒤 fallback까지 다시 느린 외부 fetch를 붙잡으며 `/api/screener` first-usable 응답이 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.45 - 2026-04-11
 
 - backend `memory_hygiene`는 이제 Render safe mode에서 trim 시작 기준을 `pressure_ratio 0.6`부터 적용합니다. 그래서 메모리가 이미 warning band에 들어왔는데도 0.7을 넘길 때까지 기다리며 public smoke 한 바퀴 뒤 cgroup 사용량이 500MB 한도 바로 아래에 오래 붙어 있던 구간을 더 일찍 눌러보도록 조정했습니다.
