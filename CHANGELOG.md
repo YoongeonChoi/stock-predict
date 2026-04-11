@@ -4,6 +4,13 @@ All notable changes to this project are tracked here.
 
 ## v2.61.23 - 2026-04-12
 
+## v2.61.24 - 2026-04-12
+
+- Render memory-safe 운영에서 `/api/country/KR/report`는 이제 cached/archived 리포트가 아직 없더라도, background refresh를 유지할 수 있는 safe-mode 구간이면 공개 timeout budget을 더 짧게 사용합니다. 그래서 cold/full 계산이 매번 5초를 다 쓰고 `country_report_timeout` partial로 떨어지던 구간을 줄이고, 첫 응답 latency를 더 빨리 partial로 닫으면서 다음 조회를 위한 background warm-up은 그대로 살리도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 일반 공개 budget과 safe-mode 단축 budget의 분기를 함께 고정하는 회귀를 추가했습니다.
+
+## v2.61.23 - 2026-04-12
+
 - backend `country` startup guard는 이제 최대 300초 고정이 아니라, 최소 보호 시간이 지난 뒤 `public_dashboard_prewarm=ok`이고 메모리 압박이 낮으면 조기 해제됩니다. 그래서 Render memory-safe startup에서 메모리는 이미 안정적인데도 `/api/country/KR/report`, `/api/country/KR/heatmap`, `/api/market/opportunities/KR`가 너무 오래 startup guard partial에만 머무는 구간을 줄였습니다.
 - `backend/tests/test_country_router.py`에는 startup guard 조기 해제와 고압 메모리 유지 조건을 함께 확인하는 회귀를 추가했습니다.
 

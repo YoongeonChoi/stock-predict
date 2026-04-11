@@ -30,6 +30,7 @@ route_stability_service = LazyModuleProxy("app.services.route_stability_service"
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 _market_calendar = LazyModuleProxy("app.utils.market_calendar")
 COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 5
+COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS = 1.25
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
 COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
@@ -672,6 +673,17 @@ def _allow_safe_mode_country_report_warmup() -> bool:
 
 def _allow_country_report_background_refresh() -> bool:
     return _allow_public_background_refresh() or _allow_safe_mode_country_report_warmup()
+
+
+def _resolve_country_report_public_timeout_seconds() -> float:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
+    if not _allow_country_report_background_refresh():
+        return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
+    return min(
+        COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
+        COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS,
+    )
 
 
 def _schedule_country_report_persist(report: dict, code: str) -> bool:
@@ -1608,7 +1620,7 @@ async def get_country_report(code: str):
     try:
         report, partial = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
+            timeout_seconds=_resolve_country_report_public_timeout_seconds(),
             keep_background=True,
             fallback_context="public",
         )
