@@ -1,0 +1,55 @@
+name: Render Keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Warm backend health
+        run: |
+          curl --fail --show-error --silent --location \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --retry 2 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            https://api.yoongeon.xyz/api/health > /tmp/health.json
+          cat /tmp/health.json
+
+      - name: Warm KR country report
+        run: |
+          curl --fail --show-error --silent --location \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --retry 2 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            https://api.yoongeon.xyz/api/country/KR/report > /tmp/country-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/country-report.json").read_text(encoding="utf-8"))
+          print(
+              json.dumps(
+                  {
+                      "partial": payload.get("partial"),
+                      "fallback_reason": payload.get("fallback_reason"),
+                      "generated_at": payload.get("generated_at"),
+                  },
+                  ensure_ascii=False,
+              )
+          )
+          PY

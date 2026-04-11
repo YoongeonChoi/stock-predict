@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.31 - 2026-04-11
+
+- `.github/workflows/render-keepalive.yml`을 추가해 GitHub Actions가 10분마다 `api/health`와 `api/country/KR/report`를 호출하도록 했습니다. Vercel Hobby cron으로는 분 단위 keepalive가 불가능해, Render cold wake로 20~35초까지 튀던 첫 요청 지연을 완화하는 keepalive를 저장소 안에서 관리하도록 옮겼습니다.
+- `backend/tests/test_keepalive_workflow.py`를 추가해 keepalive workflow의 스케줄과 대상 URL이 유지되는지 회귀로 고정했습니다. warm 대상이나 실행 주기가 실수로 빠지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.30 - 2026-04-11
 
 - backend `stock detail`은 이제 quick/full 계산이 모두 실패하거나 timeout이어도 500/504로 바로 끊지 않고, 최소 shell 상세를 `200 + partial + fallback_reason=stock_minimal_shell`로 먼저 반환합니다. Render cold wake나 외부 시세 지연 구간에서도 상세 페이지가 완전히 깨지지 않고, 티커·기본 메타데이터 중심 first-usable 상태를 먼저 유지하도록 바꿨습니다.
