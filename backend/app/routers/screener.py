@@ -251,10 +251,34 @@ def _screener_last_success_key(cache_key: str) -> str:
     return f"{cache_key}:last_success"
 
 
+def _consume_screener_task_result(task: asyncio.Task[object]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
+async def _run_screener_timeboxed(job, *, timeout_seconds: float) -> tuple[object | None, bool]:
+    task = asyncio.ensure_future(job)
+    task.add_done_callback(_consume_screener_task_result)
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=max(timeout_seconds, 0.01))
+        return result, False
+    except asyncio.TimeoutError:
+        task.cancel()
+        return None, True
+
+
 async def _timed_screener_cache_lookup(job, *, label: str):
     try:
-        return await asyncio.wait_for(job, timeout=SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+        result, timed_out = await _run_screener_timeboxed(
+            job,
+            timeout_seconds=SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        )
+        if not timed_out:
+            return result
         logging.warning(
             "%s timed out after %.2fs; continuing as cache miss.",
             label,
@@ -268,8 +292,12 @@ async def _timed_screener_cache_lookup(job, *, label: str):
 
 async def _timed_screener_cache_write(job, *, label: str) -> None:
     try:
-        await asyncio.wait_for(job, timeout=SCREENER_CACHE_WRITE_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+        _, timed_out = await _run_screener_timeboxed(
+            job,
+            timeout_seconds=SCREENER_CACHE_WRITE_TIMEOUT_SECONDS,
+        )
+        if not timed_out:
+            return
         logging.warning(
             "%s timed out after %.2fs; continuing without waiting for cache persistence.",
             label,
@@ -863,21 +891,25 @@ async def screen_stocks(
                         return response
                 representative_results: list[dict] = []
                 try:
-                    representative_results = await asyncio.wait_for(
+                    representative_results_payload, representative_timed_out = await _run_screener_timeboxed(
                         _build_kr_representative_snapshot_results(
                             limit=limit,
                             universe=current_universe,
                             sector=sector,
                             country=country,
                         ),
-                        timeout=PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
+                        timeout_seconds=PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
                     )
-                except asyncio.TimeoutError:
-                    logging.warning(
-                        "screener representative snapshot timed out after %.1fs for %s",
-                        PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
-                        cache_key,
-                    )
+                    if representative_timed_out:
+                        logging.warning(
+                            "screener representative snapshot timed out after %.1fs for %s",
+                            PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS,
+                            cache_key,
+                        )
+                    else:
+                        representative_results = list(representative_results_payload or [])
+                except Exception:
+                    representative_results = []
                 filtered_representative_results = _filter_snapshot_results(
                     representative_results,
                     market_cap_min=market_cap_min,
@@ -942,52 +974,58 @@ async def screen_stocks(
                     )
                     _maybe_trim_public_route_memory("screener")
                     return response
-                response = await asyncio.wait_for(
+                response, response_timed_out = await _run_screener_timeboxed(
                     _build_response(
                         candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
                         partial=True,
                         fallback_reason="kr_bulk_snapshot_warming",
                     ),
-                    timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+                    timeout_seconds=PUBLIC_SCREENER_TIMEOUT_SECONDS,
                 )
+                if response_timed_out:
+                    raise asyncio.TimeoutError
                 _spawn_screener_cache_warmup(cache_key, _build_response)
             else:
-                response = await asyncio.wait_for(
+                response, response_timed_out = await _run_screener_timeboxed(
                     _build_response(),
-                    timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+                    timeout_seconds=PUBLIC_SCREENER_TIMEOUT_SECONDS,
                 )
+                if response_timed_out:
+                    raise asyncio.TimeoutError
         else:
-            response = await asyncio.wait_for(
+            response, response_timed_out = await _run_screener_timeboxed(
                 cache.get_or_fetch(
                     cache_key,
                     _build_response,
                     ttl=SCREENER_RESPONSE_CACHE_TTL,
                 ),
-                timeout=PUBLIC_SCREENER_TIMEOUT_SECONDS,
+                timeout_seconds=PUBLIC_SCREENER_TIMEOUT_SECONDS,
             )
+            if response_timed_out:
+                raise asyncio.TimeoutError
     except asyncio.TimeoutError:
         err = SP_5018(f"Screener for {country} exceeded {PUBLIC_SCREENER_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
         try:
-            response = await asyncio.wait_for(
+            response, fallback_timed_out = await _run_screener_timeboxed(
                 _build_snapshot_fallback(country=country, sector=sector, limit=limit),
-                timeout=PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
+                timeout_seconds=PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
-            logging.warning(
-                "screener fallback timed out after %.1fs for %s; returning shell response instead.",
-                PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
-                cache_key,
-            )
-            response = await _build_timeout_shell_response(
-                country=country,
-                sector=sector,
-                limit=limit,
-                sort_by=sort_by,
-                sort_dir=sort_dir,
-                universe=universe,
-                fallback_reason="kr_timeout_shell" if country == "KR" else "screener_timeout_shell",
-            )
+            if fallback_timed_out:
+                logging.warning(
+                    "screener fallback timed out after %.1fs for %s; returning shell response instead.",
+                    PUBLIC_SCREENER_FALLBACK_TIMEOUT_SECONDS,
+                    cache_key,
+                )
+                response = await _build_timeout_shell_response(
+                    country=country,
+                    sector=sector,
+                    limit=limit,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    universe=universe,
+                    fallback_reason="kr_timeout_shell" if country == "KR" else "screener_timeout_shell",
+                )
         except Exception as exc:
             logging.warning("screener fallback build failed for %s: %s", cache_key, exc)
             response = await _build_timeout_shell_response(

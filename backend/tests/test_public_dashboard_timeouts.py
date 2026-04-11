@@ -25,6 +25,24 @@ async def _very_slow_response(*args, **kwargs):
     return {}
 
 
+async def _slow_cancel_cleanup_response(*args, **kwargs):
+    try:
+        await asyncio.sleep(0.2)
+    except asyncio.CancelledError:
+        await asyncio.sleep(0.05)
+        raise
+    return {}
+
+
+async def _slow_cancel_cleanup_list_response(*args, **kwargs):
+    try:
+        await asyncio.sleep(0.2)
+    except asyncio.CancelledError:
+        await asyncio.sleep(0.05)
+        raise
+    return []
+
+
 async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
     return await fetcher()
 
@@ -681,6 +699,45 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         representative_quotes.assert_awaited_once_with(limit=20)
         warmup.assert_called_once()
 
+    def test_screener_default_kr_path_skips_cache_lookup_cancellation_cleanup(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        representative_quotes = AsyncMock(
+            return_value={
+                "000001.KS": {
+                    "ticker": "000001.KS",
+                    "name": "Samsung Electronics",
+                    "current_price": 70100.0,
+                    "prev_close": 69300.0,
+                    "market_cap": 420000000000.0,
+                    "change_pct": 1.15,
+                }
+            }
+        )
+        with (
+            patch("app.routers.screener.SCREENER_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_slow_cancel_cleanup_response)),
+            patch("app.routers.screener._spawn_screener_cache_warmup") as warmup,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=representative_quotes,
+            ),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/screener?country=KR&limit=20")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
+        self.assertLess(elapsed, 0.05)
+        representative_quotes.assert_awaited_once_with(limit=20)
+        warmup.assert_called_once()
+
     def test_screener_default_kr_path_returns_partial_even_when_cache_persist_stalls(self):
         sector_map = {
             f"Sector {index}": [f"{index:06d}.KS"]
@@ -849,6 +906,38 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        background_job.assert_called_once()
+        self.assertGreaterEqual(cache_set.await_count, 1)
+
+    def test_screener_safe_mode_skips_representative_cancellation_cleanup_before_shell(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        background_task = unittest.mock.Mock()
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener._build_kr_representative_snapshot_results",
+                new=AsyncMock(side_effect=_slow_cancel_cleanup_list_response),
+            ),
+            patch("app.routers.screener.get_or_create_background_job", return_value=(background_task, True)) as background_job,
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/screener?country=KR&limit=20")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        self.assertLess(elapsed, 0.05)
         background_job.assert_called_once()
         self.assertGreaterEqual(cache_set.await_count, 1)
 

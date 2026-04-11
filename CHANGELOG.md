@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.48 - 2026-04-11
+
+- backend `/api/screener`는 이제 대표 스냅샷, cache lookup/write, main/fallback build timeout을 모두 `shield + explicit cancel` 기반 timebox로 감쌉니다. 그래서 timeout 자체는 났는데 cancellation cleanup이나 SQLite 정리 대기 때문에 first-hit 응답이 15초를 그대로 채워 버리던 회귀를 더 짧게 끊습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener` cache lookup과 representative snapshot이 cancellation cleanup sleep을 가져도 즉시 partial/shell로 복귀하는 회귀를 추가했습니다. 그래서 timeout 뒤 정리 단계 때문에 `/api/screener` first-usable 응답이 다시 밀리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.47 - 2026-04-11
 
 - backend `/api/diagnostics`는 이제 응답 시작 전에 현재 메모리 pressure를 먼저 읽고, warning 이상이면 trim을 한 번 시도한 뒤 probe 예산을 더 짧게 가져갑니다. 또한 critical pressure에서는 archive/research 같은 heavy probe를 건너뛰고 구조화된 skip 이유를 바로 반환합니다. 그래서 public smoke 직후 Render 500MB 보호 구간에서 diagnostics가 다시 10초대 후반까지 늘어지며 메모리 회복도 늦어지던 구간을 더 보수적으로 막습니다.
