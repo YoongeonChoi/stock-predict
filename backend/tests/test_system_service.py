@@ -221,6 +221,60 @@ class SystemServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(diagnostics["research_archive_error"], "skipped under critical memory pressure")
         trim_memory.assert_called_once_with("diagnostics_preflight")
 
+    async def test_get_diagnostics_skips_heavy_probes_under_elevated_warning_pressure(self):
+        route_summary = {
+            "routes": [],
+            "first_usable_metrics": {
+                "tracked_routes": 0,
+                "total_requests": 0,
+                "p50_elapsed_ms": 0.0,
+                "p95_elapsed_ms": 0.0,
+                "fallback_served_rate": 0.0,
+                "stale_served_rate": 0.0,
+                "first_request_cold_failure_rate": 0.0,
+                "blank_screen_rate": 0.0,
+                "error_only_screen_rate": 0.0,
+            },
+            "hydration_failure_summary": {"tracked": False, "total": 0, "failure_count": 0, "failure_rate": 0.0, "by_route": []},
+            "session_recovery_summary": {"tracked": False, "total": 0, "failure_count": 0, "failure_rate": 0.0, "by_route": []},
+            "failure_class_summary": {"tracked": False, "total": 0, "by_class": {}, "recovered_count": 0, "recovered_rate": 0.0},
+        }
+        elevated_memory_snapshot = {
+            "source": "proc_status",
+            "rss_bytes": 410 * 1024 * 1024,
+            "rss_mb": 410.0,
+            "peak_rss_bytes": 450 * 1024 * 1024,
+            "peak_rss_mb": 450.0,
+            "cgroup_current_bytes": 420 * 1024 * 1024,
+            "cgroup_current_mb": 420.0,
+            "cgroup_limit_bytes": 500 * 1024 * 1024,
+            "cgroup_limit_mb": 500.0,
+            "configured_budget_mb": 500,
+            "resolved_budget_mb": 500.0,
+            "pressure_ratio": 0.84,
+            "pressure_state": "warning",
+            "memory_cache": {"entry_count": 2, "estimated_bytes": 2048},
+            "memory_trim": {"attempts": 0, "successes": 0},
+            "render_memory_safe_mode": True,
+        }
+
+        with (
+            patch("app.services.system_service.get_settings", return_value=self._settings_stub()),
+            patch("app.services.system_service.get_runtime_state", return_value={"status": "ok", "started_at": "2026-04-03T00:00:00Z", "startup_tasks": []}),
+            patch("app.services.system_service.archive_service.get_accuracy", new=AsyncMock(side_effect=AssertionError("accuracy probe should be skipped"))),
+            patch("app.services.system_service.research_archive_service.get_public_research_status", new=AsyncMock(side_effect=AssertionError("research probe should be skipped"))),
+            patch("app.services.system_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch("app.services.system_service._build_learned_fusion_status", return_value=None),
+            patch("app.services.system_service.route_stability_service.get_route_stability_summary", return_value=route_summary),
+            patch("app.services.system_service.maybe_trim_process_memory", return_value={"attempted": True, "trimmed": True}) as trim_memory,
+            patch("app.services.system_service._get_process_memory_snapshot", side_effect=[elevated_memory_snapshot, elevated_memory_snapshot, elevated_memory_snapshot]),
+        ):
+            diagnostics = await system_service.get_diagnostics()
+
+        self.assertEqual(diagnostics["prediction_accuracy_error"], "skipped under warning memory pressure")
+        self.assertEqual(diagnostics["research_archive_error"], "skipped under warning memory pressure")
+        trim_memory.assert_called_once_with("diagnostics_preflight")
+
     async def test_get_diagnostics_runs_best_effort_probes_concurrently(self):
         route_summary = {
             "routes": [],

@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.49 - 2026-04-11
+
+- backend `memory_hygiene`는 이제 Render safe mode에서 `pressure_ratio 0.8` 이상의 elevated warning 구간이면 trim cooldown을 건너뛰고 바로 한 번 더 정리를 시도합니다. 그래서 public smoke 직후 cgroup 사용량이 500MB 한도 바로 아래에 붙어 있을 때도 다음 요청이 쿨다운 때문에 손을 놓지 않도록 조정했습니다.
+- backend `/api/diagnostics`는 이제 preflight trim 이후 pressure가 `0.8` 이상이면 critical 전 warning 구간에서도 archive/research heavy probe를 건너뛰고 구조화된 skip reason을 바로 반환합니다. 그래서 운영 smoke 직후 diagnostics가 다시 10초대까지 늘어지며 메모리 회복을 방해하던 회귀를 더 짧게 끊습니다.
+- `backend/tests/test_memory_hygiene.py`, `backend/tests/test_system_service.py`에는 elevated warning 구간에서 trim cooldown bypass와 diagnostics heavy probe skip을 함께 고정하는 회귀를 추가했습니다. 그래서 Render 500MB 보호선 바로 아래에서 trim과 diagnostics 축약이 다시 critical 직전까지 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.48 - 2026-04-11
 
 - backend `/api/screener`는 이제 대표 스냅샷, cache lookup/write, main/fallback build timeout을 모두 `shield + explicit cancel` 기반 timebox로 감쌉니다. 그래서 timeout 자체는 났는데 cancellation cleanup이나 SQLite 정리 대기 때문에 first-hit 응답이 15초를 그대로 채워 버리던 회귀를 더 짧게 끊습니다.

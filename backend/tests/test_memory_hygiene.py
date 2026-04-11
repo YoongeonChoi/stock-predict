@@ -87,11 +87,11 @@ class MemoryHygieneTests(unittest.TestCase):
 
     def test_trim_respects_cooldown(self):
         snapshot = {
-            "current_bytes": 420 * 1024 * 1024,
-            "rss_bytes": 420 * 1024 * 1024,
+            "current_bytes": 390 * 1024 * 1024,
+            "rss_bytes": 390 * 1024 * 1024,
             "budget_bytes": 512 * 1024 * 1024,
-            "observed_bytes": 420 * 1024 * 1024,
-            "pressure_ratio": 420 / 512,
+            "observed_bytes": 390 * 1024 * 1024,
+            "pressure_ratio": 390 / 512,
         }
         reduced = {
             "current_bytes": 360 * 1024 * 1024,
@@ -141,6 +141,40 @@ class MemoryHygieneTests(unittest.TestCase):
         ):
             first = memory_hygiene.maybe_trim_process_memory("critical-a")
             second = memory_hygiene.maybe_trim_process_memory("critical-b")
+
+        self.assertTrue(first["attempted"])
+        self.assertTrue(second["attempted"])
+        self.assertTrue(second["cooldown_bypassed"])
+        stats = memory_hygiene.get_memory_trim_stats()
+        self.assertEqual(stats["attempts"], 2)
+        self.assertTrue(stats["last_cooldown_bypassed"])
+
+    def test_trim_bypasses_cooldown_when_pressure_is_elevated_warning(self):
+        warning_before = {
+            "current_bytes": 430 * 1024 * 1024,
+            "rss_bytes": 430 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 430 * 1024 * 1024,
+            "pressure_ratio": 430 / 512,
+        }
+        warning_after = {
+            "current_bytes": 418 * 1024 * 1024,
+            "rss_bytes": 418 * 1024 * 1024,
+            "budget_bytes": 512 * 1024 * 1024,
+            "observed_bytes": 418 * 1024 * 1024,
+            "pressure_ratio": 418 / 512,
+        }
+        with (
+            patch("app.utils.memory_hygiene.get_settings", return_value=self._settings(safe_mode=True)),
+            patch(
+                "app.utils.memory_hygiene._get_pressure_snapshot",
+                side_effect=[warning_before, warning_after, warning_before, warning_after],
+            ),
+            patch("app.utils.memory_hygiene.gc.collect", return_value=7),
+            patch("app.utils.memory_hygiene._try_malloc_trim", return_value=True),
+        ):
+            first = memory_hygiene.maybe_trim_process_memory("warning-a")
+            second = memory_hygiene.maybe_trim_process_memory("warning-b")
 
         self.assertTrue(first["attempted"])
         self.assertTrue(second["attempted"])

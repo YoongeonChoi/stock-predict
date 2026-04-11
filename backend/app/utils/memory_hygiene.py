@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _TRIM_COOLDOWN_SECONDS = 2.0
 _TRIM_MIN_PRESSURE_RATIO = 0.6
+_TRIM_COOLDOWN_BYPASS_PRESSURE_RATIO = 0.8
 _TRIM_LOCK = threading.Lock()
 _LAST_TRIM_MONOTONIC = 0.0
 _TRIM_STATS: dict[str, Any] = {
@@ -171,7 +172,11 @@ def maybe_trim_process_memory(reason: str, *, min_pressure_ratio: float = _TRIM_
 
     with _TRIM_LOCK:
         now = time.monotonic()
-        cooldown_seconds = 0.0 if before_ratio >= 0.9 else _TRIM_COOLDOWN_SECONDS
+        cooldown_seconds = (
+            0.0
+            if before_ratio >= _TRIM_COOLDOWN_BYPASS_PRESSURE_RATIO
+            else _TRIM_COOLDOWN_SECONDS
+        )
         cooldown_remaining = cooldown_seconds - (now - _LAST_TRIM_MONOTONIC)
         if cooldown_seconds > 0 and cooldown_remaining > 0:
             return {

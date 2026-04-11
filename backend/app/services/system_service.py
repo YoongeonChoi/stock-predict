@@ -25,6 +25,8 @@ from app.services import (
 from app.utils.memory_hygiene import get_memory_trim_stats, maybe_trim_process_memory
 from app.version import APP_VERSION
 
+DIAGNOSTICS_HEAVY_PROBE_SKIP_PRESSURE_RATIO = 0.8
+
 
 def _configured(value: str) -> bool:
     return bool(str(value or "").strip())
@@ -245,7 +247,7 @@ async def get_diagnostics() -> dict:
         preflight_pressure_ratio = float(preflight_memory_diagnostics.get("pressure_ratio") or 0.0)
         preflight_pressure_state = str(preflight_memory_diagnostics.get("pressure_state") or "ok")
 
-    if preflight_pressure_ratio >= 0.9:
+    if preflight_pressure_ratio >= DIAGNOSTICS_HEAVY_PROBE_SKIP_PRESSURE_RATIO:
         accuracy, accuracy_error = None, f"skipped under {preflight_pressure_state} memory pressure"
         research_archive, research_archive_error = None, f"skipped under {preflight_pressure_state} memory pressure"
     else:

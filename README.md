@@ -9,11 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.48`
+현재 릴리즈: `v2.60.49`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `memory_hygiene`는 이제 Render safe mode에서 `pressure_ratio 0.8` 이상의 elevated warning 구간이면 trim cooldown을 건너뛰고 바로 한 번 더 정리를 시도합니다. 그래서 public smoke 직후 cgroup 사용량이 500MB 한도 바로 아래 warning band에 머무를 때도 다음 요청이 쿨다운에 막혀 손을 놓고 있지 않도록 조정했습니다.
+- backend `/api/diagnostics`는 이제 preflight trim 이후 pressure가 `0.8` 이상이면 critical 전이라도 archive/research heavy probe를 건너뛰고 구조화된 skip reason을 바로 반환합니다. 그래서 운영 smoke 직후 warning pressure만으로도 diagnostics가 다시 10초대까지 늘어지며 메모리 회복을 방해하던 구간을 더 짧게 끊습니다.
+- `backend/tests/test_memory_hygiene.py`, `backend/tests/test_system_service.py`에는 elevated warning 구간에서 cooldown bypass와 heavy probe skip이 함께 유지되는 회귀를 추가했습니다. 앞으로는 Render 500MB 보호선 바로 아래에서 trim과 diagnostics 축약이 다시 critical 직전까지 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/screener`는 이제 대표 스냅샷, cache lookup/write, main/fallback build timeout을 모두 `shield + explicit cancel` 기반 timebox로 감쌉니다. 그래서 timeout 자체는 났는데 cancellation cleanup이나 SQLite 정리 대기 때문에 첫 응답이 15초를 그대로 채워 버리던 cold-hit 회귀를 더 짧게 끊습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 `screener` cache lookup과 representative snapshot이 cancellation cleanup sleep을 가져도 즉시 partial/shell로 복귀하는 회귀를 추가했습니다. 앞으로는 timeout 뒤 정리 단계 때문에 `/api/screener`가 다시 first-usable 응답을 놓치는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/diagnostics`는 이제 응답 시작 전에 현재 메모리 pressure를 먼저 읽고, warning 이상이면 즉시 trim을 한 번 시도한 뒤 probe 예산을 더 짧게 가져갑니다. 그래서 public smoke 직후 RSS가 400MB대 후반으로 치솟은 상태에서 archive/research probe까지 다시 오래 붙잡으며 진단 API 자체가 18초 가까이 늦어지던 구간을 먼저 줄이도록 정리했습니다.
