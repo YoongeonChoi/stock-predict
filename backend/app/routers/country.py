@@ -37,6 +37,7 @@ COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS = 0.2
 COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
 COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
 OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+OPPORTUNITY_STARTUP_WARMUP_LIMIT_FLOOR = 12
 OPPORTUNITY_TIMEOUT_SECONDS = 8
 OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 4
 HEATMAP_TIMEOUT_SECONDS = 10
@@ -735,6 +736,34 @@ def _spawn_opportunity_refresh(code: str, limit: int) -> None:
     task.add_done_callback(
         lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
     )
+
+
+def _spawn_opportunity_quick_warmup(code: str, limit: int) -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping opportunity quick startup warmup for %s because Render memory pressure is high.", code)
+        _maybe_trim_public_route_memory("market_opportunities_quick_warmup:skip")
+        return False
+    code = code.upper()
+    warmup_limit = max(int(limit), OPPORTUNITY_STARTUP_WARMUP_LIMIT_FLOOR)
+    label = f"Opportunity quick startup warmup for {code}"
+
+    async def _warm() -> None:
+        try:
+            await market_service.get_market_opportunities_quick(code, limit=warmup_limit)
+        finally:
+            _maybe_trim_public_route_memory("market_opportunities_quick_warmup")
+
+    task, created = get_or_create_background_job(
+        f"opportunity_quick_startup:{code}:{warmup_limit}",
+        _warm,
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing warmup task.", label)
+        return False
+    task.add_done_callback(
+        lambda task_, warm_label=label: _log_background_completion(task_, label=warm_label)
+    )
+    return True
 
 
 async def _capture_opportunity_payload(code: str, payload: dict) -> None:
@@ -1873,6 +1902,8 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 )
                 _maybe_trim_public_route_memory("market_opportunities")
                 return payload
+
+            _spawn_opportunity_quick_warmup(code, limit)
 
         payload = _build_traced_opportunity_partial(
             started_at,

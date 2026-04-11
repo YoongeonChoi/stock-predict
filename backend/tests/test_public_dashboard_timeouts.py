@@ -327,6 +327,100 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
         self.assertIn("다음 재조회", response.json()["universe_note"])
 
+    def test_market_opportunities_startup_guard_schedules_quick_warmup_before_placeholder(self):
+        placeholder_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "정밀 후보 계산을 다시 준비하고 있습니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 243,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "대표 후보 기준 placeholder를 먼저 제공합니다.",
+            "opportunities": [],
+        }
+        warmup_task = SimpleNamespace(add_done_callback=lambda callback: None)
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=True),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country.market_service.build_market_opportunities_placeholder",
+                return_value=placeholder_payload,
+            ),
+            patch("app.routers.country.get_or_create_background_job", return_value=(warmup_task, True)) as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_startup_guard")
+        background_job.assert_called_once()
+        self.assertEqual(background_job.call_args.args[0], "opportunity_quick_startup:KR:12")
+
+    def test_market_opportunities_startup_guard_skips_quick_warmup_under_pressure_guard(self):
+        placeholder_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-03-27T12:00:00",
+            "market_regime": {
+                "label": "KR 빠른 스냅샷",
+                "stance": "neutral",
+                "trend": "range",
+                "volatility": "normal",
+                "breadth": "mixed",
+                "score": 50.0,
+                "conviction": 38.0,
+                "summary": "메모리 보호 구간이라 시장 국면만 먼저 제공합니다.",
+                "playbook": [],
+                "warnings": [],
+                "signals": [],
+            },
+            "universe_size": 243,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "메모리 보호 구간이라 다음 재조회에서 quick 후보를 다시 확인합니다.",
+            "opportunities": [],
+        }
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=True),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=True),
+            patch(
+                "app.routers.country.market_service.build_market_opportunities_placeholder",
+                return_value=placeholder_payload,
+            ),
+            patch("app.routers.country.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/market/opportunities/KR?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "opportunity_memory_guard")
+        background_job.assert_not_called()
+
     def test_market_opportunities_returns_placeholder_when_quick_times_out_and_no_cache_exists(self):
         placeholder_payload = {
             "country_code": "KR",

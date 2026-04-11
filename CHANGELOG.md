@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.14 - 2026-04-12
+
+- backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있어도 dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 첫 요청은 가벼운 `opportunity_startup_guard` partial로 바로 닫고, 다음 재조회부터는 usable quick 후보가 더 빨리 복구될 수 있게 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 quick warm-up을 예약하는 회귀와, memory pressure guard에서는 그 warm-up을 시작하지 않는 회귀를 함께 추가했습니다.
+
 ## v2.61.13 - 2026-04-12
 
 - backend `startup_guard` 공개 경로는 이제 `country report`에서 최근 cached/archived 리포트를 짧게 먼저 확인하고, 있으면 placeholder 대신 실제 최근 리포트를 우선 보여줍니다. 그래서 배포 직후에도 이미 저장된 국가 리포트가 있으면 본문 내용을 더 빨리 복구할 수 있습니다.

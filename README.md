@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.13`
+현재 릴리즈: `v2.61.14`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있더라도 즉시 placeholder만 남기지 않고, dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 배포 직후 첫 요청은 가벼운 partial로 닫되, 다음 재조회부터는 usable quick 후보가 더 빨리 살아날 수 있게 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 quick warm-up을 예약하는 경우와, memory pressure guard에서는 그 warm-up마저 시작하지 않는 회귀를 함께 추가했습니다. 앞으로는 cold start 직후 기회 레이더가 다시 placeholder만 반복하고 다음 조회 품질이 회복되지 않는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/market/indicators`가 내부적으로 사용하는 `yfinance index quote cache`도 이제 `0값 payload`를 저장하지 않습니다. 그래서 라우트 쪽 shared cache를 비웠더라도 안쪽 `index:*` 캐시에 남아 있던 stale zero 응답을 다시 재사용하던 경로까지 함께 차단했습니다.
 - `backend/app/data/yfinance_client.py`의 index quote cache key는 `v2`로 올렸습니다. 그래서 이미 운영 캐시에 남아 있던 오래된 zero quote를 바로 우회하고, 새 요청부터는 실제 정상값만 다시 캐시에 남도록 정리했습니다.
 - backend `/api/market/indicators`의 개별 지표 fetch는 더 여유 있는 item budget 안에서 계속 timebox됩니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않으면서, 직전 패치보다 실제 정상값을 다시 복구할 가능성은 더 높였습니다.
