@@ -9,11 +9,14 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.54`
+현재 릴리즈: `v2.60.55`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/country/KR/heatmap`는 이제 Render `startup_memory_safe_mode`에서 `yfinance_client`가 아직 cold import 상태면 live heatmap build 자체를 시작하지 않고, 먼저 cache/last-success를 확인한 뒤 그것도 없으면 `heatmap_cold_import_guard` shell로 바로 닫습니다. 그래서 heatmap first hit 하나만으로 `yfinance` 스택을 새로 깨우며 워커 메모리를 다시 `470MB+` critical band로 밀어 올리던 경로를 더 보수적으로 막았습니다.
+- heatmap timeout fallback도 이제 safe mode에서 `kr_market_quote_client`가 cold import 상태면 live 대표호가 fetch를 다시 시도하지 않고 placeholder heatmap으로 바로 닫습니다. 그래서 live build timeout 뒤 fallback에서 다시 KR quote client를 깨우며 memory pressure를 한 번 더 올리던 경로를 줄였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode cold import guard가 live heatmap build/shared cache fetch를 모두 건너뛰는 회귀와, heatmap fallback이 cold KR quote import를 다시 깨우지 않는 회귀를 추가했습니다. 앞으로는 히트맵 first hit이 다시 cold data client import 때문에 지연과 메모리 급등을 같이 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/stock/{ticker}/detail`의 quick public 경로는 이제 Render `startup_memory_safe_mode`에서 background full refresh를 아예 시작하지 않습니다. 프론트 기본 흐름은 `preferFull=false`인데도 quick 응답 직후 숨은 full refresh가 다시 돌면서 RSS를 `450MB+` warning band까지 밀어 올리고, 이어지는 diagnostics/screener 지연을 다시 키우던 경로를 끊었습니다.
 - `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서도 stock detail background refresh가 다시 살아나지 않는 회귀를 추가했습니다. 앞으로는 quick 종목 상세 뒤에서 full 분석이 몰래 붙어 메모리를 다시 잡아먹는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/stock/{ticker}/detail`은 이제 Render `startup_memory_safe_mode`에서 `stock_analyzer`가 아직 cold import 상태면 uncached quick/full 분석을 바로 시작하지 않고 `stock_memory_guard` shell로 먼저 내려갑니다. 로컬 기준 `stock_analyzer` 첫 import만으로도 RSS가 약 `+136MB` 커지는 구간을 확인했고, 운영에서는 이 cold import가 첫 종목 상세 요청 뒤 memory pressure를 critical까지 끌어올리며 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.

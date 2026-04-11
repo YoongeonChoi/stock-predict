@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.55 - 2026-04-11
+
+- backend `/api/country/KR/heatmap`는 이제 Render `startup_memory_safe_mode`에서 `yfinance_client`가 아직 cold import 상태면 live heatmap build를 시작하지 않고, 현재 cache/last-success만 확인한 뒤 그것도 없으면 `heatmap_cold_import_guard` shell로 바로 복귀합니다. 그래서 heatmap first hit 하나만으로 `yfinance` 스택을 새로 깨우며 워커 메모리를 다시 `470MB+` critical band까지 밀어 올리던 경로를 더 보수적으로 막았습니다.
+- heatmap timeout fallback도 이제 safe mode에서 `kr_market_quote_client`가 cold import 상태면 live 대표호가 fetch를 다시 시도하지 않고 placeholder heatmap으로 바로 닫습니다. 그래서 timeout 뒤 fallback에서 quote client를 한 번 더 깨우며 memory pressure를 다시 높이던 경로를 줄였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode cold import guard가 live heatmap build/shared cache fetch를 모두 건너뛰는 회귀와, heatmap fallback이 cold KR quote import를 다시 깨우지 않는 회귀를 추가했습니다. 그래서 히트맵 first hit이 다시 cold data client import 때문에 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.54 - 2026-04-11
 
 - backend `/api/screener`는 이제 Render `startup_memory_safe_mode`에서 KR quick path가 `kr_market_quote_client`를 아직 cold import 상태로 깨우지 않습니다. 캐시나 `last_success`가 없더라도 작은 limit 요청까지 바로 `kr_safe_shell_warming` seed로 닫아, 로컬 측정 기준 첫 import만으로 약 `+132MB`가 붙는 quote client 때문에 screener first hit 뒤 프로세스 메모리가 한 번에 warning band로 점프하던 경로를 더 보수적으로 막았습니다.

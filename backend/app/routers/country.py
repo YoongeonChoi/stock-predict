@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import sys
 import time
 from collections.abc import Awaitable
 from typing import Any
@@ -245,16 +246,19 @@ async def _build_heatmap_fallback(code: str) -> dict:
     if code == "KR":
         representative_quotes = await _load_cached_kr_representative_quotes()
         if not representative_quotes:
-            try:
-                representative_quotes = await asyncio.wait_for(
-                    kr_market_quote_client.get_kr_representative_quotes(
-                        limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
-                    ),
-                    timeout=2.5,
-                )
-            except Exception as exc:
-                logging.warning("heatmap representative fallback failed for %s: %s", code, exc)
+            if _should_avoid_cold_heatmap_quote_import():
                 representative_quotes = {}
+            else:
+                try:
+                    representative_quotes = await asyncio.wait_for(
+                        kr_market_quote_client.get_kr_representative_quotes(
+                            limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+                        ),
+                        timeout=2.5,
+                    )
+                except Exception as exc:
+                    logging.warning("heatmap representative fallback failed for %s: %s", code, exc)
+                    representative_quotes = {}
 
         sectors_from_quotes = _build_heatmap_children_from_quotes(universe, representative_quotes)
         if sectors_from_quotes:
@@ -496,6 +500,26 @@ def _should_use_ultra_fast_public_fallback() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
+
+
+def _is_yfinance_module_warm() -> bool:
+    return "app.data.yfinance_client" in sys.modules
+
+
+def _is_kr_market_quote_module_warm() -> bool:
+    return "app.data.kr_market_quote_client" in sys.modules
+
+
+def _should_avoid_cold_heatmap_live_build() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_yfinance_module_warm()
+
+
+def _should_avoid_cold_heatmap_quote_import() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_kr_market_quote_module_warm()
 
 
 def _should_use_startup_public_route_guard() -> bool:
@@ -1442,6 +1466,28 @@ async def get_heatmap(code: str):
     from app.data import cache as data_cache
     cache_key = f"heatmap:v3:{code}"
     last_success_key = f"heatmap:last_success:{code}"
+
+    if _should_avoid_cold_heatmap_live_build():
+        cached_response = await data_cache.get(cache_key)
+        if _heatmap_has_tiles(cached_response):
+            _maybe_trim_public_route_memory("country_heatmap")
+            return cached_response
+
+        cached_success = await data_cache.get(last_success_key)
+        if _heatmap_has_tiles(cached_success):
+            response = dict(cached_success)
+            response["partial"] = True
+            response["fallback_reason"] = "heatmap_last_success"
+            response["generated_at"] = datetime.now().isoformat()
+            _maybe_trim_public_route_memory("country_heatmap")
+            return response
+
+        response = dict(_build_heatmap_guard_shell(code))
+        response["partial"] = True
+        response["fallback_reason"] = "heatmap_cold_import_guard"
+        response["generated_at"] = datetime.now().isoformat()
+        _maybe_trim_public_route_memory("country_heatmap")
+        return response
 
     async def _fetch_heatmap():
         try:

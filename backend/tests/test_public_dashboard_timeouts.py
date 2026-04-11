@@ -845,6 +845,59 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(first_tile["change"], 0.0)
         self.assertEqual(first_tile["ticker"], "")
 
+    def test_heatmap_safe_mode_cold_import_guard_returns_shell_without_live_build(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
+            patch("app.routers.country._should_avoid_cold_heatmap_live_build", return_value=True),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch(
+                "app.routers.country._build_heatmap_payload",
+                new=AsyncMock(side_effect=AssertionError("cold import guard should skip live heatmap build")),
+            ),
+            patch(
+                "app.routers.country._build_heatmap_fallback",
+                new=AsyncMock(side_effect=AssertionError("cold import guard should skip live fallback build")),
+            ),
+            patch(
+                "app.data.cache.get_or_fetch",
+                new=AsyncMock(side_effect=AssertionError("cold import guard should skip shared cache fetch")),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/country/KR/heatmap")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "heatmap_cold_import_guard")
+        self.assertGreater(len(payload["children"]), 0)
+        self.assertEqual(payload["children"][0]["children"][0]["change"], 0.0)
+
+    def test_heatmap_fallback_safe_mode_cold_quote_import_skips_live_representative_fetch(self):
+        with (
+            patch(
+                "app.data.universe_data.get_universe",
+                new=AsyncMock(return_value={"Information Technology": ["005930.KS"]}),
+            ),
+            patch(
+                "app.routers.country._load_cached_kr_representative_quotes",
+                new=AsyncMock(return_value={}),
+            ),
+            patch("app.routers.country._should_avoid_cold_heatmap_quote_import", return_value=True),
+            patch(
+                "app.routers.country.kr_market_quote_client.get_kr_representative_quotes",
+                new=AsyncMock(side_effect=AssertionError("cold quote guard should skip representative quote fetch")),
+            ),
+        ):
+            response = asyncio.run(country_router._build_heatmap_fallback("KR"))
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "live_snapshot_timeout")
+        self.assertEqual(response["children"][0]["children"][0]["ticker"], "005930.KS")
+        self.assertEqual(response["children"][0]["children"][0]["change"], 0.0)
+
     def test_screener_partial_does_not_schedule_cache_warmup_in_render_safe_mode(self):
         sector_map = {
             f"Sector {index}": [f"{index:06d}.KS"]
