@@ -486,6 +486,13 @@ async def get_index_quote(ticker: str) -> dict:
     settings = get_settings()
     session_token = market_session_cache_token(ticker=ticker)
 
+    def _is_cacheable_index_quote(payload: dict | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        price = _safe_float(payload.get("price"), 0.0) or 0.0
+        prev_close = _safe_float(payload.get("prev_close"), 0.0) or 0.0
+        return price > 0.0 or prev_close > 0.0
+
     async def _fetch():
         def _sync():
             snapshot = _load_snapshot(ticker, history_period="5d", include_info=False)
@@ -503,9 +510,10 @@ async def get_index_quote(ticker: str) -> dict:
         return await asyncio.to_thread(_sync)
 
     return await cache.get_or_fetch(
-        f"index:{ticker}:{session_token}",
+        f"index:v2:{ticker}:{session_token}",
         _fetch,
         _fresh_price_ttl(settings.cache_ttl_price),
+        should_cache=_is_cacheable_index_quote,
     )
 
 

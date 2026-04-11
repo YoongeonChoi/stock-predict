@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.11 - 2026-04-12
+
+- backend `app.data.yfinance_client.get_index_quote()`는 이제 `index:v2:*` cache key를 사용하고, `price/prev_close`가 모두 0인 payload는 내부 index cache에 저장하지 않습니다. 그래서 `/api/market/indicators` 라우트 shared cache를 비워도 안쪽 quote cache가 stale zero 응답을 다시 뿌리던 경로까지 같이 정리했습니다.
+- `backend/tests/test_yfinance_client.py`에는 versioned index cache key와 zero-payload non-cache predicate 회귀를 추가했습니다. 앞으로는 지표 strip이 다시 0으로 굳더라도 quote layer에서 바로 원인을 잡을 수 있습니다.
+
 ## v2.61.10 - 2026-04-12
 
 - backend `/api/market/indicators`는 이제 `shared cache`에 `all-zero fallback` payload를 저장하지 않습니다. 그래서 배포 직후나 외부 시세 일시 지연 때 한 번 내려간 `0값 strip`이 TTL 동안 그대로 굳어 버리던 문제를 줄이고, 다음 요청에서 정상 지표를 다시 채울 수 있게 정리했습니다.

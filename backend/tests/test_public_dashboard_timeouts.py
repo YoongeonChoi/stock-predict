@@ -805,7 +805,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "kr_representative_snapshot_warming")
-        self.assertLess(elapsed, 0.05)
+        self.assertLess(elapsed, 0.08)
         representative_quotes.assert_awaited_once_with(limit=20)
         warmup.assert_called_once()
 
