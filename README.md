@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.17`
+현재 릴리즈: `v2.61.18`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `public_api_memory_hygiene_middleware`는 이제 pre-request memory trim을 짧게 timebox하고, 느려지면 요청을 계속 흘려보내면서 trim은 백그라운드에서 마무리합니다. 그래서 Render 메모리 보호는 유지하되, 서버 route trace는 5초 안쪽인데 실제 클라이언트 요청만 30~40초씩 늘어지던 지연을 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_main_memory_hygiene.py`에는 공개 API request가 trim scheduler를 타는지, 느린 trim이 있어도 middleware가 그 완료까지 기다리지 않는지, 이미 돌고 있는 trim이 있으면 추가 요청을 다시 붙잡지 않는지 확인하는 회귀를 추가했습니다.
 - backend `/api/briefing/daily`는 이제 `briefing_service` lazy import도 비동기 helper 안에서 로드합니다. 그래서 첫 브리핑 요청이 무거운 모듈 import 때문에 timeout 바깥에서 30초 이상 묶이는 경로를 줄이고, 공개 timeout budget이 실제 import 비용까지 포함해 적용되도록 정리했습니다.
 - `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 늦은 cancellation cleanup뿐 아니라 느린 lazy import도 기다리지 않고 바로 partial로 내려가는 회귀를 추가했습니다. 앞으로는 첫 브리핑 진입이 import 비용 때문에 다시 timeout budget 바깥으로 밀리는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/briefing/daily`의 공개 timeout은 이제 `shielded background task` 기준으로 동작합니다. 그래서 Render cold wake 직후 브리핑 전체 계산이 늦더라도 timeout 후 늦은 cancellation cleanup을 기다리며 30~40초까지 붙잡히지 않고, 1차 partial을 더 빨리 반환하면서 백그라운드 계산은 계속 살아 cache 복구를 이어 가도록 정리했습니다.

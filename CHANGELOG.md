@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.18 - 2026-04-12
+
+- backend `public_api_memory_hygiene_middleware`는 이제 pre-request memory trim을 짧게 timebox하고, trim이 길어지면 요청을 계속 흘려보내면서 정리는 백그라운드에서 마무리합니다. 그래서 Render safe mode의 메모리 보호는 유지하되, `/api/briefing/daily`나 `/api/market/indicators`처럼 서버 route trace보다 실제 클라이언트 체감이 훨씬 길게 늘어지던 지연을 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_main_memory_hygiene.py`에는 공개 API request가 trim scheduler를 타는지, 느린 trim이 middleware를 끝까지 붙잡지 않는지, 이미 돌고 있는 trim이 있으면 추가 요청을 다시 기다리게 하지 않는지 확인하는 회귀를 추가했습니다.
+
 ## v2.61.17 - 2026-04-12
 
 - backend `/api/briefing/daily`는 이제 `briefing_service` lazy import도 비동기 helper 안에서 로드합니다. 그래서 첫 브리핑 요청이 무거운 모듈 import 때문에 timeout 바깥에서 오래 묶이는 경로를 줄이고, 공개 timeout budget이 실제 import 비용까지 포함해 적용되도록 정리했습니다.

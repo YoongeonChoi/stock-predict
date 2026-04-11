@@ -42,10 +42,13 @@ logging.basicConfig(
 )
 
 startup_log = logging.getLogger("stock_predict.startup")
+memory_log = logging.getLogger("stock_predict.memory")
 archive_service = LazyModuleProxy("app.services.archive_service")
 learned_fusion_profile_service = LazyModuleProxy("app.services.learned_fusion_profile_service")
 market_service = LazyModuleProxy("app.services.market_service")
 research_archive_service = LazyModuleProxy("app.services.research_archive_service")
+PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS = 0.15
+_public_api_pre_request_trim_task: asyncio.Task | None = None
 
 
 @dataclass(frozen=True)
@@ -310,6 +313,48 @@ def _memory_hygiene_request_reason(request: Request) -> str:
     return normalized.replace("/", ":")[:96]
 
 
+async def _run_public_api_pre_request_trim(reason: str) -> dict[str, object]:
+    return await asyncio.to_thread(maybe_trim_process_memory, reason)
+
+
+def _finalize_public_api_pre_request_trim(task: asyncio.Task) -> None:
+    global _public_api_pre_request_trim_task
+    if _public_api_pre_request_trim_task is task:
+        _public_api_pre_request_trim_task = None
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        memory_log.debug("pre-request memory trim task was cancelled")
+    except Exception as exc:  # pragma: no cover - best effort guard
+        memory_log.debug("pre-request memory trim task failed: %s", exc, exc_info=True)
+
+
+async def _maybe_schedule_public_api_pre_request_trim(reason: str) -> None:
+    global _public_api_pre_request_trim_task
+
+    task = _public_api_pre_request_trim_task
+    if task is not None and not task.done():
+        return
+
+    task = asyncio.create_task(
+        _run_public_api_pre_request_trim(reason),
+        name="public-api-pre-request-trim",
+    )
+    _public_api_pre_request_trim_task = task
+    task.add_done_callback(_finalize_public_api_pre_request_trim)
+    try:
+        await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        memory_log.debug(
+            "pre-request memory trim for %s exceeded %.2fs; continuing while trim finishes in background.",
+            reason,
+            PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS,
+        )
+
+
 @app.middleware("http")
 async def public_api_memory_hygiene_middleware(request: Request, call_next):
     if (
@@ -319,9 +364,11 @@ async def public_api_memory_hygiene_middleware(request: Request, call_next):
         and request.url.path != "/api/health"
     ):
         try:
-            maybe_trim_process_memory(f"pre:{_memory_hygiene_request_reason(request)}")
+            await _maybe_schedule_public_api_pre_request_trim(
+                f"pre:{_memory_hygiene_request_reason(request)}"
+            )
         except Exception as exc:  # pragma: no cover - best effort guard
-            logging.getLogger("stock_predict.memory").debug(
+            memory_log.debug(
                 "pre-request memory trim skipped for %s: %s",
                 request.url.path,
                 exc,
