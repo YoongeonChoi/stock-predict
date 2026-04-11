@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.23 - 2026-04-11
+
+- backend `app.analysis.llm_client`는 이제 `openai` SDK를 실제 호출 시점에만 import합니다. 공개 route startup과 Render cold wake가 불필요한 SDK 메모리를 먼저 점유하지 않도록 바꿔, `500MB` 한도 근처에서 startup RSS를 더 낮추는 방향으로 정리했습니다.
+- `backend/tests/test_llm_client.py`를 추가해 `llm_client` import와 API key가 없는 fast-fail 경로가 `openai`를 eager import하지 않는 회귀를 고정했습니다.
+- `verify.py`는 배포 브라우저 스모크 전에 같은 라우트를 한 번 더 워밍업하고, viewport matrix 전체 예산도 `600s`로 늘렸습니다. 실제 서비스는 정상인데 cold path 때문에 `--deployed-site-smoke`만 간헐적으로 `exit 1`로 깨지던 검증 체인 불안정을 줄였습니다.
+
 ## v2.60.22 - 2026-04-11
 
 - 공개 `country report`의 memory-guard 경로를 더 공격적으로 가볍게 줄였습니다. 고압박 `500MB` 구간에서는 archived report 재조회와 quick 후보 탐색을 먼저 붙잡지 않고, 대표 지수 스냅샷 중심 1차 응답을 바로 반환하도록 바꿔 `country_report_memory_guard` 응답이 보호 모드인데도 9~10초까지 늘어지던 문제를 줄이는 방향으로 정리했습니다.

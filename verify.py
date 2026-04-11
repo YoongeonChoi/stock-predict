@@ -34,6 +34,7 @@ BACKEND_IMPORT_NAME_OVERRIDES = {
 BACKEND_TEST_EXTRA_IMPORTS = ("requests",)
 VERIFY_LOCK_PATH = ROOT / ".verify.lock"
 VERIFY_LOCK_STALE_SECONDS = 6 * 60 * 60
+BROWSER_SMOKE_VIEWPORT_MATRIX_MAX_TOTAL_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,34 @@ def warm_browser_routes(base_url: str) -> None:
                 time.sleep(attempt)
 
 
+def build_warm_browser_routes_command(python_command: list[str], base_url: str) -> list[str]:
+    return [
+        *python_command,
+        "-c",
+        f"from verify import warm_browser_routes; warm_browser_routes('{base_url}')",
+    ]
+
+
+def build_browser_smoke_command(python_command: list[str], base_url: str) -> list[str]:
+    return [
+        *python_command,
+        str(ROOT / "scripts" / "browser_smoke.py"),
+        "--base-url",
+        base_url,
+        "--attempts",
+        "6",
+        "--retry-delay",
+        "2.5",
+        "--virtual-time-budget-ms",
+        "18000",
+        "--command-timeout-seconds",
+        "30",
+        "--max-total-seconds",
+        str(BROWSER_SMOKE_VIEWPORT_MATRIX_MAX_TOTAL_SECONDS),
+        "--viewport-matrix",
+    ]
+
+
 def _read_lock_metadata(lock_path: Path) -> dict:
     try:
         return json.loads(lock_path.read_text(encoding="utf-8"))
@@ -259,34 +288,10 @@ def main(argv: list[str] | None = None) -> int:
         browser_smoke_url = args.browser_smoke_url or "http://127.0.0.1:3000"
         if stages.run_browser_smoke and is_local_browser_target(browser_smoke_url):
             run_step("Launch local dev server", [*python_command, str(ROOT / "start.py")], ROOT)
-            run_step(
-                "Warm browser routes",
-                [*python_command, "-c", f"from verify import warm_browser_routes; warm_browser_routes('{browser_smoke_url}')"],
-                ROOT,
-            )
+            run_step("Warm browser routes", build_warm_browser_routes_command(python_command, browser_smoke_url), ROOT)
 
         if stages.run_browser_smoke:
-            run_step(
-                "Browser smoke",
-                [
-                    *python_command,
-                    str(ROOT / "scripts" / "browser_smoke.py"),
-                    "--base-url",
-                    browser_smoke_url,
-                    "--attempts",
-                    "6",
-                    "--retry-delay",
-                    "2.5",
-                    "--virtual-time-budget-ms",
-                    "18000",
-                    "--command-timeout-seconds",
-                    "30",
-                    "--max-total-seconds",
-                    "240",
-                    "--viewport-matrix",
-                ],
-                ROOT,
-            )
+            run_step("Browser smoke", build_browser_smoke_command(python_command, browser_smoke_url), ROOT)
 
         if stages.run_live_api_smoke:
             run_step("Backend live API smoke", [*python_command, "scripts/live_api_smoke.py"], ROOT / "backend")
@@ -313,24 +318,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             deployed_frontend_url = "https://www.yoongeon.xyz"
             run_step(
+                "Warm deployed browser routes",
+                build_warm_browser_routes_command(python_command, deployed_frontend_url),
+                ROOT,
+            )
+            run_step(
                 "Deployed browser smoke",
-                [
-                    *python_command,
-                    str(ROOT / "scripts" / "browser_smoke.py"),
-                    "--base-url",
-                    deployed_frontend_url,
-                    "--attempts",
-                    "6",
-                    "--retry-delay",
-                    "2.5",
-                    "--virtual-time-budget-ms",
-                    "18000",
-                    "--command-timeout-seconds",
-                    "30",
-                    "--max-total-seconds",
-                    "240",
-                    "--viewport-matrix",
-                ],
+                build_browser_smoke_command(python_command, deployed_frontend_url),
                 ROOT,
             )
 

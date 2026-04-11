@@ -70,6 +70,22 @@ class VerifyRuntimeTests(unittest.TestCase):
 
         self.assertTrue(args.allow_parallel)
 
+    def test_browser_smoke_command_uses_expanded_viewport_matrix_budget(self) -> None:
+        command = verify_runner.build_browser_smoke_command(["python"], "https://www.yoongeon.xyz")
+
+        max_total_index = command.index("--max-total-seconds")
+        self.assertEqual(
+            command[max_total_index + 1],
+            str(verify_runner.BROWSER_SMOKE_VIEWPORT_MATRIX_MAX_TOTAL_SECONDS),
+        )
+        self.assertIn("--viewport-matrix", command)
+
+    def test_warm_browser_routes_command_targets_requested_base_url(self) -> None:
+        command = verify_runner.build_warm_browser_routes_command(["python"], "https://www.yoongeon.xyz")
+
+        self.assertEqual(command[:2], ["python", "-c"])
+        self.assertIn("warm_browser_routes('https://www.yoongeon.xyz')", command[2])
+
     def test_acquire_verify_lock_blocks_second_active_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             lock_path = Path(temp_dir) / ".verify.lock"

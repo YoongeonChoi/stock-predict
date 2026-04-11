@@ -1,10 +1,16 @@
 """OpenAI GPT-4o wrapper with structured JSON output and error-coded responses."""
 
 import json
+from functools import lru_cache
+from importlib import import_module
 
-import openai
 from app.config import get_settings
 from app.errors import SP_1001, SP_4001, SP_4002, SP_4003, SP_4004, SP_4005
+
+
+@lru_cache(maxsize=1)
+def _get_openai_module():
+    return import_module("openai")
 
 
 async def ask_json(
@@ -19,6 +25,7 @@ async def ask_json(
         err.log("warning")
         return err.to_dict()
 
+    openai = _get_openai_module()
     try:
         client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
@@ -72,6 +79,7 @@ async def ask_text(system_prompt: str, user_prompt: str, temperature: float = 0.
         SP_1001().log("warning")
         return ""
 
+    openai = _get_openai_module()
     try:
         client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,

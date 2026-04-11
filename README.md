@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.22`
+현재 릴리즈: `v2.60.23`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `llm_client`는 이제 `openai` SDK를 import 시점이 아니라 실제 LLM 호출 시점에 지연 로드합니다. Render `500MB` 메모리 한도 근처에서 공개 route startup이 불필요한 SDK 메모리를 먼저 점유하지 않도록 줄여, cold start RSS를 낮추는 방향으로 정리했습니다.
+- `verify.py --deployed-site-smoke`는 배포 브라우저 매트릭스를 돌리기 전에 동일 라우트를 한 번 더 워밍업하고, 전체 viewport matrix 예산도 늘렸습니다. 실제 사이트는 정상인데 cold path 때문에 검증만 `exit 1`로 깨지던 간헐 실패를 줄여 회귀 루프를 더 안정적으로 반복할 수 있습니다.
 - 공개 `country report`의 memory-guard 경로를 더 가볍게 줄였습니다. 메모리 보호 응답이 필요한 순간에는 archived report 재조회와 후보 탐색을 먼저 붙잡지 않고, 대표 지수 스냅샷 중심 1차 응답을 바로 반환해 Render `500MB` 한도 근처에서 9~10초까지 늘어나던 보호 응답 지연을 더 낮추는 방향으로 정리했습니다.
 - `verify.py`와 `start.py --check`는 이제 Windows에서 repo-local `venv`와 PATH만 보지 않고, 표준 `nodejs` 설치 경로와 로컬 `.cmd` shim까지 해석합니다. `node`가 PATH에 없어도 `next build`, `tsc --noEmit`, 런처 점검이 같은 규칙으로 계속 동작해 회귀 루프 자체가 끊기지 않도록 맞췄습니다.
 - `/api/health`는 Render memory-safe 모드에서도 요청 전 `gc/malloc_trim`을 건너뜁니다. readiness 확인과 wake 확인 경로가 메모리 정리 작업 때문에 추가로 느려지지 않도록 분리했습니다.
