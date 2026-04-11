@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.19 - 2026-04-12
+
+- `scripts/deployed_site_smoke.py`는 이제 배포 API 측정을 `urllib` 대신 `requests` 클라이언트로 수행하고, `Accept-Encoding: identity`와 `Connection: close`를 명시합니다. 그래서 직접 `requests`로는 빠르게 끝나는 호출이 deployed smoke에서만 30~40초처럼 보이던 false latency를 줄이고, 실제 서비스 병목과 검증 체인 병목을 더 정확히 분리할 수 있게 정리했습니다.
+- `backend/tests/test_deployed_site_smoke.py`에는 배포 스모크 fetch가 같은 `requests` 헤더/timeout 규칙을 유지하는지와, 보호 API의 `error_code` 검증 실패가 elapsed summary를 포함한 안정적인 실패 로그로 남는지 확인하는 회귀를 추가했습니다.
+
 ## v2.61.18 - 2026-04-12
 
 - backend `public_api_memory_hygiene_middleware`는 이제 pre-request memory trim을 짧게 timebox하고, trim이 길어지면 요청을 계속 흘려보내면서 정리는 백그라운드에서 마무리합니다. 그래서 Render safe mode의 메모리 보호는 유지하되, `/api/briefing/daily`나 `/api/market/indicators`처럼 서버 route trace보다 실제 클라이언트 체감이 훨씬 길게 늘어지던 지연을 줄이는 방향으로 정리했습니다.

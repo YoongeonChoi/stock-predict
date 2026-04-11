@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.18`
+현재 릴리즈: `v2.61.19`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- `scripts/deployed_site_smoke.py`는 이제 배포 API 측정을 `urllib` 대신 `requests` 클라이언트로 수행하고, `Accept-Encoding: identity`와 `Connection: close`를 명시합니다. 그래서 직접 `requests`로는 1초 안쪽인데 deployed smoke만 30~40초처럼 보이던 false latency를 줄이고, 실제 서버 지연과 검증 체인 지연을 더 정확히 분리할 수 있게 맞췄습니다.
+- `backend/tests/test_deployed_site_smoke.py`에는 배포 스모크 fetch가 같은 `requests` 헤더/timeout 규칙을 유지하는지와, `401` 보호 API가 `SP-6014` 없이 내려올 때 elapsed summary를 포함한 실패를 안정적으로 출력하는 회귀를 추가했습니다. 앞으로는 검증 체인 자체가 다시 잘못된 HTTP 클라이언트나 출력 버그 때문에 흔들리는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `public_api_memory_hygiene_middleware`는 이제 pre-request memory trim을 짧게 timebox하고, 느려지면 요청을 계속 흘려보내면서 trim은 백그라운드에서 마무리합니다. 그래서 Render 메모리 보호는 유지하되, 서버 route trace는 5초 안쪽인데 실제 클라이언트 요청만 30~40초씩 늘어지던 지연을 줄이는 방향으로 정리했습니다.
 - `backend/tests/test_main_memory_hygiene.py`에는 공개 API request가 trim scheduler를 타는지, 느린 trim이 있어도 middleware가 그 완료까지 기다리지 않는지, 이미 돌고 있는 trim이 있으면 추가 요청을 다시 붙잡지 않는지 확인하는 회귀를 추가했습니다.
 - backend `/api/briefing/daily`는 이제 `briefing_service` lazy import도 비동기 helper 안에서 로드합니다. 그래서 첫 브리핑 요청이 무거운 모듈 import 때문에 timeout 바깥에서 30초 이상 묶이는 경로를 줄이고, 공개 timeout budget이 실제 import 비용까지 포함해 적용되도록 정리했습니다.

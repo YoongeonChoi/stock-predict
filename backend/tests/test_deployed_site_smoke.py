@@ -51,6 +51,35 @@ class DeployedSiteSmokeTests(unittest.TestCase):
         self.assertEqual(deployed_smoke.clamp_timeout(45, 15), 15)
         self.assertEqual(deployed_smoke.clamp_timeout(8, 15), 8)
 
+    def test_fetch_uses_requests_client_with_explicit_headers(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "status_code": 200,
+                "text": '{"ok": true}',
+                "headers": {"x-test": "1"},
+            },
+        )()
+
+        with patch.object(deployed_smoke.requests, "get", return_value=response) as get:
+            status, body, headers = deployed_smoke.fetch("https://api.example.com/health", timeout=7)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, '{"ok": true}')
+        self.assertEqual(headers["x-test"], "1")
+        get.assert_called_once()
+        kwargs = get.call_args.kwargs
+        self.assertEqual(kwargs["timeout"], 7)
+        self.assertEqual(kwargs["headers"]["User-Agent"], "stock-predict-deployed-smoke/1.0")
+        self.assertEqual(kwargs["headers"]["Accept-Encoding"], "identity")
+        self.assertEqual(kwargs["headers"]["Connection"], "close")
+
+    def test_fetch_wraps_requests_timeout(self):
+        with patch.object(deployed_smoke.requests, "get", side_effect=deployed_smoke.requests.Timeout("boom")):
+            with self.assertRaisesRegex(RuntimeError, "timed out after 9s"):
+                deployed_smoke.fetch("https://api.example.com/health", timeout=9)
+
     def test_fetch_with_retry_stops_when_budget_is_already_exhausted(self):
         with patch.object(deployed_smoke, "fetch", side_effect=AssertionError("fetch should not run")):
             with self.assertRaisesRegex(RuntimeError, "budget was exhausted"):
@@ -184,6 +213,40 @@ class DeployedSiteSmokeTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertEqual(fetch_with_retry.call_count, 1)
         frontend_checks.assert_not_called()
+
+    def test_main_missing_error_code_failure_keeps_elapsed_summary(self):
+        check = deployed_smoke.ApiSmokeCheck(
+            name="auth-watchlist",
+            method="GET",
+            path="/api/watchlist",
+            expected_status=401,
+            expected_error_code="SP-6014",
+        )
+        outcome = deployed_smoke.FetchOutcome(
+            status=401,
+            body='{"detail": "unauthorized"}',
+            headers={},
+            attempts=1,
+            total_elapsed_seconds=0.31,
+            final_attempt_elapsed_seconds=0.31,
+        )
+
+        with (
+            patch.object(
+                deployed_smoke,
+                "build_api_checks",
+                return_value=[(check, "https://api.example.com/api/watchlist")],
+            ),
+            patch.object(deployed_smoke, "build_frontend_checks", return_value=[]),
+            patch.object(deployed_smoke, "fetch_with_retry", return_value=outcome),
+            patch("builtins.print") as print_mock,
+        ):
+            exit_code = deployed_smoke.main(["--fail-fast"])
+
+        self.assertEqual(exit_code, 1)
+        printed = " ".join(" ".join(str(arg) for arg in call.args) for call in print_mock.call_args_list)
+        self.assertIn("missing error_code SP-6014", printed)
+        self.assertIn("in 0.31s", printed)
 
 
 if __name__ == "__main__":

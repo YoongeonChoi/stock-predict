@@ -3,15 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
-from urllib.request import Request, urlopen
+
+import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -101,18 +100,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def fetch(url: str, timeout: int = 30) -> tuple[int, str, dict[str, str]]:
-    request = Request(url, headers={"User-Agent": "stock-predict-deployed-smoke/1.0"})
     try:
-        with urlopen(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8", errors="replace")
-            return response.status, body, dict(response.headers.items())
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        return exc.code, body, dict(exc.headers.items())
-    except (TimeoutError, socket.timeout) as exc:
+        response = requests.get(
+            url,
+            timeout=timeout,
+            headers={
+                "User-Agent": "stock-predict-deployed-smoke/1.0",
+                "Accept-Encoding": "identity",
+                "Connection": "close",
+            },
+        )
+    except requests.Timeout as exc:
         raise RuntimeError(f"{url} timed out after {timeout}s") from exc
-    except URLError as exc:
+    except requests.RequestException as exc:
         raise RuntimeError(f"{url} connection failed: {exc}") from exc
+    return response.status_code, response.text, dict(response.headers.items())
 
 
 def clamp_timeout(request_timeout: int, timeout_cap: int) -> int:
@@ -332,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         ):
             failures.append(f"{check.name}: expected error_code {check.expected_error_code}, got {payload}")
             print(
-                f"[FAIL] {check.name:24} {url} -> missing error_code {check.expected_error_code} in {elapsed:.2f}s",
+                f"[FAIL] {check.name:24} {url} -> missing error_code {check.expected_error_code} {format_elapsed_summary(outcome)}",
                 flush=True,
             )
             if args.fail_fast:
