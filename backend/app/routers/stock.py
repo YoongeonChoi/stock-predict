@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from starlette.background import BackgroundTask
 from app.analysis.stock_cache_keys import stock_detail_latest_cache_key, stock_detail_quick_cache_key
 from app.config import get_settings
 from app.data import cache
@@ -71,6 +70,19 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         maybe_trim_process_memory(reason)
     except Exception:
         pass
+
+
+async def _run_deferred_public_route_memory_trim(reason: str) -> None:
+    await asyncio.to_thread(_maybe_trim_public_route_memory, reason)
+
+
+def _schedule_public_route_memory_trim(reason: str | None) -> None:
+    if not reason:
+        return
+    try:
+        asyncio.create_task(_run_deferred_public_route_memory_trim(reason))
+    except RuntimeError:
+        _maybe_trim_public_route_memory(reason)
 
 
 def _should_skip_public_side_effects() -> bool:
@@ -373,15 +385,13 @@ def _sanitize_json_value(value: Any) -> Any:
 def _build_stock_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
     encoded = jsonable_encoder(payload)
     response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
-    if trim_reason:
-        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
+    _schedule_public_route_memory_trim(trim_reason)
     return response
 
 
 def _build_stock_error_response(status_code: int, content: dict, *, trim_reason: str | None = None) -> JSONResponse:
     response = JSONResponse(status_code=status_code, content=content)
-    if trim_reason:
-        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
+    _schedule_public_route_memory_trim(trim_reason)
     return response
 
 

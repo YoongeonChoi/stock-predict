@@ -16,14 +16,21 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_build_country_success_response_defers_memory_trim_until_background_task(self):
         payload = {"country": {"code": "KR"}, "market_summary": "ok"}
 
-        with patch("app.routers.country._maybe_trim_public_route_memory") as trim:
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.routers.country._maybe_trim_public_route_memory") as trim,
+            patch("app.routers.country.asyncio.create_task", side_effect=_capture_task) as create_task,
+        ):
             response = country._build_country_success_response(payload, trim_reason="country_report")
 
             trim.assert_not_called()
-            self.assertIsNotNone(response.background)
-            await response.background()
+            create_task.assert_called_once()
+            self.assertIsNone(response.background)
 
-        trim.assert_called_once_with("country_report")
+        trim.assert_not_called()
 
     async def test_market_opportunities_returns_quick_and_starts_background_refresh(self):
         refresh_started = asyncio.Event()

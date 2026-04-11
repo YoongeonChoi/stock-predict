@@ -8,7 +8,6 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
-from starlette.background import BackgroundTask
 from app.config import get_settings
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.models.country import COUNTRY_REGISTRY
@@ -105,8 +104,7 @@ def _sanitize_json_value(value: Any) -> Any:
 def _build_country_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
     encoded = jsonable_encoder(payload)
     response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
-    if trim_reason:
-        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
+    _schedule_public_route_memory_trim(trim_reason)
     return response
 
 
@@ -425,6 +423,19 @@ def _maybe_trim_public_route_memory(reason: str) -> None:
         maybe_trim_process_memory(reason)
     except Exception as exc:
         logging.debug("memory trim skipped for %s: %s", reason, exc)
+
+
+async def _run_deferred_public_route_memory_trim(reason: str) -> None:
+    await asyncio.to_thread(_maybe_trim_public_route_memory, reason)
+
+
+def _schedule_public_route_memory_trim(reason: str | None) -> None:
+    if not reason:
+        return
+    try:
+        asyncio.create_task(_run_deferred_public_route_memory_trim(reason))
+    except RuntimeError:
+        _maybe_trim_public_route_memory(reason)
 
 
 def _should_skip_public_side_effects() -> bool:

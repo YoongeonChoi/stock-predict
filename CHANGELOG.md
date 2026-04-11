@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.27 - 2026-04-11
+
+- backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 별도 `asyncio` background trim으로 미뤘습니다. first-usable latency 개선 방향은 유지하면서도 `Response.background` 경로에서 배포 런타임이 `No response returned`로 500을 내던 문제를 피하도록 수정했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 response helper가 trim을 inline으로 호출하지 않고 비동기 스케줄만 거는 회귀를 추가했습니다. fast path가 다시 동기 trim에 막히거나 trim 전달 방식 때문에 공개 응답이 깨지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.26 - 2026-04-11
 
 - backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 응답 전송 후 background trim으로 미뤘습니다. memory-safe 보호는 유지하면서도 cached/fallback 응답이 마지막 메모리 정리 때문에 더 늦게 닫히지 않도록 바꿔, first-usable latency를 줄이는 방향으로 정리했습니다.

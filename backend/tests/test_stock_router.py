@@ -65,14 +65,21 @@ class StockRouterTests(unittest.TestCase):
     def test_build_stock_success_response_defers_memory_trim_until_background_task(self):
         payload = _cached_snapshot()
 
-        with patch("app.routers.stock._maybe_trim_public_route_memory") as trim:
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.routers.stock._maybe_trim_public_route_memory") as trim,
+            patch("app.routers.stock.asyncio.create_task", side_effect=_capture_task) as create_task,
+        ):
             response = stock_router._build_stock_success_response(payload, trim_reason="stock_detail")
 
             trim.assert_not_called()
-            self.assertIsNotNone(response.background)
-            asyncio.run(response.background())
+            create_task.assert_called_once()
+            self.assertIsNone(response.background)
 
-        trim.assert_called_once_with("stock_detail")
+        trim.assert_not_called()
 
     def test_get_cached_stock_detail_without_refresh_uses_lightweight_cache(self):
         cached = _cached_snapshot()
