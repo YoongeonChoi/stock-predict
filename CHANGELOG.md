@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.9 - 2026-04-12
+
+- backend `/api/market/indicators`는 이제 `USD/KRW / Gold / Oil / Bitcoin` 각 지표 fetch를 개별 timebox로 감쌉니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않고, 늦은 항목만 `0값 fallback`으로 떨어뜨린 채 먼저 응답하도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 개별 indicator timeout이 cancellation cleanup을 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 공개 대시보드 상단 지표가 다시 single-source stall 때문에 first usable 응답을 놓치는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- repo 루트에서 `python -m unittest discover -s backend/tests ...`를 직접 실행해도 `app.*` import가 깨지지 않도록 root package shim과 verify/runtime 회귀 테스트를 추가했습니다. 이제 manual 기능 루프와 verify 보조 실행이 cwd에 덜 민감하게 동작합니다.
+
 ## v2.61.8 - 2026-04-12
 
 - backend `/api/stock/{ticker}/detail`의 public non-full `stock_memory_guard` 경로는 이제 숫자 KR 티커를 `005930 -> 005930.KS` 식으로 fast path 정규화한 뒤 바로 shell을 반환합니다. 그래서 cold start에서 `ticker_resolver_service` 전체 import/map build에 묶이지 않고 먼저 응답하도록 정리했습니다.

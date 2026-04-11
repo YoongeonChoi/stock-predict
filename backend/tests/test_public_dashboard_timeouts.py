@@ -401,6 +401,41 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), last_success_payload)
 
+    def test_market_indicators_item_timeout_does_not_block_full_response(self):
+        async def _indicator_side_effect(ticker: str):
+            if ticker == "GC=F":
+                try:
+                    await asyncio.sleep(0.2)
+                except asyncio.CancelledError:
+                    await asyncio.sleep(0.05)
+                    raise
+            return {"ticker": ticker, "price": 123.4, "change_pct": 1.2}
+
+        with (
+            patch("app.routers.country.MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.country.MARKET_INDICATORS_TIMEOUT_SECONDS", 1),
+            patch("app.data.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.data.cache.set", new=AsyncMock(return_value=None)),
+            patch(
+                "app.data.yfinance_client.get_index_quote",
+                new=AsyncMock(side_effect=_indicator_side_effect),
+            ),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/market/indicators")
+            elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(elapsed, 0.12)
+        payload = response.json()
+        gold = next(item for item in payload if item["name"] == "Gold")
+        usdkrw = next(item for item in payload if item["name"] == "USD/KRW")
+        self.assertEqual(gold["price"], 0)
+        self.assertEqual(gold["change_pct"], 0)
+        self.assertEqual(usdkrw["price"], 123.4)
+        self.assertEqual(usdkrw["change_pct"], 1.2)
+
     def test_daily_briefing_timeout_returns_partial_fallback(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",

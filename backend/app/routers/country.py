@@ -51,6 +51,7 @@ MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_CACHE_TTL_SECONDS = 300
 MARKET_INDICATORS_TIMEOUT_SECONDS = 3
 MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 1.0
+MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS = 0.75
 MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
 HEATMAP_LAST_SUCCESS_TTL_SECONDS = 3600
 MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS = 1800
@@ -953,8 +954,27 @@ async def _build_market_indicators_payload() -> list[dict]:
 
     async def _load_indicator(item: tuple[str, str]) -> dict:
         name, ticker = item
+        indicator_label = f"market indicator {ticker}"
+        quote_task = asyncio.create_task(
+            yfinance_client.get_index_quote(ticker),
+            name=f"market-indicator:{ticker}",
+        )
         try:
-            quote = await yfinance_client.get_index_quote(ticker)
+            quote = await asyncio.wait_for(
+                asyncio.shield(quote_task),
+                timeout=MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            quote_task.add_done_callback(
+                lambda task, *, label=indicator_label: _log_background_completion(task, label=label)
+            )
+            _cancel_background_task(quote_task, label=indicator_label)
+            logging.warning(
+                "market indicator %s timed out after %ss; using zero-value fallback.",
+                ticker,
+                MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS,
+            )
+            quote = {"price": 0, "change_pct": 0}
         except Exception:
             quote = {"price": 0, "change_pct": 0}
         return {

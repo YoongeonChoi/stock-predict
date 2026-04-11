@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -132,6 +133,27 @@ class VerifyRuntimeTests(unittest.TestCase):
                     self.assertEqual(metadata["pid"], verify_runner.os.getpid())
 
             self.assertFalse(lock_path.exists())
+
+    def test_root_level_unittest_discovery_can_import_backend_app_package(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "backend/tests",
+                "-p",
+                "test_root_app_import.py",
+                "-v",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
