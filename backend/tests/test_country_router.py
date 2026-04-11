@@ -338,6 +338,34 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["children"][0]["children"][0]["ticker"], "005930.KS")
         self.assertNotEqual(response["children"][0]["children"][0]["change"], 0.0)
 
+    async def test_heatmap_fallback_uses_shorter_safe_mode_representative_quote_timeout(self):
+        captured: dict[str, float] = {}
+
+        async def _get_universe(code: str, *, prefer_fallback: bool = False):
+            self.assertEqual(code, "KR")
+            self.assertTrue(prefer_fallback)
+            return {"Information Technology": ["005930.KS"]}
+
+        async def _capture_wait_for(awaitable, timeout):
+            captured["timeout"] = timeout
+            return await awaitable
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.data.universe_data.get_universe", new=AsyncMock(side_effect=_get_universe)),
+            patch("app.routers.country._load_cached_kr_representative_quotes", new=AsyncMock(return_value={})),
+            patch("app.routers.country._should_avoid_cold_heatmap_quote_import", return_value=False),
+            patch("app.routers.country.asyncio.wait_for", new=AsyncMock(side_effect=_capture_wait_for)),
+            patch("app.routers.country.kr_market_quote_client.get_kr_representative_quotes", new=AsyncMock(return_value={})),
+        ):
+            response = await country._build_heatmap_fallback("KR")
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(
+            captured["timeout"],
+            country.HEATMAP_SAFE_MODE_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS,
+        )
+
     async def test_country_report_fallback_uses_latest_archived_report(self):
         archived_report = {
             "country": {"code": "KR", "name": "Korea", "name_local": "한국"},
@@ -550,6 +578,32 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             country.COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS,
         )
         self.assertTrue(loader.await_args.kwargs["keep_background"])
+
+    async def test_get_heatmap_uses_shorter_safe_mode_wait_timeout(self):
+        payload = {
+            "children": [
+                {
+                    "name": "Information Technology",
+                    "children": [{"ticker": "005930.KS", "name": "Samsung Electronics", "change": 0.0}],
+                }
+            ]
+        }
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
+            patch("app.routers.country._should_avoid_cold_heatmap_live_build", return_value=False),
+            patch("app.data.cache.get_or_fetch", new=AsyncMock(return_value=payload)) as cache_fetch,
+            patch("app.routers.country._maybe_trim_public_route_memory"),
+        ):
+            response = await country.get_heatmap("KR")
+
+        self.assertEqual(response, payload)
+        self.assertEqual(
+            cache_fetch.await_args.kwargs["wait_timeout"],
+            country.HEATMAP_SAFE_MODE_WAIT_TIMEOUT_SECONDS,
+        )
 
     async def test_get_country_report_partial_response_skips_inline_prediction_capture(self):
         report = {

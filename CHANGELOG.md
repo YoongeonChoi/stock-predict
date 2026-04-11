@@ -2,7 +2,10 @@
 
 All notable changes to this project are tracked here.
 
-## v2.61.23 - 2026-04-12
+## v2.61.26 - 2026-04-12
+
+- Render memory-safe 운영의 `/api/country/KR/heatmap`은 이제 safe-mode에서 shared cache `wait_timeout`과 KR 대표 시세 fallback timeout을 함께 더 짧게 사용합니다. 그래서 partial 응답이 기본 2.5초 대기를 거의 다 쓰고 3초대로 밀리던 구간을 줄이고, usable heatmap fallback을 더 빨리 반환하면서 백그라운드 캐시 복구는 그대로 유지하도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 safe-mode heatmap이 더 짧은 wait timeout과 대표 시세 fallback timeout을 실제로 사용하는 회귀를 추가했습니다.
 
 ## v2.61.25 - 2026-04-12
 

@@ -63,6 +63,9 @@ HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
 HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
+HEATMAP_SAFE_MODE_WAIT_TIMEOUT_SECONDS = 1.0
+HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS = 2.5
+HEATMAP_SAFE_MODE_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS = 0.35
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
 COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
@@ -260,7 +263,7 @@ async def _build_heatmap_fallback(code: str) -> dict:
                         kr_market_quote_client.get_kr_representative_quotes(
                             limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
                         ),
-                        timeout=2.5,
+                        timeout=_resolve_heatmap_representative_quote_timeout_seconds(),
                     )
                 except Exception as exc:
                     logging.warning("heatmap representative fallback failed for %s: %s", code, exc)
@@ -530,6 +533,21 @@ def _should_avoid_cold_heatmap_quote_import() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     return not _is_kr_market_quote_module_warm()
+
+
+def _resolve_heatmap_wait_timeout_seconds() -> float:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(HEATMAP_WAIT_TIMEOUT_SECONDS, HEATMAP_SAFE_MODE_WAIT_TIMEOUT_SECONDS)
+    return HEATMAP_WAIT_TIMEOUT_SECONDS
+
+
+def _resolve_heatmap_representative_quote_timeout_seconds() -> float:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(
+            HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS,
+            HEATMAP_SAFE_MODE_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS,
+        )
+    return HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS
 
 
 def _should_use_startup_public_route_guard() -> bool:
@@ -1713,7 +1731,7 @@ async def get_heatmap(code: str):
         cache_key,
         _fetch_heatmap,
         ttl=900,
-        wait_timeout=HEATMAP_WAIT_TIMEOUT_SECONDS,
+        wait_timeout=_resolve_heatmap_wait_timeout_seconds(),
         timeout_fallback=lambda: _build_heatmap_fallback(code),
     )
     _maybe_trim_public_route_memory("country_heatmap")
