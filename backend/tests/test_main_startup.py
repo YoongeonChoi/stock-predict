@@ -417,6 +417,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.screener.prewarm_public_screener_cache_seed",
                 new=AsyncMock(return_value=None),
             ) as screener_prewarm,
+            patch(
+                "app.main.calendar_service.prewarm_public_calendar_cache_seed",
+                new=AsyncMock(return_value=None),
+            ) as calendar_prewarm,
             patch.object(app_settings, "render_environment", True),
             patch.object(app_settings, "render_service_name", "stock-predict-api"),
             patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
@@ -464,6 +468,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         indicators_prewarm.assert_awaited_once()
         briefing_prewarm.assert_awaited_once()
         screener_prewarm.assert_awaited_once()
+        calendar_prewarm.assert_awaited_once()
 
     async def test_render_memory_safe_mode_continues_when_public_dashboard_prewarm_fails(self):
         with (
@@ -496,6 +501,10 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.screener.prewarm_public_screener_cache_seed",
                 new=AsyncMock(return_value=None),
             ) as screener_prewarm,
+            patch(
+                "app.main.calendar_service.prewarm_public_calendar_cache_seed",
+                new=AsyncMock(return_value=None),
+            ) as calendar_prewarm,
             patch.object(app_settings, "render_environment", True),
             patch.object(app_settings, "render_service_name", "stock-predict-api"),
             patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
@@ -529,6 +538,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         indicators_prewarm.assert_awaited_once()
         briefing_prewarm.assert_not_called()
         screener_prewarm.assert_not_called()
+        calendar_prewarm.assert_not_called()
 
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):

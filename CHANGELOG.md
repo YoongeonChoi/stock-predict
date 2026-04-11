@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.22 - 2026-04-12
+
+- Render memory-safe startup `public_dashboard_prewarm`이 이제 캘린더 월간 shell seed도 함께 데웁니다. 그래서 배포 직후 첫 `/api/calendar/KR` 호출이 외부 일정 feed cold fetch를 응답 경로에서 바로 떠안지 않고, 짧은 TTL의 월간 핵심 일정 partial cache를 먼저 재사용하도록 정리했습니다.
+- backend `app/services/calendar_service.py`에 `prewarm_public_calendar_cache_seed()`를 추가하고, `backend/tests/test_main_startup.py`와 `backend/tests/test_calendar_service.py`에 startup seed가 실제로 실행되며 외부 earnings/economic feed를 건드리지 않는 회귀를 추가했습니다.
+
 ## v2.61.21 - 2026-04-12
 
 - Render memory-safe startup `public_dashboard_prewarm`이 이제 `시장 지표 -> 데일리 브리핑 -> 기본 screener safe-shell seed`까지 함께 데웁니다. `/api/screener?country=KR&limit=20` 첫 운영 진입이 `universe_data` lazy import와 safe-shell cache seed 생성을 요청 경로에서 한 번에 떠안지 않도록 startup 쪽으로 당겨, 배포 직후 cold-hit 지연을 더 줄이는 방향으로 정리했습니다.

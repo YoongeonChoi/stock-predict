@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import db
+from app.services import calendar_service
 from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
 from app.exceptions import ApiAppException
 from app.routers import (
@@ -164,6 +165,7 @@ async def _prewarm_public_dashboard_payloads() -> None:
     await country.prewarm_market_indicators_cache()
     await briefing.prewarm_daily_briefing_cache()
     await screener.prewarm_public_screener_cache_seed()
+    await calendar_service.prewarm_public_calendar_cache_seed()
 
 
 @asynccontextmanager
