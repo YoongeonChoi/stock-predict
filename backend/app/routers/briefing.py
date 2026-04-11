@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 import time
 
 from fastapi import APIRouter
@@ -17,6 +18,7 @@ settings = get_settings()
 briefing_service = LazyModuleProxy("app.services.briefing_service")
 market_session_service = LazyModuleProxy("app.services.market_session_service")
 route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+log = logging.getLogger("stock_predict.briefing_route")
 PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 6.0
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 PUBLIC_STARTUP_GUARD_SECONDS = 300
@@ -48,6 +50,18 @@ def _public_memory_pressure_ratio() -> float:
     except Exception:
         return 0.0
     return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+def _observe_briefing_task(task: asyncio.Task, label: str) -> None:
+    def _consume_result(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.warning("Daily briefing %s finished with a late failure: %s", label, exc, exc_info=True)
+
+    task.add_done_callback(_consume_result)
 
 
 def _should_use_ultra_fast_public_fallback() -> bool:
@@ -128,9 +142,11 @@ async def get_daily_briefing():
         )
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
+    briefing_task: asyncio.Task | None = None
     try:
+        briefing_task = asyncio.create_task(briefing_service.get_daily_briefing())
         payload = await asyncio.wait_for(
-            briefing_service.get_daily_briefing(),
+            asyncio.shield(briefing_task),
             timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
         )
         route_stability_service.record_route_trace(
@@ -148,6 +164,8 @@ async def get_daily_briefing():
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
     except asyncio.TimeoutError:
+        if briefing_task is not None:
+            _observe_briefing_task(briefing_task, "full")
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
         payload = _build_daily_briefing_shell(
@@ -168,6 +186,10 @@ async def get_daily_briefing():
         )
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
+    except asyncio.CancelledError:
+        if briefing_task is not None:
+            briefing_task.cancel()
+        raise
     except Exception as exc:
         err = SP_5011(str(exc)[:200])
         err.log()

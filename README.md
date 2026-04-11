@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.15`
+현재 릴리즈: `v2.61.16`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/briefing/daily`의 공개 timeout은 이제 `shielded background task` 기준으로 동작합니다. 그래서 Render cold wake 직후 브리핑 전체 계산이 늦더라도 timeout 후 늦은 cancellation cleanup을 기다리며 30~40초까지 붙잡히지 않고, 1차 partial을 더 빨리 반환하면서 백그라운드 계산은 계속 살아 cache 복구를 이어 가도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 늦은 cancellation cleanup을 기다리지 않고 바로 partial로 내려가는 회귀를 추가했습니다. 앞으로는 브리핑 6초 budget이 다시 cleanup 대기 때문에 무너지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/country/{code}/report`는 이제 Render `startup_memory_safe_mode`에서도 `startup_guard` 구간이 지나고 메모리 압박이 아주 높지 않으며 분석 모듈이 이미 warm된 상태라면, timeout partial을 내린 뒤 background refresh를 계속 살려 둡니다. 그래서 첫 재시도 이후에도 `country_report_timeout` partial만 반복되던 구간에서 최근 archived/quick fallback을 유지한 채 다음 조회 품질이 더 빨리 회복되도록 정리했습니다.
 - `backend/tests/test_country_router.py`에는 safe-mode warm-up이 켜진 경우 timeout fallback이 archived/quick candidate 정보를 계속 포함하면서 background refresh task도 살아 있는지 확인하는 회귀를 추가했습니다. 앞으로는 저압박 safe mode에서 country report가 다시 “빠르게 partial만 반환하고 갱신은 멈춰 버리는” 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있더라도 즉시 placeholder만 남기지 않고, dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 배포 직후 첫 요청은 가벼운 partial로 닫되, 다음 재조회부터는 usable quick 후보가 더 빨리 살아날 수 있게 정리했습니다.

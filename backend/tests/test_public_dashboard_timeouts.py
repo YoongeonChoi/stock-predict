@@ -705,6 +705,34 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
 
+    def test_daily_briefing_timeout_skips_cancellation_cleanup_before_partial(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "market_view": [],
+            "focus_cards": [],
+            "upcoming_events": [],
+            "sessions": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["기본 시장 스냅샷 먼저 표시"],
+        }
+        with (
+            patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing.briefing_service.get_daily_briefing", new=AsyncMock(side_effect=_slow_cancel_cleanup_response)),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
+            patched_client() as client,
+        ):
+            started = time.perf_counter()
+            response = client.get("/api/briefing/daily")
+            elapsed = time.perf_counter() - started
+            time.sleep(0.07)
+
+        self.assertLess(elapsed, 0.04)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+
     def test_daily_briefing_startup_guard_returns_partial_fallback_without_full_fetch(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",
