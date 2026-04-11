@@ -23,6 +23,7 @@ SCREENER_CACHE_WRITE_TIMEOUT_SECONDS = 0.35
 SCREENER_RESPONSE_CACHE_TTL = 600
 SCREENER_LAST_SUCCESS_TTL = 1800
 SCREENER_SAFE_MODE_SEED_TTL = 180
+SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT = 20
 SCREENER_MAX_CANDIDATES = 36
 SCREENER_MAX_SECTOR_CANDIDATES = 16
 SCREENER_MAX_PER_SECTOR = 4
@@ -605,6 +606,63 @@ async def _build_seeded_safe_mode_shell_response(
     logging.info(log_message, cache_key)
     _maybe_trim_public_route_memory("screener")
     return response
+
+
+async def prewarm_public_screener_cache_seed() -> None:
+    if not getattr(settings, "startup_memory_safe_mode", False):
+        return
+
+    cache_key = _build_screener_cache_key(
+        country="KR",
+        sector=None,
+        market_cap_min=None,
+        market_cap_max=None,
+        price_min=None,
+        price_max=None,
+        pe_min=None,
+        pe_max=None,
+        pb_max=None,
+        dividend_yield_min=None,
+        beta_max=None,
+        change_pct_min=None,
+        change_pct_max=None,
+        pct_from_52w_high_min=None,
+        pct_from_52w_high_max=None,
+        revenue_growth_min=None,
+        roe_min=None,
+        debt_to_equity_max=None,
+        avg_volume_min=None,
+        profitable_only=False,
+        score_min=None,
+        sort_by="market_cap",
+        sort_dir="desc",
+        limit=SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
+    )
+    cached_response = await _timed_screener_cache_lookup(
+        cache.get(cache_key),
+        label=f"screener startup seed lookup {cache_key}",
+    )
+    if cached_response is not None:
+        _maybe_trim_public_route_memory("screener_startup_prewarm")
+        return
+
+    current_universe = await get_universe("KR", prefer_fallback=True)
+    selected_tickers = _select_candidate_tickers(current_universe, None)
+    response = _build_safe_mode_shell_response(
+        tickers=selected_tickers,
+        universe=current_universe,
+        sector=None,
+        country="KR",
+        sort_by="market_cap",
+        sort_dir="desc",
+        limit=SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
+        fallback_reason="kr_safe_shell_warming",
+    )
+    await _timed_screener_cache_write(
+        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+        label=f"screener startup seed write {cache_key}",
+    )
+    _maybe_trim_public_route_memory("screener_startup_prewarm")
 
 
 @router.get("/screener")

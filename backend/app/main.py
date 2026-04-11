@@ -163,6 +163,7 @@ async def _run_startup_tasks(
 async def _prewarm_public_dashboard_payloads() -> None:
     await country.prewarm_market_indicators_cache()
     await briefing.prewarm_daily_briefing_cache()
+    await screener.prewarm_public_screener_cache_seed()
 
 
 @asynccontextmanager

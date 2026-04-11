@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, PropertyMock, patch
 
 from app.routers import briefing as briefing_router
 from app.routers import country as country_router
+from app.routers import screener as screener_router
 from client_helpers import patched_client
 
 
@@ -1458,6 +1459,60 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
         background_job.assert_not_called()
         self.assertGreaterEqual(cache_set.await_count, 1)
+
+    def test_screener_startup_seed_uses_fallback_universe_without_quote_import(self):
+        universe = {
+            "Information Technology": ["005930.KS", "000660.KS"],
+            "Financials": ["105560.KS"],
+        }
+        expected_cache_key = screener_router._build_screener_cache_key(
+            country="KR",
+            sector=None,
+            market_cap_min=None,
+            market_cap_max=None,
+            price_min=None,
+            price_max=None,
+            pe_min=None,
+            pe_max=None,
+            pb_max=None,
+            dividend_yield_min=None,
+            beta_max=None,
+            change_pct_min=None,
+            change_pct_max=None,
+            pct_from_52w_high_min=None,
+            pct_from_52w_high_max=None,
+            revenue_growth_min=None,
+            roe_min=None,
+            debt_to_equity_max=None,
+            avg_volume_min=None,
+            profitable_only=False,
+            score_min=None,
+            sort_by="market_cap",
+            sort_dir="desc",
+            limit=screener_router.SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
+        )
+
+        with (
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=universe)) as get_universe,
+            patch("app.routers.screener._maybe_trim_public_route_memory") as trim_memory,
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(side_effect=AssertionError("startup screener seed should not fetch KR quotes")),
+            ),
+        ):
+            asyncio.run(screener_router.prewarm_public_screener_cache_seed())
+
+        get_universe.assert_awaited_once_with("KR", prefer_fallback=True)
+        cache_set.assert_awaited_once()
+        self.assertEqual(cache_set.await_args.args[0], expected_cache_key)
+        payload = cache_set.await_args.args[1]
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(payload["results"][0]["ticker"], "005930.KS")
+        self.assertEqual(payload["results"][0]["current_price"], 0.0)
+        trim_memory.assert_called_once_with("screener_startup_prewarm")
 
 
 if __name__ == "__main__":

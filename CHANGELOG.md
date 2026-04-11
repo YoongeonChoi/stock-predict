@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.21 - 2026-04-12
+
+- Render memory-safe startup `public_dashboard_prewarm`이 이제 `시장 지표 -> 데일리 브리핑 -> 기본 screener safe-shell seed`까지 함께 데웁니다. `/api/screener?country=KR&limit=20` 첫 운영 진입이 `universe_data` lazy import와 safe-shell cache seed 생성을 요청 경로에서 한 번에 떠안지 않도록 startup 쪽으로 당겨, 배포 직후 cold-hit 지연을 더 줄이는 방향으로 정리했습니다.
+- backend `app/routers/screener.py`에 `prewarm_public_screener_cache_seed()`를 추가하고, `backend/tests/test_main_startup.py`와 `backend/tests/test_public_dashboard_timeouts.py`에 startup prewarm이 실제로 실행되며 fallback universe만 사용하고 KR quote import는 건드리지 않는 회귀를 추가했습니다.
+
 ## v2.61.20 - 2026-04-12
 
 - Render memory-safe startup에도 `public_dashboard_prewarm`을 추가해 `시장 지표 -> 데일리 브리핑` 순서의 공개 캐시를 먼저 데우도록 정리했습니다. 그래서 배포 버전 반영 직후 첫 운영 스윕에서만 `/api/market/indicators`와 `/api/briefing/daily`가 cold-hit 때문에 30초대까지 튀던 구간을 줄이고, 첫 사용자 진입이 더 빨리 warm cache를 재사용할 수 있게 맞췄습니다.
