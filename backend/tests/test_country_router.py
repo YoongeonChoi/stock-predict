@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -518,6 +519,44 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["fallback_reason"], "country_report_memory_guard")
         builder.assert_awaited_once()
         archived_lookup.assert_not_awaited()
+        self.assertFalse(builder.await_args.kwargs["include_archived_report"])
+        self.assertFalse(builder.await_args.kwargs["include_quick_candidates"])
+
+    async def test_get_country_report_returns_startup_guard_fallback_during_recent_startup_window(self):
+        fallback_payload = {
+            "country": {"code": "KR"},
+            "market_summary": "startup guard fallback",
+            "partial": True,
+            "fallback_reason": "country_report_startup_guard",
+            "errors": [],
+        }
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.12}),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
+            ),
+            patch(
+                "app.routers.country._load_latest_cached_country_report",
+                new=AsyncMock(side_effect=AssertionError("cached report lookup should be skipped during startup guard")),
+            ),
+            patch(
+                "app.routers.country._load_latest_archived_country_report",
+                new=AsyncMock(side_effect=AssertionError("archived lookup should be skipped during startup guard")),
+            ),
+            patch("app.routers.country._build_country_report_fallback", new=AsyncMock(return_value=fallback_payload)) as builder,
+            patch("app.routers.country._load_country_report_with_fallback", new=AsyncMock(side_effect=AssertionError("heavy analysis path should be skipped during startup guard"))),
+        ):
+            response = await country.get_country_report("KR")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "country_report_startup_guard")
+        builder.assert_awaited_once()
+        self.assertEqual(builder.await_args.kwargs["reason"], "country_report_startup_guard")
         self.assertFalse(builder.await_args.kwargs["include_archived_report"])
         self.assertFalse(builder.await_args.kwargs["include_quick_candidates"])
 

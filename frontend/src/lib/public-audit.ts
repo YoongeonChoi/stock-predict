@@ -14,6 +14,8 @@ export interface PublicAuditChip {
 const FALLBACK_REASON_LABELS: Record<string, string> = {
   briefing_timeout: "브리핑 계산 지연",
   public_briefing_timeout: "브리핑 계산 지연",
+  country_report_memory_guard: "시장 요약 보호 응답",
+  country_report_startup_guard: "시장 요약 초기 워밍업 응답",
   country_report_timeout: "시장 요약 지연",
   heatmap_timeout: "히트맵 계산 지연",
   movers_timeout: "상위 집계 지연",
@@ -97,6 +99,12 @@ export function buildPublicAuditSummary(
   }
   if (meta?.partial && meta?.fallback_reason === "prediction_lab_partial_data") {
     return "검증 세부 집계 일부가 늦어도 최근 스냅샷과 fusion 상태부터 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "country_report_startup_guard") {
+    return "서비스가 막 깨어난 직후라 대표 시장 스냅샷을 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "country_report_memory_guard") {
+    return "서버 메모리 보호 구간이라 대표 시장 스냅샷을 먼저 보여주고 있습니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
     return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";

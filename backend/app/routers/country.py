@@ -4,14 +4,14 @@ import math
 import time
 from collections.abc import Awaitable
 from typing import Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from app.config import get_settings
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.models.country import COUNTRY_REGISTRY
-from app.runtime import get_or_create_background_job
+from app.runtime import get_or_create_background_job, get_runtime_state
 from app.scoring.country_scorer import build_country_score
 from app.utils.async_tools import gather_limited
 from app.utils.lazy_module import LazyModuleProxy
@@ -63,6 +63,7 @@ COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+COUNTRY_REPORT_STARTUP_GUARD_SECONDS = 300
 
 
 def market_session_cache_token(*args, **kwargs):
@@ -462,6 +463,21 @@ def _should_use_ultra_fast_public_fallback() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
+
+
+def _should_use_startup_fast_country_report_fallback() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        runtime_state = get_runtime_state()
+        started_at_raw = str(runtime_state.get("started_at") or "").strip()
+        if not started_at_raw:
+            return False
+        started_at = datetime.fromisoformat(started_at_raw)
+        now = datetime.now(started_at.tzinfo or timezone.utc)
+        return (now - started_at).total_seconds() <= COUNTRY_REPORT_STARTUP_GUARD_SECONDS
+    except Exception:
+        return False
 
 
 async def _run_country_public_side_effect(
@@ -1304,12 +1320,23 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
-    if _should_use_ultra_fast_public_fallback():
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_fast_country_report_fallback()
+    if pressure_guard or startup_guard:
+        guard_reason = "country_report_memory_guard" if pressure_guard else "country_report_startup_guard"
+        guard_detail = (
+            _country_report_memory_guard_detail(code)
+            if pressure_guard
+            else (
+                f"{code} 리포트 서비스가 막 깨어난 직후라 정밀 계산보다 대표 시장 스냅샷을 먼저 보여주고 있습니다. "
+                "잠시 뒤 다시 조회하면 정밀 리포트가 회복될 수 있습니다."
+            )
+        )
         report = await _build_country_report_fallback(
             code,
-            reason="country_report_memory_guard",
+            reason=guard_reason,
             error_code=None,
-            detail=_country_report_memory_guard_detail(code),
+            detail=guard_detail,
             include_archived_report=False,
             include_quick_candidates=False,
         )
