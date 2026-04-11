@@ -595,6 +595,49 @@ def _spawn_market_indicators_warmup(fetcher, *, cache_key: str, label: str = "Ma
     return True
 
 
+async def _fetch_market_indicators_payload() -> list[dict[str, object]]:
+    from app.data import cache as data_cache
+
+    last_success_key = "market_indicators:last_success"
+    try:
+        payload = await asyncio.wait_for(
+            _build_market_indicators_payload(),
+            timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
+        )
+        if _market_indicators_have_values(payload):
+            await data_cache.set(last_success_key, payload, MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS)
+        return payload
+    except asyncio.TimeoutError:
+        logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
+    except Exception as exc:
+        logging.warning("market indicators failed: %s", exc, exc_info=True)
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
+
+
+async def prewarm_market_indicators_cache() -> None:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping startup market indicators prewarm because Render memory pressure is high.")
+        _maybe_trim_public_route_memory("market_indicators_startup_prewarm:skip")
+        return
+
+    from app.data import cache as data_cache
+
+    cache_key = "market_indicators:v3"
+    try:
+        payload = await _fetch_market_indicators_payload()
+        if _market_indicators_have_values(payload):
+            await data_cache.set(cache_key, payload, MARKET_INDICATORS_CACHE_TTL_SECONDS)
+    finally:
+        _maybe_trim_public_route_memory("market_indicators_startup_prewarm")
+
+
 def _allow_safe_mode_country_report_warmup() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
@@ -1730,34 +1773,12 @@ async def get_market_indicators():
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
 
-    async def _fetch_indicators():
-        try:
-            payload = await asyncio.wait_for(
-                _build_market_indicators_payload(),
-                timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
-            )
-            if _market_indicators_have_values(payload):
-                await data_cache.set(last_success_key, payload, MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS)
-            return payload
-        except asyncio.TimeoutError:
-            logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
-            cached_success = await data_cache.get(last_success_key)
-            if _market_indicators_have_values(cached_success):
-                return cached_success
-            return _build_market_indicators_fallback()
-        except Exception as exc:
-            logging.warning("market indicators failed: %s", exc, exc_info=True)
-            cached_success = await data_cache.get(last_success_key)
-            if _market_indicators_have_values(cached_success):
-                return cached_success
-            return _build_market_indicators_fallback()
-
     if pressure_guard or startup_guard:
         cached_success = await data_cache.get(last_success_key)
         if _market_indicators_have_values(cached_success):
             return cached_success
         if startup_guard and not pressure_guard:
-            _spawn_market_indicators_warmup(_fetch_indicators, cache_key=cache_key)
+            _spawn_market_indicators_warmup(_fetch_market_indicators_payload, cache_key=cache_key)
         return _build_market_indicators_fallback()
 
     async def _timeout_indicator_fallback():
@@ -1768,7 +1789,7 @@ async def get_market_indicators():
 
     return await data_cache.get_or_fetch(
         cache_key,
-        _fetch_indicators,
+        _fetch_market_indicators_payload,
         ttl=MARKET_INDICATORS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=_timeout_indicator_fallback,

@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     startup_learned_fusion_refresh_timeout: int = 25
     startup_market_opportunity_prewarm: bool = True
     startup_market_opportunity_prewarm_timeout: int = 180
+    startup_public_dashboard_prewarm: bool = True
     startup_background_task_concurrency: int = 3
     startup_allow_heavy_render_jobs: bool = False
     stock_detail_background_refresh: bool = True
@@ -154,6 +155,10 @@ class Settings(BaseSettings):
         if self.startup_memory_safe_mode:
             return min(self.startup_market_opportunity_prewarm_timeout, 45)
         return self.startup_market_opportunity_prewarm_timeout
+
+    @property
+    def effective_startup_public_dashboard_prewarm(self) -> bool:
+        return self.startup_public_dashboard_prewarm and self.startup_memory_safe_mode
 
     @property
     def effective_startup_background_task_concurrency(self) -> int:

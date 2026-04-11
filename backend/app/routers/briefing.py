@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.errors import SP_5011, SP_5012, SP_5018
-from app.runtime import get_runtime_state
+from app.runtime import get_or_create_background_job, get_runtime_state
 from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
 from app.utils.route_trace import build_route_trace
@@ -57,6 +57,17 @@ async def _load_daily_briefing_payload() -> dict:
     return await module.get_daily_briefing()
 
 
+async def prewarm_daily_briefing_cache() -> None:
+    if _should_use_ultra_fast_public_fallback():
+        log.info("Skipping startup daily briefing prewarm because Render memory pressure is high.")
+        _maybe_trim_public_route_memory("daily_briefing_startup_prewarm:skip")
+        return
+    try:
+        await _load_daily_briefing_payload()
+    finally:
+        _maybe_trim_public_route_memory("daily_briefing_startup_prewarm")
+
+
 def _observe_briefing_task(task: asyncio.Task, label: str) -> None:
     def _consume_result(done_task: asyncio.Task) -> None:
         try:
@@ -88,6 +99,26 @@ def _should_use_startup_public_route_guard() -> bool:
         return (now - started_at).total_seconds() <= PUBLIC_STARTUP_GUARD_SECONDS
     except Exception:
         return False
+
+
+def _spawn_daily_briefing_warmup(label: str = "Daily briefing warmup") -> bool:
+    if _should_use_ultra_fast_public_fallback():
+        log.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory("daily_briefing_warmup:skip")
+        return False
+
+    async def _warm() -> None:
+        try:
+            await _load_daily_briefing_payload()
+        finally:
+            _maybe_trim_public_route_memory("daily_briefing_warmup")
+
+    task, created = get_or_create_background_job("daily_briefing:warmup", _warm)
+    if not created:
+        log.info("%s already running; reusing the existing warmup task.", label)
+        return False
+    _observe_briefing_task(task, "warmup")
+    return True
 
 
 def _build_daily_briefing_shell(note: str, *, fallback_reason: str = "briefing_timeout") -> dict:
@@ -128,6 +159,8 @@ async def get_daily_briefing():
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
+        if startup_guard and not pressure_guard:
+            _spawn_daily_briefing_warmup(label="Daily briefing startup warmup")
         payload = _build_daily_briefing_shell(
             "브리핑 전체 계산을 잠시 건너뛰고 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
         )

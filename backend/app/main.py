@@ -160,6 +160,11 @@ async def _run_startup_tasks(
         raise
 
 
+async def _prewarm_public_dashboard_payloads() -> None:
+    await country.prewarm_market_indicators_cache()
+    await briefing.prewarm_daily_briefing_cache()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     background_tasks: list[asyncio.Task] = []
@@ -254,6 +259,24 @@ async def lifespan(app: FastAPI):
                 name="market_opportunity_prewarm",
                 configured_detail="KR opportunity radar prewarm skipped by configuration.",
             ),
+        )
+
+    if settings.effective_startup_public_dashboard_prewarm:
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="public_dashboard_prewarm",
+                running_detail="Prewarming public dashboard caches for first deployed hits.",
+                success_detail="Public dashboard prewarm completed.",
+                failure_prefix="Public dashboard prewarm failed during startup",
+                timeout_seconds=90,
+                job=_prewarm_public_dashboard_payloads,
+            )
+        )
+    else:
+        upsert_startup_task(
+            "public_dashboard_prewarm",
+            "ok",
+            "Public dashboard prewarm skipped by configuration or because Render memory-safe startup mode is not active.",
         )
 
     if startup_tasks:

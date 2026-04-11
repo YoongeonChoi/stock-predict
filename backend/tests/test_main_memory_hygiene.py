@@ -2,14 +2,21 @@ import unittest
 import asyncio
 import threading
 import time
-from unittest.mock import PropertyMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
+from fastapi.testclient import TestClient
 import app.main as main_module
-from app.main import settings as app_settings
+from app.main import app, settings as app_settings
 from tests.client_helpers import patched_client
 
 
 class MainMemoryHygieneMiddlewareTests(unittest.TestCase):
+    def setUp(self):
+        main_module._public_api_pre_request_trim_task = None
+
+    def tearDown(self):
+        main_module._public_api_pre_request_trim_task = None
+
     def test_health_check_does_not_trigger_pre_request_trim(self):
         with (
             patch("app.main._maybe_schedule_public_api_pre_request_trim") as trim,
@@ -38,9 +45,17 @@ class MainMemoryHygieneMiddlewareTests(unittest.TestCase):
 
         with (
             patch("app.main._maybe_schedule_public_api_pre_request_trim", side_effect=_trim) as trim,
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch("app.main._prewarm_public_dashboard_payloads", new=AsyncMock(return_value=None)),
             patch.object(type(app_settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch.object(type(app_settings), "effective_startup_public_dashboard_prewarm", new_callable=PropertyMock, return_value=False),
+            patch.object(app_settings, "startup_learned_fusion_refresh", False),
+            patch.object(app_settings, "startup_prediction_accuracy_refresh", False),
+            patch.object(app_settings, "startup_research_archive_sync", False),
+            patch.object(app_settings, "startup_market_opportunity_prewarm", False),
+            patch.object(app_settings, "startup_public_dashboard_prewarm", False),
         ):
-            with patched_client() as client:
+            with TestClient(app) as client:
                 response = client.get("/api/countries")
 
         self.assertEqual(response.status_code, 200)

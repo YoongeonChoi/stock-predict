@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.20 - 2026-04-12
+
+- Render memory-safe startup에도 `public_dashboard_prewarm`을 추가해 `시장 지표 -> 데일리 브리핑` 순서의 공개 캐시를 먼저 데우도록 정리했습니다. 그래서 배포 버전 반영 직후 첫 운영 스윕에서만 `/api/market/indicators`와 `/api/briefing/daily`가 cold-hit 때문에 30초대까지 튀던 구간을 줄이고, 첫 사용자 진입이 더 빨리 warm cache를 재사용할 수 있게 맞췄습니다.
+- backend `briefing` startup guard는 이제 shell 응답과 함께 background warmup도 예약합니다. 그래서 Render safe mode 초기 5분 안에 브리핑을 먼저 연 경우에도 다음 조회가 다시 같은 cold-hit을 반복할 가능성을 줄였습니다.
+- `backend/tests/test_main_startup.py`와 `backend/tests/test_public_dashboard_timeouts.py`에는 Render safe mode public dashboard prewarm의 성공/실패 경로와, briefing startup guard가 warmup을 실제로 예약하는 회귀를 추가했습니다.
+
 ## v2.61.19 - 2026-04-12
 
 - `scripts/deployed_site_smoke.py`는 이제 배포 API 측정을 `urllib` 대신 `requests` 클라이언트로 수행하고, `Accept-Encoding: identity`와 `Connection: close`를 명시합니다. 그래서 직접 `requests`로는 빠르게 끝나는 호출이 deployed smoke에서만 30~40초처럼 보이던 false latency를 줄이고, 실제 서비스 병목과 검증 체인 병목을 더 정확히 분리할 수 있게 정리했습니다.

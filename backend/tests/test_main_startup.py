@@ -405,6 +405,14 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "app.main.market_service.get_market_opportunities_quick",
                 new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
             ) as radar_prewarm,
+            patch(
+                "app.main.country.prewarm_market_indicators_cache",
+                new=AsyncMock(return_value=None),
+            ) as indicators_prewarm,
+            patch(
+                "app.main.briefing.prewarm_daily_briefing_cache",
+                new=AsyncMock(return_value=None),
+            ) as briefing_prewarm,
             patch.object(app_settings, "render_environment", True),
             patch.object(app_settings, "render_service_name", "stock-predict-api"),
             patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
@@ -424,6 +432,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                         "prediction_accuracy_refresh": "ok",
                         "research_archive_sync": "ok",
                         "market_opportunity_prewarm": "ok",
+                        "public_dashboard_prewarm": "ok",
                     },
                 )
 
@@ -448,6 +457,68 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         accuracy_refresh.assert_not_called()
         research_sync.assert_not_called()
         radar_prewarm.assert_not_called()
+        indicators_prewarm.assert_awaited_once()
+        briefing_prewarm.assert_awaited_once()
+
+    async def test_render_memory_safe_mode_continues_when_public_dashboard_prewarm_fails(self):
+        with (
+            patch("app.main.db.initialize", new=AsyncMock()),
+            patch(
+                "app.main.learned_fusion_profile_service.refresh_profiles",
+                new=AsyncMock(return_value={}),
+            ) as fusion_refresh,
+            patch(
+                "app.main.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(return_value=None),
+            ) as accuracy_refresh,
+            patch(
+                "app.main.research_archive_service.sync_public_research_reports",
+                new=AsyncMock(return_value={"processed_total": 0}),
+            ) as research_sync,
+            patch(
+                "app.main.market_service.get_market_opportunities_quick",
+                new=AsyncMock(return_value={"country_code": "KR", "opportunities": []}),
+            ) as radar_prewarm,
+            patch(
+                "app.main.country.prewarm_market_indicators_cache",
+                new=AsyncMock(side_effect=RuntimeError("indicator prewarm failed")),
+            ) as indicators_prewarm,
+            patch(
+                "app.main.briefing.prewarm_daily_briefing_cache",
+                new=AsyncMock(return_value=None),
+            ) as briefing_prewarm,
+            patch.object(app_settings, "render_environment", True),
+            patch.object(app_settings, "render_service_name", "stock-predict-api"),
+            patch.object(app_settings, "startup_allow_heavy_render_jobs", False),
+            patch.object(app_settings, "startup_learned_fusion_refresh", True),
+            patch.object(app_settings, "startup_prediction_accuracy_refresh", True),
+            patch.object(app_settings, "startup_prediction_accuracy_refresh_on_render", True),
+            patch.object(app_settings, "startup_research_archive_sync", True),
+            patch.object(app_settings, "startup_market_opportunity_prewarm", True),
+            patch.object(app_settings, "startup_market_opportunity_prewarm_timeout", 180),
+            patch.object(app_settings, "startup_background_task_concurrency", 3),
+        ):
+            async with lifespan(app):
+                state = await self._wait_for_status(
+                    "degraded",
+                    {
+                        "learned_fusion_profile_refresh": "ok",
+                        "prediction_accuracy_refresh": "ok",
+                        "research_archive_sync": "ok",
+                        "market_opportunity_prewarm": "ok",
+                        "public_dashboard_prewarm": "warning",
+                    },
+                )
+
+        tasks = {task["name"]: task for task in state["startup_tasks"]}
+        self.assertEqual(tasks["public_dashboard_prewarm"]["status"], "warning")
+        self.assertIn("indicator prewarm failed", tasks["public_dashboard_prewarm"]["detail"])
+        fusion_refresh.assert_not_called()
+        accuracy_refresh.assert_not_called()
+        research_sync.assert_not_called()
+        radar_prewarm.assert_not_called()
+        indicators_prewarm.assert_awaited_once()
+        briefing_prewarm.assert_not_called()
 
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):

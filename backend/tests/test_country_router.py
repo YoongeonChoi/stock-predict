@@ -124,23 +124,35 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
 
     async def test_list_countries_returns_fallback_when_payload_times_out(self):
+        fallback_payload = [
+            {
+                "code": "KR",
+                "name": "Korea",
+                "name_local": "한국",
+                "currency": "KRW",
+                "indices": [
+                    {
+                        "ticker": "^KS11",
+                        "name": "KOSPI",
+                        "price": 0,
+                        "change_pct": 0,
+                    }
+                ],
+            }
+        ]
+
         async def _slow_payload():
             await asyncio.sleep(0.03)
             return []
 
-        async def _return_fetcher(_key, fetcher, ttl=None, **kwargs):
-            return await fetcher()
-
         with (
             patch("app.routers.country.COUNTRIES_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.country._build_countries_payload", new=AsyncMock(side_effect=_slow_payload)),
-            patch("app.data.cache.get_or_fetch", new=AsyncMock(side_effect=_return_fetcher)),
+            patch("app.routers.country._build_countries_fallback", return_value=fallback_payload),
         ):
-            response = await country.list_countries()
+            response = await country._fetch_countries_payload_for_cache()
 
-        self.assertTrue(response)
-        self.assertEqual(response[0]["indices"][0]["price"], 0)
-        self.assertEqual(response[0]["indices"][0]["change_pct"], 0)
+        self.assertEqual(response, fallback_payload)
 
     async def test_list_countries_startup_guard_skips_cache_lookup_and_returns_fallback(self):
         with (

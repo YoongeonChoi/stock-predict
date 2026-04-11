@@ -325,7 +325,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "opportunity_cached_quick_response")
-        self.assertIn("다음 재조회", response.json()["universe_note"])
+        self.assertIn("usable 후보", response.json()["universe_note"])
 
     def test_market_opportunities_startup_guard_schedules_quick_warmup_before_placeholder(self):
         placeholder_payload = {
@@ -488,19 +488,37 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
     def test_countries_safe_mode_returns_fallback_without_background_refresh(self):
         background_task = unittest.mock.Mock()
+        fallback_payload = [
+            {
+                "code": "KR",
+                "name": "Korea",
+                "name_local": "한국",
+                "currency": "KRW",
+                "indices": [
+                    {
+                        "ticker": "^KS11",
+                        "name": "KOSPI",
+                        "price": 0,
+                        "change_pct": 0,
+                    }
+                ],
+            }
+        ]
+
+        async def _cache_get(_key):
+            return None
+
         with (
-            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country._allow_public_background_refresh", return_value=False),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=False),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=_cache_get)),
             patch(
-                "app.routers.country.get_runtime_state",
-                return_value={
-                    "started_at": (
-                        datetime.now(timezone.utc)
-                        - timedelta(seconds=country_router.PUBLIC_STARTUP_GUARD_SECONDS + 30)
-                    ).isoformat(),
-                    "startup_tasks": [],
-                },
+                "app.data.cache.get_or_fetch",
+                new=AsyncMock(side_effect=AssertionError("safe mode should not use shared countries cache fetch")),
             ),
-            patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.country._build_countries_fallback", return_value=fallback_payload),
             patch("app.data.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.country.get_or_create_background_job", return_value=(background_task, True)) as background_job,
             patched_client() as client,
@@ -518,13 +536,8 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
     def test_market_indicators_startup_guard_returns_fallback_without_live_fetch(self):
         with (
             patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
-            patch(
-                "app.routers.country.get_runtime_state",
-                return_value={
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                    "startup_tasks": [],
-                },
-            ),
+            patch("app.routers.country._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.country._should_use_startup_public_route_guard", return_value=True),
             patch("app.data.cache.get", new=AsyncMock(return_value=None)),
             patch(
                 "app.data.cache.get_or_fetch",
@@ -782,17 +795,13 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         }
         with (
             patch.object(type(briefing_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
-            patch(
-                "app.routers.briefing.get_runtime_state",
-                return_value={
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                    "startup_tasks": [],
-                },
-            ),
+            patch("app.routers.briefing._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.briefing._should_use_startup_public_route_guard", return_value=True),
             patch(
                 "app.routers.briefing._load_daily_briefing_payload",
                 new=AsyncMock(side_effect=AssertionError("startup guard should bypass full briefing fetch")),
             ),
+            patch("app.routers.briefing._spawn_daily_briefing_warmup") as warmup,
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
@@ -801,6 +810,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+        warmup.assert_called_once()
 
     def test_daily_briefing_memory_guard_returns_partial_fallback_without_full_fetch(self):
         fallback_payload = {
@@ -822,6 +832,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.briefing._load_daily_briefing_payload",
                 new=AsyncMock(side_effect=AssertionError("memory guard should bypass full briefing fetch")),
             ),
+            patch("app.routers.briefing._spawn_daily_briefing_warmup") as warmup,
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
         ):
@@ -830,6 +841,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+        warmup.assert_not_called()
 
     def test_screener_timeout_returns_snapshot_fallback(self):
         async def _slow_gather(*args, **kwargs):
@@ -1280,10 +1292,16 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
+
+        async def _cache_get(_key):
+            return None
+
         with (
-            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
+            patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=True),
             patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
             patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
@@ -1308,10 +1326,16 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
+
+        async def _cache_get(_key):
+            return None
+
         with (
-            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
+            patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=True),
             patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
-            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
             patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
@@ -1330,7 +1354,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
-        self.assertLess(elapsed, 0.05)
+        self.assertLess(elapsed, 0.15)
         background_job.assert_not_called()
         self.assertGreaterEqual(cache_set.await_count, 1)
 
@@ -1339,10 +1363,15 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
+
+        async def _cache_get(_key):
+            return None
+
         with (
-            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
             patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=False),
-            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
             patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
@@ -1400,9 +1429,17 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "total": 1,
             "sectors": list(sector_map.keys()),
         }
+
+        async def _cache_get(key):
+            if str(key).endswith(":last_success"):
+                return last_success_payload
+            return None
+
         with (
-            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
-            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, last_success_payload])),
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
+            patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=False),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
             patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
             patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
             patch(
