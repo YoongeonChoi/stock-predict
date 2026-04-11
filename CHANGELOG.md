@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.36 - 2026-04-11
+
+- `.github/workflows/render-keepalive.yml`은 이제 `main` push에서도 즉시 한 번 실행됩니다. public GitHub Actions 페이지 기준으로 keepalive workflow run이 `0`건이던 상태를 bootstrapping하기 위해, 배포 직후 warm-up과 workflow 활성 확인을 같은 경로로 묶었습니다.
+- `backend/tests/test_keepalive_workflow.py`는 keepalive workflow가 `main` push + 10분 cron + manual trigger를 함께 유지하는지 회귀로 고정합니다. schedule만 남고 push bootstrap이 빠져 workflow가 다시 잠든 상태로 남는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.35 - 2026-04-11
 
 - backend `/api/market/indicators`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후나 메모리 압박 구간이면 shared cache/live yfinance fetch를 바로 건너뛰고 `last_success` 또는 초경량 fallback을 먼저 반환합니다. 운영 smoke에서 `market/indicators` 첫 호출이 15초 timeout에 걸리던 구간을 줄이기 위해, 공개 지표 라우트도 다른 startup guard 공개 경로와 같은 fast fallback 규칙으로 맞췄습니다.

@@ -8,6 +8,8 @@ class KeepaliveWorkflowTests(unittest.TestCase):
         self.assertTrue(workflow_path.exists())
 
         workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("push:", workflow)
+        self.assertIn("- main", workflow)
         self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("https://api.yoongeon.xyz/api/health", workflow)
