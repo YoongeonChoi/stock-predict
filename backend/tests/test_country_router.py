@@ -13,6 +13,18 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         reset_runtime_state()
 
+    async def test_build_country_success_response_defers_memory_trim_until_background_task(self):
+        payload = {"country": {"code": "KR"}, "market_summary": "ok"}
+
+        with patch("app.routers.country._maybe_trim_public_route_memory") as trim:
+            response = country._build_country_success_response(payload, trim_reason="country_report")
+
+            trim.assert_not_called()
+            self.assertIsNotNone(response.background)
+            await response.background()
+
+        trim.assert_called_once_with("country_report")
+
     async def test_market_opportunities_returns_quick_and_starts_background_refresh(self):
         refresh_started = asyncio.Event()
         quick_payload = {

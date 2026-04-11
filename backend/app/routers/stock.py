@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 from app.analysis.stock_cache_keys import stock_detail_latest_cache_key, stock_detail_quick_cache_key
 from app.config import get_settings
 from app.data import cache
@@ -373,7 +374,14 @@ def _build_stock_success_response(payload: dict, *, trim_reason: str | None = No
     encoded = jsonable_encoder(payload)
     response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
     if trim_reason:
-        _maybe_trim_public_route_memory(trim_reason)
+        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
+    return response
+
+
+def _build_stock_error_response(status_code: int, content: dict, *, trim_reason: str | None = None) -> JSONResponse:
+    response = JSONResponse(status_code=status_code, content=content)
+    if trim_reason:
+        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
     return response
 
 
@@ -718,8 +726,7 @@ async def get_stock_detail(
             fallback_reason="stock_detail_timeout",
             served_state="degraded",
         )
-        _maybe_trim_public_route_memory("stock_detail")
-        return JSONResponse(status_code=504, content=err.to_dict())
+        return _build_stock_error_response(504, err.to_dict(), trim_reason="stock_detail")
     except Exception as e:
         cached_quick = quick_fallback or await _timed_stock_cache_lookup(
             get_cached_quick_stock_detail(ticker),
@@ -788,8 +795,7 @@ async def get_stock_detail(
             fallback_reason="stock_detail_error",
             served_state="degraded",
         )
-        _maybe_trim_public_route_memory("stock_detail")
-        return JSONResponse(status_code=500, content=err.to_dict())
+        return _build_stock_error_response(500, err.to_dict(), trim_reason="stock_detail")
 
     _record_stock_detail_trace(
         started_at,

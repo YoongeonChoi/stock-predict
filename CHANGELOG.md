@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.26 - 2026-04-11
+
+- backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 응답 전송 후 background trim으로 미뤘습니다. memory-safe 보호는 유지하면서도 cached/fallback 응답이 마지막 메모리 정리 때문에 더 늦게 닫히지 않도록 바꿔, first-usable latency를 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 response helper가 trim을 inline으로 호출하지 않고 background task로 넘기는 회귀를 추가했습니다. 앞으로는 cached/partial fast path가 다시 동기 trim에 막히는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.25 - 2026-04-11
 
 - backend `country` router는 Render memory-safe 모드에서 `/api/countries` fallback 또는 `last_success` 응답 후 즉시 background refresh를 다시 띄우지 않도록 정리했습니다. 이제 safe mode에서는 응답 직후 `asyncio.create_task`로 index quote 재수집을 붙이지 않아, cold `countries` 요청과 메모리 보호 응답이 불필요한 후속 작업에 흔들리지 않습니다.

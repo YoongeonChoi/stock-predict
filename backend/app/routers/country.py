@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
 from app.config import get_settings
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.models.country import COUNTRY_REGISTRY
@@ -101,9 +102,12 @@ def _sanitize_json_value(value: Any) -> Any:
     return value
 
 
-def _build_country_success_response(payload: dict) -> JSONResponse:
+def _build_country_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
     encoded = jsonable_encoder(payload)
-    return JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+    response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+    if trim_reason:
+        response.background = BackgroundTask(_maybe_trim_public_route_memory, trim_reason)
+    return response
 
 
 def _countries_payload_has_live_quotes(payload: Any) -> bool:
@@ -1207,8 +1211,7 @@ async def get_country_report(code: str):
     )
     if cached_success:
         _spawn_country_report_refresh(code)
-        _maybe_trim_public_route_memory("country_report")
-        return _build_country_success_response(cached_success)
+        return _build_country_success_response(cached_success, trim_reason="country_report")
 
     if _should_use_ultra_fast_public_fallback():
         report = await _build_country_report_fallback(
@@ -1219,8 +1222,7 @@ async def get_country_report(code: str):
             include_archived_report=False,
             include_quick_candidates=False,
         )
-        _maybe_trim_public_route_memory("country_report")
-        return _build_country_success_response(report)
+        return _build_country_success_response(report, trim_reason="country_report")
 
     archived_report = await _timed_country_lookup(
         _load_latest_archived_country_report(code),
@@ -1230,8 +1232,7 @@ async def get_country_report(code: str):
     if archived_report:
         _spawn_country_report_refresh(code)
         report = _build_stale_archived_country_report(code, archived_report)
-        _maybe_trim_public_route_memory("country_report")
-        return _build_country_success_response(report)
+        return _build_country_success_response(report, trim_reason="country_report")
 
     try:
         report, partial = await _load_country_report_with_fallback(
@@ -1249,8 +1250,7 @@ async def get_country_report(code: str):
     if not partial:
         _schedule_country_report_persist(report, code)
 
-    _maybe_trim_public_route_memory("country_report")
-    return _build_country_success_response(report)
+    return _build_country_success_response(report, trim_reason="country_report")
 
 
 @router.get("/country/{code}/heatmap")

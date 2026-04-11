@@ -62,6 +62,18 @@ def _cached_snapshot(*, partial: bool = False, fallback_reason: str | None = Non
 
 
 class StockRouterTests(unittest.TestCase):
+    def test_build_stock_success_response_defers_memory_trim_until_background_task(self):
+        payload = _cached_snapshot()
+
+        with patch("app.routers.stock._maybe_trim_public_route_memory") as trim:
+            response = stock_router._build_stock_success_response(payload, trim_reason="stock_detail")
+
+            trim.assert_not_called()
+            self.assertIsNotNone(response.background)
+            asyncio.run(response.background())
+
+        trim.assert_called_once_with("stock_detail")
+
     def test_get_cached_stock_detail_without_refresh_uses_lightweight_cache(self):
         cached = _cached_snapshot()
 

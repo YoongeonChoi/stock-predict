@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.60.25`
+현재 릴리즈: `v2.60.26`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `country report`와 `stock detail`은 이제 응답 직전 동기 `gc/malloc_trim`을 수행하지 않고, 응답을 보낸 뒤 background trim으로 넘깁니다. Render `500MB` 보호 구간에서도 fallback이나 cached 응답이 마지막 메모리 정리 때문에 더 늦게 닫히지 않도록 바꿔, first-usable latency를 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 응답 helper가 trim을 inline으로 호출하지 않고 background task로 미루는 회귀를 추가했습니다. 그래서 앞으로는 cached/partial 성공 응답이 다시 직전 trim 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - Render memory-safe startup에서는 `prediction_accuracy_refresh`도 이제 함께 건너뜁니다. cold wake 직후 `yfinance` 가격 이력 재평가가 공개 라우트와 같은 타이밍에 붙지 않도록 줄여, `500MB` 한도 근처에서 startup background job이 추가 메모리와 CPU를 먼저 잡아먹던 구간을 더 보수적으로 막았습니다.
 - `/api/countries`는 memory-safe 모드에서 fallback 또는 `last_success`를 반환할 때 더 이상 즉시 background refresh를 시작하지 않습니다. 응답 직후 `asyncio.create_task`가 다시 index quote 수집을 붙잡으면서 cold route와 메모리 보호 응답을 흔들던 문제를 줄여, `countries` 첫 응답이 안전한 shell/fallback 그대로 끝나도록 맞췄습니다.
 - 관련 safe mode 기대값을 startup/public dashboard 회귀 테스트에 함께 고정했습니다. 그래서 앞으로는 `prediction_accuracy_refresh`가 Render 보호 모드에서 다시 살아나거나, `countries` fallback이 응답 직후 무거운 background refresh를 다시 켜는 회귀를 테스트에서 바로 잡을 수 있습니다.
