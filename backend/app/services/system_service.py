@@ -22,7 +22,7 @@ from app.services import (
     research_archive_service,
     route_stability_service,
 )
-from app.utils.memory_hygiene import get_memory_trim_stats
+from app.utils.memory_hygiene import get_memory_trim_stats, maybe_trim_process_memory
 from app.version import APP_VERSION
 
 
@@ -107,11 +107,23 @@ def _empty_route_stability_summary() -> dict:
     }
 
 
-async def _run_best_effort_probe(loader, *, timeout_seconds: int) -> tuple[object | None, str | None]:
+def _consume_probe_task_result(task: asyncio.Task[object]) -> None:
     try:
-        result = await asyncio.wait_for(loader(), timeout=max(timeout_seconds, 1))
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
+async def _run_best_effort_probe(loader, *, timeout_seconds: int) -> tuple[object | None, str | None]:
+    task = asyncio.create_task(loader())
+    task.add_done_callback(_consume_probe_task_result)
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=max(timeout_seconds, 1))
         return result, None
     except asyncio.TimeoutError:
+        task.cancel()
         return None, f"timeout after {max(timeout_seconds, 1)}s"
     except Exception as exc:
         return None, str(exc)
@@ -220,16 +232,36 @@ async def get_diagnostics() -> dict:
         ),
     )
 
-    (accuracy, accuracy_error), (research_archive, research_archive_error) = await asyncio.gather(
-        _run_best_effort_probe(
-            lambda: archive_service.get_accuracy(refresh=False),
-            timeout_seconds=diagnostics_probe_timeout_seconds,
-        ),
-        _run_best_effort_probe(
-            lambda: research_archive_service.get_public_research_status(refresh_if_missing=False),
-            timeout_seconds=diagnostics_probe_timeout_seconds,
-        ),
-    )
+    preflight_memory_diagnostics = _get_process_memory_snapshot(settings)
+    preflight_pressure_ratio = float(preflight_memory_diagnostics.get("pressure_ratio") or 0.0)
+    preflight_pressure_state = str(preflight_memory_diagnostics.get("pressure_state") or "ok")
+
+    if preflight_pressure_ratio >= 0.75:
+        try:
+            maybe_trim_process_memory("diagnostics_preflight")
+        except Exception:
+            pass
+        preflight_memory_diagnostics = _get_process_memory_snapshot(settings)
+        preflight_pressure_ratio = float(preflight_memory_diagnostics.get("pressure_ratio") or 0.0)
+        preflight_pressure_state = str(preflight_memory_diagnostics.get("pressure_state") or "ok")
+
+    if preflight_pressure_ratio >= 0.9:
+        accuracy, accuracy_error = None, f"skipped under {preflight_pressure_state} memory pressure"
+        research_archive, research_archive_error = None, f"skipped under {preflight_pressure_state} memory pressure"
+    else:
+        probe_timeout_seconds = diagnostics_probe_timeout_seconds
+        if preflight_pressure_ratio >= 0.75:
+            probe_timeout_seconds = min(probe_timeout_seconds, 1)
+        (accuracy, accuracy_error), (research_archive, research_archive_error) = await asyncio.gather(
+            _run_best_effort_probe(
+                lambda: archive_service.get_accuracy(refresh=False),
+                timeout_seconds=probe_timeout_seconds,
+            ),
+            _run_best_effort_probe(
+                lambda: research_archive_service.get_public_research_status(refresh_if_missing=False),
+                timeout_seconds=probe_timeout_seconds,
+            ),
+        )
     calibration_profiles = None
     try:
         calibration_profiles = confidence_calibration_service.get_profile_summary()

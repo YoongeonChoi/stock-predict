@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.47 - 2026-04-11
+
+- backend `/api/diagnostics`는 이제 응답 시작 전에 현재 메모리 pressure를 먼저 읽고, warning 이상이면 trim을 한 번 시도한 뒤 probe 예산을 더 짧게 가져갑니다. 또한 critical pressure에서는 archive/research 같은 heavy probe를 건너뛰고 구조화된 skip 이유를 바로 반환합니다. 그래서 public smoke 직후 Render 500MB 보호 구간에서 diagnostics가 다시 10초대 후반까지 늘어지며 메모리 회복도 늦어지던 구간을 더 보수적으로 막습니다.
+- backend `system_service`의 best-effort probe는 이제 timeout이 나면 cancellation cleanup까지 끝날 때까지 기다리지 않고 바로 복귀합니다. 그래서 timeout된 probe가 정리 단계 sleep까지 끌고 가며 diagnostics 응답 자체를 추가로 늦추던 회귀를 줄였습니다.
+- `backend/tests/test_system_service.py`에는 critical memory pressure에서 heavy probe를 건너뛰는 회귀와, timeout된 probe가 cancellation cleanup 대기에 막히지 않는 회귀를 추가했습니다. 그래서 diagnostics가 다시 메모리 보호 규칙을 어기거나 timeout 이후에도 응답을 길게 붙잡는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.46 - 2026-04-11
 
 - backend `/api/screener`는 이제 본문 10초 timeout 뒤 들어가는 snapshot fallback에도 `2초` 상한을 둡니다. 그래서 본 경로가 이미 timeout된 뒤 fallback까지 다시 `yfinance` 배치 다운로드를 오래 기다리며 운영 smoke에서 15초를 넘기던 회귀를 더 짧은 shell partial로 끊습니다.
