@@ -60,6 +60,7 @@ class StartupTaskDefinition:
 
 def _startup_skip_detail(*, name: str, configured_detail: str) -> str:
     if settings.startup_memory_safe_mode and name in {
+        "prediction_accuracy_refresh",
         "learned_fusion_profile_refresh",
         "research_archive_sync",
         "market_opportunity_prewarm",

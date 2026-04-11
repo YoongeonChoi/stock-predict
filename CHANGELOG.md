@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.25 - 2026-04-11
+
+- backend `country` router는 Render memory-safe 모드에서 `/api/countries` fallback 또는 `last_success` 응답 후 즉시 background refresh를 다시 띄우지 않도록 정리했습니다. 이제 safe mode에서는 응답 직후 `asyncio.create_task`로 index quote 재수집을 붙이지 않아, cold `countries` 요청과 메모리 보호 응답이 불필요한 후속 작업에 흔들리지 않습니다.
+- backend startup safe mode는 `prediction_accuracy_refresh`도 함께 건너뜁니다. cold wake 직후 `yfinance` 가격 이력 재평가가 공개 라우트와 경쟁하면서 `500MB` 한도 근처 메모리와 CPU를 더 밀어 올리던 경로를 줄여, startup background load를 더 보수적으로 낮췄습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`, `backend/tests/test_main_startup.py`, `backend/tests/test_deployment_config.py`를 갱신해 새 safe mode 정책을 회귀 테스트로 고정했고, `.\venv\Scripts\python.exe .\verify.py` 전체 검증도 다시 통과했습니다.
+
 ## v2.60.24 - 2026-04-11
 
 - backend `market_service`는 이제 `yfinance_client`, `stock_scorer`, `stock_analyzer`, `distributional_return_engine` 같은 무거운 공개 레이더 의존성을 실제 계산 시점까지 지연 로드합니다. `market_service` import footprint 자체를 줄여 quick radar first-hit에서 `pandas/yfinance/ta`가 무조건 함께 올라오지 않도록 정리했습니다.

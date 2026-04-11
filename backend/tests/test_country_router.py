@@ -122,6 +122,47 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response[0]["indices"][0]["price"], 0)
         self.assertEqual(response[0]["indices"][0]["change_pct"], 0)
 
+    async def test_list_countries_safe_mode_reuses_last_success_without_spawning_refresh(self):
+        last_success = [
+            {
+                "code": "KR",
+                "name": "South Korea",
+                "name_local": "한국",
+                "currency": "KRW",
+                "indices": [{"ticker": "^KS11", "name": "KOSPI", "price": 2712.3, "change_pct": 0.8}],
+            }
+        ]
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=[None, last_success])),
+            patch("app.data.cache.set", new=AsyncMock()) as cache_set,
+            patch(
+                "app.routers.country.get_or_create_background_job",
+                side_effect=AssertionError("safe mode should not spawn countries refresh"),
+            ),
+        ):
+            response = await country.list_countries()
+
+        self.assertEqual(response, last_success)
+        cache_set.assert_not_awaited()
+
+    async def test_list_countries_safe_mode_seeds_fallback_without_spawning_refresh(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.data.cache.get", new=AsyncMock(side_effect=[None, None])),
+            patch("app.data.cache.set", new=AsyncMock()) as cache_set,
+            patch(
+                "app.routers.country.get_or_create_background_job",
+                side_effect=AssertionError("safe mode should not spawn countries refresh"),
+            ),
+        ):
+            response = await country.list_countries()
+
+        self.assertTrue(response)
+        self.assertEqual(response[0]["indices"][0]["price"], 0)
+        cache_set.assert_awaited_once()
+
     async def test_market_movers_prefers_kr_representative_quotes(self):
         representative_quotes = {
             "005930.KS": {

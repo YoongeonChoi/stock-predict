@@ -116,10 +116,7 @@ class Settings(BaseSettings):
     @property
     def effective_startup_prediction_accuracy_refresh(self) -> bool:
         if self.startup_memory_safe_mode:
-            return (
-                self.startup_prediction_accuracy_refresh
-                and self.startup_prediction_accuracy_refresh_on_render
-            )
+            return False
         return self.startup_prediction_accuracy_refresh
 
     @property

@@ -658,6 +658,10 @@ async def _refresh_countries_cache_in_background() -> list[dict]:
 
 
 def _spawn_countries_refresh() -> None:
+    if not _allow_public_background_refresh():
+        logging.info("Skipping Countries refresh because public background refresh is disabled.")
+        _maybe_trim_public_route_memory("countries_refresh:disabled")
+        return
     label = "Countries refresh"
     task, created = get_or_create_background_job(
         "countries_refresh:v2",

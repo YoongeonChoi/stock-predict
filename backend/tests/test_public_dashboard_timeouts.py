@@ -286,7 +286,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertIn("children", response)
 
-    def test_countries_safe_mode_returns_fallback_and_starts_background_refresh(self):
+    def test_countries_safe_mode_returns_fallback_without_background_refresh(self):
         background_task = unittest.mock.Mock()
         with (
             patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
@@ -301,8 +301,8 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload[0]["code"], "KR")
         self.assertEqual(payload[0]["indices"][0]["price"], 0)
-        background_job.assert_called_once()
-        background_task.add_done_callback.assert_called_once()
+        background_job.assert_not_called()
+        background_task.add_done_callback.assert_not_called()
         cache_set.assert_awaited_once()
 
     def test_daily_briefing_timeout_returns_partial_fallback(self):

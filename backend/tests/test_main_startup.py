@@ -432,9 +432,9 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             "Render 메모리 세이프 startup 프로필",
             tasks["learned_fusion_profile_refresh"]["detail"],
         )
-        self.assertEqual(
+        self.assertIn(
+            "Render 메모리 세이프 startup 프로필",
             tasks["prediction_accuracy_refresh"]["detail"],
-            "Prediction accuracy refresh completed.",
         )
         self.assertIn(
             "Render 메모리 세이프 startup 프로필",
@@ -445,7 +445,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
             tasks["market_opportunity_prewarm"]["detail"],
         )
         fusion_refresh.assert_not_called()
-        accuracy_refresh.assert_awaited_once_with(limit=25)
+        accuracy_refresh.assert_not_called()
         research_sync.assert_not_called()
         radar_prewarm.assert_not_called()
 
