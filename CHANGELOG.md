@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.1 - 2026-04-11
+
+- backend `/api/research/predictions`는 `refresh=false` 기본 진입에서 due prediction backfill과 accuracy refresh를 더 이상 응답 경로에서 기다리지 않습니다. 캐시 miss 첫 진입도 background maintenance로 넘겨 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추던 경로를 줄이고, 현재 준비된 연구실 데이터는 즉시 partial 응답으로 먼저 보여 주도록 정리했습니다.
+- `backend/tests/test_research_and_portfolio.py`에는 prediction lab 기본 진입이 background maintenance completion을 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 `/lab` 첫 진입이 accuracy refresh나 backfill 때문에 다시 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.0 - 2026-04-11
 
 - `기회 레이더` 상위 10개 후보를 기준일별 cohort로 저장하는 `opportunity_radar_snapshots` 흐름을 추가했습니다. `prediction_capture_service`가 usable radar payload를 만들면 상위 후보를 함께 적재하고, `archive_service.refresh_prediction_accuracy()`가 `1D / 5D / 20D` 실측 가격과 방향/밴드 적중 여부를 다시 평가하도록 연결했습니다.

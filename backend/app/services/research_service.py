@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 from app.analysis.next_day_forecast import MODEL_VERSION
@@ -26,6 +27,8 @@ PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS = 3.0
 PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT = 25
 PREDICTION_LAB_RECENT_TIMEOUT_SECONDS = 1.5
 PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS = 1.5
+
+logger = logging.getLogger("stock_predict.research")
 
 
 def _prediction_label(prediction_type: str) -> str:
@@ -880,6 +883,44 @@ async def _refresh_prediction_lab_accuracy(refresh: bool) -> str | None:
     return None
 
 
+def _log_prediction_lab_background_completion(task: asyncio.Task, label: str) -> None:
+    try:
+        result = task.result()
+    except asyncio.CancelledError:
+        logger.info("prediction lab %s background task was cancelled.", label)
+        return
+    except Exception:
+        logger.warning("prediction lab %s background task failed.", label, exc_info=True)
+        return
+
+    reason = None
+    if isinstance(result, tuple) and len(result) == 2:
+        _, reason = result
+    elif isinstance(result, str):
+        reason = result
+
+    if reason:
+        logger.info("prediction lab %s background task finished with %s.", label, reason)
+
+
+def _schedule_prediction_lab_background_maintenance() -> None:
+    backfill_task = asyncio.create_task(
+        _backfill_prediction_lab_predictions(False),
+        name="prediction-lab-backfill",
+    )
+    backfill_task.add_done_callback(
+        lambda task, label="backfill": _log_prediction_lab_background_completion(task, label)
+    )
+
+    refresh_task = asyncio.create_task(
+        _refresh_prediction_lab_accuracy(False),
+        name="prediction-lab-accuracy-refresh",
+    )
+    refresh_task.add_done_callback(
+        lambda task, label="accuracy-refresh": _log_prediction_lab_background_completion(task, label)
+    )
+
+
 async def _build_prediction_lab_fallback(
     *,
     limit_recent: int,
@@ -1019,8 +1060,14 @@ async def _build_prediction_lab_fallback(
 
 
 async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dict:
-    backfill_summary, backfill_reason = await _backfill_prediction_lab_predictions(refresh)
-    refresh_reason = await _refresh_prediction_lab_accuracy(refresh)
+    if refresh:
+        backfill_summary, backfill_reason = await _backfill_prediction_lab_predictions(True)
+        refresh_reason = await _refresh_prediction_lab_accuracy(True)
+    else:
+        backfill_summary = _empty_backfill_summary()
+        backfill_reason = None
+        refresh_reason = None
+        _schedule_prediction_lab_background_maintenance()
 
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}

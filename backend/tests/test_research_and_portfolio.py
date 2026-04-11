@@ -684,21 +684,40 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["review_queue"], [])
 
     async def test_prediction_lab_auto_refreshes_due_records_on_default_load(self):
-        refresh_accuracy = AsyncMock(
-            return_value={
-                "checked_at": "2026-04-05T09:00:00",
-                "due_pending_count": 1,
-                "evaluated_count": 1,
-                "unmatched_count": 0,
-                "error_count": 0,
-                "calibration_refreshed": True,
-            }
-        )
+        backfill_started = asyncio.Event()
+        refresh_started = asyncio.Event()
+        release_background = asyncio.Event()
+
+        async def delayed_backfill(refresh: bool):
+            self.assertFalse(refresh)
+            backfill_started.set()
+            await release_background.wait()
+            return (
+                {
+                    "checked_reports": 1,
+                    "updated_reports": 1,
+                    "captured_predictions": 1,
+                },
+                None,
+            )
+
+        async def delayed_refresh(refresh: bool):
+            self.assertFalse(refresh)
+            refresh_started.set()
+            await release_background.wait()
+            return None
 
         with (
             patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.research_service.cache.set", new=AsyncMock()),
-            patch("app.services.research_service.archive_service.refresh_prediction_accuracy", new=refresh_accuracy),
+            patch(
+                "app.services.research_service._backfill_prediction_lab_predictions",
+                new=AsyncMock(side_effect=delayed_backfill),
+            ),
+            patch(
+                "app.services.research_service._refresh_prediction_lab_accuracy",
+                new=AsyncMock(side_effect=delayed_refresh),
+            ),
             patch(
                 "app.services.research_service.db.prediction_stats",
                 new=AsyncMock(
@@ -724,9 +743,17 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=_sample_radar_summary()),
             ),
         ):
-            result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
+            result = await asyncio.wait_for(
+                research_service.get_prediction_lab(limit_recent=20, refresh=False),
+                timeout=0.1,
+            )
+            await asyncio.wait_for(
+                asyncio.gather(backfill_started.wait(), refresh_started.wait()),
+                timeout=0.1,
+            )
+            release_background.set()
+            await asyncio.sleep(0)
 
-        refresh_accuracy.assert_awaited_once_with(limit=research_service.PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT)
         self.assertFalse(result["partial"])
         self.assertEqual(result["accuracy"]["total_predictions"], 1)
 

@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.0`
+현재 릴리즈: `v2.61.1`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/research/predictions`와 `/lab`의 기본 진입(`refresh=false`)은 이제 적중률 재계산과 due prediction backfill을 응답 경로에서 기다리지 않고 백그라운드 유지보수 작업으로 넘깁니다. 그래서 첫 진입이 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추는 대신, 현재 준비된 연구실 데이터를 즉시 보여 주고 후속 보강은 뒤에서 이어가도록 정리했습니다.
+- `backend/tests/test_research_and_portfolio.py`에는 prediction lab 기본 진입이 background maintenance를 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 `/lab` 첫 화면이 다시 accuracy refresh/backfill 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - `기회 레이더` 상위 10개 후보를 기준일마다 별도 cohort로 저장하고, `/lab`에서 `1D / 5D / 20D` 방향 적중률, 20거래일 밴드 적중률, 최근 miss/hit 복기, tag별 분해를 함께 보도록 확장했습니다.
 - 레이더 점수는 이제 실측 cohort를 바탕으로 bounded empirical post-score 조정을 함께 반영합니다. 최근 45일 표본을 decay로 읽어 `모멘텀 / 수급 / 실적 / 밸류 / 업황 / 퀄리티` feature별 보정 방향을 계산하되, 점수 가산은 최대 `±6점`으로 제한해 500MB 운영 한도에서도 보수적으로 작동하게 맞췄습니다.
 - `/calendar`, `/archive`, `/watchlist`, `/portfolio`, `/stock/[ticker]`, `/lab`에 남아 있던 버튼/세그먼트 누락을 공용 `button hierarchy + responsive segmented control`로 다시 흡수했습니다. 좁은 화면에서도 액션 버튼이 토글 chip처럼 보이거나 한 줄에서 깨지는 구간을 줄였습니다.
