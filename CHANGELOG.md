@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.2 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`는 Render safe mode에서 full/quick cache가 모두 비어 있는 첫 공개 진입일 때 quick builder를 응답 경로에서 기다리지 않습니다. 기본 경로는 즉시 `stock_memory_guard` shell을 먼저 반환하고, quick snapshot warm은 백그라운드에서 따로 진행해 배포 직후 cold-hit 한 번 때문에 `stock-detail` smoke가 15초 timeout까지 밀리는 구간을 줄였습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode cache miss가 `stock_memory_guard`를 바로 반환하면서 quick warm 스케줄만 남기는 회귀를 추가했습니다. 앞으로는 public stock detail 첫 진입이 다시 quick builder I/O 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.1 - 2026-04-11
 
 - backend `/api/research/predictions`는 `refresh=false` 기본 진입에서 due prediction backfill과 accuracy refresh를 더 이상 응답 경로에서 기다리지 않습니다. 캐시 miss 첫 진입도 background maintenance로 넘겨 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추던 경로를 줄이고, 현재 준비된 연구실 데이터는 즉시 partial 응답으로 먼저 보여 주도록 정리했습니다.

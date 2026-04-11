@@ -9,11 +9,13 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.1`
+현재 릴리즈: `v2.61.2`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- backend `/api/stock/{ticker}/detail`는 이제 Render safe mode에서 full/quick cache가 모두 비어 있는 첫 공개 진입일 때 quick 빌더를 응답 경로에서 기다리지 않습니다. 기본 경로는 즉시 `stock_memory_guard` shell을 보여 주고, quick snapshot warm은 백그라운드에서 따로 진행해 배포 직후 cold-hit 한 번 때문에 15초 timeout까지 밀리는 구간을 줄였습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode cache miss가 `stock_memory_guard`를 바로 반환하면서 quick warm 스케줄만 남기는 회귀를 추가했습니다. 앞으로는 public stock detail 첫 진입이 다시 quick builder I/O에 붙잡혀 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - backend `/api/research/predictions`와 `/lab`의 기본 진입(`refresh=false`)은 이제 적중률 재계산과 due prediction backfill을 응답 경로에서 기다리지 않고 백그라운드 유지보수 작업으로 넘깁니다. 그래서 첫 진입이 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추는 대신, 현재 준비된 연구실 데이터를 즉시 보여 주고 후속 보강은 뒤에서 이어가도록 정리했습니다.
 - `backend/tests/test_research_and_portfolio.py`에는 prediction lab 기본 진입이 background maintenance를 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 `/lab` 첫 화면이 다시 accuracy refresh/backfill 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
 - `기회 레이더` 상위 10개 후보를 기준일마다 별도 cohort로 저장하고, `/lab`에서 `1D / 5D / 20D` 방향 적중률, 20거래일 밴드 적중률, 최근 miss/hit 복기, tag별 분해를 함께 보도록 확장했습니다.

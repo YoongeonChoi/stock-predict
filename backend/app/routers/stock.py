@@ -34,6 +34,7 @@ STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
+_STOCK_DETAIL_QUICK_WARM_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 
@@ -595,6 +596,50 @@ def _schedule_stock_detail_refresh(ticker: str) -> bool:
     return True
 
 
+def _schedule_stock_detail_quick_warm(ticker: str) -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    if _should_skip_public_side_effects():
+        logger.info(
+            "Skipping stock detail quick warm for %s because Render memory pressure is high.",
+            ticker,
+        )
+        return False
+    if not _is_stock_analysis_module_warm():
+        logger.info(
+            "Skipping stock detail quick warm for %s because stock analysis module is still cold.",
+            ticker,
+        )
+        return False
+
+    existing = _STOCK_DETAIL_QUICK_WARM_TASKS.get(ticker)
+    if existing and not existing.done():
+        return True
+
+    async def _run_quick_warm() -> None:
+        try:
+            await asyncio.wait_for(build_quick_stock_detail(ticker), timeout=STOCK_DETAIL_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "stock detail quick warm timed out for %s after %.2fs",
+                ticker,
+                STOCK_DETAIL_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning(
+                "stock detail quick warm failed for %s: %s",
+                ticker,
+                str(exc)[:180],
+                exc_info=True,
+            )
+        finally:
+            _STOCK_DETAIL_QUICK_WARM_TASKS.pop(ticker, None)
+            _maybe_trim_public_route_memory("stock_detail_quick_warm_post")
+
+    _STOCK_DETAIL_QUICK_WARM_TASKS[ticker] = asyncio.create_task(_run_quick_warm())
+    return True
+
+
 async def _serve_quick_stock_detail(
     started_at: float,
     *,
@@ -764,6 +809,23 @@ async def get_stock_detail(
     if _should_avoid_cold_stock_analysis_import():
         logger.info(
             "Serving stock memory guard shell for %s because Render safe mode avoids cold stock analysis import.",
+            ticker,
+        )
+        shell_payload = await _build_stock_memory_guard_shell(ticker)
+        _record_stock_detail_trace(
+            started_at,
+            request_phase="shell",
+            cache_state="miss",
+            timeout_budget_seconds=detail_timeout,
+            payload=shell_payload,
+            fallback_reason="stock_memory_guard",
+            served_state="degraded",
+        )
+        return _build_stock_success_response(shell_payload, trim_reason="stock_detail")
+    if bool(getattr(settings, "startup_memory_safe_mode", False)) and not prefer_full:
+        _schedule_stock_detail_quick_warm(ticker)
+        logger.info(
+            "Serving stock memory guard shell for %s while quick snapshot warm-up runs in the background.",
             ticker,
         )
         shell_payload = await _build_stock_memory_guard_shell(ticker)
