@@ -885,7 +885,6 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
-        background_task = unittest.mock.Mock()
         with (
             patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
             patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
@@ -896,7 +895,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.screener._build_kr_representative_snapshot_results",
                 new=AsyncMock(side_effect=_slow_list_response),
             ),
-            patch("app.routers.screener.get_or_create_background_job", return_value=(background_task, True)) as background_job,
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
             patched_client() as client,
         ):
             response = client.get("/api/screener?country=KR&limit=20")
@@ -906,7 +905,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
-        background_job.assert_called_once()
+        background_job.assert_not_called()
         self.assertGreaterEqual(cache_set.await_count, 1)
 
     def test_screener_safe_mode_skips_representative_cancellation_cleanup_before_shell(self):
@@ -914,7 +913,6 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             f"Sector {index}": [f"{index:06d}.KS"]
             for index in range(1, 13)
         }
-        background_task = unittest.mock.Mock()
         with (
             patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
             patch("app.routers.screener.PUBLIC_SCREENER_PARTIAL_TIMEOUT_SECONDS", 0.01),
@@ -925,7 +923,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
                 "app.routers.screener._build_kr_representative_snapshot_results",
                 new=AsyncMock(side_effect=_slow_cancel_cleanup_list_response),
             ),
-            patch("app.routers.screener.get_or_create_background_job", return_value=(background_task, True)) as background_job,
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
             patched_client() as client,
         ):
             started = time.perf_counter()
@@ -938,7 +936,63 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
         self.assertLess(elapsed, 0.05)
-        background_job.assert_called_once()
+        background_job.assert_not_called()
+        self.assertGreaterEqual(cache_set.await_count, 1)
+
+    def test_screener_safe_mode_last_success_seed_skips_cache_warmup(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+        last_success_payload = {
+            "results": [
+                {
+                    "ticker": "000001.KS",
+                    "name": "Samsung Electronics",
+                    "sector": "Sector 1",
+                    "industry": "N/A",
+                    "market_cap": 420000000000.0,
+                    "current_price": 70100.0,
+                    "change_pct": 1.15,
+                    "pe_ratio": None,
+                    "pb_ratio": None,
+                    "dividend_yield": None,
+                    "beta": None,
+                    "week52_high": None,
+                    "week52_low": None,
+                    "pct_from_52w_high": None,
+                    "revenue_growth": None,
+                    "roe": None,
+                    "debt_to_equity": None,
+                    "avg_volume": None,
+                    "profit_margins": None,
+                    "score": None,
+                    "country_code": "KR",
+                }
+            ],
+            "total": 1,
+            "sectors": list(sector_map.keys()),
+        }
+        with (
+            patch.object(type(country_router.settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=True),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=[None, last_success_payload])),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_representative_quotes",
+                new=AsyncMock(side_effect=AssertionError("last_success path should not fetch representative quotes")),
+            ),
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=20")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_last_success_snapshot")
+        self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
+        background_job.assert_not_called()
         self.assertGreaterEqual(cache_set.await_count, 1)
 
 

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.50 - 2026-04-11
+
+- backend `/api/screener`는 이제 Render safe mode에서 `last_success` seed나 `safe shell` partial을 내려준 뒤 추가 cache warmup background job을 다시 만들지 않습니다. 그래서 partial 응답 뒤에 KR bulk snapshot warmup이 계속 돌며 운영 smoke 직후 memory pressure와 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode shell fallback과 last-success seed가 모두 cache warmup background job 없이 끝나는 회귀를 추가했습니다. 그래서 Render 500MB 보호 구간에서 screener partial 뒤 후속 warmup이 다시 살아나 메모리와 지연을 끌어올리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.60.49 - 2026-04-11
 
 - backend `memory_hygiene`는 이제 Render safe mode에서 `pressure_ratio 0.8` 이상의 elevated warning 구간이면 trim cooldown을 건너뛰고 바로 한 번 더 정리를 시도합니다. 그래서 public smoke 직후 cgroup 사용량이 500MB 한도 바로 아래에 붙어 있을 때도 다음 요청이 쿨다운 때문에 손을 놓지 않도록 조정했습니다.

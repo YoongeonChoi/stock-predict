@@ -878,14 +878,9 @@ async def screen_stocks(
                             cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
                             label=f"screener partial seed write {cache_key}",
                         )
-                        _spawn_screener_cache_warmup(
+                        logging.info(
+                            "Skipping screener cache warmup for %s because Render safe mode is active and last_success seed already served.",
                             cache_key,
-                            lambda: _build_response(
-                                candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
-                                partial=True,
-                                fallback_reason="kr_bulk_snapshot_warming",
-                            ),
-                            allow_safe_mode=True,
                         )
                         _maybe_trim_public_route_memory("screener")
                         return response
@@ -963,14 +958,9 @@ async def screen_stocks(
                         cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
                         label=f"screener safe-shell cache write {cache_key}",
                     )
-                    _spawn_screener_cache_warmup(
+                    logging.info(
+                        "Skipping screener cache warmup for %s because Render safe mode is active and shell fallback already served.",
                         cache_key,
-                        lambda: _build_response(
-                            candidate_limit=SCREENER_COLD_START_KR_CANDIDATES,
-                            partial=True,
-                            fallback_reason="kr_bulk_snapshot_warming",
-                        ),
-                        allow_safe_mode=True,
                     )
                     _maybe_trim_public_route_memory("screener")
                     return response
