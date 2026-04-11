@@ -17,9 +17,13 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   country_report_memory_guard: "시장 요약 보호 응답",
   country_report_startup_guard: "시장 요약 초기 워밍업 응답",
   country_report_timeout: "시장 요약 지연",
+  heatmap_memory_guard: "히트맵 보호 응답",
+  heatmap_startup_guard: "히트맵 초기 워밍업 응답",
   heatmap_timeout: "히트맵 계산 지연",
   movers_timeout: "상위 집계 지연",
   radar_timeout: "레이더 계산 지연",
+  opportunity_memory_guard: "레이더 보호 응답",
+  opportunity_startup_guard: "레이더 초기 워밍업 응답",
   opportunity_quick_fallback: "대표 후보 기준 빠른 응답",
   opportunity_quick_response: "대표 후보 기준 빠른 응답",
   opportunity_cached_quick_response: "이전 usable 후보 기준",
@@ -105,6 +109,18 @@ export function buildPublicAuditSummary(
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_memory_guard") {
     return "서버 메모리 보호 구간이라 대표 시장 스냅샷을 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "heatmap_startup_guard") {
+    return "서비스가 막 깨어난 직후라 대표 종목 기준 히트맵을 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "heatmap_memory_guard") {
+    return "서버 메모리 보호 구간이라 대표 종목 기준 히트맵을 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "opportunity_startup_guard") {
+    return "서비스가 막 깨어난 직후라 대표 후보 기준 기회 레이더를 먼저 보여주고 있습니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "opportunity_memory_guard") {
+    return "서버 메모리 보호 구간이라 대표 후보 기준 기회 레이더를 먼저 보여주고 있습니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
     return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";

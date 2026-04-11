@@ -1,5 +1,7 @@
 import asyncio
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, PropertyMock, patch
 
 from app.routers import country as country_router
@@ -510,6 +512,26 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "kr_bulk_snapshot_warming")
         bulk_quotes.assert_awaited_once_with(expected_tickers, skip_full_market_fallback=True)
         warmup.assert_called_once()
+
+    def test_heatmap_startup_guard_returns_partial_fallback_without_live_build(self):
+        fallback_payload = {"children": [], "partial": True, "fallback_reason": "live_snapshot_timeout"}
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.12}),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
+            ),
+            patch("app.routers.country._build_heatmap_payload", new=AsyncMock(side_effect=AssertionError("live heatmap build should be skipped during startup guard"))),
+            patch("app.routers.country._build_heatmap_fallback", new=AsyncMock(return_value=fallback_payload)),
+            patch("app.data.cache.get_or_fetch", new=AsyncMock(side_effect=AssertionError("cache fetch should be skipped during startup guard"))),
+            patched_client() as client,
+        ):
+            response = client.get("/api/country/KR/heatmap")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["partial"])
+        self.assertEqual(response.json()["fallback_reason"], "heatmap_startup_guard")
 
     def test_screener_partial_does_not_schedule_cache_warmup_in_render_safe_mode(self):
         sector_map = {

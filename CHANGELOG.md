@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.33 - 2026-04-11
+
+- backend `heatmap`과 `market/opportunities`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 `startup guard` fast fallback을 먼저 사용합니다. 새 프로세스는 메모리 비율이 낮아도 live heatmap build와 quick opportunity fetch가 8~30초대까지 늘어질 수 있었는데, 이번에는 `heatmap_startup_guard`, `opportunity_startup_guard`로 대표 스냅샷과 placeholder를 먼저 내려 first-usable 응답을 더 빨리 닫도록 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`에는 최근 startup window 동안 heavy heatmap/live quick 경로를 건너뛰는 회귀를 추가했습니다. 새 프로세스 초반에 다시 무거운 public route가 풀 계산으로 들어가는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- frontend `public-audit`에는 `heatmap_startup_guard`, `heatmap_memory_guard`, `opportunity_startup_guard`, `opportunity_memory_guard` 라벨/요약을 추가해, 히트맵과 기회 레이더 fallback 이유도 자연스러운 한국어로 안내하도록 맞췄습니다.
+
 ## v2.60.32 - 2026-04-11
 
 - backend `country report`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안에도 `startup guard` fast fallback을 먼저 사용합니다. 새 프로세스는 메모리 비율이 낮아도 cold first-hit가 길어질 수 있었는데, `country_report_startup_guard`로 바로 눌러 first-usable 응답을 더 빨리 내는 쪽으로 정리했습니다.

@@ -590,6 +590,40 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["fallback_reason"], "opportunity_memory_guard")
         self.assertEqual(response["fallback_tier"], "placeholder")
 
+    async def test_market_opportunities_returns_startup_guard_placeholder_during_recent_startup_window(self):
+        placeholder_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-04-11T08:00:00",
+            "market_regime": None,
+            "universe_size": 0,
+            "total_scanned": 0,
+            "quote_available_count": 0,
+            "detailed_scanned_count": 0,
+            "actionable_count": 0,
+            "bullish_count": 0,
+            "universe_source": "fallback",
+            "universe_note": "startup guard placeholder",
+            "opportunities": [],
+        }
+
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.12}),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
+            ),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
+            patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("live quick fetch should be skipped"))),
+        ):
+            response = await country.get_market_opportunities("KR", limit=12)
+
+        self.assertTrue(response["partial"])
+        self.assertEqual(response["fallback_reason"], "opportunity_startup_guard")
+        self.assertEqual(response["fallback_tier"], "placeholder")
+
     async def test_country_report_fallback_timeboxes_snapshot_and_quick_candidate_lookups_under_pressure(self):
         async def _slow_lookup(*args, **kwargs):
             await asyncio.sleep(0.05)

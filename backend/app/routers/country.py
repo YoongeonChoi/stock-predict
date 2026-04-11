@@ -63,7 +63,7 @@ COUNTRIES_CACHE_KEY = "countries:v2"
 COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
-COUNTRY_REPORT_STARTUP_GUARD_SECONDS = 300
+PUBLIC_STARTUP_GUARD_SECONDS = 300
 
 
 def market_session_cache_token(*args, **kwargs):
@@ -465,7 +465,7 @@ def _should_use_ultra_fast_public_fallback() -> bool:
     return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
 
 
-def _should_use_startup_fast_country_report_fallback() -> bool:
+def _should_use_startup_public_route_guard() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     try:
@@ -475,7 +475,7 @@ def _should_use_startup_fast_country_report_fallback() -> bool:
             return False
         started_at = datetime.fromisoformat(started_at_raw)
         now = datetime.now(started_at.tzinfo or timezone.utc)
-        return (now - started_at).total_seconds() <= COUNTRY_REPORT_STARTUP_GUARD_SECONDS
+        return (now - started_at).total_seconds() <= PUBLIC_STARTUP_GUARD_SECONDS
     except Exception:
         return False
 
@@ -1321,7 +1321,7 @@ async def get_country_report(code: str):
         return JSONResponse(status_code=404, content=err.to_dict())
 
     pressure_guard = _should_use_ultra_fast_public_fallback()
-    startup_guard = _should_use_startup_fast_country_report_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
         guard_reason = "country_report_memory_guard" if pressure_guard else "country_report_startup_guard"
         guard_detail = (
@@ -1392,6 +1392,18 @@ async def get_heatmap(code: str):
     from app.data import cache as data_cache
     cache_key = f"heatmap:v3:{code}"
     last_success_key = f"heatmap:last_success:{code}"
+
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        response = dict(await _build_heatmap_fallback(code))
+        response["partial"] = True
+        response["fallback_reason"] = (
+            "heatmap_memory_guard" if pressure_guard else "heatmap_startup_guard"
+        )
+        response["generated_at"] = datetime.now().isoformat()
+        _maybe_trim_public_route_memory("country_heatmap")
+        return response
 
     async def _fetch_heatmap():
         try:
@@ -1689,20 +1701,32 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         _maybe_trim_public_route_memory("market_opportunities")
         return payload
 
-    if _should_use_ultra_fast_public_fallback():
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
         payload = _build_traced_opportunity_partial(
             started_at,
             payload=market_service.build_market_opportunities_placeholder(
                 code,
                 note=(
-                    f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
-                    "이번 요청에서 무거운 quick 계산을 생략하고 안전한 placeholder를 먼저 제공합니다. "
-                    "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
+                    (
+                        f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
+                        "이번 요청에서 무거운 quick 계산을 생략하고 안전한 placeholder를 먼저 제공합니다. "
+                        "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
+                    )
+                    if pressure_guard
+                    else (
+                        f"{code} 기회 레이더 서비스가 막 깨어난 직후라 "
+                        "이번 요청에서는 대표 후보 기준 placeholder를 먼저 제공합니다. "
+                        "잠시 뒤 다시 조회하면 quick 후보와 정밀 결과가 회복될 수 있습니다."
+                    )
                 ),
             ),
             request_phase="shell",
             cache_state="miss",
-            fallback_reason="opportunity_memory_guard",
+            fallback_reason=(
+                "opportunity_memory_guard" if pressure_guard else "opportunity_startup_guard"
+            ),
             served_state="degraded",
             fallback_tier="placeholder",
         )
