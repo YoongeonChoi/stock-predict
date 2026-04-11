@@ -2,6 +2,10 @@
 
 All notable changes to this project are tracked here.
 
+## v2.60.40 - 2026-04-11
+
+- backend `/api/market/opportunities/{code}`는 이제 memory/startup guard 구간에서 cached full/quick 조회까지 먼저 기다리지 않고 즉시 placeholder 응답으로 내려갑니다. 그래서 Render 메모리 warning 구간에서 캐시 I/O 때문에 quick fallback조차 늦어지던 회귀를 줄였습니다.
+
 ## v2.60.39 - 2026-04-11
 
 - backend `/api/country/KR/heatmap` fallback은 이제 timeout 이후에도 동적 FMP 유니버스를 다시 조회하지 않고 즉시 fallback 유니버스를 사용합니다. 그래서 히트맵이 느린 live build에서 partial로 내려갈 때 fallback 단계가 다시 외부 의존을 타며 15초 budget을 넘기는 회귀를 줄였습니다.

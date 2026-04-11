@@ -623,8 +623,8 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
             patch("app.routers.country.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
-            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
-            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(side_effect=AssertionError("cache lookup should be skipped during memory guard"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("quick cache lookup should be skipped during memory guard"))),
             patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
             patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("live quick fetch should be skipped"))),
         ):
@@ -657,8 +657,8 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
                 "app.routers.country.get_runtime_state",
                 return_value={"started_at": datetime.now(timezone.utc).isoformat(), "startup_tasks": []},
             ),
-            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(return_value=None)),
-            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(return_value=None)),
+            patch("app.routers.country.market_service.get_cached_market_opportunities", new=AsyncMock(side_effect=AssertionError("cache lookup should be skipped during startup guard"))),
+            patch("app.routers.country.market_service.get_cached_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("quick cache lookup should be skipped during startup guard"))),
             patch("app.routers.country.market_service.build_market_opportunities_placeholder", return_value=placeholder_payload),
             patch("app.routers.country.market_service.get_market_opportunities_quick", new=AsyncMock(side_effect=AssertionError("live quick fetch should be skipped"))),
         ):

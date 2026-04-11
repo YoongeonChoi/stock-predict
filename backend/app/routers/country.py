@@ -1683,6 +1683,38 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=market_service.build_market_opportunities_placeholder(
+                code,
+                note=(
+                    (
+                        f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
+                        "이번 요청에서 캐시 조회와 무거운 quick 계산을 건너뛰고 안전한 placeholder를 먼저 제공합니다. "
+                        "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
+                    )
+                    if pressure_guard
+                    else (
+                        f"{code} 기회 레이더 서비스가 막 깨어난 직후라 "
+                        "이번 요청에서는 캐시 조회를 건너뛰고 대표 후보 기준 placeholder를 먼저 제공합니다. "
+                        "잠시 뒤 다시 조회하면 quick 후보와 정밀 결과가 회복될 수 있습니다."
+                    )
+                ),
+            ),
+            request_phase="shell",
+            cache_state="miss",
+            fallback_reason=(
+                "opportunity_memory_guard" if pressure_guard else "opportunity_startup_guard"
+            ),
+            served_state="degraded",
+            fallback_tier="placeholder",
+        )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return payload
+
     cached_full = await market_service.get_cached_market_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_full):
         await _capture_opportunity_payload(code, cached_full)
@@ -1710,38 +1742,6 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 f"{_opportunity_refresh_followup_sentence()}"
             ),
             fallback_tier="cached_quick",
-        )
-        _maybe_trim_public_route_memory("market_opportunities")
-        return payload
-
-    pressure_guard = _should_use_ultra_fast_public_fallback()
-    startup_guard = _should_use_startup_public_route_guard()
-    if pressure_guard or startup_guard:
-        payload = _build_traced_opportunity_partial(
-            started_at,
-            payload=market_service.build_market_opportunities_placeholder(
-                code,
-                note=(
-                    (
-                        f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
-                        "이번 요청에서 무거운 quick 계산을 생략하고 안전한 placeholder를 먼저 제공합니다. "
-                        "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
-                    )
-                    if pressure_guard
-                    else (
-                        f"{code} 기회 레이더 서비스가 막 깨어난 직후라 "
-                        "이번 요청에서는 대표 후보 기준 placeholder를 먼저 제공합니다. "
-                        "잠시 뒤 다시 조회하면 quick 후보와 정밀 결과가 회복될 수 있습니다."
-                    )
-                ),
-            ),
-            request_phase="shell",
-            cache_state="miss",
-            fallback_reason=(
-                "opportunity_memory_guard" if pressure_guard else "opportunity_startup_guard"
-            ),
-            served_state="degraded",
-            fallback_tier="placeholder",
         )
         _maybe_trim_public_route_memory("market_opportunities")
         return payload
