@@ -13,6 +13,8 @@ export interface PublicAuditChip {
 
 const PARTIAL_REASON_CHIPS: Record<string, PublicAuditChip> = {
   briefing_partial_snapshot: { label: "요약 스냅샷", tone: "info" },
+  briefing_startup_guard: { label: "초기 스냅샷", tone: "info" },
+  briefing_memory_guard: { label: "보호 스냅샷", tone: "neutral" },
   country_report_startup_seed: { label: "준비 스냅샷", tone: "info" },
   country_report_startup_guard: { label: "초기 스냅샷", tone: "info" },
   heatmap_startup_guard: { label: "초기 스냅샷", tone: "info" },
@@ -41,6 +43,8 @@ const PARTIAL_REASON_CHIPS: Record<string, PublicAuditChip> = {
 
 const FALLBACK_REASON_LABELS: Record<string, string> = {
   briefing_partial_snapshot: "브리핑 요약 스냅샷",
+  briefing_startup_guard: "브리핑 초기 스냅샷",
+  briefing_memory_guard: "브리핑 보호 스냅샷",
   briefing_timeout: "브리핑 계산 지연",
   public_briefing_timeout: "브리핑 계산 지연",
   country_report_memory_guard: "시장 요약 보호 스냅샷",
@@ -154,6 +158,12 @@ export function buildPublicAuditSummary(
 ) {
   if (meta?.partial && meta?.fallback_reason === "briefing_partial_snapshot") {
     return "시장 브리핑은 먼저 정리했고, 레이더와 포커스 카드는 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "briefing_startup_guard") {
+    return "처음 진입에서는 세션 상태와 핵심 일정부터 먼저 보여주고, 전체 브리핑은 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "briefing_memory_guard") {
+    return "서버 보호 구간에서는 세션 상태와 핵심 일정부터 먼저 보여주고, 전체 브리핑은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_placeholder_response") {
     return "이번 요청에서는 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 보여주고 있습니다.";

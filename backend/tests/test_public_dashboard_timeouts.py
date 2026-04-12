@@ -817,7 +817,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",
             "partial": True,
-            "fallback_reason": "briefing_timeout",
+            "fallback_reason": "briefing_startup_guard",
             "sessions": [],
             "market_view": [],
             "focus_cards": [],
@@ -841,14 +841,14 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
-        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+        self.assertEqual(response.json()["fallback_reason"], "briefing_startup_guard")
         warmup.assert_called_once()
 
     def test_daily_briefing_memory_guard_returns_partial_fallback_without_full_fetch(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",
             "partial": True,
-            "fallback_reason": "briefing_timeout",
+            "fallback_reason": "briefing_memory_guard",
             "sessions": [],
             "market_view": [],
             "focus_cards": [],
@@ -872,7 +872,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
-        self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
+        self.assertEqual(response.json()["fallback_reason"], "briefing_memory_guard")
         warmup.assert_not_called()
 
     def test_daily_briefing_seed_returns_last_success_snapshot_before_full_fetch(self):

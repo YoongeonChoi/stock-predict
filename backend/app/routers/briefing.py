@@ -216,10 +216,12 @@ async def get_daily_briefing():
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
+        fallback_reason = "briefing_memory_guard" if pressure_guard else "briefing_startup_guard"
         if startup_guard and not pressure_guard:
             _spawn_daily_briefing_warmup(label="Daily briefing startup warmup")
         payload = _build_daily_briefing_shell(
-            "브리핑 전체 계산을 잠시 건너뛰고 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
+            "브리핑 전체 계산을 잠시 건너뛰고 지금은 세션 상태와 핵심 일정만 먼저 표시합니다.",
+            fallback_reason=fallback_reason,
         )
         route_stability_service.record_route_trace(
             "daily_briefing",
@@ -231,7 +233,7 @@ async def get_daily_briefing():
                 timeout_budget_ms=PUBLIC_ENDPOINT_TIMEOUT_SECONDS * 1000.0,
                 upstream_source="briefing_service",
                 payload=payload,
-                fallback_reason="daily_briefing_memory_guard" if pressure_guard else "daily_briefing_startup_guard",
+                fallback_reason=fallback_reason,
                 served_state="partial",
             ),
         )

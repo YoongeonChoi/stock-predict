@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.35 - 2026-04-12
+
+- `backend/app/routers/briefing.py`는 이제 startup guard와 memory guard 응답을 각각 `briefing_startup_guard`, `briefing_memory_guard`로 명시합니다. 기존에는 이 구간도 payload 상 `briefing_timeout`으로 보여서, 첫 진입 보호 응답이 실제 timeout처럼 오해되던 문제가 있었습니다.
+- `frontend/src/lib/public-audit.ts`에는 `briefing_startup_guard`, `briefing_memory_guard` 전용 chip/label/summary를 추가했습니다. 이제 운영 첫 진입에서 브리핑이 보호 스냅샷으로 내려와도 `브리핑 계산 지연` 대신 실제 상태에 맞는 안내 문구로 보입니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 briefing startup/memory guard 응답이 새 fallback reason을 그대로 유지하는지 함께 검증합니다.
+
 ## v2.61.34 - 2026-04-12
 
 - `backend/app/routers/briefing.py`의 full briefing fetch는 이제 bare `asyncio.create_task(...)` 대신 runtime background registry에 등록됩니다. 그래서 timeout 뒤에도 같은 계산이 event loop에서 안정적으로 이어지고, 완료 시 `daily_briefing:last_success`까지 도달할 가능성을 높였습니다.

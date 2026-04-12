@@ -9,11 +9,12 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.34`
+현재 릴리즈: `v2.61.35`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 브리핑 public fallback은 이제 `startup_guard`, `memory_guard`, `timeout`을 같은 문구로 뭉개지 않습니다. 그래서 실제로는 startup 보호 구간인데도 화면에 계속 `브리핑 계산 지연`처럼 보이던 오진을 줄이고, 첫 진입 상태를 더 정확하게 읽을 수 있게 맞췄습니다.
 - `daily briefing` full 계산 timeout 뒤에도 이제 런타임 background registry가 같은 작업을 계속 붙잡습니다. 그래서 timeout 응답 직후 task가 사라져 `last_success`까지 못 가는 경로를 줄이고, 뒤이은 요청이 직전 브리핑 seed를 더 안정적으로 재사용할 수 있게 정리했습니다.
 - `/api/briefing/daily`는 이제 5분 본캐시가 비어도 같은 날짜의 `last_success` 스냅샷을 먼저 재사용하고, 뒤에서 refresh를 이어 갑니다. 그래서 캐시 만료 직후 첫 진입이 다시 6초 timeout shell을 맞기보다, 직전 브리핑 스냅샷을 바로 읽고 다음 요청에서 최신 브리핑으로 자연스럽게 따라붙도록 정리했습니다.
 - startup prewarm은 이제 `KR country report`를 2초 안에 끝내지 못해도 `country_report_startup_seed`를 먼저 고정합니다. 그래서 배포 직후나 cold wake 직후 첫 `/` 진입이 startup guard 빈 shell 대신, archived/quick 후보를 최대한 섞은 준비된 시장 스냅샷을 바로 읽을 수 있게 맞췄습니다.
