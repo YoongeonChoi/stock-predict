@@ -1710,6 +1710,48 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
         self.assertGreaterEqual(cache_set.await_count, 2)
 
+    def test_screener_startup_guard_shell_persists_full_shared_seed_for_larger_follow_up_limit(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS-{slot}" for slot in range(1, 5)]
+            for index in range(1, 11)
+        }
+        cache_store = {}
+
+        async def _cache_get(key):
+            return cache_store.get(key)
+
+        async def _cache_set(key, value, ttl):
+            cache_store[key] = value
+
+        with (
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._should_use_startup_public_screener_guard", return_value=True),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
+            patch("app.routers.screener.cache.set", new=AsyncMock(side_effect=_cache_set)),
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)) as get_universe,
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(side_effect=AssertionError("startup guard shell should avoid live KR bulk quotes")),
+            ),
+            patch(
+                "app.routers.screener.yfinance_client.get_market_snapshot",
+                new=AsyncMock(side_effect=AssertionError("startup guard shell should avoid yfinance fallback")),
+            ),
+            patched_client() as client,
+        ):
+            first_response = client.get("/api/screener?country=KR&limit=10")
+            second_response = client.get("/api/screener?country=KR&limit=50")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        first_payload = first_response.json()
+        second_payload = second_response.json()
+        self.assertTrue(first_payload["partial"])
+        self.assertTrue(second_payload["partial"])
+        self.assertEqual(len(first_payload["results"]), 10)
+        self.assertEqual(len(second_payload["results"]), 36)
+        get_universe.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.39 - 2026-04-12
+
+- `backend/app/routers/screener.py`의 startup guard safe shell은 이제 작은 `limit` 요청을 먼저 처리하더라도 shared startup seed를 그대로 작은 결과로 덮어쓰지 않습니다. 공용 seed는 별도로 `36개` 기준으로 유지하므로, 첫 `/api/screener?country=KR&limit=10` 뒤 곧바로 이어지는 `limit=50` 요청까지 `10개짜리 partial`로 줄어드는 seed 오염을 막았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard의 첫 `limit=10` shell 뒤 다음 `limit=50` 요청이 shared seed로 `36개` 후보를 다시 받는 회귀를 추가했습니다. 앞으로는 startup race를 막는 패치가 오히려 공용 seed 크기를 줄여 버리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.38 - 2026-04-12
 
 - `backend/app/routers/screener.py`의 startup guard는 이제 shared startup seed가 아직 비어 있어도 그대로 live KR bulk quote path로 흘러가지 않고, fallback universe 기반 `kr_safe_shell_warming` shell을 즉시 반환합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 seed prewarm race 때문에 다시 10초 안팎 full 계산으로 새던 빈틈을 한 번 더 줄였습니다.

@@ -784,8 +784,23 @@ async def _build_seeded_safe_mode_shell_response(
         label=f"screener safe-shell cache write {cache_key}",
     )
     if persist_startup_seed:
+        startup_seed_response = response
+        if len(response.get("results") or []) < min(
+            SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
+            len(tickers),
+        ):
+            startup_seed_response = _build_safe_mode_shell_response(
+                tickers=tickers,
+                universe=universe,
+                sector=sector,
+                country=country,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                limit=SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
+                fallback_reason="kr_safe_shell_warming",
+            )
         await _timed_screener_cache_write(
-            _persist_public_screener_startup_seed(country, response),
+            _persist_public_screener_startup_seed(country, startup_seed_response),
             label=f"screener startup seed write {country}",
         )
     logging.info(log_message, cache_key)
