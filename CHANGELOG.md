@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.40 - 2026-04-12
+
+- `backend/app/services/export_service.py`의 PDF sanitize는 이제 `📉`, `📈`, `🔻`, `🔺`, `💸`, `💰`, `⚠️` 같은 미지원 이모지를 한글 표식이나 안전한 ASCII 표기로 먼저 치환한 뒤 남은 variation selector와 기호 이모지를 제거합니다. 그래서 `country report` PDF export가 한글 폰트 missing glyph 경고를 남기거나 문장 중간에서 깨질 가능성을 더 줄였습니다.
+- `backend/tests/test_export_service.py`에는 unsupported emoji가 기대한 표식으로 치환되는 회귀와, 이모지가 포함된 요약 payload도 실제 `%PDF` 바이트로 정상 렌더되는 회귀를 추가했습니다. 앞으로는 export 요약 문구에 새 이모지나 경고 기호가 다시 섞여 들어와도 같은 문제를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.39 - 2026-04-12
 
 - `backend/app/routers/screener.py`의 startup guard safe shell은 이제 작은 `limit` 요청을 먼저 처리하더라도 shared startup seed를 그대로 작은 결과로 덮어쓰지 않습니다. 공용 seed는 별도로 `36개` 기준으로 유지하므로, 첫 `/api/screener?country=KR&limit=10` 뒤 곧바로 이어지는 `limit=50` 요청까지 `10개짜리 partial`로 줄어드는 seed 오염을 막았습니다.

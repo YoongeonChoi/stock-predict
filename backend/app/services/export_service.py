@@ -5,6 +5,7 @@ import io
 import logging
 import os
 import platform
+import re
 
 from fpdf import FPDF
 
@@ -20,6 +21,8 @@ SECTION_TITLES = {
     "buy_sell_guide": "매매 가이드",
     "key_news": "핵심 뉴스",
 }
+
+UNSUPPORTED_PDF_EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF]")
 
 
 def _find_unicode_font() -> str | None:
@@ -60,10 +63,18 @@ def _sanitize_for_pdf(text: str) -> str:
         "⚠": "[주의]",
         "❌": "[X]",
         "•": "-",
+        "📉": "[하락]",
+        "📈": "[상승]",
+        "🔻": "[하락]",
+        "🔺": "[상승]",
+        "💸": "[현금유출]",
+        "💰": "[현금유입]",
     }
     cleaned = str(text or "")
     for source, target in replacements.items():
         cleaned = cleaned.replace(source, target)
+    cleaned = cleaned.replace("\ufe0f", "")
+    cleaned = UNSUPPORTED_PDF_EMOJI_RE.sub("", cleaned)
     return cleaned
 
 

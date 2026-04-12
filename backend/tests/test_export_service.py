@@ -4,6 +4,11 @@ from app.services import export_service
 
 
 class ExportServiceTests(unittest.TestCase):
+    def test_sanitize_for_pdf_replaces_unsupported_emoji(self):
+        sanitized = export_service._sanitize_for_pdf("시장 요약 📉 / 자금 흐름 💸 / 경고 ⚠️")
+
+        self.assertEqual(sanitized, "시장 요약 [하락] / 자금 흐름 [현금유출] / 경고 [주의]")
+
     def test_export_pdf_returns_bytes_payload(self):
         payload = {
             "market_summary": "테스트 PDF 내보내기",
@@ -37,6 +42,17 @@ class ExportServiceTests(unittest.TestCase):
         }
 
         rendered = export_service.export_pdf(payload, title="멀티라인 점검")
+
+        self.assertIsInstance(rendered, bytes)
+        self.assertTrue(rendered.startswith(b"%PDF"))
+
+    def test_export_pdf_handles_emoji_summary_without_layout_error(self):
+        payload = {
+            "market_summary": "시장 충격 📉 이후 현금 유출 💸 이 계속됐습니다.",
+            "analysis_summary": "추가 경고 ⚠️ 는 치환 후에도 PDF 렌더가 유지되어야 합니다.",
+        }
+
+        rendered = export_service.export_pdf(payload, title="이모지 점검")
 
         self.assertIsInstance(rendered, bytes)
         self.assertTrue(rendered.startswith(b"%PDF"))
