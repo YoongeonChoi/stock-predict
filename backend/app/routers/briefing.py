@@ -256,8 +256,12 @@ async def get_daily_briefing():
         _schedule_public_route_memory_trim("daily_briefing")
         return seeded_payload
     briefing_task: asyncio.Task | None = None
+    briefing_task_created = False
     try:
-        briefing_task = asyncio.create_task(_load_daily_briefing_payload())
+        briefing_task, briefing_task_created = get_or_create_background_job(
+            "daily_briefing:full_payload",
+            _load_daily_briefing_payload,
+        )
         payload = await asyncio.wait_for(
             asyncio.shield(briefing_task),
             timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
@@ -277,7 +281,7 @@ async def get_daily_briefing():
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
     except asyncio.TimeoutError:
-        if briefing_task is not None:
+        if briefing_task is not None and briefing_task_created:
             _observe_briefing_task(briefing_task, "full")
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
         err.log("warning")

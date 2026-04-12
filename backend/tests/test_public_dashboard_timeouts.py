@@ -782,6 +782,37 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
 
+    def test_daily_briefing_timeout_registers_runtime_background_job(self):
+        fallback_payload = {
+            "generated_at": "2026-03-29T09:00:00",
+            "partial": True,
+            "fallback_reason": "briefing_timeout",
+            "market_view": [],
+            "focus_cards": [],
+            "upcoming_events": [],
+            "sessions": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["기본 시장 스냅샷 먼저 표시"],
+        }
+        created_job_names: list[str] = []
+
+        def _create_registered_job(name, job_factory):
+            created_job_names.append(name)
+            return asyncio.create_task(job_factory()), True
+
+        with (
+            patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_response)),
+            patch("app.routers.briefing.get_or_create_background_job", side_effect=_create_registered_job),
+            patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
+            patched_client() as client,
+        ):
+            response = client.get("/api/briefing/daily")
+            time.sleep(0.07)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(created_job_names, ["daily_briefing:full_payload"])
+
     def test_daily_briefing_startup_guard_returns_partial_fallback_without_full_fetch(self):
         fallback_payload = {
             "generated_at": "2026-03-29T09:00:00",

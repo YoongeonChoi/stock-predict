@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.34 - 2026-04-12
+
+- `backend/app/routers/briefing.py`의 full briefing fetch는 이제 bare `asyncio.create_task(...)` 대신 runtime background registry에 등록됩니다. 그래서 timeout 뒤에도 같은 계산이 event loop에서 안정적으로 이어지고, 완료 시 `daily_briefing:last_success`까지 도달할 가능성을 높였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 실제로 `daily_briefing:full_payload` background job으로 등록되는지 확인하는 회귀를 추가했습니다. 앞으로는 timeout 응답 뒤 background 계산이 참조를 잃고 사라지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.33 - 2026-04-12
 
 - `/api/briefing/daily`는 이제 5분 본캐시 miss 시 같은 날짜의 `daily_briefing:last_success` 스냅샷을 먼저 재사용하고, 백그라운드 warmup으로 최신 브리핑을 다시 채웁니다. 그래서 첫 요청이 6초 timeout shell로 떨어지기보다 직전 브리핑을 바로 보여 주고, 뒤에서 최신 스냅샷으로 자연스럽게 따라붙도록 정리했습니다.
