@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.31 - 2026-04-12
+
+- Render memory-safe startup의 `public_dashboard_prewarm`은 이제 `KR country report` 성공 캐시까지 함께 예열합니다. 그래서 첫 `/` 진입이 `KR report` 기반 패널을 읽을 때 요청 경로에서 정밀 국가 리포트를 0부터 다시 계산하며 `country_report_timeout` partial로 떨어질 가능성을 더 줄였습니다.
+- `backend/tests/test_main_startup.py`에는 이 startup prewarm이 실제로 `market indicators -> briefing -> primary country report -> screener -> calendar` 흐름 안에 포함되는지와, 앞단 prewarm 실패 시 country report prewarm이 무리하게 이어지지 않는 회귀를 함께 추가했습니다.
+
 ## v2.61.30 - 2026-04-12
 
 - deployed smoke에서 실제로 내려오던 `briefing_partial_snapshot`, `live_snapshot_timeout`, `kr_safe_shell_warming`, `calendar_startup_warming` fallback reason을 프론트 공용 audit 라벨과 요약 문구에 정식 반영했습니다.

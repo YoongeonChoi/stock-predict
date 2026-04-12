@@ -695,6 +695,18 @@ async def prewarm_market_indicators_cache() -> None:
         _maybe_trim_public_route_memory("market_indicators_startup_prewarm")
 
 
+async def prewarm_primary_country_report_cache() -> None:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping startup primary country report prewarm because Render memory pressure is high.")
+        _maybe_trim_public_route_memory("country_report_startup_prewarm:skip")
+        return
+
+    try:
+        await analyze_country("KR")
+    finally:
+        _maybe_trim_public_route_memory("country_report_startup_prewarm")
+
+
 def _allow_safe_mode_country_report_warmup() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
