@@ -91,9 +91,13 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
-        cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
+        cpi_dates = [
+            event["date"]
+            for event in result["events"]
+            if event["title_en"] == "CPI Release" and event["country_code"] == "KR"
+        ]
         self.assertEqual(len(cpi_dates), 1)
-        self.assertIn("월간 핵심 일정", result["summary"]["note"])
+        self.assertIn("한국과 해외 핵심 일정", result["summary"]["note"])
 
     async def test_actual_economic_event_replaces_monthly_recurring_estimate(self):
         economic_rows = [
@@ -110,8 +114,78 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await calendar_service.get_calendar("KR", year=2026, month=3)
 
-        cpi_dates = [event["date"] for event in result["events"] if event["title_en"] == "CPI Release"]
+        cpi_dates = [
+            event["date"]
+            for event in result["events"]
+            if event["title_en"] == "CPI Release" and event["country_code"] == "KR"
+        ]
         self.assertEqual(cpi_dates, ["2026-03-12"])
+
+    async def test_calendar_includes_tracked_global_macro_and_earnings_events(self):
+        earning_rows = [
+            {"date": "2026-03-20", "symbol": "NVDA", "time": "amc", "epsEstimated": 5.1},
+        ]
+        economic_rows = [
+            {"date": "2026-03-12", "event": "CPI Release", "country": "US"},
+            {"date": "2026-03-19", "event": "Interest Rate Decision", "country": "Euro Area"},
+        ]
+
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=earning_rows)),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
+
+        self.assertTrue(
+            any(
+                event["country_code"] == "US" and event["title"] == "미국 CPI 발표"
+                for event in result["economic_events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                event["country_code"] == "EU" and event["title"] == "ECB 금리결정"
+                for event in result["economic_events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                event["country_code"] == "US" and event.get("symbol") == "NVDA"
+                for event in result["earnings_events"]
+            )
+        )
+
+    async def test_global_actual_event_does_not_remove_korea_recurring_event(self):
+        economic_rows = [
+            {"date": "2026-03-12", "event": "CPI Release", "country": "US"},
+        ]
+
+        with (
+            patch("app.services.calendar_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.cache.set", new=AsyncMock()),
+            patch("app.services.calendar_service.fmp_client.get_earning_calendar", new=AsyncMock(return_value=[])),
+            patch("app.services.calendar_service.fmp_client.get_economic_calendar", new=AsyncMock(return_value=economic_rows)),
+            patch("app.services.calendar_service.fmp_client.get_feature_status", new=AsyncMock(return_value=None)),
+            patch("app.services.calendar_service.get_settings", return_value=SimpleNamespace(cache_ttl_news=60)),
+        ):
+            result = await calendar_service.get_calendar("KR", year=2026, month=3)
+
+        self.assertTrue(
+            any(
+                event["country_code"] == "KR" and event["title_en"] == "CPI Release"
+                for event in result["events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                event["country_code"] == "US" and event["title_en"] == "CPI Release"
+                for event in result["events"]
+            )
+        )
 
     async def test_calendar_returns_partial_with_available_source_data_when_one_feed_is_slow(self):
         async def _slow_earnings():

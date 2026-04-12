@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.62.0 - 2026-04-12
+
+- `backend/app/services/research_archive_service.py`는 기본 기관 리포트 표본을 더 넓게 수집하고, `Federal Reserve FEDS Notes`, `Federal Reserve FEDS`, `IFDP`, `ECB Publications`를 새 공식 소스로 추가합니다. `/api/archive/research`는 이제 `region_code`를 비우면 전체 지역을 그대로 반환하고, `/archive` 초기 SSR도 전체 지역 `40건`을 먼저 보여 주도록 맞췄습니다.
+- `frontend/src/components/pages/ArchivePageClient.tsx`는 기관 리서치 아카이브의 기본 필터를 `전체`로 바꾸고, 활성 소스 요약도 `12개`까지 노출합니다. 그래서 첫 진입에서 한국 표본만 몇 건 보이던 상태 대신, 국내외 기관 리포트를 같은 화면에서 바로 비교할 수 있습니다.
+- `backend/app/services/calendar_service.py`는 한국 recurring 일정에 더해 미국 CPI/FOMC/비농업고용, ECB 금리결정, BOJ 금리결정, 주요 해외 대형주 실적을 같은 월간 캘린더에 함께 반영합니다. recurring dedupe는 이제 `country_code + title_en` 기준으로 유지해 해외 실제 이벤트가 들어와도 한국 recurring 일정이 사라지지 않습니다.
+- `frontend/src/components/pages/CalendarPageClient.tsx`는 상단 핵심 일정 카드를 `4건`, 우측 upcoming 목록을 `12건`까지 보여 주고, 각 일정에 국가 라벨을 함께 붙입니다. 그래서 `/calendar` 첫 화면에서 한국장 기준 흐름은 유지하면서도 해외 매크로와 대표 기업 실적을 더 빨리 구분해 읽을 수 있습니다.
+- `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 추가 해외 소스 회귀, 전체 지역 조회 회귀, 글로벌 매크로/실적 포함 회귀, 국가별 recurring dedupe 회귀를 추가했습니다.
+
 ## v2.61.40 - 2026-04-12
 
 - `backend/app/services/export_service.py`의 PDF sanitize는 이제 `📉`, `📈`, `🔻`, `🔺`, `💸`, `💰`, `⚠️` 같은 미지원 이모지를 한글 표식이나 안전한 ASCII 표기로 먼저 치환한 뒤 남은 variation selector와 기호 이모지를 제거합니다. 그래서 `country report` PDF export가 한글 폰트 missing glyph 경고를 남기거나 문장 중간에서 깨질 가능성을 더 줄였습니다.
