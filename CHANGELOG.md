@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.30 - 2026-04-12
+
+- deployed smoke에서 실제로 내려오던 `briefing_partial_snapshot`, `live_snapshot_timeout`, `kr_safe_shell_warming`, `calendar_startup_warming` fallback reason을 프론트 공용 audit 라벨과 요약 문구에 정식 반영했습니다.
+- 이제 운영 첫 진입에서도 raw fallback key가 그대로 보이지 않고 `브리핑 요약 스냅샷`, `대표 시세 스냅샷`, `기본 스크리너 스냅샷`, `월간 일정 스냅샷`처럼 현재 상태를 더 자연스럽게 읽을 수 있습니다.
+
 ## v2.61.29 - 2026-04-12
 
 - backend `country`와 `briefing` startup guard는 이제 최소 보호 시간만 지난 뒤 메모리 pressure가 안정적인 경우 더 빨리 풀리고, `public_dashboard_prewarm`이 `warning`으로 끝난 경우에도 인스턴스가 이미 안정적이면 live 경로를 다시 시도할 수 있도록 완화했습니다.
