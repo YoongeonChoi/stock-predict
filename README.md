@@ -9,11 +9,12 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.31`
+현재 릴리즈: `v2.61.32`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- startup prewarm은 이제 `KR country report`를 2초 안에 끝내지 못해도 `country_report_startup_seed`를 먼저 고정합니다. 그래서 배포 직후나 cold wake 직후 첫 `/` 진입이 startup guard 빈 shell 대신, archived/quick 후보를 최대한 섞은 준비된 시장 스냅샷을 바로 읽을 수 있게 맞췄습니다.
 - Render memory-safe startup의 `public_dashboard_prewarm`은 이제 `KR country report` 성공 캐시까지 함께 예열합니다. 그래서 첫 `/` 진입이 대시보드와 같은 `KR report` 기반 패널을 바로 읽을 때, 요청 경로에서 정밀 국가 리포트를 0부터 다시 계산하며 `country_report_timeout` partial로 떨어질 가능성을 더 줄였습니다.
 - deployed smoke에서 실제로 내려오던 `briefing_partial_snapshot`, `live_snapshot_timeout`, `kr_safe_shell_warming`, `calendar_startup_warming` fallback reason을 프론트 공용 audit 라벨과 요약 문구에 정식 반영했습니다. 그래서 운영 첫 진입에서도 raw fallback key가 그대로 보이지 않고 `브리핑 요약 스냅샷`, `대표 시세 스냅샷`, `기본 스크리너 스냅샷`, `월간 일정 스냅샷`처럼 현재 상태를 더 자연스럽게 읽을 수 있습니다.
 - backend `country`와 `briefing` startup guard는 이제 최소 보호 시간만 지난 뒤 메모리 pressure가 안정적인 경우 더 빨리 풀리고, `public_dashboard_prewarm`이 `warning`으로 끝난 경우에도 인스턴스가 이미 안정적이면 live 경로를 다시 시도할 수 있도록 완화했습니다. 그래서 첫 진입 때 메모리는 이미 안정적인데도 `/`, `/radar`, `/api/briefing/daily`가 너무 오래 `startup_guard` partial 문구에만 머무는 구간을 더 줄였습니다.

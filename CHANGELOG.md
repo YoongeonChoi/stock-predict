@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.32 - 2026-04-12
+
+- startup prewarm은 이제 `KR country report`가 2초 안에 끝나지 않아도 `country_report_startup_seed`를 먼저 `last_success` 캐시에 고정합니다. 그래서 배포 직후나 cold wake 직후 첫 `/` 진입이 startup guard 빈 shell 대신, archived/quick 후보를 최대한 섞은 준비된 시장 스냅샷을 더 빨리 읽을 수 있습니다.
+- `frontend/src/lib/public-audit.ts`에는 `country_report_startup_seed` 라벨과 요약 문구를 추가했습니다. 이제 이 준비 스냅샷이 실제로 내려와도 generic `일부 데이터 지연` 대신 `준비 스냅샷`과 더 자연스러운 안내 문구로 보입니다.
+- `backend/tests/test_country_router.py`에는 startup prewarm이 analysis timeout 시 `country_report:last_success:KR`에 seed payload를 저장하는 회귀를 추가했습니다.
+
 ## v2.61.31 - 2026-04-12
 
 - Render memory-safe startup의 `public_dashboard_prewarm`은 이제 `KR country report` 성공 캐시까지 함께 예열합니다. 그래서 첫 `/` 진입이 `KR report` 기반 패널을 읽을 때 요청 경로에서 정밀 국가 리포트를 0부터 다시 계산하며 `country_report_timeout` partial로 떨어질 가능성을 더 줄였습니다.

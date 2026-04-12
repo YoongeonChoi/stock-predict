@@ -108,6 +108,45 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertFalse(country._should_use_startup_public_route_guard())
 
+    async def test_prewarm_primary_country_report_cache_seeds_last_success_when_analysis_times_out(self):
+        release_report = asyncio.Event()
+
+        async def slow_report():
+            await release_report.wait()
+            return {"country": {"code": "KR"}, "partial": False}
+
+        report_task = asyncio.create_task(slow_report())
+        seed_payload = {
+            "country": {"code": "KR"},
+            "partial": True,
+            "fallback_reason": "country_report_startup_seed",
+        }
+
+        with (
+            patch("app.routers.country._should_skip_public_side_effects", return_value=False),
+            patch("app.routers.country._load_latest_cached_country_report", new=AsyncMock(return_value=None)),
+            patch(
+                "app.routers.country.get_or_create_background_job",
+                return_value=(report_task, True),
+            ),
+            patch("app.routers.country.COUNTRY_REPORT_STARTUP_PREWARM_TIMEOUT_SECONDS", 0.01),
+            patch(
+                "app.routers.country._build_country_report_fallback",
+                new=AsyncMock(return_value=seed_payload),
+            ) as build_fallback,
+            patch("app.data.cache.set", new=AsyncMock()) as cache_set,
+        ):
+            await country.prewarm_primary_country_report_cache()
+
+        build_fallback.assert_awaited_once()
+        cache_set.assert_awaited_once_with(
+            "country_report:last_success:KR",
+            seed_payload,
+            country.COUNTRY_REPORT_STARTUP_SEED_TTL_SECONDS,
+        )
+        release_report.set()
+        await report_task
+
     async def test_build_country_success_response_defers_memory_trim_until_background_task(self):
         payload = {"country": {"code": "KR"}, "market_summary": "ok"}
 

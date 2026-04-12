@@ -31,6 +31,8 @@ yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 _market_calendar = LazyModuleProxy("app.utils.market_calendar")
 COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 5
 COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS = 1.25
+COUNTRY_REPORT_STARTUP_PREWARM_TIMEOUT_SECONDS = 2.0
+COUNTRY_REPORT_STARTUP_SEED_TTL_SECONDS = 180
 COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
 COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
@@ -696,13 +698,62 @@ async def prewarm_market_indicators_cache() -> None:
 
 
 async def prewarm_primary_country_report_cache() -> None:
+    code = "KR"
     if _should_skip_public_side_effects():
         logging.info("Skipping startup primary country report prewarm because Render memory pressure is high.")
         _maybe_trim_public_route_memory("country_report_startup_prewarm:skip")
         return
 
+    cached_success = await _timed_country_lookup(
+        _load_latest_cached_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"startup primary country report cached lookup {code}",
+    )
+    if cached_success:
+        _maybe_trim_public_route_memory("country_report_startup_prewarm:cached")
+        return
+
+    report_label = f"Startup primary country report prewarm for {code}"
+    report_task, created = get_or_create_background_job(
+        f"country_report:{code}",
+        lambda: analyze_country(code),
+    )
+    if created:
+        report_task.add_done_callback(
+            lambda task_, warm_label=report_label: _log_background_completion(task_, label=warm_label)
+        )
+
     try:
-        await analyze_country("KR")
+        await asyncio.wait_for(
+            asyncio.shield(report_task),
+            timeout=COUNTRY_REPORT_STARTUP_PREWARM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        cached_success = await _timed_country_lookup(
+            _load_latest_cached_country_report(code),
+            timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+            label=f"startup primary country report post-timeout lookup {code}",
+        )
+        if cached_success:
+            return
+
+        from app.data import cache as data_cache
+
+        seed_payload = await _build_country_report_fallback(
+            code,
+            reason="country_report_startup_seed",
+            error_code=None,
+            detail=(
+                "정밀 국가 리포트를 준비하는 동안 첫 화면에서 바로 읽을 수 있는 시장 스냅샷을 먼저 고정했습니다."
+            ),
+            include_archived_report=True,
+            include_quick_candidates=True,
+        )
+        await data_cache.set(
+            f"country_report:last_success:{code}",
+            seed_payload,
+            COUNTRY_REPORT_STARTUP_SEED_TTL_SECONDS,
+        )
     finally:
         _maybe_trim_public_route_memory("country_report_startup_prewarm")
 

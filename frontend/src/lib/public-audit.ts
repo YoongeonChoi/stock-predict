@@ -13,6 +13,7 @@ export interface PublicAuditChip {
 
 const PARTIAL_REASON_CHIPS: Record<string, PublicAuditChip> = {
   briefing_partial_snapshot: { label: "요약 스냅샷", tone: "info" },
+  country_report_startup_seed: { label: "준비 스냅샷", tone: "info" },
   country_report_startup_guard: { label: "초기 스냅샷", tone: "info" },
   heatmap_startup_guard: { label: "초기 스냅샷", tone: "info" },
   opportunity_startup_guard: { label: "초기 스냅샷", tone: "info" },
@@ -43,6 +44,7 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   briefing_timeout: "브리핑 계산 지연",
   public_briefing_timeout: "브리핑 계산 지연",
   country_report_memory_guard: "시장 요약 보호 스냅샷",
+  country_report_startup_seed: "시장 요약 준비 스냅샷",
   country_report_startup_guard: "시장 요약 초기 스냅샷",
   country_report_timeout: "시장 요약 지연",
   heatmap_memory_guard: "히트맵 보호 스냅샷",
@@ -164,6 +166,9 @@ export function buildPublicAuditSummary(
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_startup_guard") {
     return "처음 진입에서는 대표 시장 스냅샷을 먼저 정리했고, 정밀 시장 요약은 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "country_report_startup_seed") {
+    return "처음 진입에서는 준비된 시장 스냅샷을 먼저 보여주고, 정밀 시장 요약은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_memory_guard") {
     return "서버 보호 구간에서는 대표 시장 스냅샷을 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
