@@ -1160,6 +1160,20 @@ async def screen_stocks(
                 if guarded_response is not None:
                     _maybe_trim_public_route_memory("screener")
                     return guarded_response
+                current_universe = await _load_universe()
+                selected_tickers = _select_candidate_tickers(current_universe, sector)
+                return await _build_seeded_safe_mode_shell_response(
+                    cache_key=cache_key,
+                    tickers=selected_tickers,
+                    universe=current_universe,
+                    sector=sector,
+                    country=country,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    limit=limit,
+                    log_message="Serving screener startup safe shell for %s because startup guard has no shared seed yet.",
+                    persist_startup_seed=True,
+                )
             if _should_avoid_cold_kr_quote_import():
                 cached_response = await _timed_screener_cache_lookup(
                     cache.get(cache_key),

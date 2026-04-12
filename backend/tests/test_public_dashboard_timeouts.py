@@ -1678,6 +1678,38 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
         cache_set.assert_awaited_once()
 
+    def test_screener_startup_guard_builds_safe_shell_when_shared_seed_is_not_ready(self):
+        sector_map = {
+            f"Sector {index}": [f"{index:06d}.KS"]
+            for index in range(1, 13)
+        }
+
+        with (
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._should_use_startup_public_screener_guard", return_value=True),
+            patch("app.routers.screener.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch("app.routers.screener.get_universe", new=AsyncMock(return_value=sector_map)),
+            patch(
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=AsyncMock(side_effect=AssertionError("startup guard shell should avoid live KR bulk quotes")),
+            ),
+            patch(
+                "app.routers.screener.yfinance_client.get_market_snapshot",
+                new=AsyncMock(side_effect=AssertionError("startup guard shell should avoid yfinance fallback")),
+            ),
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=10")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(len(payload["results"]), 10)
+        self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
+        self.assertGreaterEqual(cache_set.await_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

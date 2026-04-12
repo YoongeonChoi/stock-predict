@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.38 - 2026-04-12
+
+- `backend/app/routers/screener.py`의 startup guard는 이제 shared startup seed가 아직 비어 있어도 그대로 live KR bulk quote path로 흘러가지 않고, fallback universe 기반 `kr_safe_shell_warming` shell을 즉시 반환합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 seed prewarm race 때문에 다시 10초 안팎 full 계산으로 새던 빈틈을 한 번 더 줄였습니다.
+- 같은 경로는 safe shell을 반환하면서 startup seed도 함께 기록합니다. 그래서 첫 요청이 shell로 닫힌 직후 다음 요청부터는 공용 startup seed를 바로 hydrate해, 같은 인스턴스 안에서 screener 첫 usable 상태가 더 빨리 안정되도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard에서 shared seed가 아직 없을 때도 live KR bulk quote와 yfinance fallback을 모두 건너뛰고 safe shell을 즉시 반환하는 회귀를 추가했습니다. 앞으로는 startup guard의 seed race가 다시 deployed first-hit 지연으로 번지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.37 - 2026-04-12
 
 - `backend/app/routers/screener.py`는 이제 Render `startup_memory_safe_mode`의 초기 보호 시간 안에서는 기본 공개 쿼리에 대해 exact cache miss가 나더라도 live KR bulk quote path로 바로 내려가지 않고, 먼저 `last_success`와 공용 startup seed를 재사용합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 이미 usable partial snapshot이 있는데도 live bulk fetch를 다시 타며 9~11초대로 늘어지던 구간을 더 보수적으로 줄였습니다.

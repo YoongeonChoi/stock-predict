@@ -9,11 +9,12 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.37`
+현재 릴리즈: `v2.61.38`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- `/api/screener` startup guard는 이제 shared startup seed가 아직 준비되지 않은 첫 찰나에도 live KR bulk quote path로 흘러가지 않고, 즉시 safe shell을 만들어 반환합니다. 그래서 배포 직후 첫 `/screener?country=KR&limit=10` hit이 seed race 때문에 다시 10초 안팎 full 계산으로 새던 빈틈을 한 번 더 줄였습니다.
 - `/api/screener` 기본 공개 쿼리는 이제 Render startup 보호 시간 안에서는 live KR bulk quote 경로보다 `last_success -> shared startup seed`를 먼저 확인합니다. 그래서 배포 직후 첫 `/screener` 진입이 이미 준비된 partial snapshot이 있는데도 다시 live bulk fetch를 타며 9~11초까지 늘어지던 구간을 더 보수적으로 줄였습니다.
 - `/api/screener` startup safe mode는 이제 기본 공개 쿼리에서 `limit`이 달라도 공용 startup seed를 재사용합니다. 그래서 배포 직후 첫 스크리너 진입이 `limit=10` 프론트 seed와 `limit=20/50` 운영 점검 요청이 서로 다른 cache key 때문에 다시 cold shell을 만들던 구간을 줄이고, 첫 usable partial을 더 빨리 재사용할 수 있게 맞췄습니다.
 - 브리핑 public fallback은 이제 `startup_guard`, `memory_guard`, `timeout`을 같은 문구로 뭉개지 않습니다. 그래서 실제로는 startup 보호 구간인데도 화면에 계속 `브리핑 계산 지연`처럼 보이던 오진을 줄이고, 첫 진입 상태를 더 정확하게 읽을 수 있게 맞췄습니다.
