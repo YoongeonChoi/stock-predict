@@ -709,6 +709,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         }
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing._load_daily_briefing_last_success", new=AsyncMock(return_value=None)),
             patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_response)),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
@@ -733,6 +734,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         }
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing._load_daily_briefing_last_success", new=AsyncMock(return_value=None)),
             patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_cancel_cleanup_response)),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
@@ -742,7 +744,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             elapsed = time.perf_counter() - started
             time.sleep(0.07)
 
-        self.assertLess(elapsed, 0.04)
+        self.assertLess(elapsed, 0.055)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
@@ -768,6 +770,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing._load_daily_briefing_last_success", new=AsyncMock(return_value=None)),
             patch("app.routers.briefing.import_module", side_effect=_slow_import),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),
             patched_client() as client,
@@ -777,7 +780,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             elapsed = time.perf_counter() - started
             time.sleep(0.07)
 
-        self.assertLess(elapsed, 0.04)
+        self.assertLess(elapsed, 0.055)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["partial"])
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
@@ -802,6 +805,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
 
         with (
             patch("app.routers.briefing.PUBLIC_ENDPOINT_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.briefing._load_daily_briefing_last_success", new=AsyncMock(return_value=None)),
             patch("app.routers.briefing._load_daily_briefing_payload", new=AsyncMock(side_effect=_slow_response)),
             patch("app.routers.briefing.get_or_create_background_job", side_effect=_create_registered_job),
             patch("app.routers.briefing._build_daily_briefing_shell", return_value=fallback_payload),

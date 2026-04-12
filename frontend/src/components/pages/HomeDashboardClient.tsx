@@ -9,7 +9,12 @@ import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
-import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
+import {
+  buildPublicAuditSummary,
+  formatAuditDate,
+  formatAuditTime,
+  type PublicAuditFields,
+} from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
 import {
   reportErrorOnlyScreen,
@@ -92,12 +97,7 @@ function formatMacroClaimValue(claim: MacroClaim) {
 }
 
 function formatMacroClaimDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleDateString("ko-KR");
+  return formatAuditDate(value) || value || "";
 }
 
 function describeLoadError(error: unknown, fallback: string) {
@@ -111,14 +111,7 @@ function describeLoadError(error: unknown, fallback: string) {
 }
 
 function toInitialClock(value?: string | null) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleTimeString("ko-KR");
+  return formatAuditTime(value) || "";
 }
 
 interface HomeDashboardClientProps {

@@ -97,7 +97,7 @@ export default function SearchBar() {
           aria-expanded={open}
           aria-controls="global-search-results"
           placeholder="티커 또는 종목명을 입력하세요"
-          className="w-full bg-transparent text-[0.93rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.97rem]"
+          className="w-full min-w-0 bg-transparent pr-6 text-[0.93rem] text-text outline-none placeholder:text-text-secondary sm:text-[0.97rem]"
         />
         <div className="hidden shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary xl:block">
           Enter
@@ -122,21 +122,21 @@ export default function SearchBar() {
                   key={result.ticker}
                   onClick={() => select(result.ticker)}
                   className={cn(
-                    "grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted",
+                    "grid w-full gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-3",
                     index < results.length - 1 ? "border-b border-border/10" : "",
                   )}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[0.9rem] font-semibold text-text">{result.ticker}</span>
-                      <span className="status-token">{result.country_code}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="shrink-0 font-mono text-[0.9rem] font-semibold text-text">{result.ticker}</span>
+                      <span className="status-token shrink-0">{result.country_code}</span>
                     </div>
-                    <div className="mt-1 truncate text-sm text-text">{result.name}</div>
+                    <div className="mt-1 break-words text-sm font-medium text-text sm:truncate">{result.name}</div>
                     {result.resolution_note ? (
-                      <div className="mt-1 truncate text-[12px] text-text-secondary">{result.resolution_note}</div>
+                      <div className="mt-1 break-words text-[12px] text-text-secondary sm:truncate">{result.resolution_note}</div>
                     ) : null}
                   </div>
-                  <span className="self-start font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary">
+                  <span className="justify-self-start font-mono text-[10px] uppercase tracking-[0.08em] text-text-secondary sm:self-start sm:justify-self-auto sm:text-[11px]">
                     {result.match_basis === "partial_ticker" ? "검색" : "해석"}
                   </span>
                 </button>

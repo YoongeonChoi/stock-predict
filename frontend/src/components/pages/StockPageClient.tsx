@@ -295,7 +295,15 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         variant="compact"
         eyebrow="종목 상세"
         title={stock.name}
-        description={`${stock.ticker} · ${stock.sector} · ${stock.industry}`}
+        description={
+          <div className="space-y-1">
+            <div className="font-mono text-[0.92rem] text-text-secondary">{stock.ticker}</div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.95rem] text-text-secondary">
+              {stock.sector ? <span className="break-words">{stock.sector}</span> : null}
+              {stock.industry ? <span className="break-words">{stock.industry}</span> : null}
+            </div>
+          </div>
+        }
         meta={
           <>
             <span className="info-chip">{formatPrice(stock.current_price, priceKey)}</span>
@@ -308,13 +316,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
             <Link href="/" className="ui-button-secondary px-4">
               홈으로
             </Link>
-            <button
-              onClick={handleTrackingAction}
-              disabled={watchlistSyncing}
-              className="ui-button-primary px-4 disabled:cursor-wait disabled:opacity-60"
-            >
-              {watchlistActionLabel}
-            </button>
           </div>
         }
       />

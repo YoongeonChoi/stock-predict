@@ -5,12 +5,12 @@ import { getConnectionErrorMessage, isConnectionError } from "@/lib/request-stat
 import { cn } from "@/lib/utils";
 
 const ERROR_GUIDE: Record<string, string> = {
-  "SP-1001": "backend/.env 파일에 OPENAI_API_KEY를 설정해 주세요.",
-  "SP-1002": "OpenAI API 인증에 실패했습니다. 플랫폼에서 키 상태를 확인해 주세요.",
-  "SP-1003": "추가 공공데이터 API를 쓸 경우 해당 키를 backend/.env에 설정해 주세요.",
-  "SP-1004": "backend/.env 파일에 ECOS_API_KEY를 설정해 주세요.",
-  "SP-1005": "backend/.env 파일에 FMP_API_KEY를 설정해 주세요.",
-  "SP-1006": "배포 환경에 Supabase 서버 키를 설정해 주세요.",
+  "SP-1001": "AI 보조 분석 설정이 아직 준비되지 않아 일부 요약만 먼저 제공하고 있습니다.",
+  "SP-1002": "AI 보조 분석 인증 상태를 확인해야 합니다.",
+  "SP-1003": "추가 공공데이터 연동 설정이 없어 기본 데이터만 먼저 제공하고 있습니다.",
+  "SP-1004": "외부 경제지표 연동 설정이 비어 있어 일부 지표를 가져오지 못했습니다.",
+  "SP-1005": "보조 시세 연동 설정이 비어 있어 일부 재무 보강이 제한됩니다.",
+  "SP-1006": "계정 저장 기능의 서버 설정을 확인해 주세요.",
   "SP-2001": "추가 공공데이터 API 호출에 실패했습니다. 네트워크 또는 키 상태를 확인해 주세요.",
   "SP-2002": "한국은행 ECOS API 호출에 실패했습니다.",
   "SP-2003": "보조 통계 API 호출에 실패했습니다.",
@@ -140,8 +140,8 @@ export function WarningBanner({ codes }: WarningBannerProps) {
           <p className="state-card-title !mt-0">일부 데이터가 제한적으로 제공됩니다</p>
           <div className="space-y-1">
             {codes.map((code) => (
-              <div key={code} className="flex items-center gap-2 text-xs text-text-secondary">
-                <span className="font-mono px-1 py-0.5 rounded bg-warning/10 text-warning">{code}</span>
+              <div key={code} className="flex items-start gap-2 text-xs text-text-secondary">
+                <span className="font-mono px-1 py-0.5 rounded bg-warning/10 text-warning shrink-0">{code}</span>
                 <span>{getGuide(code)}</span>
               </div>
             ))}

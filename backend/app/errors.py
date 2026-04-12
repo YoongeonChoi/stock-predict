@@ -48,17 +48,17 @@ class AppError:
 # 1xxx  Configuration
 # ---------------------------------------------------------------------------
 SP_1001 = lambda: AppError("SP-1001", "OpenAI API key not configured",
-                           "Set OPENAI_API_KEY in backend/.env")
+                           "Set the OpenAI API key in the backend service configuration")
 SP_1002 = lambda: AppError("SP-1002", "OpenAI API key invalid",
                            "Check your key at platform.openai.com/api-keys")
 SP_1003 = lambda: AppError("SP-1003", "Supplemental public-data API key not configured",
                            "Set additional free KR market/public-data keys only if you use them")
 SP_1004 = lambda: AppError("SP-1004", "ECOS API key not configured",
-                           "Set ECOS_API_KEY in backend/.env (free)")
+                           "Set the ECOS API key in the backend service configuration")
 SP_1005 = lambda: AppError("SP-1005", "FMP API key not configured",
-                           "Set FMP_API_KEY in backend/.env (free, optional)")
+                           "Set the FMP API key in the backend service configuration")
 SP_1006 = lambda: AppError("SP-1006", "Supabase server key not configured",
-                           "Set SUPABASE_SERVER_KEY in backend/.env or deployment env")
+                           "Set the Supabase server key in the backend service or deployment environment")
 
 # ---------------------------------------------------------------------------
 # 2xxx  Data Sources

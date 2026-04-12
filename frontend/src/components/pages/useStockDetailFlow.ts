@@ -67,7 +67,7 @@ export function useStockDetailFlow({
         return next;
       } catch (err) {
         if (cancelled) return null;
-        console.error(err);
+        console.warn(err);
         if (err instanceof ApiTimeoutError) {
           reportHydrationRefetchTimeout(ROUTE_KEY, "stock_detail_quick", QUICK_TIMEOUT_MS);
         } else {
@@ -97,7 +97,7 @@ export function useStockDetailFlow({
         reportHydrationRefetchSuccess(ROUTE_KEY, "stock_detail_full");
       } catch (err) {
         if (!cancelled) {
-          console.error(err);
+          console.warn(err);
           if (err instanceof ApiTimeoutError) {
             reportHydrationRefetchTimeout(ROUTE_KEY, "stock_detail_full", FULL_TIMEOUT_MS);
           } else {
@@ -132,7 +132,7 @@ export function useStockDetailFlow({
         }
       })
       .catch((nextError) => {
-        console.error(nextError);
+        console.warn(nextError);
         reportPanelDegraded(ROUTE_KEY, "technical_summary", toError(nextError).message);
       });
 
@@ -144,7 +144,7 @@ export function useStockDetailFlow({
         }
       })
       .catch((nextError) => {
-        console.error(nextError);
+        console.warn(nextError);
         reportPanelDegraded(ROUTE_KEY, "pivot_points", toError(nextError).message);
       });
 
@@ -156,7 +156,7 @@ export function useStockDetailFlow({
         }
       })
       .catch((nextError) => {
-        console.error(nextError);
+        console.warn(nextError);
         reportPanelDegraded(ROUTE_KEY, "forecast_delta", toError(nextError).message);
       });
 

@@ -8,7 +8,7 @@ import type {
   HeatmapData,
   MarketMovers,
 } from "@/lib/api";
-import type { PublicAuditFields } from "@/lib/public-audit";
+import { formatAuditTime, type PublicAuditFields } from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
 import {
   reportErrorOnlyScreen,
@@ -43,14 +43,7 @@ function describeLoadError(error: unknown, fallback: string) {
 }
 
 function toInitialClock(value?: string | null) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleTimeString("ko-KR");
+  return formatAuditTime(value) || "";
 }
 
 export function useHomeDashboardViewModel({
@@ -99,7 +92,7 @@ export function useHomeDashboardViewModel({
       const result = await api.getDailyBriefing({ timeoutMs: BRIEFING_TIMEOUT_MS });
       setBriefing(result);
     } catch (error) {
-      console.error(error);
+      console.warn(error);
       setBriefing(null);
       setBriefingError(describeLoadError(error, "브리핑 계산이 길어져 오늘의 요약을 아직 표시하지 못했습니다."));
     } finally {
@@ -135,7 +128,7 @@ export function useHomeDashboardViewModel({
           setHeatmapError(null);
         });
       } catch (error) {
-        console.error(error);
+        console.warn(error);
         syncIfCurrent(() => {
           setHeatmapData(null);
           setHeatmapError(describeLoadError(error, "히트맵 계산이 지연되고 있습니다. 잠시 뒤 다시 시도해 주세요."));
@@ -153,7 +146,7 @@ export function useHomeDashboardViewModel({
           setMoversError(null);
         });
       } catch (error) {
-        console.error(error);
+        console.warn(error);
         syncIfCurrent(() => {
           setMovers(null);
           setMoversError(describeLoadError(error, "상승률·하락률 상위 집계가 지연되고 있습니다. 잠시 뒤 다시 시도해 주세요."));
@@ -171,7 +164,7 @@ export function useHomeDashboardViewModel({
           setRadarError(null);
         });
       } catch (error) {
-        console.error(error);
+        console.warn(error);
         syncIfCurrent(() => {
           setRadarData(null);
           setRadarError(describeLoadError(error, "강한 셋업 계산이 길어져 이번에는 목록을 비워 두었습니다."));
@@ -189,7 +182,7 @@ export function useHomeDashboardViewModel({
           setReportError(null);
         });
       } catch (error) {
-        console.error(error);
+        console.warn(error);
         syncIfCurrent(() => {
           setCountryReport(null);
           setReportError(describeLoadError(error, "시장 요약 리포트 계산이 길어져 이번에는 요약만 표시합니다."));
@@ -200,7 +193,7 @@ export function useHomeDashboardViewModel({
     })();
 
     await Promise.allSettled([heatmapTask, moversTask, radarTask, reportTask]);
-    syncIfCurrent(() => setLastUpdated(new Date().toLocaleTimeString("ko-KR")));
+    syncIfCurrent(() => setLastUpdated(formatAuditTime(new Date().toISOString()) || ""));
   };
 
   useEffect(() => {
@@ -216,10 +209,10 @@ export function useHomeDashboardViewModel({
         ]);
 
         if (countryResult.status === "fulfilled") setCountries(countryResult.value);
-        else console.error(countryResult.reason);
+        else console.warn(countryResult.reason);
 
         if (indicatorResult.status === "fulfilled") setIndicators(indicatorResult.value);
-        else console.error(indicatorResult.reason);
+        else console.warn(indicatorResult.reason);
       }
 
       if (!initialBriefing) {

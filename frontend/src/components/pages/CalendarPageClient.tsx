@@ -15,6 +15,7 @@ const COUNTRIES = [
 ];
 
 const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const KOREA_TIME_ZONE = "Asia/Seoul";
 
 const EVENT_STYLES: Record<string, { dot: string; chip: string; label: string; badge: string }> = {
   rose: {
@@ -56,15 +57,30 @@ const EVENT_STYLES: Record<string, { dot: string; chip: string; label: string; b
 };
 
 function formatMonthLabel(date: Date) {
-  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long" }).format(date);
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: KOREA_TIME_ZONE,
+    year: "numeric",
+    month: "long",
+  }).format(date);
 }
 
 function formatDateLabel(date: string) {
   return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: KOREA_TIME_ZONE,
     month: "long",
     day: "numeric",
     weekday: "long",
   }).format(new Date(`${date}T12:00:00`));
+}
+
+function getTodayKeyInKorea() {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KOREA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(new Date());
 }
 
 function buildCalendarDays(year: number, month: number) {
@@ -111,7 +127,8 @@ interface CalendarPageClientProps {
 }
 
 export default function CalendarPageClient({ initialData = null }: CalendarPageClientProps) {
-  const today = useMemo(() => new Date(), []);
+  const todayKeySeed = useMemo(() => getTodayKeyInKorea(), []);
+  const today = useMemo(() => new Date(`${todayKeySeed}T12:00:00`), [todayKeySeed]);
   const [country, setCountry] = useState("KR");
   const [data, setData] = useState<(CalendarResponse & { partial?: boolean; fallback_reason?: string | null }) | null>(initialData);
   const [loading, setLoading] = useState(!initialData);
@@ -143,7 +160,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
     api.getCalendar(country, viewYear, viewMonth + 1, { timeoutMs: 18_000 })
       .then(setData)
       .catch((caught) => {
-        console.error(caught);
+        console.warn(caught);
         setError(
           getUserFacingErrorMessage(
             caught,
