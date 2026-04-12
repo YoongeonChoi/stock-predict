@@ -48,6 +48,7 @@ def build_quote_only_opportunity_item(
     total_ranked: int,
     sector: str,
     ticker: str,
+    name: str | None,
     current_price: float,
     change_pct: float,
     country_code: str,
@@ -71,7 +72,7 @@ def build_quote_only_opportunity_item(
     return OpportunityItem(
         rank=rank,
         ticker=ticker,
-        name=ticker.split(".")[0],
+        name=(str(name or "").strip() or ticker.split(".")[0]),
         country_code=country_code,
         sector=sector,
         current_price=round(current_price, 2),

@@ -984,8 +984,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             "scanned_count": 2,
             "quote_available_count": 2,
             "ranked": [
-                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
-                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
+                {"sector": "Information Technology", "ticker": "005930.KS", "name": "삼성전자", "current_price": 70100.0, "change_pct": 1.15},
+                {"sector": "Information Technology", "ticker": "000660.KS", "name": "SK하이닉스", "current_price": 201000.0, "change_pct": 1.26},
             ],
         }
 
@@ -1010,6 +1010,10 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["quote_available_count"], 2)
         self.assertEqual(result["detailed_scanned_count"], 0)
         self.assertEqual(len(result["opportunities"]), 2)
+        self.assertEqual(
+            [item["name"] for item in result["opportunities"]],
+            ["삼성전자", "SK하이닉스"],
+        )
         self.assertIsNotNone(result["next_day_focus"])
         self.assertEqual(result["next_day_focus"]["trade_plan"]["expected_holding_days"], 1)
         self.assertIn("1차 시세 스캔 후보", result["universe_note"])
@@ -1025,8 +1029,8 @@ class MarketServiceTests(unittest.IsolatedAsyncioTestCase):
             "scanned_count": 2,
             "quote_available_count": 2,
             "ranked": [
-                {"sector": "Information Technology", "ticker": "005930.KS", "current_price": 70100.0, "change_pct": 1.15},
-                {"sector": "Information Technology", "ticker": "000660.KS", "current_price": 201000.0, "change_pct": 1.26},
+                {"sector": "Information Technology", "ticker": "005930.KS", "name": "삼성전자", "current_price": 70100.0, "change_pct": 1.15},
+                {"sector": "Information Technology", "ticker": "000660.KS", "name": "SK하이닉스", "current_price": 201000.0, "change_pct": 1.26},
             ],
         }
 

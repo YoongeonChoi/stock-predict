@@ -431,6 +431,7 @@ def _build_quote_only_opportunities(
             total_ranked=len(ranked_quotes),
             sector=item["sector"],
             ticker=item["ticker"],
+            name=item.get("name"),
             current_price=_safe_float(item.get("current_price"), 0.0),
             change_pct=_safe_float(item.get("change_pct"), 0.0),
             country_code=country_code,
@@ -475,6 +476,7 @@ async def _build_kr_representative_quote_only_opportunities(
             {
                 "sector": sector_lookup.get(ticker, "대표 후보"),
                 "ticker": ticker,
+                "name": str(quote.get("name") or "").strip() or ticker.split(".")[0],
                 "current_price": round(current_price, 2),
                 "change_pct": round(change_pct, 2),
                 "quick_score": round(change_pct * 2.2 + regime_bias, 4),
@@ -545,6 +547,7 @@ async def _build_kr_radar_quote_screen(market_regime) -> tuple[SimpleNamespace, 
             {
                 "sector": sector,
                 "ticker": ticker,
+                "name": str(quote.get("name") or "").strip() or ticker.split(".")[0],
                 "current_price": round(current_price, 2),
                 "change_pct": round(change_pct, 2),
                 "quick_score": round(quick_score, 4),

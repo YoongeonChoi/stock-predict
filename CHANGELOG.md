@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.28 - 2026-04-12
+
+- 기회 레이더의 축약 후보 카드가 검은 제목과 회색 보조 라인에 티커를 중복 노출하던 문제를 수정했습니다.
+- KR 빠른/전수 1차 스캔 경로는 이제 회사명을 함께 유지해 카드 헤더는 회사명, 보조 mono 라인은 티커를 안정적으로 표시합니다.
+
 ## v2.61.27 - 2026-04-12
 
 - backend `country` startup guard 조기 해제는 이제 `public_dashboard_prewarm=ok` 이후 메모리 pressure가 임계값 바로 근처에서 흔들릴 때 작은 jitter 완충 구간을 둡니다. 그래서 `/api/country/KR/heatmap`과 `/api/market/opportunities/KR`가 같은 배포 인스턴스에서 `startup_guard`와 live fallback 사이를 번갈아 오가던 플래핑을 줄이고, 첫 usable 응답이 더 일관되게 유지되도록 정리했습니다.
