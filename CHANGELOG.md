@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.29 - 2026-04-12
+
+- backend `country`와 `briefing` startup guard는 이제 최소 보호 시간만 지난 뒤 메모리 pressure가 안정적인 경우 더 빨리 풀리고, `public_dashboard_prewarm`이 `warning`으로 끝난 경우에도 인스턴스가 이미 안정적이면 live 경로를 다시 시도할 수 있도록 완화했습니다.
+- frontend 공용 audit 문구는 이제 startup/quick/cache fallback을 무조건 `일부 데이터 지연` 경고로 번역하지 않고 `초기 스냅샷`, `빠른 스냅샷`, `직전 스냅샷`처럼 현재 상태에 맞는 라벨로 보여 줍니다. 홈 대시보드의 빈 뉴스 상태도 `기사 연결 대기` 대신 `핵심 기사 보강 중`으로 정리했습니다.
+
 ## v2.61.28 - 2026-04-12
 
 - 기회 레이더의 축약 후보 카드가 검은 제목과 회색 보조 라인에 티커를 중복 노출하던 문제를 수정했습니다.

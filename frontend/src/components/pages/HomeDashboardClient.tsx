@@ -664,11 +664,11 @@ export default function HomeDashboardClient({
               ))}
               {!reportLoading && topNews.length === 0 ? (
                 <WorkspaceStateCard
-                  eyebrow={reportError ? "뉴스 지연" : "기사 연결 대기"}
-                  title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "연결된 기사 목록이 아직 비어 있습니다"}
+                  eyebrow={reportError ? "뉴스 지연" : "핵심 기사 보강 중"}
+                  title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "오늘 핵심 기사 목록을 준비하고 있습니다"}
                   message={
                     reportError ||
-                    "시장 요약은 준비됐지만 연결된 핵심 기사 목록은 아직 비어 있습니다. 잠시 뒤 다시 열면 기사 연결이 채워질 수 있습니다."
+                    "시장 요약은 먼저 준비됐고, 핵심 기사 연결은 이어서 보강됩니다. 잠시 뒤 다시 열면 기사 목록이 채워질 수 있습니다."
                   }
                   onAction={reportError ? retryCurrentWorkspace : undefined}
                   tone={reportError ? "warning" : "neutral"}

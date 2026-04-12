@@ -11,22 +11,45 @@ export interface PublicAuditChip {
   tone: "neutral" | "warning" | "info";
 }
 
+const PARTIAL_REASON_CHIPS: Record<string, PublicAuditChip> = {
+  country_report_startup_guard: { label: "초기 스냅샷", tone: "info" },
+  heatmap_startup_guard: { label: "초기 스냅샷", tone: "info" },
+  opportunity_startup_guard: { label: "초기 스냅샷", tone: "info" },
+  country_report_memory_guard: { label: "보호 스냅샷", tone: "neutral" },
+  heatmap_memory_guard: { label: "보호 스냅샷", tone: "neutral" },
+  opportunity_memory_guard: { label: "보호 스냅샷", tone: "neutral" },
+  opportunity_quick_fallback: { label: "빠른 스냅샷", tone: "info" },
+  opportunity_quick_response: { label: "빠른 스냅샷", tone: "info" },
+  opportunity_cached_quick_response: { label: "직전 스냅샷", tone: "info" },
+  cached_snapshot: { label: "기본 스냅샷", tone: "info" },
+  calendar_refresh_pending: { label: "동기화 진행 중", tone: "info" },
+  calendar_live_partial_data: { label: "실시간 일정 보강 중", tone: "info" },
+  research_sync_pending: { label: "동기화 진행 중", tone: "info" },
+  prediction_lab_partial_data: { label: "검증 보강 중", tone: "info" },
+  prediction_lab_cache_wait_timeout: { label: "최근 스냅샷", tone: "info" },
+  screener_seeded_cache: { label: "기본 스냅샷", tone: "info" },
+  kr_representative_snapshot_warming: { label: "대표 스냅샷", tone: "info" },
+  stock_cached_detail: { label: "저장 스냅샷", tone: "info" },
+  stock_minimal_shell: { label: "기본 상세", tone: "neutral" },
+  stock_quick_detail: { label: "빠른 상세", tone: "info" },
+};
+
 const FALLBACK_REASON_LABELS: Record<string, string> = {
   briefing_timeout: "브리핑 계산 지연",
   public_briefing_timeout: "브리핑 계산 지연",
-  country_report_memory_guard: "시장 요약 보호 응답",
-  country_report_startup_guard: "시장 요약 초기 워밍업 응답",
+  country_report_memory_guard: "시장 요약 보호 스냅샷",
+  country_report_startup_guard: "시장 요약 초기 스냅샷",
   country_report_timeout: "시장 요약 지연",
-  heatmap_memory_guard: "히트맵 보호 응답",
-  heatmap_startup_guard: "히트맵 초기 워밍업 응답",
+  heatmap_memory_guard: "히트맵 보호 스냅샷",
+  heatmap_startup_guard: "히트맵 초기 스냅샷",
   heatmap_timeout: "히트맵 계산 지연",
   movers_timeout: "상위 집계 지연",
   radar_timeout: "레이더 계산 지연",
-  opportunity_memory_guard: "레이더 보호 응답",
-  opportunity_startup_guard: "레이더 초기 워밍업 응답",
+  opportunity_memory_guard: "레이더 보호 스냅샷",
+  opportunity_startup_guard: "레이더 초기 스냅샷",
   opportunity_quick_fallback: "대표 후보 기준 빠른 응답",
   opportunity_quick_response: "대표 후보 기준 빠른 응답",
-  opportunity_cached_quick_response: "이전 usable 후보 기준",
+  opportunity_cached_quick_response: "직전 후보 스냅샷",
   opportunity_placeholder_response: "사용 가능 후보 미확보",
   screener_timeout: "스크리너 계산 지연",
   screener_seeded_cache: "전일 종가 기준 기본 캐시",
@@ -44,12 +67,36 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   stock_quick_detail: "빠른 종목 스냅샷 기준",
 };
 
-function normalizeReason(reason?: string | null) {
+function normalizeReasonKey(reason?: string | null) {
   const normalized = String(reason || "").trim();
+  return normalized || null;
+}
+
+function normalizeReason(reason?: string | null) {
+  const normalized = normalizeReasonKey(reason);
   if (!normalized) {
     return null;
   }
   return FALLBACK_REASON_LABELS[normalized] || normalized.replace(/_/g, " ");
+}
+
+function resolvePartialChip(reason?: string | null): PublicAuditChip {
+  const normalized = normalizeReasonKey(reason);
+  if (normalized && PARTIAL_REASON_CHIPS[normalized]) {
+    return PARTIAL_REASON_CHIPS[normalized];
+  }
+  return { label: "일부 데이터 지연", tone: "warning" };
+}
+
+function resolveReasonTone(meta?: PublicAuditFields | null): PublicAuditChip["tone"] {
+  if (!meta?.partial) {
+    return "neutral";
+  }
+  const normalized = normalizeReasonKey(meta?.fallback_reason);
+  if (normalized && PARTIAL_REASON_CHIPS[normalized]) {
+    return PARTIAL_REASON_CHIPS[normalized].tone === "warning" ? "warning" : "neutral";
+  }
+  return "warning";
 }
 
 export function formatAuditTimestamp(value?: string | null) {
@@ -76,11 +123,11 @@ export function buildPublicAuditChips(
     chips.push({ label: `마지막 갱신 ${generated}`, tone: "info" });
   }
   if (meta?.partial) {
-    chips.push({ label: "일부 데이터 지연", tone: "warning" });
+    chips.push(resolvePartialChip(meta?.fallback_reason));
   }
   const reason = normalizeReason(meta?.fallback_reason);
   if (reason) {
-    chips.push({ label: reason, tone: meta?.partial ? "warning" : "neutral" });
+    chips.push({ label: reason, tone: resolveReasonTone(meta) });
   }
   if (options.staleLabel) {
     chips.push({ label: options.staleLabel, tone: "neutral" });
@@ -105,22 +152,38 @@ export function buildPublicAuditSummary(
     return "검증 세부 집계 일부가 늦어도 최근 스냅샷과 fusion 상태부터 먼저 보여주고 있습니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_startup_guard") {
-    return "서비스가 막 깨어난 직후라 대표 시장 스냅샷을 먼저 보여주고 있습니다.";
+    return "처음 진입에서는 대표 시장 스냅샷을 먼저 정리했고, 정밀 시장 요약은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_memory_guard") {
-    return "서버 메모리 보호 구간이라 대표 시장 스냅샷을 먼저 보여주고 있습니다.";
+    return "서버 보호 구간에서는 대표 시장 스냅샷을 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "heatmap_startup_guard") {
-    return "서비스가 막 깨어난 직후라 대표 종목 기준 히트맵을 먼저 보여주고 있습니다.";
+    return "처음 진입에서는 대표 종목 기준 히트맵을 먼저 정리했고, 정밀 히트맵은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "heatmap_memory_guard") {
-    return "서버 메모리 보호 구간이라 대표 종목 기준 히트맵을 먼저 보여주고 있습니다.";
+    return "서버 보호 구간에서는 대표 종목 기준 히트맵을 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_startup_guard") {
-    return "서비스가 막 깨어난 직후라 대표 후보 기준 기회 레이더를 먼저 보여주고 있습니다.";
+    return "처음 진입에서는 대표 후보 기준 기회 레이더를 먼저 정리했고, 정밀 후보 계산은 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_memory_guard") {
-    return "서버 메모리 보호 구간이라 대표 후보 기준 기회 레이더를 먼저 보여주고 있습니다.";
+    return "서버 보호 구간에서는 대표 후보 기준 기회 레이더를 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
+  }
+  if (
+    meta?.partial &&
+    (meta?.fallback_reason === "opportunity_quick_fallback" ||
+      meta?.fallback_reason === "opportunity_quick_response")
+  ) {
+    return "대표 후보 기준 빠른 레이더를 먼저 정리했고, 정밀 후보 계산은 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "opportunity_cached_quick_response") {
+    return "직전 후보 스냅샷을 먼저 보여주고, 최신 후보 계산은 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "screener_seeded_cache") {
+    return "기본 스냅샷을 먼저 보여주고, 최신 조건 계산은 이어서 보강합니다.";
+  }
+  if (meta?.partial && meta?.fallback_reason === "prediction_lab_cache_wait_timeout") {
+    return "최근 검증 스냅샷을 먼저 보여주고, 최신 집계는 이어서 보강합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
     return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";

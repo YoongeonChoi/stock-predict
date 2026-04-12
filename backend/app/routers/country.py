@@ -72,9 +72,13 @@ COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
 PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
 PUBLIC_STARTUP_GUARD_SECONDS = 300
+PUBLIC_STARTUP_GUARD_MIN_SECONDS = 45
+PUBLIC_STARTUP_GUARD_STABLE_RELEASE_SECONDS = 75
+PUBLIC_STARTUP_GUARD_STABLE_RELEASE_PRESSURE_RATIO = 0.48
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS = 180
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO = 0.5
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO = 0.02
+PUBLIC_STARTUP_GUARD_SETTLED_TASK_STATUSES = frozenset({"ok", "warning"})
 
 
 def market_session_cache_token(*args, **kwargs):
@@ -564,19 +568,28 @@ def _should_use_startup_public_route_guard() -> bool:
         elapsed_seconds = (now - started_at).total_seconds()
         if elapsed_seconds > PUBLIC_STARTUP_GUARD_SECONDS:
             return False
+        if elapsed_seconds < PUBLIC_STARTUP_GUARD_MIN_SECONDS:
+            return True
+
+        pressure_ratio = _public_memory_pressure_ratio()
+        if (
+            elapsed_seconds >= PUBLIC_STARTUP_GUARD_STABLE_RELEASE_SECONDS
+            and pressure_ratio <= PUBLIC_STARTUP_GUARD_STABLE_RELEASE_PRESSURE_RATIO
+        ):
+            return False
         if elapsed_seconds < PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS:
             return True
 
         startup_tasks = runtime_state.get("startup_tasks") or []
-        public_dashboard_prewarm_ok = any(
+        public_dashboard_prewarm_ready = any(
             str(task.get("name") or "") == "public_dashboard_prewarm"
-            and str(task.get("status") or "") == "ok"
+            and str(task.get("status") or "") in PUBLIC_STARTUP_GUARD_SETTLED_TASK_STATUSES
             for task in startup_tasks
             if isinstance(task, dict)
         )
         if (
-            public_dashboard_prewarm_ok
-            and _public_memory_pressure_ratio()
+            public_dashboard_prewarm_ready
+            and pressure_ratio
             <= (
                 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO
                 + PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO

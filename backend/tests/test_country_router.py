@@ -31,6 +31,26 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertFalse(country._should_use_startup_public_route_guard())
 
+    async def test_startup_guard_releases_after_stable_window_even_without_prewarm(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_STABLE_RELEASE_SECONDS + 10)
+                    ).isoformat(),
+                    "startup_tasks": [],
+                },
+            ),
+            patch(
+                "app.routers.country._public_memory_pressure_ratio",
+                return_value=country.PUBLIC_STARTUP_GUARD_STABLE_RELEASE_PRESSURE_RATIO - 0.01,
+            ),
+        ):
+            self.assertFalse(country._should_use_startup_public_route_guard())
+
     async def test_startup_guard_stays_enabled_when_memory_pressure_is_not_low(self):
         with (
             patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
@@ -64,6 +84,26 @@ class CountryRouterTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "app.routers.country._public_memory_pressure_ratio",
                 return_value=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO + 0.0002,
+            ),
+        ):
+            self.assertFalse(country._should_use_startup_public_route_guard())
+
+    async def test_startup_guard_releases_after_prewarm_warning_when_pressure_is_low(self):
+        with (
+            patch("app.routers.country.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch(
+                "app.routers.country.get_runtime_state",
+                return_value={
+                    "started_at": (
+                        datetime.now(timezone.utc)
+                        - timedelta(seconds=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS + 15)
+                    ).isoformat(),
+                    "startup_tasks": [{"name": "public_dashboard_prewarm", "status": "warning"}],
+                },
+            ),
+            patch(
+                "app.routers.country._public_memory_pressure_ratio",
+                return_value=country.PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO - 0.01,
             ),
         ):
             self.assertFalse(country._should_use_startup_public_route_guard())
