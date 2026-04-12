@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.37 - 2026-04-12
+
+- `backend/app/routers/screener.py`는 이제 Render `startup_memory_safe_mode`의 초기 보호 시간 안에서는 기본 공개 쿼리에 대해 exact cache miss가 나더라도 live KR bulk quote path로 바로 내려가지 않고, 먼저 `last_success`와 공용 startup seed를 재사용합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 이미 usable partial snapshot이 있는데도 live bulk fetch를 다시 타며 9~11초대로 늘어지던 구간을 더 보수적으로 줄였습니다.
+- 같은 startup guard에서 사용하는 safe-shell seed 크기도 `36`으로 맞췄습니다. 그래서 `/screener` 첫 partial이 기존 `limit=20` shell보다 더 풍부한 후보를 유지하면서도, `limit=50` 운영 스모크와 같은 startup seed 결과를 재사용할 수 있게 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 live KR bulk quote/fallback universe lookup을 건드리지 않고 shared startup seed를 먼저 반환하는 회귀를 추가했습니다. 앞으로는 deployed 첫 hit 보호 경로가 다시 live fetch로 새는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
 ## v2.61.36 - 2026-04-12
 
 - `backend/app/routers/screener.py`는 이제 startup safe mode에서 exact cache miss가 나더라도 기본 공개 쿼리라면 공용 `startup seed`를 먼저 재사용합니다. 그래서 `/screener` 첫 진입의 `limit=10` seed와 운영 스모크의 `limit=20/50` 요청이 서로 다른 cache key 때문에 다시 cold shell을 만들던 경로를 줄이고, 첫 usable partial을 더 빨리 되돌릴 수 있게 정리했습니다.

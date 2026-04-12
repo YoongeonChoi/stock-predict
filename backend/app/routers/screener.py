@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import sys
+from datetime import datetime, timezone
 from fastapi import APIRouter, Query
 from fastapi.params import Param
 from app.config import get_settings
 from app.data import cache
 from app.errors import SP_5018
-from app.runtime import get_or_create_background_job
+from app.runtime import get_or_create_background_job, get_runtime_state
 from app.utils.async_tools import gather_limited
 from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import maybe_trim_process_memory
@@ -23,13 +24,14 @@ SCREENER_CACHE_WRITE_TIMEOUT_SECONDS = 0.35
 SCREENER_RESPONSE_CACHE_TTL = 600
 SCREENER_LAST_SUCCESS_TTL = 1800
 SCREENER_SAFE_MODE_SEED_TTL = 180
-SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT = 20
+SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT = 36
 SCREENER_MAX_CANDIDATES = 36
 SCREENER_MAX_SECTOR_CANDIDATES = 16
 SCREENER_MAX_PER_SECTOR = 4
 SCREENER_CONCURRENCY = 4
 SCREENER_ENRICHMENT_BUDGET = 12
 SCREENER_COLD_START_KR_CANDIDATES = 10
+PUBLIC_SCREENER_STARTUP_GUARD_SECONDS = 75
 
 
 def _is_kr_market_quote_module_warm() -> bool:
@@ -40,6 +42,22 @@ def _should_avoid_cold_kr_quote_import() -> bool:
     if not bool(getattr(settings, "startup_memory_safe_mode", False)):
         return False
     return not _is_kr_market_quote_module_warm()
+
+
+def _should_use_startup_public_screener_guard() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        runtime_state = get_runtime_state()
+        started_at_raw = str(runtime_state.get("started_at") or "").strip()
+        if not started_at_raw:
+            return False
+        started_at = datetime.fromisoformat(started_at_raw)
+        now = datetime.now(started_at.tzinfo or timezone.utc)
+        elapsed_seconds = (now - started_at).total_seconds()
+        return elapsed_seconds <= PUBLIC_SCREENER_STARTUP_GUARD_SECONDS
+    except Exception:
+        return False
 
 
 async def get_universe(*args, **kwargs):
@@ -436,6 +454,65 @@ async def _persist_public_screener_startup_seed(country: str, payload: dict) -> 
         payload,
         SCREENER_SAFE_MODE_SEED_TTL,
     )
+
+
+async def _load_startup_guarded_public_screener_response(
+    *,
+    cache_key: str,
+    country: str,
+    sort_by: str,
+    sort_dir: str,
+    limit: int,
+) -> dict | None:
+    cached_response = await _timed_screener_cache_lookup(
+        cache.get(cache_key),
+        label=f"screener cache lookup {cache_key}",
+    )
+    if cached_response is not None:
+        return cached_response
+
+    last_success_response = await _timed_screener_cache_lookup(
+        _load_screener_last_success(cache_key),
+        label=f"screener last_success lookup {cache_key}",
+    )
+    if last_success_response is not None:
+        response = _with_screener_partial(
+            dict(last_success_response),
+            fallback_reason="kr_last_success_snapshot",
+        )
+        await _timed_screener_cache_write(
+            cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+            label=f"screener partial seed write {cache_key}",
+        )
+        logging.info(
+            "Serving screener last_success seed for %s during startup guard.",
+            cache_key,
+        )
+        return response
+
+    startup_seed_response = await _timed_screener_cache_lookup(
+        _load_public_screener_startup_seed(country),
+        label=f"screener startup seed lookup {country}",
+    )
+    if startup_seed_response is None:
+        return None
+
+    response = _clone_seeded_screener_response(
+        startup_seed_response,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+        fallback_reason="kr_safe_shell_warming",
+    )
+    await _timed_screener_cache_write(
+        cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+        label=f"screener startup seed hydrate {cache_key}",
+    )
+    logging.info(
+        "Serving screener startup seed for %s during startup guard.",
+        cache_key,
+    )
+    return response
 
 
 def _build_safe_mode_shell_response(
@@ -1072,6 +1149,17 @@ async def screen_stocks(
     )
     try:
         if use_direct_kr_quick_path:
+            if is_default_public_query and _should_use_startup_public_screener_guard():
+                guarded_response = await _load_startup_guarded_public_screener_response(
+                    cache_key=cache_key,
+                    country=country,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    limit=limit,
+                )
+                if guarded_response is not None:
+                    _maybe_trim_public_route_memory("screener")
+                    return guarded_response
             if _should_avoid_cold_kr_quote_import():
                 cached_response = await _timed_screener_cache_lookup(
                     cache.get(cache_key),
