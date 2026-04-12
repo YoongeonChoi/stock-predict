@@ -38,7 +38,14 @@ const REGION_LABELS: Record<ResearchRegionCode, string> = {
   JP: "일본",
 };
 
-const RESEARCH_REGIONS: ResearchRegionCode[] = ["KR", "US", "EU", "JP"];
+type ResearchRegionFilter = ResearchRegionCode | "ALL";
+
+const RESEARCH_REGION_LABELS: Record<ResearchRegionFilter, string> = {
+  ALL: "전체",
+  ...REGION_LABELS,
+};
+
+const RESEARCH_REGIONS: ResearchRegionFilter[] = ["ALL", "KR", "US", "EU", "JP"];
 
 interface ArchivePageClientProps {
   initialArchives?: ArchiveEntry[];
@@ -57,7 +64,7 @@ export default function ArchivePageClient({
   const [accuracy, setAccuracy] = useState<PredictionAccuracyStats | null>(initialAccuracy);
   const [researchReports, setResearchReports] = useState<ResearchArchiveEntry[]>(initialResearchReports);
   const [researchStatus, setResearchStatus] = useState<ResearchArchiveStatus | null>(initialResearchStatus);
-  const [researchRegion, setResearchRegion] = useState<ResearchRegionCode>("KR");
+  const [researchRegion, setResearchRegion] = useState<ResearchRegionFilter>("ALL");
   const [loading, setLoading] = useState(initialArchives.length === 0);
   const [researchLoading, setResearchLoading] = useState(initialResearchReports.length === 0 && !initialResearchStatus);
   const [refreshingResearch, setRefreshingResearch] = useState(false);
@@ -93,8 +100,9 @@ export default function ArchivePageClient({
       if (forceRefresh) {
         await api.refreshResearchArchive();
       }
+      const regionCode = researchRegion === "ALL" ? undefined : researchRegion;
       const [reports, status] = await Promise.all([
-        api.getResearchArchive(researchRegion, 24, !forceRefresh),
+        api.getResearchArchive(regionCode, 40, !forceRefresh),
         api.getResearchArchiveStatus(true),
       ]);
       setResearchReports(reports);
@@ -125,10 +133,14 @@ export default function ArchivePageClient({
   }
 
   const activeRegionTotal = useMemo(
-    () => researchStatus?.regions.find((item) => item.region_code === researchRegion)?.total ?? researchReports.length,
+    () => (
+      researchRegion === "ALL"
+        ? (researchStatus?.total_reports ?? researchReports.length)
+        : (researchStatus?.regions.find((item) => item.region_code === researchRegion)?.total ?? researchReports.length)
+    ),
     [researchReports.length, researchRegion, researchStatus],
   );
-  const visibleSources = useMemo(() => researchStatus?.sources.slice(0, 8) ?? [], [researchStatus]);
+  const visibleSources = useMemo(() => researchStatus?.sources.slice(0, 12) ?? [], [researchStatus]);
   const researchAuditSummary = buildPublicAuditSummary(
     researchStatus
       ? {
@@ -153,7 +165,7 @@ export default function ArchivePageClient({
         meta={
           <>
             <span className="info-chip">공식 기관 우선</span>
-            <span className="info-chip">{REGION_LABELS[researchRegion]} 보기</span>
+            <span className="info-chip">{RESEARCH_REGION_LABELS[researchRegion]} 보기</span>
             {researchStatus ? <span className="info-chip">활성 소스 {researchStatus.source_count}개</span> : null}
           </>
         }
@@ -231,9 +243,10 @@ export default function ArchivePageClient({
           <div>
             <h2 className="section-title">기관 리서치 아카이브</h2>
             <p className="section-copy">
-              한국은행, KDI, Federal Reserve, ECB, BOJ 공식 리포트를 모아 둡니다. PDF가 있으면 바로 열고, 없으면 원문으로 이동합니다.
+              한국은행, KDI, Federal Reserve, ECB, BOJ와 추가 해외 정책·연구 리포트를 함께 모읍니다. 전체 보기로 표본을 넓히고, 필요하면 지역별로 다시 좁힐 수 있습니다.
             </p>
           </div>
+<<<<<<< HEAD
           <div className="flex flex-wrap gap-2">
             {RESEARCH_REGIONS.map((region) => (
               <button
@@ -248,6 +261,25 @@ export default function ArchivePageClient({
                 {REGION_LABELS[region]}
               </button>
             ))}
+=======
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="ui-segmented-control-responsive">
+              {RESEARCH_REGIONS.map((region) => (
+                <button
+                  key={region}
+                  onClick={() => setResearchRegion(region)}
+                  className={[
+                    "ui-segmented-option",
+                    researchRegion === region && "ui-segmented-option-active",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {RESEARCH_REGION_LABELS[region]}
+                </button>
+              ))}
+            </div>
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
             <button
               onClick={handleResearchRefresh}
               disabled={refreshingResearch}
@@ -272,9 +304,9 @@ export default function ArchivePageClient({
         {researchStatus ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="metric-card">
-              <div className="text-xs text-text-secondary">현재 지역 리포트</div>
+              <div className="text-xs text-text-secondary">현재 선택 리포트</div>
               <div className="mt-2 text-2xl font-semibold text-text">{activeRegionTotal}</div>
-              <div className="mt-1 text-xs text-text-secondary">{REGION_LABELS[researchRegion]} 기준</div>
+              <div className="mt-1 text-xs text-text-secondary">{RESEARCH_REGION_LABELS[researchRegion]} 기준</div>
             </div>
             <div className="metric-card">
               <div className="text-xs text-text-secondary">전체 소스</div>
@@ -319,7 +351,7 @@ export default function ArchivePageClient({
         {researchLoading ? (
           <div className="space-y-3">
             <WorkspaceLoadingCard
-              title={`${REGION_LABELS[researchRegion]} 기관 리포트를 정리하고 있습니다`}
+              title={`${RESEARCH_REGION_LABELS[researchRegion]} 기관 리포트를 정리하고 있습니다`}
               message="출처, 발행일, PDF 여부를 먼저 읽은 뒤 지역별 목록으로 다시 배치합니다."
               className="min-h-[160px]"
             />
@@ -332,7 +364,7 @@ export default function ArchivePageClient({
         ) : researchReports.length === 0 ? (
           <WorkspaceStateCard
             eyebrow="리포트 대기"
-            title={`${REGION_LABELS[researchRegion]} 공개 리포트가 아직 없습니다`}
+            title={`${RESEARCH_REGION_LABELS[researchRegion]} 공개 리포트가 아직 없습니다`}
             message="잠시 후 새로고침하거나 다른 지역을 먼저 확인해 주세요. 원문이 반영되면 이 목록에 바로 추가됩니다."
           />
         ) : (

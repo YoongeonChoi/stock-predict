@@ -22,7 +22,7 @@ async def get_accuracy_stats(refresh: bool = False):
 
 @router.get("/archive/research")
 async def list_research_reports(
-    region_code: str | None = "KR",
+    region_code: str | None = None,
     source_id: str | None = None,
     limit: int = Query(40, ge=1, le=200),
     auto_refresh: bool = False,

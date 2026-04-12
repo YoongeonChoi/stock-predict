@@ -15,6 +15,16 @@ const COUNTRIES = [
 ];
 
 const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+<<<<<<< HEAD
+=======
+const KOREA_TIME_ZONE = "Asia/Seoul";
+const EVENT_COUNTRY_LABELS: Record<string, string> = {
+  KR: "한국",
+  US: "미국",
+  EU: "유로존",
+  JP: "일본",
+};
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
 
 const EVENT_STYLES: Record<string, { dot: string; chip: string; label: string; badge: string }> = {
   rose: {
@@ -93,6 +103,11 @@ function impactLabel(impact: CalendarEvent["impact"]) {
   if (impact === "high") return "중요";
   if (impact === "medium") return "보통";
   return "참고";
+}
+
+function eventCountryLabel(countryCode?: string | null) {
+  if (!countryCode) return "시장";
+  return EVENT_COUNTRY_LABELS[countryCode] || countryCode;
 }
 
 interface CalendarPageClientProps {
@@ -203,8 +218,13 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
     { label: "정책 일정", value: data.summary.policy_count, note: "중앙은행·금리 이벤트" },
     { label: "실적 일정", value: data.summary.earnings_count, note: "주요 기업 발표" },
   ] : [];
+<<<<<<< HEAD
+=======
+  const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
+  const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
   const auditSummary = buildPublicAuditSummary(data, {
-    defaultSummary: "다음 일정과 월간 보드를 함께 보여주고, 실제 이벤트가 늦으면 추정 반복 일정으로 먼저 채웁니다.",
+    defaultSummary: "한국 일정과 주요 해외 매크로·대표 기업 실적을 함께 보여주고, 실제 이벤트가 늦으면 추정 반복 일정으로 먼저 채웁니다.",
   });
 
   return (
@@ -212,7 +232,12 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       <PageHeader
         eyebrow="Market Schedule Workspace"
         title="시장 일정 캘린더"
+<<<<<<< HEAD
         description="한국장의 월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
+=======
+        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 같은 흐름으로 보고, 확인된 실제 일정이 들어오면 바로 반영합니다."
+        variant="compact"
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
         meta={
           <>
             <span className="info-chip">{activeCountry.flag} {activeCountry.label} 기준</span>
@@ -288,6 +313,9 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${style.badge}`}>{typeLabel(event)}</span>
                       <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
+                        {eventCountryLabel(event.country_code)}
+                      </span>
+                      <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
                         {sourceLabel}
                       </span>
                       <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
@@ -344,7 +372,13 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">정책</span>
                 <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-sky-700 dark:text-sky-300">물가 / 핵심 지표</span>
                 <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-amber-700 dark:text-amber-300">실적</span>
+<<<<<<< HEAD
                 <span className="rounded-full border border-border bg-border/20 px-3 py-1.5 text-text-secondary">같은 월간 지표는 한 달에 1회만 표시</span>
+=======
+              </div>
+              <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
+                반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
               </div>
 
               <div className="grid grid-cols-7 gap-2 px-1 text-xs text-text-secondary">
@@ -431,6 +465,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                                 <div className="font-medium text-text">{event.title}</div>
                               </div>
                               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-secondary">
+                                <span>{eventCountryLabel(event.country_code)}</span>
                                 <span>{typeLabel(event)}</span>
                                 {event.subtitle ? <span>{event.subtitle}</span> : null}
                               </div>
@@ -454,7 +489,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               <div className="card !p-4 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold">다가오는 핵심 일정</h2>
-                  <p className="mt-1 text-sm text-text-secondary">이번 달 안에서 가까운 순서대로 보여줍니다.</p>
+                  <p className="mt-1 text-sm text-text-secondary">이번 달 안에서 가까운 순서대로 12개까지 보여줍니다.</p>
                 </div>
                 <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
                   {data.upcoming_events.length > 0 ? data.upcoming_events.map((event) => {
@@ -472,7 +507,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                               <span className="font-medium text-text">{event.title}</span>
                             </div>
                             <div className="mt-1 text-xs text-text-secondary">
-                              {formatDateLabel(event.date)}
+                              {eventCountryLabel(event.country_code)} · {formatDateLabel(event.date)}
                               {event.subtitle ? ` · ${event.subtitle}` : ""}
                             </div>
                           </div>

@@ -117,9 +117,16 @@ export function getPublicPredictionAccuracy() {
   return getPublicJson<PredictionAccuracyStats>("/api/archive/accuracy/stats?refresh=false", 300);
 }
 
-export function getPublicResearchArchive(region: "KR" | "US" | "EU" | "JP" = "KR", limit = 24) {
+export function getPublicResearchArchive(region?: "KR" | "US" | "EU" | "JP", limit = 40) {
+  const searchParams = new URLSearchParams({
+    limit: String(limit),
+    auto_refresh: "false",
+  });
+  if (region) {
+    searchParams.set("region_code", region);
+  }
   return getPublicJson<ResearchArchiveEntry[]>(
-    `/api/archive/research?region_code=${region}&limit=${limit}&auto_refresh=false`,
+    `/api/archive/research?${searchParams.toString()}`,
     300,
     10000,
   );

@@ -2,6 +2,7 @@
 
 All notable changes to this project are tracked here.
 
+<<<<<<< HEAD
 ## v2.53.0 - 2026-04-01
 
 - 전체 워크스페이스 안정성 패스를 위해 `stock detail`, `daily briefing`, `market opportunities`에 공통 `request_trace`와 `fallback_tier` 기준을 맞췄습니다. 각 응답은 이제 `shell | quick | full`, `memory_hit | sqlite_hit | miss`, `fresh | partial | stale | degraded` 축으로 원인을 더 일관되게 분류할 수 있습니다.
@@ -18,6 +19,670 @@ All notable changes to this project are tracked here.
 - 홈 대시보드는 hydration 이후 `briefing`, `country report`, `heatmap`, `movers`, `radar` 재호출이 실패하더라도 server-first로 받은 usable 데이터를 더 이상 지우지 않습니다. `briefing`은 stale summary와 마지막 생성 시각을 유지한 채 독립 패널처럼 degrade되어, 홈 전체가 32초 timeout 배너 한 장으로 무너지지 않게 맞췄습니다.
 - `daily briefing`도 cache source와 served state를 담은 `request_trace`를 반환하고, `degraded` fallback도 같은 메타 구조를 유지합니다. 그래서 첫 요청 cold start, cache hit, radar slow-path를 구분해 추적할 수 있습니다.
 - 운영 스모크는 `/api/briefing/daily`, `/api/country/KR/report`, `/api/stock/003670/detail?prefer_full=true`를 추가로 확인하고, 프론트 `/`, `/radar`, `/stock/003670.KS` HTML에 `32초 안에 응답이 오지 않았습니다.`나 raw `Failed to fetch`가 남아 있으면 배포 검증에서 실패하도록 강화했습니다.
+=======
+## v2.62.0 - 2026-04-12
+
+- `backend/app/services/research_archive_service.py`는 기본 기관 리포트 표본을 더 넓게 수집하고, `Federal Reserve FEDS Notes`, `Federal Reserve FEDS`, `IFDP`, `ECB Publications`를 새 공식 소스로 추가합니다. `/api/archive/research`는 이제 `region_code`를 비우면 전체 지역을 그대로 반환하고, `/archive` 초기 SSR도 전체 지역 `40건`을 먼저 보여 주도록 맞췄습니다.
+- `frontend/src/components/pages/ArchivePageClient.tsx`는 기관 리서치 아카이브의 기본 필터를 `전체`로 바꾸고, 활성 소스 요약도 `12개`까지 노출합니다. 그래서 첫 진입에서 한국 표본만 몇 건 보이던 상태 대신, 국내외 기관 리포트를 같은 화면에서 바로 비교할 수 있습니다.
+- `backend/app/services/calendar_service.py`는 한국 recurring 일정에 더해 미국 CPI/FOMC/비농업고용, ECB 금리결정, BOJ 금리결정, 주요 해외 대형주 실적을 같은 월간 캘린더에 함께 반영합니다. recurring dedupe는 이제 `country_code + title_en` 기준으로 유지해 해외 실제 이벤트가 들어와도 한국 recurring 일정이 사라지지 않습니다.
+- `frontend/src/components/pages/CalendarPageClient.tsx`는 상단 핵심 일정 카드를 `4건`, 우측 upcoming 목록을 `12건`까지 보여 주고, 각 일정에 국가 라벨을 함께 붙입니다. 그래서 `/calendar` 첫 화면에서 한국장 기준 흐름은 유지하면서도 해외 매크로와 대표 기업 실적을 더 빨리 구분해 읽을 수 있습니다.
+- `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 추가 해외 소스 회귀, 전체 지역 조회 회귀, 글로벌 매크로/실적 포함 회귀, 국가별 recurring dedupe 회귀를 추가했습니다.
+
+## v2.61.40 - 2026-04-12
+
+- `backend/app/services/export_service.py`의 PDF sanitize는 이제 `📉`, `📈`, `🔻`, `🔺`, `💸`, `💰`, `⚠️` 같은 미지원 이모지를 한글 표식이나 안전한 ASCII 표기로 먼저 치환한 뒤 남은 variation selector와 기호 이모지를 제거합니다. 그래서 `country report` PDF export가 한글 폰트 missing glyph 경고를 남기거나 문장 중간에서 깨질 가능성을 더 줄였습니다.
+- `backend/tests/test_export_service.py`에는 unsupported emoji가 기대한 표식으로 치환되는 회귀와, 이모지가 포함된 요약 payload도 실제 `%PDF` 바이트로 정상 렌더되는 회귀를 추가했습니다. 앞으로는 export 요약 문구에 새 이모지나 경고 기호가 다시 섞여 들어와도 같은 문제를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.39 - 2026-04-12
+
+- `backend/app/routers/screener.py`의 startup guard safe shell은 이제 작은 `limit` 요청을 먼저 처리하더라도 shared startup seed를 그대로 작은 결과로 덮어쓰지 않습니다. 공용 seed는 별도로 `36개` 기준으로 유지하므로, 첫 `/api/screener?country=KR&limit=10` 뒤 곧바로 이어지는 `limit=50` 요청까지 `10개짜리 partial`로 줄어드는 seed 오염을 막았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard의 첫 `limit=10` shell 뒤 다음 `limit=50` 요청이 shared seed로 `36개` 후보를 다시 받는 회귀를 추가했습니다. 앞으로는 startup race를 막는 패치가 오히려 공용 seed 크기를 줄여 버리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.38 - 2026-04-12
+
+- `backend/app/routers/screener.py`의 startup guard는 이제 shared startup seed가 아직 비어 있어도 그대로 live KR bulk quote path로 흘러가지 않고, fallback universe 기반 `kr_safe_shell_warming` shell을 즉시 반환합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 seed prewarm race 때문에 다시 10초 안팎 full 계산으로 새던 빈틈을 한 번 더 줄였습니다.
+- 같은 경로는 safe shell을 반환하면서 startup seed도 함께 기록합니다. 그래서 첫 요청이 shell로 닫힌 직후 다음 요청부터는 공용 startup seed를 바로 hydrate해, 같은 인스턴스 안에서 screener 첫 usable 상태가 더 빨리 안정되도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard에서 shared seed가 아직 없을 때도 live KR bulk quote와 yfinance fallback을 모두 건너뛰고 safe shell을 즉시 반환하는 회귀를 추가했습니다. 앞으로는 startup guard의 seed race가 다시 deployed first-hit 지연으로 번지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.37 - 2026-04-12
+
+- `backend/app/routers/screener.py`는 이제 Render `startup_memory_safe_mode`의 초기 보호 시간 안에서는 기본 공개 쿼리에 대해 exact cache miss가 나더라도 live KR bulk quote path로 바로 내려가지 않고, 먼저 `last_success`와 공용 startup seed를 재사용합니다. 그래서 배포 직후 첫 `/api/screener?country=KR&limit=10` hit이 이미 usable partial snapshot이 있는데도 live bulk fetch를 다시 타며 9~11초대로 늘어지던 구간을 더 보수적으로 줄였습니다.
+- 같은 startup guard에서 사용하는 safe-shell seed 크기도 `36`으로 맞췄습니다. 그래서 `/screener` 첫 partial이 기존 `limit=20` shell보다 더 풍부한 후보를 유지하면서도, `limit=50` 운영 스모크와 같은 startup seed 결과를 재사용할 수 있게 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 live KR bulk quote/fallback universe lookup을 건드리지 않고 shared startup seed를 먼저 반환하는 회귀를 추가했습니다. 앞으로는 deployed 첫 hit 보호 경로가 다시 live fetch로 새는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.36 - 2026-04-12
+
+- `backend/app/routers/screener.py`는 이제 startup safe mode에서 exact cache miss가 나더라도 기본 공개 쿼리라면 공용 `startup seed`를 먼저 재사용합니다. 그래서 `/screener` 첫 진입의 `limit=10` seed와 운영 스모크의 `limit=20/50` 요청이 서로 다른 cache key 때문에 다시 cold shell을 만들던 경로를 줄이고, 첫 usable partial을 더 빨리 되돌릴 수 있게 정리했습니다.
+- `backend/app/routers/screener.py`의 startup prewarm은 이제 limit-specific exact key 대신 공용 `screener:startup_seed:v1:KR:default` seed를 기록합니다. 이후 기본 공개 스크리너 요청은 이 seed를 정확한 요청 key로 hydrate해 재사용하므로, 배포 직후 첫 스크리너 hit이 fallback universe 재계산까지 다시 내려가는 빈도를 더 낮췄습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup screener seed가 공용 key에 기록되는지, 그리고 `limit` mismatch가 있어도 같은 seed를 먼저 재사용해 universe lookup 없이 응답하는지 확인하는 회귀를 추가했습니다.
+
+## v2.61.35 - 2026-04-12
+
+- `backend/app/routers/briefing.py`는 이제 startup guard와 memory guard 응답을 각각 `briefing_startup_guard`, `briefing_memory_guard`로 명시합니다. 기존에는 이 구간도 payload 상 `briefing_timeout`으로 보여서, 첫 진입 보호 응답이 실제 timeout처럼 오해되던 문제가 있었습니다.
+- `frontend/src/lib/public-audit.ts`에는 `briefing_startup_guard`, `briefing_memory_guard` 전용 chip/label/summary를 추가했습니다. 이제 운영 첫 진입에서 브리핑이 보호 스냅샷으로 내려와도 `브리핑 계산 지연` 대신 실제 상태에 맞는 안내 문구로 보입니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 briefing startup/memory guard 응답이 새 fallback reason을 그대로 유지하는지 함께 검증합니다.
+
+## v2.61.34 - 2026-04-12
+
+- `backend/app/routers/briefing.py`의 full briefing fetch는 이제 bare `asyncio.create_task(...)` 대신 runtime background registry에 등록됩니다. 그래서 timeout 뒤에도 같은 계산이 event loop에서 안정적으로 이어지고, 완료 시 `daily_briefing:last_success`까지 도달할 가능성을 높였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 실제로 `daily_briefing:full_payload` background job으로 등록되는지 확인하는 회귀를 추가했습니다. 앞으로는 timeout 응답 뒤 background 계산이 참조를 잃고 사라지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.33 - 2026-04-12
+
+- `/api/briefing/daily`는 이제 5분 본캐시 miss 시 같은 날짜의 `daily_briefing:last_success` 스냅샷을 먼저 재사용하고, 백그라운드 warmup으로 최신 브리핑을 다시 채웁니다. 그래서 첫 요청이 6초 timeout shell로 떨어지기보다 직전 브리핑을 바로 보여 주고, 뒤에서 최신 스냅샷으로 자연스럽게 따라붙도록 정리했습니다.
+- `backend/app/services/briefing_service.py`는 이제 정상 브리핑 응답을 본캐시와 함께 `last_success` 키에도 저장합니다. partial snapshot이더라도 세션/시장 요약/포커스 카드가 있는 usable 응답은 더 오래 재사용할 수 있게 맞췄습니다.
+- `backend/tests/test_briefing_service.py`와 `backend/tests/test_public_dashboard_timeouts.py`에는 이 `last_success` 저장과 seed 우선 응답 회귀를 추가했습니다.
+
+## v2.61.32 - 2026-04-12
+
+- startup prewarm은 이제 `KR country report`가 2초 안에 끝나지 않아도 `country_report_startup_seed`를 먼저 `last_success` 캐시에 고정합니다. 그래서 배포 직후나 cold wake 직후 첫 `/` 진입이 startup guard 빈 shell 대신, archived/quick 후보를 최대한 섞은 준비된 시장 스냅샷을 더 빨리 읽을 수 있습니다.
+- `frontend/src/lib/public-audit.ts`에는 `country_report_startup_seed` 라벨과 요약 문구를 추가했습니다. 이제 이 준비 스냅샷이 실제로 내려와도 generic `일부 데이터 지연` 대신 `준비 스냅샷`과 더 자연스러운 안내 문구로 보입니다.
+- `backend/tests/test_country_router.py`에는 startup prewarm이 analysis timeout 시 `country_report:last_success:KR`에 seed payload를 저장하는 회귀를 추가했습니다.
+
+## v2.61.31 - 2026-04-12
+
+- Render memory-safe startup의 `public_dashboard_prewarm`은 이제 `KR country report` 성공 캐시까지 함께 예열합니다. 그래서 첫 `/` 진입이 `KR report` 기반 패널을 읽을 때 요청 경로에서 정밀 국가 리포트를 0부터 다시 계산하며 `country_report_timeout` partial로 떨어질 가능성을 더 줄였습니다.
+- `backend/tests/test_main_startup.py`에는 이 startup prewarm이 실제로 `market indicators -> briefing -> primary country report -> screener -> calendar` 흐름 안에 포함되는지와, 앞단 prewarm 실패 시 country report prewarm이 무리하게 이어지지 않는 회귀를 함께 추가했습니다.
+
+## v2.61.30 - 2026-04-12
+
+- deployed smoke에서 실제로 내려오던 `briefing_partial_snapshot`, `live_snapshot_timeout`, `kr_safe_shell_warming`, `calendar_startup_warming` fallback reason을 프론트 공용 audit 라벨과 요약 문구에 정식 반영했습니다.
+- 이제 운영 첫 진입에서도 raw fallback key가 그대로 보이지 않고 `브리핑 요약 스냅샷`, `대표 시세 스냅샷`, `기본 스크리너 스냅샷`, `월간 일정 스냅샷`처럼 현재 상태를 더 자연스럽게 읽을 수 있습니다.
+
+## v2.61.29 - 2026-04-12
+
+- backend `country`와 `briefing` startup guard는 이제 최소 보호 시간만 지난 뒤 메모리 pressure가 안정적인 경우 더 빨리 풀리고, `public_dashboard_prewarm`이 `warning`으로 끝난 경우에도 인스턴스가 이미 안정적이면 live 경로를 다시 시도할 수 있도록 완화했습니다.
+- frontend 공용 audit 문구는 이제 startup/quick/cache fallback을 무조건 `일부 데이터 지연` 경고로 번역하지 않고 `초기 스냅샷`, `빠른 스냅샷`, `직전 스냅샷`처럼 현재 상태에 맞는 라벨로 보여 줍니다. 홈 대시보드의 빈 뉴스 상태도 `기사 연결 대기` 대신 `핵심 기사 보강 중`으로 정리했습니다.
+
+## v2.61.28 - 2026-04-12
+
+- 기회 레이더의 축약 후보 카드가 검은 제목과 회색 보조 라인에 티커를 중복 노출하던 문제를 수정했습니다.
+- KR 빠른/전수 1차 스캔 경로는 이제 회사명을 함께 유지해 카드 헤더는 회사명, 보조 mono 라인은 티커를 안정적으로 표시합니다.
+
+## v2.61.27 - 2026-04-12
+
+- backend `country` startup guard 조기 해제는 이제 `public_dashboard_prewarm=ok` 이후 메모리 pressure가 임계값 바로 근처에서 흔들릴 때 작은 jitter 완충 구간을 둡니다. 그래서 `/api/country/KR/heatmap`과 `/api/market/opportunities/KR`가 같은 배포 인스턴스에서 `startup_guard`와 live fallback 사이를 번갈아 오가던 플래핑을 줄이고, 첫 usable 응답이 더 일관되게 유지되도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 조기 해제 pressure 임계값 바로 위의 작은 jitter에서도 startup guard가 계속 풀리는 회귀를 추가했습니다.
+
+## v2.61.26 - 2026-04-12
+
+- Render memory-safe 운영의 `/api/country/KR/heatmap`은 이제 safe-mode에서 shared cache `wait_timeout`과 KR 대표 시세 fallback timeout을 함께 더 짧게 사용합니다. 그래서 partial 응답이 기본 2.5초 대기를 거의 다 쓰고 3초대로 밀리던 구간을 줄이고, usable heatmap fallback을 더 빨리 반환하면서 백그라운드 캐시 복구는 그대로 유지하도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 safe-mode heatmap이 더 짧은 wait timeout과 대표 시세 fallback timeout을 실제로 사용하는 회귀를 추가했습니다.
+
+## v2.61.25 - 2026-04-12
+
+- Render memory-safe 운영의 `/api/country/KR/report`는 이제 background refresh 허용 여부와 관계없이 safe-mode 공개 timeout budget을 짧게 유지합니다. 그래서 일부 요청만 2초 안쪽으로 줄고 다른 요청은 다시 5~8초로 튀던 편차를 줄이고, country report partial 응답 latency를 더 일관되게 낮추도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 background refresh가 꺼진 경우에도 safe-mode 단축 timeout budget이 유지되는 회귀를 추가했습니다.
+
+## v2.61.24 - 2026-04-12
+
+- Render memory-safe 운영에서 `/api/country/KR/report`는 이제 cached/archived 리포트가 아직 없더라도, background refresh를 유지할 수 있는 safe-mode 구간이면 공개 timeout budget을 더 짧게 사용합니다. 그래서 cold/full 계산이 매번 5초를 다 쓰고 `country_report_timeout` partial로 떨어지던 구간을 줄이고, 첫 응답 latency를 더 빨리 partial로 닫으면서 다음 조회를 위한 background warm-up은 그대로 살리도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 일반 공개 budget과 safe-mode 단축 budget의 분기를 함께 고정하는 회귀를 추가했습니다.
+
+## v2.61.23 - 2026-04-12
+
+- backend `country` startup guard는 이제 최대 300초 고정이 아니라, 최소 보호 시간이 지난 뒤 `public_dashboard_prewarm=ok`이고 메모리 압박이 낮으면 조기 해제됩니다. 그래서 Render memory-safe startup에서 메모리는 이미 안정적인데도 `/api/country/KR/report`, `/api/country/KR/heatmap`, `/api/market/opportunities/KR`가 너무 오래 startup guard partial에만 머무는 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`에는 startup guard 조기 해제와 고압 메모리 유지 조건을 함께 확인하는 회귀를 추가했습니다.
+
+## v2.61.22 - 2026-04-12
+
+- Render memory-safe startup `public_dashboard_prewarm`이 이제 캘린더 월간 shell seed도 함께 데웁니다. 그래서 배포 직후 첫 `/api/calendar/KR` 호출이 외부 일정 feed cold fetch를 응답 경로에서 바로 떠안지 않고, 짧은 TTL의 월간 핵심 일정 partial cache를 먼저 재사용하도록 정리했습니다.
+- backend `app/services/calendar_service.py`에 `prewarm_public_calendar_cache_seed()`를 추가하고, `backend/tests/test_main_startup.py`와 `backend/tests/test_calendar_service.py`에 startup seed가 실제로 실행되며 외부 earnings/economic feed를 건드리지 않는 회귀를 추가했습니다.
+
+## v2.61.21 - 2026-04-12
+
+- Render memory-safe startup `public_dashboard_prewarm`이 이제 `시장 지표 -> 데일리 브리핑 -> 기본 screener safe-shell seed`까지 함께 데웁니다. `/api/screener?country=KR&limit=20` 첫 운영 진입이 `universe_data` lazy import와 safe-shell cache seed 생성을 요청 경로에서 한 번에 떠안지 않도록 startup 쪽으로 당겨, 배포 직후 cold-hit 지연을 더 줄이는 방향으로 정리했습니다.
+- backend `app/routers/screener.py`에 `prewarm_public_screener_cache_seed()`를 추가하고, `backend/tests/test_main_startup.py`와 `backend/tests/test_public_dashboard_timeouts.py`에 startup prewarm이 실제로 실행되며 fallback universe만 사용하고 KR quote import는 건드리지 않는 회귀를 추가했습니다.
+
+## v2.61.20 - 2026-04-12
+
+- Render memory-safe startup에도 `public_dashboard_prewarm`을 추가해 `시장 지표 -> 데일리 브리핑` 순서의 공개 캐시를 먼저 데우도록 정리했습니다. 그래서 배포 버전 반영 직후 첫 운영 스윕에서만 `/api/market/indicators`와 `/api/briefing/daily`가 cold-hit 때문에 30초대까지 튀던 구간을 줄이고, 첫 사용자 진입이 더 빨리 warm cache를 재사용할 수 있게 맞췄습니다.
+- backend `briefing` startup guard는 이제 shell 응답과 함께 background warmup도 예약합니다. 그래서 Render safe mode 초기 5분 안에 브리핑을 먼저 연 경우에도 다음 조회가 다시 같은 cold-hit을 반복할 가능성을 줄였습니다.
+- `backend/tests/test_main_startup.py`와 `backend/tests/test_public_dashboard_timeouts.py`에는 Render safe mode public dashboard prewarm의 성공/실패 경로와, briefing startup guard가 warmup을 실제로 예약하는 회귀를 추가했습니다.
+
+## v2.61.19 - 2026-04-12
+
+- `scripts/deployed_site_smoke.py`는 이제 배포 API 측정을 `urllib` 대신 `requests` 클라이언트로 수행하고, `Accept-Encoding: identity`와 `Connection: close`를 명시합니다. 그래서 직접 `requests`로는 빠르게 끝나는 호출이 deployed smoke에서만 30~40초처럼 보이던 false latency를 줄이고, 실제 서비스 병목과 검증 체인 병목을 더 정확히 분리할 수 있게 정리했습니다.
+- `backend/tests/test_deployed_site_smoke.py`에는 배포 스모크 fetch가 같은 `requests` 헤더/timeout 규칙을 유지하는지와, 보호 API의 `error_code` 검증 실패가 elapsed summary를 포함한 안정적인 실패 로그로 남는지 확인하는 회귀를 추가했습니다.
+
+## v2.61.18 - 2026-04-12
+
+- backend `public_api_memory_hygiene_middleware`는 이제 pre-request memory trim을 짧게 timebox하고, trim이 길어지면 요청을 계속 흘려보내면서 정리는 백그라운드에서 마무리합니다. 그래서 Render safe mode의 메모리 보호는 유지하되, `/api/briefing/daily`나 `/api/market/indicators`처럼 서버 route trace보다 실제 클라이언트 체감이 훨씬 길게 늘어지던 지연을 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_main_memory_hygiene.py`에는 공개 API request가 trim scheduler를 타는지, 느린 trim이 middleware를 끝까지 붙잡지 않는지, 이미 돌고 있는 trim이 있으면 추가 요청을 다시 기다리게 하지 않는지 확인하는 회귀를 추가했습니다.
+
+## v2.61.17 - 2026-04-12
+
+- backend `/api/briefing/daily`는 이제 `briefing_service` lazy import도 비동기 helper 안에서 로드합니다. 그래서 첫 브리핑 요청이 무거운 모듈 import 때문에 timeout 바깥에서 오래 묶이는 경로를 줄이고, 공개 timeout budget이 실제 import 비용까지 포함해 적용되도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 느린 lazy import를 기다리지 않고 즉시 partial로 내려가는 회귀를 추가했습니다.
+
+## v2.61.16 - 2026-04-12
+
+- backend `/api/briefing/daily`는 이제 공개 timeout을 `shielded background task` 기준으로 적용합니다. 그래서 Render cold wake 직후 브리핑 전체 계산이 늦더라도 timeout 이후 늦은 cancellation cleanup을 기다리며 30~40초까지 붙잡히지 않고, 1차 partial을 더 빨리 반환하면서 백그라운드 계산은 계속 살아 cache 복구를 이어 가도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 daily briefing timeout이 늦은 cancellation cleanup을 기다리지 않고 즉시 partial로 내려가는 회귀를 추가했습니다.
+
+## v2.61.15 - 2026-04-12
+
+- backend `/api/country/{code}/report`는 이제 Render `startup_memory_safe_mode`에서도 `startup_guard`가 끝났고 메모리 압박이 아주 높지 않으며 `country_analyzer`가 이미 warm된 상태라면, timeout partial 이후 background refresh를 계속 살려 둡니다. 그래서 repeated `country_report_timeout` partial이 이어지던 구간에서 최근 archived/quick fallback을 유지한 채 다음 재조회 품질이 더 빨리 회복되도록 정리했습니다.
+- `backend/tests/test_country_router.py`에는 safe-mode warm-up이 timeout fallback의 archived/quick candidate 정보를 유지하면서 background refresh task를 계속 살려 두는지 확인하는 회귀를 추가했습니다.
+
+## v2.61.14 - 2026-04-12
+
+- backend `/api/market/opportunities/{code}`는 이제 Render `startup_guard`에서 cached full/quick이 모두 비어 있어도 dedupe된 `quick warm-up`을 백그라운드로 한 번 예약합니다. 그래서 첫 요청은 가벼운 `opportunity_startup_guard` partial로 바로 닫고, 다음 재조회부터는 usable quick 후보가 더 빨리 복구될 수 있게 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup guard가 quick warm-up을 예약하는 회귀와, memory pressure guard에서는 그 warm-up을 시작하지 않는 회귀를 함께 추가했습니다.
+
+## v2.61.13 - 2026-04-12
+
+- backend `startup_guard` 공개 경로는 이제 `country report`에서 최근 cached/archived 리포트를 짧게 먼저 확인하고, 있으면 placeholder 대신 실제 최근 리포트를 우선 보여줍니다. 그래서 배포 직후에도 이미 저장된 국가 리포트가 있으면 본문 내용을 더 빨리 복구할 수 있습니다.
+- 같은 guard는 `market opportunities`에서 cached full/quick payload를 먼저 확인해, usable 후보가 남아 있으면 placeholder 대신 최근 후보 목록을 우선 반환합니다. `backend/tests/test_public_dashboard_timeouts.py`에는 두 startup guard 회귀를 추가했습니다.
+
+## v2.61.12 - 2026-04-12
+
+- backend `/api/market/indicators`는 startup guard 중 `last_success`가 비어 있으면 즉시 fallback만 주고 끝내지 않고, dedupe된 백그라운드 warm-up을 한 번 시작합니다. 그래서 Render cold start 직후 첫 실시간 요청이 30초 이상 지연되며 cold fetch 비용을 전부 떠안던 문제를 줄였습니다.
+- 같은 경로는 memory guard 중에는 warm-up을 시작하지 않도록 유지했고, `backend/tests/test_public_dashboard_timeouts.py`에 startup guard warm-up / memory guard no-warmup 회귀를 추가했습니다.
+
+## v2.61.11 - 2026-04-12
+
+- backend `app.data.yfinance_client.get_index_quote()`는 이제 `index:v2:*` cache key를 사용하고, `price/prev_close`가 모두 0인 payload는 내부 index cache에 저장하지 않습니다. 그래서 `/api/market/indicators` 라우트 shared cache를 비워도 안쪽 quote cache가 stale zero 응답을 다시 뿌리던 경로까지 같이 정리했습니다.
+- `backend/tests/test_yfinance_client.py`에는 versioned index cache key와 zero-payload non-cache predicate 회귀를 추가했습니다. 앞으로는 지표 strip이 다시 0으로 굳더라도 quote layer에서 바로 원인을 잡을 수 있습니다.
+
+## v2.61.10 - 2026-04-12
+
+- backend `/api/market/indicators`는 이제 `shared cache`에 `all-zero fallback` payload를 저장하지 않습니다. 그래서 배포 직후나 외부 시세 일시 지연 때 한 번 내려간 `0값 strip`이 TTL 동안 그대로 굳어 버리던 문제를 줄이고, 다음 요청에서 정상 지표를 다시 채울 수 있게 정리했습니다.
+- 같은 경로는 cache key를 `v3`로 올리고 indicator item timebox를 `0.75s -> 1.5s`로 넓혔습니다. 그래서 직전 배포에서 이미 굳어 있던 stale zero payload를 비우고, 너무 공격적인 개별 제한 때문에 정상값까지 같이 포기하던 구간을 완화했습니다.
+- `backend/app/data/cache.py`에는 fetch 결과별 `should_cache` predicate를 추가했고, `backend/tests/test_cache_and_universe.py` / `backend/tests/test_public_dashboard_timeouts.py`에 invalid payload non-cache와 market indicator zero-payload 회귀를 함께 고정했습니다.
+
+## v2.61.9 - 2026-04-12
+
+- backend `/api/market/indicators`는 이제 `USD/KRW / Gold / Oil / Bitcoin` 각 지표 fetch를 개별 timebox로 감쌉니다. 그래서 외부 시세 하나가 느려도 전체 지표 strip이 30초 이상 붙잡히지 않고, 늦은 항목만 `0값 fallback`으로 떨어뜨린 채 먼저 응답하도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 개별 indicator timeout이 cancellation cleanup을 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 공개 대시보드 상단 지표가 다시 single-source stall 때문에 first usable 응답을 놓치는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- repo 루트에서 `python -m unittest discover -s backend/tests ...`를 직접 실행해도 `app.*` import가 깨지지 않도록 root package shim과 verify/runtime 회귀 테스트를 추가했습니다. 이제 manual 기능 루프와 verify 보조 실행이 cwd에 덜 민감하게 동작합니다.
+
+## v2.61.8 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 public non-full `stock_memory_guard` 경로는 이제 숫자 KR 티커를 `005930 -> 005930.KS` 식으로 fast path 정규화한 뒤 바로 shell을 반환합니다. 그래서 cold start에서 `ticker_resolver_service` 전체 import/map build에 묶이지 않고 먼저 응답하도록 정리했습니다.
+- `backend/tests/test_stock_router.py`에 cold import guard가 cache lookup뿐 아니라 `ticker_resolver_service.resolve_ticker()` 호출도 건너뛰는 회귀 테스트를 추가했습니다.
+
+## v2.61.7 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`는 `prefer_full=false`인 public 경로에서 Render safe mode의 `stock_memory_guard` 조건이 잡히면, full/quick SQLite cache lookup 전에 바로 최소 shell을 반환하도록 조정했습니다. cold import 회피나 고압 메모리 구간에서 첫 응답이 cache timeout에 묶이지 않도록 줄인 패치입니다.
+- `backend/tests/test_stock_router.py`에 cold import guard가 non-full 요청에서 cache lookup 자체를 건너뛰는 회귀 테스트를 추가했습니다.
+
+## v2.61.6 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 full/quick cache lookup timebox는 이제 `shield + explicit cancel`로 동작합니다. 그래서 SQLite cache lookup이 취소 이후 정리까지 오래 붙잡히더라도, public first-hit은 cache miss로 더 빨리 넘기고 `stock_memory_guard` 또는 quick partial 응답으로 이어지게 정리했습니다.
+- `backend/tests/test_stock_router.py`에는 stock cache lookup timeout이 취소 cleanup을 기다리지 않고 quick partial로 바로 내려가는 회귀를 추가했습니다. 앞으로는 종목 상세 first-hit cache miss 경로가 다시 SQLite cancel cleanup 때문에 길어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.5 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`의 `stock_memory_guard` shell은 이제 quick cache seed를 메모리에만 남기고 SQLite persistent cache write는 건너뜁니다. 그래서 Render safe mode의 cold first-hit이 이미 가벼운 partial 응답으로 끝났는데도 보호용 shell cache write가 로컬 DB I/O에 붙잡혀 수십 초까지 늘어지는 경로를 더 짧게 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode의 `stock_memory_guard` shell cache seed가 persistent cache write 없이 끝나는 회귀를 추가했습니다. 앞으로는 종목 상세 보호 응답이 다시 SQLite cache write 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.4 - 2026-04-12
+
+- backend `/api/country/{code}/report`의 public 정밀 대기 budget을 `8초 -> 5초`로 더 낮췄습니다. 최근 정상 캐시와 archived report가 없는 경우에도 공개 첫 진입은 더 빨리 `country_report_timeout` partial로 닫고 background refresh를 이어 가게 조정해, 운영 smoke 기준 10초 안팎까지 늘어지던 국가 리포트 첫 usable 응답을 더 짧게 줄였습니다.
+- `scripts/deployed_site_smoke.py`는 이제 성공 시간에 재시도 누적과 마지막 성공 시도를 함께 표시합니다. 그래서 배포 smoke가 느린 응답 하나와 “첫 시도 실패 후 재시도 성공” 케이스를 같은 숫자로 섞어 보여 주지 않게 했고, `backend/tests/test_deployed_site_smoke.py`에 해당 회귀를 추가했습니다.
+
+## v2.61.3 - 2026-04-12
+
+- backend `/api/country/{code}/report`는 이제 public timeout fallback에서 이미 앞단이 확인한 archived report/quick 후보 lookup을 다시 반복하지 않습니다. 최근 정상 캐시와 archived report를 먼저 확인한 뒤에도 정밀 계산이 늦으면, 응답 경로는 더 가벼운 `country_report_timeout` shell로 바로 닫고 background refresh만 계속 유지해 partial 응답이 10초대까지 늘어지던 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`에는 background refresh를 유지한 public timeout fallback이 archived/quick 재조회를 다시 붙잡지 않고 lightweight fallback으로 바로 내려가는 회귀를 추가했습니다. 앞으로는 국가 리포트 timeout 응답이 다시 fallback 재조회 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.2 - 2026-04-12
+
+- backend `/api/stock/{ticker}/detail`는 Render safe mode에서 full/quick cache가 모두 비어 있는 첫 공개 진입일 때 quick builder를 응답 경로에서 기다리지 않습니다. 기본 경로는 즉시 `stock_memory_guard` shell을 먼저 반환하고, quick snapshot warm은 백그라운드에서 따로 진행해 배포 직후 cold-hit 한 번 때문에 `stock-detail` smoke가 15초 timeout까지 밀리는 구간을 줄였습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode cache miss가 `stock_memory_guard`를 바로 반환하면서 quick warm 스케줄만 남기는 회귀를 추가했습니다. 앞으로는 public stock detail 첫 진입이 다시 quick builder I/O 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.1 - 2026-04-11
+
+- backend `/api/research/predictions`는 `refresh=false` 기본 진입에서 due prediction backfill과 accuracy refresh를 더 이상 응답 경로에서 기다리지 않습니다. 캐시 miss 첫 진입도 background maintenance로 넘겨 `prediction_lab_cache_wait_timeout`으로 2초 이상 멈추던 경로를 줄이고, 현재 준비된 연구실 데이터는 즉시 partial 응답으로 먼저 보여 주도록 정리했습니다.
+- `backend/tests/test_research_and_portfolio.py`에는 prediction lab 기본 진입이 background maintenance completion을 기다리지 않고 바로 응답하는 회귀를 추가했습니다. 앞으로는 `/lab` 첫 진입이 accuracy refresh나 backfill 때문에 다시 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.61.0 - 2026-04-11
+
+- `기회 레이더` 상위 10개 후보를 기준일별 cohort로 저장하는 `opportunity_radar_snapshots` 흐름을 추가했습니다. `prediction_capture_service`가 usable radar payload를 만들면 상위 후보를 함께 적재하고, `archive_service.refresh_prediction_accuracy()`가 `1D / 5D / 20D` 실측 가격과 방향/밴드 적중 여부를 다시 평가하도록 연결했습니다.
+- `market_service`는 이제 레이더 후보별 `base_opportunity_score`, `empirical_adjustment_points`, `empirical_adjustment_reason`를 함께 계산합니다. 최근 cohort를 45일 decay로 읽는 bounded empirical profile을 써서 레이더 점수에 최대 `±6점`까지만 보정하고, `yfinance_client`는 lazy import로 유지해 import footprint와 메모리 급등 회귀를 막았습니다.
+- `/api/research/predictions`와 `/lab`은 `radar_cohorts` 요약을 함께 반환합니다. 예측 연구실 첫 화면에서 레이더 cohort 저장 건수, 기준일 수, `1D / 5D / 20D` 방향 적중률, 20D 밴드 적중률, 최근 cohort, tag breakdown, miss/hit review queue, 현재 가중 보정 방향을 같이 볼 수 있게 됐습니다.
+- `/calendar`, `/archive`, `/watchlist`, `/portfolio`, `/stock/[ticker]`, `/lab`의 버튼과 세그먼트 체계를 공용 `ui-button-*`, `ui-button-cluster`, `ui-segmented-control-responsive` 규칙으로 다시 묶었습니다. 실행 버튼과 상태 토글을 분리해 모바일에서도 줄바꿈과 비율이 무너지지 않도록 정리했습니다.
+- 회귀 테스트를 추가·갱신해 레이더 cohort 저장, 연구실 응답 계약, bounded score adjustment, market service import footprint를 고정했습니다.
+
+## v2.60.56 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 quick partial 응답 뒤 `prediction_capture_service.schedule_stock_distributional_capture()`를 아예 호출하지 않습니다. 그래서 first hit이 이미 `stock_quick_detail`로 닫힌 뒤에도 distributional capture scheduling이 cold `stock_analyzer + db` import를 다시 깨우며 10초대 지연과 추가 메모리 압박을 만들던 경로를 더 보수적으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode quick partial이 distributional capture scheduling 자체를 건너뛰는 회귀를 추가했습니다. 앞으로는 종목 상세 quick 응답이 다시 숨은 side effect import 때문에 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.55 - 2026-04-11
+
+- backend `/api/country/KR/heatmap`는 이제 Render `startup_memory_safe_mode`에서 `yfinance_client`가 아직 cold import 상태면 live heatmap build를 시작하지 않고, 현재 cache/last-success만 확인한 뒤 그것도 없으면 `heatmap_cold_import_guard` shell로 바로 복귀합니다. 그래서 heatmap first hit 하나만으로 `yfinance` 스택을 새로 깨우며 워커 메모리를 다시 `470MB+` critical band까지 밀어 올리던 경로를 더 보수적으로 막았습니다.
+- heatmap timeout fallback도 이제 safe mode에서 `kr_market_quote_client`가 cold import 상태면 live 대표호가 fetch를 다시 시도하지 않고 placeholder heatmap으로 바로 닫습니다. 그래서 timeout 뒤 fallback에서 quote client를 한 번 더 깨우며 memory pressure를 다시 높이던 경로를 줄였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode cold import guard가 live heatmap build/shared cache fetch를 모두 건너뛰는 회귀와, heatmap fallback이 cold KR quote import를 다시 깨우지 않는 회귀를 추가했습니다. 그래서 히트맵 first hit이 다시 cold data client import 때문에 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.54 - 2026-04-11
+
+- backend `/api/screener`는 이제 Render `startup_memory_safe_mode`에서 KR quick path가 `kr_market_quote_client`를 아직 cold import 상태로 깨우지 않습니다. 캐시나 `last_success`가 없더라도 작은 limit 요청까지 바로 `kr_safe_shell_warming` seed로 닫아, 로컬 측정 기준 첫 import만으로 약 `+132MB`가 붙는 quote client 때문에 screener first hit 뒤 프로세스 메모리가 한 번에 warning band로 점프하던 경로를 더 보수적으로 막았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode + cold KR quote import에서 작은 limit 요청도 representative/bulk quote fetch 없이 shell로 바로 닫히는 회귀를 추가했습니다. 앞으로는 기본 screener 요청이 다시 cold quote client를 깨우며 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.53 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서는 cached full 결과가 이미 있을 때만 full detail을 그대로 내려주고, `prefer_full=true`를 포함한 새 inline full 분석은 시작하지 않습니다. 그래서 운영 smoke나 stock detail full probe가 모듈이 이미 warm이고 pressure가 낮아 보일 때도 다시 heavy analyzer stack을 깨워 RSS를 `450MB+` warning band로 밀어 올리던 경로를 더 보수적으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서 cached quick snapshot이 있어도 `prefer_full=true`가 full upgrade를 다시 시도하지 않는 회귀를 추가했습니다. 앞으로는 Render 500MB 한도 환경에서 stock detail full probe가 다시 analyzer를 깨우는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.52 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail` quick public 경로는 이제 Render `startup_memory_safe_mode`에서 background full refresh를 시작하지 않습니다. 실제 운영에서 기본 종목 상세 호출 뒤 숨은 full refresh가 RSS를 `450MB+` warning band까지 밀어 올리고, 이어지는 diagnostics와 screener 지연을 다시 키우던 경로를 quick-only 정책으로 끊었습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간에서도 stock detail background refresh가 다시 살아나지 않는 회귀를 추가했습니다. 앞으로는 quick 응답 뒤에 full 분석 background job이 다시 붙어 메모리를 밀어 올리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.51 - 2026-04-11
+
+- backend `/api/stock/{ticker}/detail`는 이제 Render `startup_memory_safe_mode`에서 `stock_analyzer`가 아직 cold import 상태면 uncached quick/full 분석을 시작하지 않고 `stock_memory_guard` shell로 먼저 내려갑니다. 로컬 측정 기준 `stock_analyzer` 첫 import만으로도 RSS가 약 `+136MB` 커져, 첫 종목 상세 요청 뒤 memory pressure가 critical까지 올라가던 경로를 운영 fallback으로 바로 끊도록 정리했습니다.
+- stock detail background refresh도 같은 cold-import guard를 공유해, safe mode 저압 구간에서도 응답 뒤에 stock analyzer를 새로 깨우는 background refresh가 다시 붙지 않도록 막았습니다.
+- `backend/tests/test_stock_router.py`에는 safe mode 저압 구간의 cold import guard와 background refresh skip 회귀를 추가했습니다. 앞으로는 Render 500MB 한도에서 uncached stock detail first hit가 다시 무거운 분석 스택을 깨우는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.50 - 2026-04-11
+
+- backend `/api/screener`는 이제 Render safe mode에서 `last_success` seed나 `safe shell` partial을 내려준 뒤 추가 cache warmup background job을 다시 만들지 않습니다. 그래서 partial 응답 뒤에 KR bulk snapshot warmup이 계속 돌며 운영 smoke 직후 memory pressure와 diagnostics 지연을 다시 키우던 경로를 잘랐습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 safe mode shell fallback과 last-success seed가 모두 cache warmup background job 없이 끝나는 회귀를 추가했습니다. 그래서 Render 500MB 보호 구간에서 screener partial 뒤 후속 warmup이 다시 살아나 메모리와 지연을 끌어올리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.49 - 2026-04-11
+
+- backend `memory_hygiene`는 이제 Render safe mode에서 `pressure_ratio 0.8` 이상의 elevated warning 구간이면 trim cooldown을 건너뛰고 바로 한 번 더 정리를 시도합니다. 그래서 public smoke 직후 cgroup 사용량이 500MB 한도 바로 아래에 붙어 있을 때도 다음 요청이 쿨다운 때문에 손을 놓지 않도록 조정했습니다.
+- backend `/api/diagnostics`는 이제 preflight trim 이후 pressure가 `0.8` 이상이면 critical 전 warning 구간에서도 archive/research heavy probe를 건너뛰고 구조화된 skip reason을 바로 반환합니다. 그래서 운영 smoke 직후 diagnostics가 다시 10초대까지 늘어지며 메모리 회복을 방해하던 회귀를 더 짧게 끊습니다.
+- `backend/tests/test_memory_hygiene.py`, `backend/tests/test_system_service.py`에는 elevated warning 구간에서 trim cooldown bypass와 diagnostics heavy probe skip을 함께 고정하는 회귀를 추가했습니다. 그래서 Render 500MB 보호선 바로 아래에서 trim과 diagnostics 축약이 다시 critical 직전까지 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.48 - 2026-04-11
+
+- backend `/api/screener`는 이제 대표 스냅샷, cache lookup/write, main/fallback build timeout을 모두 `shield + explicit cancel` 기반 timebox로 감쌉니다. 그래서 timeout 자체는 났는데 cancellation cleanup이나 SQLite 정리 대기 때문에 first-hit 응답이 15초를 그대로 채워 버리던 회귀를 더 짧게 끊습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener` cache lookup과 representative snapshot이 cancellation cleanup sleep을 가져도 즉시 partial/shell로 복귀하는 회귀를 추가했습니다. 그래서 timeout 뒤 정리 단계 때문에 `/api/screener` first-usable 응답이 다시 밀리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.47 - 2026-04-11
+
+- backend `/api/diagnostics`는 이제 응답 시작 전에 현재 메모리 pressure를 먼저 읽고, warning 이상이면 trim을 한 번 시도한 뒤 probe 예산을 더 짧게 가져갑니다. 또한 critical pressure에서는 archive/research 같은 heavy probe를 건너뛰고 구조화된 skip 이유를 바로 반환합니다. 그래서 public smoke 직후 Render 500MB 보호 구간에서 diagnostics가 다시 10초대 후반까지 늘어지며 메모리 회복도 늦어지던 구간을 더 보수적으로 막습니다.
+- backend `system_service`의 best-effort probe는 이제 timeout이 나면 cancellation cleanup까지 끝날 때까지 기다리지 않고 바로 복귀합니다. 그래서 timeout된 probe가 정리 단계 sleep까지 끌고 가며 diagnostics 응답 자체를 추가로 늦추던 회귀를 줄였습니다.
+- `backend/tests/test_system_service.py`에는 critical memory pressure에서 heavy probe를 건너뛰는 회귀와, timeout된 probe가 cancellation cleanup 대기에 막히지 않는 회귀를 추가했습니다. 그래서 diagnostics가 다시 메모리 보호 규칙을 어기거나 timeout 이후에도 응답을 길게 붙잡는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.46 - 2026-04-11
+
+- backend `/api/screener`는 이제 본문 10초 timeout 뒤 들어가는 snapshot fallback에도 `2초` 상한을 둡니다. 그래서 본 경로가 이미 timeout된 뒤 fallback까지 다시 `yfinance` 배치 다운로드를 오래 기다리며 운영 smoke에서 15초를 넘기던 회귀를 더 짧은 shell partial로 끊습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener`의 snapshot fallback도 stall될 때 `kr_timeout_shell`로 빠르게 복귀하는 회귀를 추가했습니다. 그래서 timeout 뒤 fallback까지 다시 느린 외부 fetch를 붙잡으며 `/api/screener` first-usable 응답이 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.45 - 2026-04-11
+
+- backend `memory_hygiene`는 이제 Render safe mode에서 trim 시작 기준을 `pressure_ratio 0.6`부터 적용합니다. 그래서 메모리가 이미 warning band에 들어왔는데도 0.7을 넘길 때까지 기다리며 public smoke 한 바퀴 뒤 cgroup 사용량이 500MB 한도 바로 아래에 오래 붙어 있던 구간을 더 일찍 눌러보도록 조정했습니다.
+- `backend/tests/test_memory_hygiene.py`에는 warning pressure band에서도 trim이 실제로 시도되는 회귀를 추가했습니다. 그래서 trim 시작 기준이 다시 너무 늦어져 memory-safe 모드가 사실상 critical 직전에서만 작동하는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.44 - 2026-04-11
+
+- backend `stock detail`은 이제 Render `startup_memory_safe_mode`에서 pressure가 중간 이상으로 올라가면 public quick 경로의 background refresh와 inline full upgrade를 더 일찍 건너뜁니다. 그래서 quick 호출 뒤 숨어서 돌던 full 분석이 RSS를 400MB대 후반까지 끌어올리고, 이어지는 `prefer_full` 호출이 10초대 후반까지 튀거나 `stock_memory_guard`로 늦게 떨어지던 회귀를 더 보수적으로 막습니다.
+- `backend/tests/test_stock_router.py`에는 elevated pressure에서 background refresh와 inline full analyze를 건너뛰는 회귀를 추가했습니다. 그래서 Render 500MB 보호 구간에서 public stock detail이 다시 full 분석을 무리하게 시작하며 지연과 메모리 급등을 동시에 만드는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.43 - 2026-04-11
+
+- backend `stock detail`은 이제 quick snapshot 대기 예산을 더 짧게 고정하고, memory guard shell/quick cache persist를 짧게 timebox합니다. 그래서 Render cold cache나 SQLite lock 구간에서도 `/api/stock/{ticker}/detail` first-usable 응답이 느린 cache write까지 같이 기다리며 6초 이상 끌리는 회귀를 더 줄였습니다.
+- `backend/tests/test_stock_router.py`, `backend/tests/test_stock_analyzer.py`에는 memory guard shell과 quick cache persist가 느린 cache write에 막히지 않고 빠르게 복귀하는 회귀를 추가했습니다. 그래서 종목 상세 fallback이 다시 cache I/O에 동기 대기하며 first-usable 응답을 늦추는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.42 - 2026-04-11
+
+- backend `/api/country/KR/heatmap`은 이제 startup/memory guard 구간에서 `cache` import나 live/universe fallback 전체를 다시 타지 않고, `COUNTRY_REGISTRY`만으로 만든 중립 섹터 shell을 즉시 반환합니다. 그래서 메모리 warning 구간에서도 히트맵 guard 응답이 다시 수초 이상 끌리는 회귀를 줄였고, 홈 대시보드도 완전히 빈 state card 대신 최소한의 섹터 레이아웃을 먼저 유지합니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 heatmap startup guard가 live builder, fallback builder, cache fetch를 모두 건너뛰고 neutral shell만 반환하는 회귀를 고정합니다. 그래서 보호 구간에서 히트맵이 다시 cache/bootstrap이나 live fallback을 먼저 타며 느려지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.41 - 2026-04-11
+
+- backend `/api/screener`는 이제 KR quick partial 경로에서 cache lookup, partial seed write, `last_success` persist를 짧게 timebox합니다. representative quote나 safe shell payload는 이미 준비됐는데도 SQLite cache I/O가 함께 늘어지면서 `/api/screener` first-usable 응답이 10초 이상 밀리던 회귀를 줄였습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `screener`가 느린 cache lookup을 miss로 처리하고, cache persist가 막혀도 partial 응답을 먼저 반환하는 회귀를 추가했습니다. 그래서 Render cold cache/lock 구간에서 screener partial path가 다시 cache I/O까지 동기 대기하는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.40 - 2026-04-11
+
+- backend `/api/market/opportunities/{code}`는 이제 memory/startup guard 구간에서 cached full/quick 조회까지 먼저 기다리지 않고 즉시 placeholder 응답으로 내려갑니다. 그래서 Render 메모리 warning 구간에서 캐시 I/O 때문에 quick fallback조차 늦어지던 회귀를 줄였습니다.
+
+## v2.60.39 - 2026-04-11
+
+- backend `/api/country/KR/heatmap` fallback은 이제 timeout 이후에도 동적 FMP 유니버스를 다시 조회하지 않고 즉시 fallback 유니버스를 사용합니다. 그래서 히트맵이 느린 live build에서 partial로 내려갈 때 fallback 단계가 다시 외부 의존을 타며 15초 budget을 넘기는 회귀를 줄였습니다.
+
+## v2.60.38 - 2026-04-11
+
+- backend `/api/briefing/daily`는 이제 timeout, startup guard, memory guard에 걸리면 `sessions/calendar/archive`를 다시 읽는 서비스 fallback까지 기다리지 않고 라우트 안에서 초경량 shell payload를 즉시 반환합니다. 그래서 브리핑이 partial 상태로 내려갈 때도 하위 의존 하나가 늦어지는 바람에 다시 15초 budget을 넘기는 경로를 더 확실히 잘랐습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`는 브리핑 timeout/startup/memory guard 경로가 route-local shell builder로 바로 닫히는지 회귀로 고정합니다. 새 프로세스 초반이나 보호 구간에서 브리핑 라우트가 다시 서비스 fallback 전체를 기다리는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.37 - 2026-04-11
+
+- backend `/api/briefing/daily`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후나 메모리 압박 구간이면 full 브리핑 계산을 바로 건너뛰고 partial fallback을 먼저 반환합니다. 기존에는 12초 대기 뒤 fallback과 동기 메모리 trim까지 같은 요청 안에서 이어져 운영 smoke 15초 예산을 넘길 수 있었는데, 이번에는 startup/memory guard와 더 짧은 timeout budget, 비동기 trim으로 first-usable 응답을 더 빨리 닫도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `daily briefing`이 startup/memory guard 상태에서 full 브리핑 fetch를 건너뛰고 partial fallback으로 바로 내려가는 회귀를 추가했습니다. 새 프로세스 초반이나 보호 구간에서 브리핑 라우트가 다시 느린 full path를 먼저 붙잡는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.36 - 2026-04-11
+
+- `.github/workflows/render-keepalive.yml`은 이제 `main` push에서도 즉시 한 번 실행됩니다. public GitHub Actions 페이지 기준으로 keepalive workflow run이 `0`건이던 상태를 bootstrapping하기 위해, 배포 직후 warm-up과 workflow 활성 확인을 같은 경로로 묶었습니다.
+- `backend/tests/test_keepalive_workflow.py`는 keepalive workflow가 `main` push + 10분 cron + manual trigger를 함께 유지하는지 회귀로 고정합니다. schedule만 남고 push bootstrap이 빠져 workflow가 다시 잠든 상태로 남는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.35 - 2026-04-11
+
+- backend `/api/market/indicators`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후나 메모리 압박 구간이면 shared cache/live yfinance fetch를 바로 건너뛰고 `last_success` 또는 초경량 fallback을 먼저 반환합니다. 운영 smoke에서 `market/indicators` 첫 호출이 15초 timeout에 걸리던 구간을 줄이기 위해, 공개 지표 라우트도 다른 startup guard 공개 경로와 같은 fast fallback 규칙으로 맞췄습니다.
+- `MARKET_INDICATORS_TIMEOUT_SECONDS`와 `MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS`를 더 짧게 조정해, live 지표 fetch가 실제 값을 못 채우는 상황에서도 첫 usable 응답을 더 빨리 닫도록 정리했습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 `market indicators`가 startup/memory guard 상태에서 shared cache fetch와 live indicator fetch를 건너뛰는 회귀를 추가했습니다. 새 프로세스 초반이나 보호 구간에서 공개 지표 라우트가 다시 느린 외부 fetch를 먼저 붙잡는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.34 - 2026-04-11
+
+- backend `/api/countries`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 캐시 lookup보다 fallback shell을 먼저 반환합니다. 새 프로세스 초반에는 `app.data.cache` 경유 lookup 자체가 첫 usable 응답을 늦출 수 있었는데, 이번에는 startup guard 구간에서 국가 목록도 바로 기본 shell을 내려 country list first-hit를 더 짧게 닫는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`에는 countries startup guard가 cache lookup을 건너뛰고 fallback shell을 바로 반환하는 회귀를 추가했습니다. startup 직후 국가 목록이 다시 cache/bootstrap 경로를 먼저 밟는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.33 - 2026-04-11
+
+- backend `heatmap`과 `market/opportunities`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안 `startup guard` fast fallback을 먼저 사용합니다. 새 프로세스는 메모리 비율이 낮아도 live heatmap build와 quick opportunity fetch가 8~30초대까지 늘어질 수 있었는데, 이번에는 `heatmap_startup_guard`, `opportunity_startup_guard`로 대표 스냅샷과 placeholder를 먼저 내려 first-usable 응답을 더 빨리 닫도록 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`에는 최근 startup window 동안 heavy heatmap/live quick 경로를 건너뛰는 회귀를 추가했습니다. 새 프로세스 초반에 다시 무거운 public route가 풀 계산으로 들어가는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- frontend `public-audit`에는 `heatmap_startup_guard`, `heatmap_memory_guard`, `opportunity_startup_guard`, `opportunity_memory_guard` 라벨/요약을 추가해, 히트맵과 기회 레이더 fallback 이유도 자연스러운 한국어로 안내하도록 맞췄습니다.
+
+## v2.60.32 - 2026-04-11
+
+- backend `country report`는 이제 Render memory-safe 모드에서 서비스가 막 깨어난 직후 몇 분 동안에도 `startup guard` fast fallback을 먼저 사용합니다. 새 프로세스는 메모리 비율이 낮아도 cold first-hit가 길어질 수 있었는데, `country_report_startup_guard`로 바로 눌러 first-usable 응답을 더 빨리 내는 쪽으로 정리했습니다.
+- `backend/tests/test_country_router.py`에는 최근 startup window 동안 cached/archive/full analysis 경로를 건너뛰고 startup guard fallback으로 바로 내려가는 회귀를 추가했습니다. 새 프로세스 초반에 다시 무거운 full path로 들어가는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- frontend `public-audit`에는 `country_report_startup_guard`와 `country_report_memory_guard` 라벨/요약을 추가해, 시장 요약 fallback 이유가 raw code 대신 자연스러운 한국어로 보이도록 맞췄습니다.
+
+## v2.60.31 - 2026-04-11
+
+- `.github/workflows/render-keepalive.yml`을 추가해 GitHub Actions가 10분마다 `api/health`와 `api/country/KR/report`를 호출하도록 했습니다. Vercel Hobby cron으로는 분 단위 keepalive가 불가능해, Render cold wake로 20~35초까지 튀던 첫 요청 지연을 완화하는 keepalive를 저장소 안에서 관리하도록 옮겼습니다.
+- `backend/tests/test_keepalive_workflow.py`를 추가해 keepalive workflow의 스케줄과 대상 URL이 유지되는지 회귀로 고정했습니다. warm 대상이나 실행 주기가 실수로 빠지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.30 - 2026-04-11
+
+- backend `stock detail`은 이제 quick/full 계산이 모두 실패하거나 timeout이어도 500/504로 바로 끊지 않고, 최소 shell 상세를 `200 + partial + fallback_reason=stock_minimal_shell`로 먼저 반환합니다. Render cold wake나 외부 시세 지연 구간에서도 상세 페이지가 완전히 깨지지 않고, 티커·기본 메타데이터 중심 first-usable 상태를 먼저 유지하도록 바꿨습니다.
+- `backend/tests/test_stock_router.py`에는 stock detail이 no-cache error/timeout에서도 최소 shell fallback으로 내려가는 회귀를 추가했습니다. quick/full builder가 동시에 실패할 때 공개 종목 상세가 다시 500으로 깨지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+- frontend `public-audit` 라벨에는 `stock_minimal_shell`을 추가해, 최소 종목 스냅샷 상태가 사용자에게 자연스러운 한국어 안내로 보이도록 맞췄습니다.
+
+## v2.60.29 - 2026-04-11
+
+- backend `country report`는 memory guard가 켜진 순간 `last_success` cache lookup도 먼저 시도하지 않고, 바로 초경량 fallback으로 내려갑니다. `app.data.cache`/`app.database` cold import와 SQLite bootstrap이 보호 모드의 첫 응답을 붙잡을 수 있는 경로를 잘라, 메모리 압박 구간에서는 최근 캐시보다 first-usable 속도를 우선하도록 순서를 고정했습니다.
+- `backend/tests/test_country_router.py`에는 memory guard 진입 시 cached report lookup까지 건너뛰는 회귀를 추가했습니다. 보호 응답 앞에서 cache import/bootstrap이 다시 선행되는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.28 - 2026-04-11
+
+- backend `country report` memory-guard fallback은 이제 `countries` cache 조회와 `fear_greed`/`country score` helper를 건너뛰고, 초경량 중립 payload를 바로 반환합니다. 메모리 보호 응답이 archived/quick lookup은 생략해도 여전히 cache import와 scoring helper 때문에 느려지던 구간을 더 줄여, `country_report_memory_guard` first-usable latency를 추가로 낮추는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`에는 memory-guard fallback이 archived/quick candidate lookup뿐 아니라 `countries` cache lookup과 scoring helper까지 호출하지 않는 회귀를 추가했습니다. 보호 응답이 다시 무거운 import/calc 경로를 밟아 500MB 보호 구간에서 늦어지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.27 - 2026-04-11
+
+- backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 별도 `asyncio` background trim으로 미뤘습니다. first-usable latency 개선 방향은 유지하면서도 `Response.background` 경로에서 배포 런타임이 `No response returned`로 500을 내던 문제를 피하도록 수정했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 response helper가 trim을 inline으로 호출하지 않고 비동기 스케줄만 거는 회귀를 추가했습니다. fast path가 다시 동기 trim에 막히거나 trim 전달 방식 때문에 공개 응답이 깨지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.26 - 2026-04-11
+
+- backend `country report`와 `stock detail`은 성공/오류 응답 직전에 수행하던 동기 `gc/malloc_trim`을 제거하고, 응답 전송 후 background trim으로 미뤘습니다. memory-safe 보호는 유지하면서도 cached/fallback 응답이 마지막 메모리 정리 때문에 더 늦게 닫히지 않도록 바꿔, first-usable latency를 줄이는 방향으로 정리했습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 response helper가 trim을 inline으로 호출하지 않고 background task로 넘기는 회귀를 추가했습니다. 앞으로는 cached/partial fast path가 다시 동기 trim에 막히는 회귀를 테스트에서 바로 잡을 수 있습니다.
+
+## v2.60.25 - 2026-04-11
+
+- backend `country` router는 Render memory-safe 모드에서 `/api/countries` fallback 또는 `last_success` 응답 후 즉시 background refresh를 다시 띄우지 않도록 정리했습니다. 이제 safe mode에서는 응답 직후 `asyncio.create_task`로 index quote 재수집을 붙이지 않아, cold `countries` 요청과 메모리 보호 응답이 불필요한 후속 작업에 흔들리지 않습니다.
+- backend startup safe mode는 `prediction_accuracy_refresh`도 함께 건너뜁니다. cold wake 직후 `yfinance` 가격 이력 재평가가 공개 라우트와 경쟁하면서 `500MB` 한도 근처 메모리와 CPU를 더 밀어 올리던 경로를 줄여, startup background load를 더 보수적으로 낮췄습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`, `backend/tests/test_main_startup.py`, `backend/tests/test_deployment_config.py`를 갱신해 새 safe mode 정책을 회귀 테스트로 고정했고, `.\venv\Scripts\python.exe .\verify.py` 전체 검증도 다시 통과했습니다.
+
+## v2.60.24 - 2026-04-11
+
+- backend `market_service`는 이제 `yfinance_client`, `stock_scorer`, `stock_analyzer`, `distributional_return_engine` 같은 무거운 공개 레이더 의존성을 실제 계산 시점까지 지연 로드합니다. `market_service` import footprint 자체를 줄여 quick radar first-hit에서 `pandas/yfinance/ta`가 무조건 함께 올라오지 않도록 정리했습니다.
+- Render memory-safe 구간에서는 quick `opportunity radar`가 `1일 포커스` 정밀 계산을 잠시 생략하고 1차 후보 목록을 먼저 반환합니다. 프론트는 이미 `next_day_focus=null`을 안전하게 처리하므로, `500MB` 한도 근처에서 focus 계산 때문에 quick 응답까지 늦어지던 구간을 더 줄이는 방향으로 맞췄습니다.
+- `test_import_footprint`와 `test_market_service` 회귀를 보강해 `market_service` import가 `numpy/pandas/yfinance/ta`를 eager load하지 않는지, 그리고 메모리 보호 구간에서 quick radar가 focus enrichment를 건너뛰는지를 고정했습니다.
+
+## v2.60.23 - 2026-04-11
+
+- backend `app.analysis.llm_client`는 이제 `openai` SDK를 실제 호출 시점에만 import합니다. 공개 route startup과 Render cold wake가 불필요한 SDK 메모리를 먼저 점유하지 않도록 바꿔, `500MB` 한도 근처에서 startup RSS를 더 낮추는 방향으로 정리했습니다.
+- `backend/tests/test_llm_client.py`를 추가해 `llm_client` import와 API key가 없는 fast-fail 경로가 `openai`를 eager import하지 않는 회귀를 고정했습니다.
+- `verify.py`는 배포 브라우저 스모크 전에 같은 라우트를 한 번 더 워밍업하고, viewport matrix 전체 예산도 `600s`로 늘렸습니다. 실제 서비스는 정상인데 cold path 때문에 `--deployed-site-smoke`만 간헐적으로 `exit 1`로 깨지던 검증 체인 불안정을 줄였습니다.
+
+## v2.60.22 - 2026-04-11
+
+- 공개 `country report`의 memory-guard 경로를 더 공격적으로 가볍게 줄였습니다. 고압박 `500MB` 구간에서는 archived report 재조회와 quick 후보 탐색을 먼저 붙잡지 않고, 대표 지수 스냅샷 중심 1차 응답을 바로 반환하도록 바꿔 `country_report_memory_guard` 응답이 보호 모드인데도 9~10초까지 늘어지던 문제를 줄이는 방향으로 정리했습니다.
+- `get_country_report`는 이제 memory guard 판단을 archived report 조회보다 먼저 수행합니다. 최근 성공 캐시가 없더라도 고압박 순간에 archive/service lookup 때문에 추가 지연과 메모리 churn이 생기지 않도록 순서를 바꿨습니다.
+- `dev_runtime.py`, `start.py`, `verify.py`는 Windows에서 PATH의 `node/npm/npx`가 비어 있어도 표준 `nodejs` 설치 경로와 로컬 `.cmd` shim을 해석해 같은 런처 규칙으로 프론트 build/typecheck를 계속 실행합니다. 회귀 루프 자체가 `node is not recognized`류 환경 문제로 끊기지 않도록 정리했습니다.
+- `test_country_router`, `test_dev_runtime` 회귀를 보강해 memory guard fallback의 초경량 경로와 Windows node launcher fallback을 각각 고정했습니다.
+
+## v2.60.21 - 2026-04-11
+
+- 공개 `stock detail`의 cached full/quick lookup 경로를 import-light로 다시 정리했습니다. 이제 라우터가 `stock_analyzer` 전체를 import하기 전에 cache key를 직접 읽어 cached/shell 응답을 먼저 만들 수 있으므로, cold 첫 요청에서 `pandas`, `ta`, 분포 엔진 적재 비용 때문에 20초 가까이 밀리던 구간을 더 줄일 수 있습니다.
+- `app.analysis.stock_cache_keys`를 분리해 stock detail cache key 버전을 분석기와 라우터가 같은 기준으로 공유하게 했습니다. key 문자열 중복을 없애면서, 빠른 cached lookup 경로가 추후 버전 변경 때도 어긋나지 않도록 고정했습니다.
+- `test_stock_router`에 경량 cached lookup 회귀를 추가해, quick/full cached 조회가 `cache.get` 직접 경로를 유지하는지 고정했습니다.
+
+## v2.60.20 - 2026-04-11
+
+- `/api/health`는 memory-safe 모드의 pre-request memory trim 대상에서 제외했습니다. Render wake/readiness 확인은 가능한 한 가벼워야 하므로, health 요청이 `gc.collect()`/`malloc_trim()` 비용을 같이 지불하지 않도록 분리했습니다.
+- 공개 `country report`의 stale archived path를 짧게 정리했습니다. archived 리포트를 이미 찾은 경우 fallback 빌더에서 archived/opportunity lookup을 다시 반복하지 않고, stale 안내와 `partial/fallback_reason`만 붙여 바로 반환합니다.
+- 공개 `stock detail` memory-guard shell은 더 이상 `yfinance_client.get_stock_info()`를 호출하지 않습니다. 고압박 500MB 구간에서는 외부 가격 조회를 생략하고 티커·기본 메타데이터 중심 최소 응답을 먼저 반환해, shell 경로가 다시 heavy import/external IO를 유발하지 않게 고정했습니다.
+- Vercel server fetch는 Render `hibernate-*` 503을 한 번만 짧게 재시도합니다. wake 순간의 일시적 503은 한 번 흡수하고, 그래도 실패하면 기존 페이지 fallback 흐름으로 내려가 사용자 화면이 멈추지 않도록 했습니다.
+- `test_main_memory_hygiene`, `test_public_dashboard_timeouts`, `test_stock_router`를 갱신해 health trim 예외, country stale 중복 lookup 제거, stock memory-guard shell의 heavy builder 우회를 회귀로 고정했습니다.
+
+## v2.60.19 - 2026-04-11
+
+- backend startup import footprint를 더 줄였습니다. `app.main`과 공개/상세 핵심 라우터는 이제 `market_service`, `archive_service`, `prediction_capture_service`, `yfinance_client`, `sector_analyzer`, `stock_scorer` 같은 무거운 모듈을 import 시점이 아니라 실제 사용 시점에 로드합니다. Render cold start에서 `/api/health`와 첫 공개 요청이 불필요한 `pandas/yfinance/ta` 적재를 먼저 하지 않도록 바꿔, 500MB 메모리 한도와 cold latency를 함께 낮추는 방향으로 정리했습니다.
+- `app.utils` 패키지는 더 이상 import만으로 `market_calendar`와 `pandas_market_calendars`를 끌어오지 않습니다. `next_trading_day`는 lazy wrapper로 노출해, route trace나 async util만 쓰는 경로가 달력 계산 모듈까지 함께 적재하지 않도록 정리했습니다.
+- `backend/tests/test_import_footprint.py`를 추가하고, `test_main_startup`, `test_country_router`, `test_stock_router`, `test_public_dashboard_timeouts`, `test_market_route_stability`, `test_watchlist_router`, `test_portfolio_recommendations`, `test_api_error_contracts`를 다시 돌려 import proxy 전환이 실제 기능 회귀 없이 startup footprint만 줄인다는 점을 고정했습니다.
+
+## v2.60.18 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `stock detail`이 캐시 미스 시에도 요청 안에서 무거운 full/quick 계산을 계속 시도하던 경로를 더 강하게 줄였습니다. 메모리 압박이 높은 운영 구간에서는 `country report`는 memory-guard fallback을, `market opportunities`는 placeholder partial을, `stock detail`은 프론트 계약을 유지하는 최소 shell 상세를 바로 반환하도록 바꿔 first-hit 10~20초대 지연과 peak RSS를 함께 줄이는 방향으로 맞췄습니다.
+- `backend/app/routers/country.py`, `backend/app/routers/stock.py`의 무거운 분석 import를 lazy import로 옮겼습니다. Render cold start와 `/api/health` 초기 응답이 불필요한 분석 모듈 적재 때문에 더 느려지고 메모리를 더 점유하던 구간을 완화하는 목적입니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 high-pressure memory guard fallback과 placeholder/shell 응답 회귀를 추가해, 압박 구간에서 heavy analysis path를 타지 않는 동작을 자동 검증으로 고정했습니다.
+
+## v2.60.17 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 route가 실제 메모리 압박을 잘못 읽어 non-critical side effect를 계속 이어가던 버그를 수정했습니다. memory pressure snapshot이 실제 budget bytes를 기준으로 계산되도록 바로잡아, 고압 상태에서 archive/prediction capture 같은 후처리가 더 보수적으로 건너뛰어지도록 맞췄습니다.
+- 공개 `country report`는 hard-timeout 후 취소 정리까지 기다리느라 예산보다 오래 붙잡히던 경로를 `task + shield + 즉시 fallback` 구조로 바꿨습니다. fallback 내부의 `countries/archive/opportunity` 조회도 짧게 timebox해서, 운영에서 보이던 `partial인데도 10초 이상 늦는` 구간을 더 줄였습니다.
+- 공개 `stock detail`도 full 분석 timeout을 hard-timeout으로 바꾸고, quick 응답 뒤에 붙던 distributional capture scheduling을 짧게 제한했습니다. 이로써 일부 티커의 first-hit 504와 quick response 뒤 추가 지연 가능성을 더 줄였습니다.
+- `backend/tests/test_memory_hygiene.py`, `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`를 확장해 memory pressure 판정, cancellation-cleanup 비대기, high-pressure ultra-fast fallback, quick-path capture timebox를 회귀로 고정했습니다.
+
+## v2.60.16 - 2026-04-11
+
+- 공개 `country report`와 `stock detail`은 cached/archive lookup 자체에도 짧은 timeout을 적용합니다. SQLite/cache 조회가 지연되면 오래 붙잡히지 않고 즉시 miss로 간주해 fallback/quick path로 내려가도록 바꿔, 운영에서 보인 `report는 partial인데도 10초 이상 늦는` 구간을 더 줄였습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 slow cached lookup을 timeout으로 건너뛰고 정상 응답을 유지하는 회귀를 추가했습니다.
+
+## v2.60.15 - 2026-04-11
+
+- 공개 `country report`와 `stock detail`이 응답 직전에 prediction capture / archive save를 동기식으로 기다리던 경로를 정리했습니다. 이제 full report는 응답을 먼저 반환하고 저장성 후처리는 분리해, 운영에서 보이던 `SP-9999 / No response returned` 500과 첫 응답 지연 가능성을 줄였습니다.
+- stock quick path와 cached full path에서는 inline prediction capture를 제거했습니다. 이미 보관된 보고서가 다시 같은 prediction row를 중복으로 쓰면서 응답 시간을 늘리고, 일부 티커에서 실패가 응답까지 전파되던 구간을 줄였습니다.
+- Render `500MB` memory-safe 모드에서는 공개 후처리성 작업도 현재 pressure가 높으면 건너뛰도록 가드했습니다. 메모리 경고 상태에서 non-critical archive/capture가 다시 워크셋을 키워 peak RSS를 밀어 올리는 경로를 더 보수적으로 막습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_stock_router.py`에 partial country response와 stock cached/quick response가 inline prediction capture 없이도 정상 응답을 유지하는 회귀를 추가했습니다.
+
+## v2.60.14 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 `/api/countries`가 캐시 미스 + cold start 구간에 너무 오래 붙잡히던 문제를 줄였습니다. 이제 공개 `countries`는 캐시가 비어 있어도 즉시 fallback을 돌려주고, 실제 지수 quote 재계산은 백그라운드 refresh로 분리합니다. 인덱스 quote에도 개별 timeout을 넣어 느린 외부 호출 한두 개가 전체 응답을 붙잡지 않게 했습니다.
+- 공개 `screener`는 representative snapshot warming 경로가 늦어질 때도 길게 대기하지 않도록 safe-mode shell-first partial 응답을 추가했습니다. 캐시가 비어 있고 representative path가 제시간에 끝나지 않으면 먼저 shell partial을 보내고, 짧은 seed cache와 safe-mode background warmup으로 다음 요청이 빨라지도록 맞췄습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`를 확장해 countries safe-mode fallback/background refresh와 screener representative timeout shell 응답을 회귀로 고정했습니다.
+
+## v2.60.13 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 trim이 실제로 너무 드문 간격으로만 실행돼, 운영 실측상 pressure가 `critical`인데도 `/api/health`, `/api/country/KR/report`, 일부 종목 상세가 다시 오래 붙잡히는 문제가 있었습니다. 이번 패치에서는 공개 API GET 요청 진입 전에 pre-request trim을 먼저 시도하고, `stock detail`, `daily briefing`, `market sessions`까지 공개 heavy route trim 경로를 넓혔습니다.
+- memory trim cooldown은 기본 `2초`로 줄이고, pressure가 이미 `critical`이면 cooldown을 우회해 연속 요청에서도 메모리 완화를 다시 시도합니다. `/api/diagnostics`는 최상단 `render_memory_safe_mode` 플래그까지 같이 내려 운영 판독 혼선도 줄였습니다.
+- `backend/tests/test_main_memory_hygiene.py`, `backend/tests/test_memory_hygiene.py`, `backend/tests/test_system_service.py`를 확장해 pre-request trim 미들웨어, critical 상태 cooldown bypass, diagnostics 플래그 노출을 회귀로 고정했습니다.
+
+## v2.60.12 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 heavy route(`countries`, `country report`, `heatmap`, `market opportunities`, `screener`) 응답 뒤에 메모리 압박 비율이 `70%` 이상이면 `gc.collect() + malloc_trim(0)` 기반 trim을 짧은 cooldown으로 시도하도록 추가했습니다. 큰 pandas/HTML/JSON 작업 뒤에 RSS가 OS로 잘 반환되지 않아 압박이 누적되던 구간을 운영 환경에서 직접 낮추는 목적입니다.
+- `/api/diagnostics`의 `memory_diagnostics`에는 이제 `memory_trim` 메타데이터가 포함됩니다. 최근 trim 시도 횟수, 마지막 trim 사유, trim 전후 메모리 MB, trim 후 압박 비율을 같이 확인해 운영에서 실제로 메모리 완화가 일어났는지 바로 추적할 수 있습니다.
+- `backend/tests/test_memory_hygiene.py`를 추가했고, 기존 timeout/public fallback 회귀와 함께 safe mode background suppression + memory trim 경로를 다시 검증했습니다.
+
+## v2.60.11 - 2026-04-11
+
+- Render `500MB` memory-safe 모드에서 공개 `country report`, `market opportunities`, `screener`가 partial/fallback 응답 뒤에 무거운 background refresh를 즉시 이어 붙이지 않도록 정리했습니다. 작은 인스턴스에서 공개 요청이 다시 공개 background 계산을 증폭시키며 재시작으로 이어지던 경로를 줄이는 쪽에 초점을 맞췄습니다.
+- `country report` 공개 fallback은 이제 실제 동작과 맞는 안내 문구와 에러 코드를 사용합니다. background refresh를 이어가지 않는 경로에서는 “다음 재조회에서 정밀 리포트를 다시 시도한다”는 문구를 사용하고, public non-background 오류가 export용 `SP-5004`로 잘못 섞이던 copy-paste 버그도 `SP-3001` 기준으로 바로잡았습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`를 확장해 safe mode에서 `country/opportunities/screener` background job이 실제로 생성되지 않는지, 공개 fallback 문구가 거짓 약속을 하지 않는지, public country error path가 export용 코드로 오염되지 않는지를 회귀로 고정했습니다.
+
+## v2.60.10 - 2026-04-11
+
+- 메모리 hot cache에 `entry_count + total bytes + per-entry bytes` 상한을 함께 걸고, oversized payload는 SQLite에만 저장하고 in-memory cache에는 올리지 않도록 정리했습니다. Render memory-safe 모드에서는 캐시 상한을 더 보수적으로 적용해 `500MB` 서버에서 큰 partial/report payload가 deep copy와 함께 누적되는 경로를 줄였습니다.
+- `/api/diagnostics`는 `memory_diagnostics`를 함께 반환해 RSS/cgroup 사용량, cache entry 수, 추정 캐시 바이트, oversized write skip 횟수, memory pressure 상태를 바로 볼 수 있게 했습니다. accuracy/research archive probe도 병렬화해 진단 엔드포인트 자체의 응답 시간을 더 짧게 유지합니다.
+- 공개 지연 경로는 `market/opportunities` quick timeout, `stock detail` quick/full grace, 홈·레이더·스크리너·종목/관심종목 SSR timebox를 더 짧게 조정했습니다. fallback 구조는 유지하면서 first HTML과 quick partial 응답이 cold path를 오래 기다리지 않도록 다시 맞췄습니다.
+- `backend/tests/test_cache_and_universe.py`, `backend/tests/test_system_service.py`를 확장해 oversized memory cache skip과 diagnostics 병렬 probe를 회귀로 고정했고, `verify.py --skip-frontend`, `verify.py --skip-frontend --live-api-smoke`까지 다시 통과했습니다.
+
+## v2.60.9 - 2026-04-10
+
+- `verify.py --deployed-site-smoke`가 하위 headless browser 프로세스에서 오래 멈추지 않도록 `browser_smoke.py`에 per-command timeout과 전체 deadline을 추가하고, `verify.py`도 같은 시간 예산을 넘겨 주도록 정리했습니다. 이제 배포 브라우저 스모크는 hang 대신 구조화된 실패로 빠르게 종료됩니다.
+- `backend/tests/test_browser_smoke_runtime.py`를 추가해 browser subprocess timeout, virtual time 기준 timeout 보정, 전체 deadline 초과 시 즉시 종료를 회귀로 고정했습니다.
+- `country report` timeout 회귀 테스트는 최근 `last_success`/archived cache 상태에 흔들리지 않도록 분리해, 검증 순서에 따라 `partial` 필드 기대가 깨지던 flaky 경로를 정리했습니다.
+- SQLite schema bootstrap은 import 시점과 startup `initialize()`에서 두 번 반복하지 않도록 1회 보장으로 바꿨습니다. `backend/tests/test_database_cache_resilience.py`에 constructor + initialize 중복 bootstrap 방지 회귀를 추가했고, cold start 초기화 비용을 더 줄였습니다.
+
+## v2.60.8 - 2026-04-10
+
+- UI 품질 루프를 한 번 더 돌려 `action-chip`이 실행 CTA로 남아 있던 구간을 추가 정리했습니다. `AuthGateCard`, `PortfolioConditionalRecommendationPanel`, `OpportunityRadarBoard`, `RadarNextDayFocusCard`의 로그인/회원가입, 조건 추천 실행, 연구실 이동, 종목 상세 이동은 모두 `primary / secondary` button hierarchy로 다시 흡수했습니다.
+- `/settings`의 계정 패널은 로그인 전 CTA를 공용 버튼으로 맞추고, 보안/이메일/탈퇴 보조 패널이 `lg`부터 더 이른 시점에 2열로 읽히도록 조정해 데스크톱 세로 길이와 액션 혼선을 줄였습니다.
+- `/watchlist`는 관심종목 추가, 심화 추적, 상세 보기, 제거 버튼을 공용 실행 버튼 계층으로 다시 정리했고, `/country/[code]/sector/[id]`는 모바일에서 상위 종목 summary card를 먼저 보여준 뒤 `md` 이상에서 표를 확장하도록 보강했습니다.
+
+## v2.60.7 - 2026-04-10
+
+- 전 화면 UI 리디자인 품질 루프를 한 번 더 돌려 `globals.css`, `layout.tsx`, `Navigation`, `SearchBar`, `AuthStatus`의 공용 비율과 간격을 다시 조정했습니다. 데스크톱 좌측 레일은 더 슬림하게 줄이고, 상단 검색/계정 스트립과 `PageHeader`는 더 낮은 높이로 맞춰 첫 viewport에서 제목과 첫 판단 카드가 함께 보이도록 정리했습니다.
+- `/`, `/radar`, `/calendar`, `/screener`, `/compare`, `/archive`, `/stock/[ticker]`의 카드 스팬과 버튼 언어를 다시 다듬어, 실행 버튼은 `primary / secondary / text`, 필터/세그먼트만 chip으로 남기도록 정리했습니다. 특히 `/calendar`는 단일 국가일 때 어색한 헤더 액션을 숨기고, 상단 빈 공간을 agenda preview와 이번 달 리듬 요약으로 다시 채웠습니다.
+- `/watchlist`, `/settings`, `/country/[code]/sector/[id]`는 모바일/태블릿 흐름을 추가로 보강했습니다. 관심종목 추가/삭제/상세/심화 추적은 button 계층으로 다시 흡수했고, 설정 패널은 로그인 전 CTA와 보안/이메일 패널 배치를 정리했으며, 섹터 상세는 모바일에서 상위 종목 summary card를 먼저 보여주고 `md` 이상에서 표를 확장하도록 바꿨습니다.
+- `DESIGN_BIBLE.md`와 `README.md`를 현재 공용 규칙에 맞게 갱신해, slim rail, action chip 제한, 상태 카드 액션 스택, summary-first 모바일 규칙이 실제 구현과 같은 의미를 말하도록 동기화했습니다.
+
+## v2.60.6 - 2026-04-10
+
+- `kr_market_quote_client`의 representative quote 캐시에 짧은 `wait_timeout`과 `last_success` fallback을 추가했습니다. 이제 공개 `/api/screener?country=KR&limit=20`의 cold partial 경로가 느린 대표 시세 fetch를 끝까지 기다리지 않고, 최근 정상 시세가 있으면 바로 그 값을 재사용하며 없을 때도 빈 placeholder로 빨리 복귀한 뒤 background refresh를 이어 갑니다.
+- `backend/tests/test_kr_market_quote_client.py`, `backend/tests/test_public_dashboard_timeouts.py`를 확장해 대표 시세 refresh timeout 시 stale cache 즉시 응답, 첫 timeout의 empty placeholder 복귀, screener bulk partial fallback 경로를 회귀로 고정했습니다.
+
+## v2.60.5 - 2026-04-10
+
+- 공개 `/api/country/{code}/report`는 최근 정상 `last_success` 캐시가 있으면 그 응답을 먼저 내리고, 캐시가 없더라도 최근 아카이브가 있으면 stale public fallback을 즉시 내려주도록 바꿨습니다. 최신 정밀 계산은 background refresh로 계속 이어 가기 때문에 운영에서 첫 응답이 `20초+`로 늘어지는 구간을 더 줄였습니다.
+- `country_analyzer`는 정상 리포트를 만들면 `country_report:last_success:{code}` 캐시도 함께 갱신해, 공개 국가 리포트가 timeout에 매번 새로 걸리지 않고 가장 최근의 정상 결과를 다시 사용할 수 있게 했습니다.
+- `backend/tests/test_country_router.py`를 확장해 `last_success` 즉시 응답과 archived stale public fallback 우선 경로를 회귀로 고정했습니다.
+
+## v2.60.4 - 2026-04-10
+
+- 공개 `/api/country/{code}/report`는 정밀 계산 timeout을 export timeout과 분리했습니다. 공개 경로는 더 이른 시점에 partial fallback으로 내려가 Render 워밍업이나 느린 외부 소스 구간에서도 배포 스모크의 `15초` 기준을 더 잘 맞추고, PDF/CSV export는 기존 여유 시간을 유지합니다.
+- `country report` fallback은 최근 정상 아카이브에 이미 `top_stocks`가 있으면 quick 후보 조회를 다시 돌지 않도록 순서를 정리했습니다. 그래서 timeout fallback 단계에서 quick 후보 경로를 한 번 더 기다리며 응답이 불필요하게 길어지던 구간을 줄였습니다.
+- `backend/tests/test_country_router.py`, `backend/tests/test_public_dashboard_timeouts.py`를 확장해 공개/내보내기 timeout budget 분리와 archived report 우선 fallback 경로를 회귀로 고정했습니다.
+
+## v2.60.3 - 2026-04-10
+
+- `market/opportunities`의 `next_day_focus`와 기회 아이템 빌더를 다시 정리해, `NaN`/`inf`가 섞인 예측값·분위수·trade plan 값이 들어와도 JSON 직렬화가 깨지지 않고 안전한 기본값으로 내려가도록 보강했습니다.
+- `backend/tests/test_market_service.py`에 `allow_nan=False` 직렬화 회귀와 비정상 예측값 sanitize 테스트를 추가해, 실제로 실패했던 레이더 응답 경로를 다시 고정했습니다.
+- 분포 인코더, 시장 국면, 과거 패턴 예측, 공포·탐욕 점수, `yfinance` 수익률 추출의 로그 수익률 계산을 `0`/음수 가격 안전 경로로 정리해 `verify.py --skip-frontend --live-api-smoke` 기준 `RuntimeWarning`이 남지 않도록 보강했습니다.
+- `backend/tests/test_log_safety.py`를 추가해 비정상 가격이 섞여도 `price_encoder`, `market_regime`, `historical_pattern_forecast`, `fear_greed`, `get_historical_returns`가 `RuntimeWarning` 없이 유한값만 내도록 회귀를 고정했습니다.
+
+## v2.60.2 - 2026-04-10
+
+- `/api/briefing/daily`의 내부 레이더 로딩을 soft-timeout 방식으로 다시 묶었습니다. 이제 느린 quick 레이더 작업이 취소를 늦게 받거나 늦게 끝나도 브리핑 전체가 그 cleanup를 기다리며 오래 붙잡히지 않고, partial 요약 응답이 더 빨리 내려갑니다.
+- 브리핑 회귀 테스트를 확장해, 늦게 끝나는 레이더 작업이 있어도 서비스가 빠르게 partial로 복귀하는 동작을 고정했습니다.
+- `verify.py`에 workspace lock과 `--allow-parallel` 우회 옵션을 추가해, 같은 저장소에서 regression sweep를 겹쳐 실행할 때 unittest/cache probe가 서로 간섭하던 flaky 경로를 기본값에서 막았습니다.
+- `backend/tests/test_verify_runtime.py`를 확장해 active lock 차단과 stale lock 정리까지 회귀로 고정했습니다.
+
+## v2.60.1 - 2026-04-09
+
+- 모바일 상단 chrome과 `PageHeader`, `SearchBar`, `AuthStatus` 간격을 다시 조정해 `네비게이션 -> 검색 -> 계정 -> 본문` 흐름이 첫 화면에서 과하게 쌓이지 않도록 정리했습니다.
+- `/auth`, `/settings`, `/portfolio`, `/watchlist`, `/stock/[ticker]`의 모바일 레이아웃을 보강했습니다. segmented 전환, 입력/액션 래핑, 긴 이메일 줄바꿈, 모바일 카드 액션 정렬, 고정 폭 보조 패널 제거를 함께 맞췄습니다.
+- `/stock/[ticker]`는 차트 컨트롤 래핑을 정리하고, 최근 재무 스냅샷에 모바일 카드 요약을 추가해 좁은 화면에서는 summary-first, `md` 이상에서는 표 상세를 유지하도록 바꿨습니다.
+- `DESIGN_BIBLE.md`와 `README.md`를 갱신해 모바일 first viewport, dense action wrapping, dense table의 모바일 대체 규칙이 현재 구현과 같은 의미를 말하도록 동기화했습니다.
+- `PublicAuditStrip`와 `MetricValueCard`에 모바일 wrap 안전장치를 추가하고, `/settings`의 API 경로 표기와 `/stock/[ticker]`의 가이드·복합 점수 헤더를 더 느슨하게 재배치해 긴 메타와 값이 좁은 화면에서 잘리지 않도록 보강했습니다.
+- `/calendar`, `/watchlist/[ticker]`, `OpportunityRadarBoard`는 모바일 action row를 공용 래핑 규칙에 맞추고, 긴 운영 설명을 pill에서 본문 메모로 내려 디자인 기준의 `긴 문장을 pill 안에 넣지 않는다` 원칙과 같은 흐름으로 다시 정리했습니다.
+- `NextDayForecastCard`, `TradePlanCard`, `HistoricalPatternCard`, `SetupBacktestCard`는 상단 summary row와 5칸 metric strip을 모바일 우선 1열/2열 흐름으로 다시 배치해 종목 상세 내부 카드도 같은 반응형 리듬을 따르도록 맞췄습니다.
+- `dev_runtime.py`, `start.py`, `verify.py`의 실행기 해석 규칙을 통일했습니다. 이제 Python은 `repo-local venv -> 현재 Python -> Windows py -3`, 프론트 실행기는 `frontend/node_modules/.bin -> PATH npm/npx` 순서로 찾고, `verify.py --deployed-site-smoke`가 로컬 dev server를 불필요하게 띄우던 동작도 제거했습니다.
+- `verify.py`에 `--full-sweep`, backend requirements import probe, responsive viewport matrix 연결을 추가하고, `--skip-frontend`는 `start.py --check --skip-frontend`와 같은 의미로 동작하도록 맞췄습니다. 그래서 frontend toolchain이 없는 backend-only 점검과 missing dependency 실패가 더 짧고 분명하게 보입니다.
+- backend data 경로에서 이미 사용하던 `requests`를 `backend/requirements.txt`에 반영하고, 관련 런처/verify 회귀 테스트를 추가해 새 환경에서 requirements 누락 때문에 검증 루프가 불완전하게 깨지지 않도록 보강했습니다.
+
+## v2.60.0 - 2026-04-08
+
+- 전역 UI 디자인 시스템을 `glass/card-heavy` 톤에서 `brutal editorial + less is more` 기준으로 다시 정리했습니다. 라이트 모드를 canonical theme로 두고 `IBM Plex Sans KR`와 `IBM Plex Mono`를 기준 글꼴로 맞췄습니다.
+- `globals.css`, `layout.tsx`, `Navigation`, `SearchBar`, `AuthStatus`, `WorkspaceStateCard`를 다시 설계해 상단 chrome, 상태 카드, 입력 필드, slab/metric/data frame 규칙을 하나의 시각 언어로 통일했습니다.
+- `/compare`, `/country/[code]`, `/country/[code]/sector/[id]`, `/settings`, `/auth`, `/lab`와 홈/레이더/종목/포트폴리오 핵심 패널을 새 primitive 기준으로 정리해 pill 남발, 다중 보더, 긴 문장의 캡슐 배치를 줄였습니다.
+- `DESIGN_BIBLE.md`를 전면 갱신해 `한 블록 = 한 visible frame`, `chip은 짧은 상태만`, `긴 한국어 문장은 box보다 rhythm 우선` 규칙을 canonical spec으로 명시했습니다.
+
+## v2.59.0 - 2026-04-07
+
+- `/api/research/predictions`에 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 추가하고, `/lab` 첫 화면을 `표본 수집 퍼널 -> horizon 커버리지 -> 지금 막히는 지점` 순서로 다시 정리했습니다.
+- `prediction_capture_service`를 도입해 `stock` quick detail, `country` partial report, `market/opportunities` quick/cached 응답에서도 canonical sample을 누적하도록 복구했습니다.
+- 최근 archive만 작은 배치로 복구하는 bounded backfill을 연구실 집계 경로에 연결해, 누락된 prediction log를 한 번에 몰지 않고 되살리도록 조정했습니다.
+
+## v2.58.1 - 2026-04-07
+
+- iPhone Safari 기준으로 `Navigation`, `SearchBar`, `AuthStatus`, `PageHeader`를 다시 묶어 모바일 상단 shell을 더 낮고 읽기 쉽게 정리했습니다.
+- `WorkspaceStateCard`와 `ErrorBanner` 시각 규칙을 맞추고, `/`, `/radar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/lab`에서 `blocking / partial / empty / loading` 상태 표현을 같은 언어로 통일했습니다.
+- `/calendar` 모바일 월간 보드를 `월 제목 -> 이동 컨트롤 -> 범례 -> 월간 보드 -> 선택 날짜 agenda` 순서로 재정리하고, 날짜 셀은 `날짜 번호 + 이벤트 점/건수 + 선택 강조` 중심으로 단순화했습니다.
+
+## v2.58.0 - 2026-04-06
+
+- `다음 거래일 포커스` 추천에 단타용 `차트 점수`를 추가했습니다. 추세 정렬, MACD 모멘텀, RSI 위치, 거래량 확인, 볼린저 밴드/돌파 품질, ATR 기반 과열 여부를 묶어 1일 추천 점수에 크게 반영합니다.
+- 포커스 카드에 차트 총점, 진입 스타일, 핵심 차트 신호를 함께 보여주도록 바꿨습니다. 이제 사용자는 왜 이 종목이 뽑혔는지와 추격보다 눌림이 나은지까지 같은 카드에서 바로 확인할 수 있습니다.
+- 차트 점수 전용 백엔드 테스트와 포커스 통합 테스트를 추가해, `질서 있는 돌파`가 `과열 추격`보다 높은 평가를 받는 회귀를 고정했습니다.
+
+## v2.57.0 - 2026-04-06
+
+- `다음 거래일 포커스`의 후보군을 넓히고, 최근 급등 종목은 추격 매수를 줄이도록 감점하는 선별 로직을 추가했습니다. 이제 상단 추천은 보드 상위 몇 종목 재사용보다 `넓은 레이더 후보군 재평가`에 가깝게 동작합니다.
+
+- `/radar`에 `다음 거래일 포커스`를 추가했습니다. 이제 레이더 응답은 상위 후보 중 1일 예상 수익률, 상승 확률, 손익비, 시장 국면을 함께 본 단기 추천 1종목과 진입가/손절가/목표가를 additive로 포함합니다.
+- 기회 레이더 상단 흐름을 `단기 포커스 -> 첫 판단 스레드 -> 시장 국면 -> 20거래일 후보 보드` 순서로 다시 정리했습니다. 사용자가 먼저 바로 볼 1종목을 읽고, 그다음 전체 레이더 근거를 내려가며 확인할 수 있게 맞췄습니다.
+- `시장 국면` 카드 내부 배치도 다시 정리해 summary, 플레이북, 판단 강도, 세부 신호가 넓은 화면에서 멀리 떨어져 보이며 생기던 빈 공간을 줄였습니다.
+- 레이더 후보 보드의 확률/수익률 라벨은 `20거래일` 기준임을 명시하도록 정리했습니다. 그래서 상단 `다음 거래일 포커스`와 아래 레이더 후보 보드의 시간축이 섞여 보이던 혼선을 줄였습니다.
+
+## v2.56.0 - 2026-04-05
+
+- KR `Opportunity Radar`의 기본 유니버스를 `코스피 상위 190개 + 코스닥 상위 10개` 대표 200종목으로 고정했습니다. 그래서 레이더의 1차 스캔 숫자, 후보 보드, 설명 문구가 실제 운영 동작과 같은 의미를 말하도록 맞췄습니다.
+- KR quick path는 이제 대표 200종목 quote screen을 먼저 만들고, 그 안에서 상위 후보만 정밀 분석합니다. `KRX listing cache`나 전종목 quote 확보가 늦어질 때도 대표 유니버스 기준 후보를 더 빠르게 보여주도록 cache key와 seed 재사용 조건을 함께 정리했습니다.
+- `/radar` 페이지 헤더와 레이더 보드 문구도 `대표 유니버스`, `코스피 190개 + 코스닥 10개` 기준으로 바꿨습니다. README와 화면에서 여전히 전종목 스캔처럼 읽히던 혼선을 줄였습니다.
+
+## v2.55.2 - 2026-04-05
+
+- `/api/research/predictions`와 예측 연구실 기본 조회가 `refresh=false`여도 만기 도달한 pending 예측 로그를 짧은 background refresh로 먼저 재평가하도록 바꿨습니다. 이 경로는 cache miss 기준에서만 제한적으로 돌고, 만기 표본이 있으면 연구실 통계를 더 빨리 실측값으로 승격합니다.
+- 연구실 인사이트와 액션 큐에 `저장된 로그는 있지만 아직 실측 평가가 끝난 표본이 없는 상태`를 별도 안내하도록 보강했습니다. 이제 `stored_predictions`, `pending_predictions`, `total_predictions=0` 조합이 단순 bootstrapping 메시지로 묻히지 않습니다.
+- `archive_service.refresh_prediction_accuracy()`는 평가 요약을 반환하고, 실제로 새 표본을 평가한 경우에만 empirical calibration refresh를 이어 실행합니다. 덕분에 연구실 기본 조회와 운영 startup에서 불필요한 무거운 재보정을 줄였습니다.
+- Render 메모리 세이프 startup에서도 `prediction_accuracy_refresh`만은 제한된 timeout과 작은 limit로 실행되도록 조정했습니다. `learned_fusion`, `research archive sync`, `market opportunity prewarm` 같은 더 무거운 작업은 계속 건너뜁니다.
+- Render 배포 설정에서 연구실 DB 경로를 `/tmp` 대신 앱 경로로 옮기고, startup prediction accuracy refresh를 다시 활성화했습니다. free 플랜의 장기 영속성 한계는 남아 있지만, sleep 이후나 짧은 재시작 뒤에도 표본이 비어 보이는 시간을 줄였습니다.
+
+## v2.55.1 - 2026-04-04
+
+- 모바일 고정 상단 바 오프셋을 본문 열 기준으로 다시 맞춰, 첫 진입 시 검색 헤더와 페이지 첫 카드가 상단 UI 아래로 겹쳐 보이던 문제를 수정했습니다.
+- 모바일 메뉴 드로어를 독립 스크롤 컨테이너로 바꾸고 body scroll lock을 추가해, 긴 메뉴에서도 하단 항목까지 안정적으로 탐색할 수 있게 했습니다.
+- `info-chip`, `ui-chip`, 버튼, 경고/빈 상태 패널에 모바일 줄바꿈과 overflow 보호 규칙을 공통으로 적용해, 긴 문구가 컬러 박스나 액션 영역 밖으로 튀어나오지 않게 했습니다.
+
+## v2.55.0 - 2026-04-04
+
+- `/lab` 예측 연구실에 `지금 볼 것` 액션 큐를 추가해, horizon별 표본 부족, calibration gap, graph coverage 저하, 고신뢰 미스 같은 신호를 우선순위로 정리해 보여줍니다.
+- 최근 실측 로그를 묶어 `반복되는 실패 패턴`을 새로 노출하고, 어떤 종류의 미스가 반복되는지와 평균 오차/신뢰도를 한 번에 읽을 수 있게 했습니다.
+- `리뷰 큐`를 추가해 최근 예측 중 먼저 복기할 항목을 정렬하고, stock scope 항목은 `/stock/[ticker]` 상세 화면으로 바로 이어지게 했습니다.
+- prediction lab 응답에 `action_queue`, `failure_patterns`, `review_queue`, `prediction_type`, `prediction_label`을 additive로 확장하고, 관련 회귀 테스트와 프론트 타입을 함께 맞췄습니다.
+
+## v2.54.2 - 2026-04-04
+
+- `/api/country/KR/report`가 라이브 계산을 끝내지 못하는 구간에도 최신 아카이브 리포트를 stale-but-usable fallback으로 되살려, 대시보드의 핵심 뉴스, 상위 종목, 오늘 포커스가 한 번에 비는 현상을 줄였습니다.
+- `/api/country/KR/heatmap`은 대표 종목 quote 또는 마지막 정상 스냅샷을 우선 재사용하도록 보강해, partial fallback이 all-gray 또는 `+0.00%` 기준 화면처럼 보이는 문제를 줄였습니다.
+- `/api/market/movers/KR`는 representative quote fallback과 last-success cache를 추가해, 무료 티어 워밍업이나 짧은 타임아웃 뒤에도 상승/하락 상위 패널이 완전히 비지 않도록 조정했습니다.
+- 홈 대시보드 movers 패널은 빈 gainers/losers 배열만 도착한 partial 응답을 정상 패널로 렌더하지 않고, 지연 상태 카드로 정리해 오해를 줄였습니다.
+
+## v2.54.1 - 2026-04-04
+
+- `/watchlist`가 legacy 예측 이력 list payload를 받을 때 preview 집계가 `.get()` 호출로 죽으며 목록 전체가 실패하던 문제를 수정했습니다. 이력 payload는 이제 dict/list 두 형태를 모두 흡수하고, 관련 회귀 테스트도 추가했습니다.
+- 대시보드 지수/보조지표 fallback은 더 이상 `0`, `₩0`, `$0` 같은 숫자를 실제 값처럼 보여주지 않습니다. usable 값이 없는 경우에는 지연 안내를 먼저 보여주고, 확보된 수치만 카드로 렌더합니다.
+- 히트맵 partial fallback은 zero-change snapshot을 전부 초록색 보드로 칠하지 않고 중립 톤으로 렌더하도록 바꿨습니다. 그래서 실시간 등락률 분포 지연이 상승장처럼 오해되는 문제를 줄였습니다.
+- `기회 레이더`의 운영성 fallback 문구를 상단 안내 한 줄로 모으고, usable 후보 카드에서는 generic fallback copy를 제거했습니다. 실제 경고와 실행 포인트가 운영 메시지에 묻히지 않도록 정리했습니다.
+- `/portfolio`는 모델 포트폴리오 서브계산이 실패해도 계정 자산 요약과 보유 종목 workspace를 그대로 유지하고, `model_portfolio`만 degraded fallback으로 내려가도록 fail-open 경로를 추가했습니다.
+
+## v2.54.0 - 2026-04-04
+
+- 관심종목 row를 확장해 `tracking_enabled`, `tracking_started_at`, `tracking_updated_at`를 같은 lifecycle 안에서 관리하도록 정리하고, 별도 tracking table 없이 심화 추적 on/off를 저장하도록 바꿨습니다.
+- `/watchlist`에 `전체 / 추적 중` 필터, tracked-first 정렬, `심화 추적 시작/중지`, `상세 보기` 흐름을 추가했습니다. 추적 중인 종목은 최근 예측 라벨과 신뢰도 preview를 바로 보여줍니다.
+- 새 상세 화면 `/watchlist/[ticker]`를 추가했습니다. 이 화면은 공개 stock shell을 먼저 렌더하고, 로그인 후에는 관심종목 membership을 확인한 뒤 최근 예측 변화, 적중 기록, 현재 판단 근거를 이어서 불러옵니다.
+- 보호 API `POST /api/watchlist/{ticker}/tracking`, `DELETE /api/watchlist/{ticker}/tracking`, `GET /api/watchlist/{ticker}/tracking-detail`를 추가했습니다. 관심종목에 없는 종목으로 심화 추적을 요청하면 새 에러 코드 `SP-6017`을 반환합니다.
+- `/stock/[ticker]`에서 관심종목 여부를 확인해 심화 추적 시작/보기로 연결되는 진입 패널을 추가했고, 기존 공개 stock detail 분석과 watchlist 상세 흐름이 자연스럽게 이어지도록 정리했습니다.
+
+## v2.53.2 - 2026-04-04
+
+- 전 화면 반응형 정리를 위해 `frontend/src/app/globals.css`에 semantic `clamp()` typography / spacing / control 토큰을 추가하고, 버튼·입력·패널·테이블 래퍼를 `ui-button-*`, `ui-input`, `ui-panel*`, `ui-table-shell` 공용 primitive로 다시 묶었습니다.
+- `layout`, `Navigation`, `SearchBar`, `AuthStatus`를 같은 밀도 체계로 다시 정리해 모바일 드로어, 상단 검색, 계정 배지가 작은 화면에서도 겹치지 않도록 조정했습니다.
+- `/auth`, `/settings`, `/portfolio`, `/screener`의 line-panel, form, CTA 버튼을 공용 반응형 스타일로 옮기고, `portfolio`와 `screener`는 모바일 카드형 요약 + 데스크톱 테이블 혼합 정책으로 재구성했습니다.
+- `scripts/browser_smoke.py`에 다중 viewport 옵션을 추가해 `390x844`, `768x1024`, `1440x900` 같은 반응형 검증을 route smoke에 함께 태울 수 있게 했습니다.
+- `market_service`는 현재 유니버스 source/size와 맞는 경우에만 cached quick seed를 재사용하도록 좁혀, 큰 quick cache가 작은 mocked universe를 덮어써 `market_service` 회귀 테스트가 깨지던 문제를 함께 수정했습니다.
+
+## v2.53.1 - 2026-04-04
+
+- `/api/country/KR/report`가 실데이터에서 `NaN` 또는 `Infinity`를 포함할 때 `SP-9999` 500으로 떨어지던 운영 오류를 수정했습니다. 국가 리포트 응답은 이제 비정상 float를 `null`로 정리한 뒤 JSON으로 반환합니다.
+- settings 계정 패널의 프로필 저장 흐름을 `useAccountProfileSection` 훅으로 분리해 프로필 draft, 아이디 중복 확인, 저장 오류 처리를 페이지 렌더 로직과 분리했습니다.
+- `frontend/src/lib/api.ts`를 계속 얇게 유지하도록 `market`, `portfolio` 도메인 클라이언트를 추가로 분리했고, browser smoke의 calendar 계약도 현재 운영 UI 문구와 맞췄습니다.
+
+## v2.53.0 - 2026-04-02
+
+- 전체 워크스페이스 안정성 리팩터링의 첫 단계를 반영했습니다. 백엔드는 `route_trace`와 `route_stability_service`를 추가해 `request_phase`, `cache_state`, `served_state`, `fallback_reason`, cold-start 의심 여부를 공통 규칙으로 기록하고, `/api/diagnostics`에 route 안정성 요약과 first usable / hydration / session recovery 지표를 additive로 노출합니다.
+- `market_service`, `portfolio_service`, `distributional_return_engine`는 기존 import 계약을 깨지 않으면서 thin facade 구조로 정리하기 시작했습니다. `backend/app/services/market/*`, `backend/app/services/portfolio/*`, `backend/app/analysis/distributional/*` 패키지로 순수 helper와 validation/summary/encoder 로직을 분리해 quick/full/fallback 책임이 큰 파일 한 곳에 뭉치지 않게 바꿨습니다.
+- 프론트는 `frontend/src/lib/api/` 아래에 request/auth/error 코어를 분리하고, `/`, `/radar`, `/stock/[ticker]`, `/portfolio`, `/watchlist`, `/settings`에서 SSR 성공, hydration refetch 성공/timeout, panel degrade, session recovery failure를 공통 방식으로 기록합니다. 그래서 “HTML은 200인데 hydration 뒤 blank/error-only로 무너지는” 회귀를 settings diagnostics와 browser smoke에서 더 빨리 볼 수 있습니다.
+- route 안정성 기준에 맞춰 홈과 레이더도 독립 패널 단위로 계측하고, stock detail quick/full, portfolio/watchlist panel isolation, diagnostics UI까지 같은 언어로 묶었습니다. 이 패스는 UI 재디자인이 아니라 shell/quick/full과 세션/패널 실패를 서로 독립적으로 다루는 구조 정리에 집중합니다.
+
+## v2.52.11 - 2026-04-02
+
+- KR 레이더의 `quick quote-only` 점수식이 상단 급등 종목에서 너무 빨리 `90.0` 상한에 닿아 카드가 같은 점수로 평탄해지던 문제를 조정했습니다. 이제 quick 후보는 `변동률 + 상대 순위`를 함께 반영하되 상한을 낮춰, 1차 스캔 상태에서도 상위 후보 간 점수 차이가 유지됩니다.
+- `get_cached_market_opportunities()`는 이제 `detailed_scanned_count > 0`인 실제 정밀 snapshot만 `cached full`로 승격합니다. 그래서 quote-only 결과가 full cache처럼 보이며 `/radar`에서 정밀 계산이 끝난 것처럼 읽히는 혼선을 줄였습니다.
+- background full refresh는 최근 usable quick 후보를 seed로 재사용해 상위 종목 정밀 스캔을 다시 시도합니다. 응답은 계속 quick로 먼저 살리되, 뒤에서는 이미 확보된 후보를 바로 분석하게 바꿔 full snapshot이 올라올 가능성을 높였습니다.
+- 레이더/포트폴리오/관심종목 UI에서도 `전수 1차 스캔` 후보는 `레이더 점수` 대신 `1차 스캔 점수`로 표시하도록 정리했습니다. 그래서 quick quote-only 후보를 정밀 레이더 점수처럼 오해하기 어렵게 맞췄습니다.
+>>>>>>> 373595e (feat: expand archive and calendar coverage)
 
 ## v2.52.10 - 2026-03-30
 

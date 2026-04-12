@@ -49,7 +49,7 @@ class ResearchSource:
     home_url: str
     feed_url: str | None = None
     page_url: str | None = None
-    entry_limit: int = 6
+    entry_limit: int = 10
     title_keywords: tuple[str, ...] = ()
     verify_ssl: bool = True
 
@@ -64,7 +64,7 @@ SOURCES: tuple[ResearchSource, ...] = (
         category="한국 경제 전망·정책 연구",
         home_url="https://www.kdi.re.kr/research/reportList",
         page_url="https://www.kdi.re.kr/research/reportList",
-        entry_limit=8,
+        entry_limit=12,
         verify_ssl=False,
     ),
     ResearchSource(
@@ -96,7 +96,40 @@ SOURCES: tuple[ResearchSource, ...] = (
         category="FOMC·통화정책",
         home_url="https://www.federalreserve.gov/newsevents/pressreleases.htm",
         feed_url="https://www.federalreserve.gov/feeds/press_monetary.xml",
-        entry_limit=8,
+        entry_limit=10,
+    ),
+    ResearchSource(
+        id="fed_feds_notes",
+        name="Federal Reserve FEDS Notes",
+        region_code="US",
+        organization_type="연준 리서치 노트",
+        language="en",
+        category="미국 정책·시장 리서치 노트",
+        home_url="https://www.federalreserve.gov/econres/notes/feds-notes/default.htm",
+        feed_url="https://www.federalreserve.gov/feeds/feds_notes.xml",
+        entry_limit=10,
+    ),
+    ResearchSource(
+        id="fed_feds_papers",
+        name="Federal Reserve FEDS Papers",
+        region_code="US",
+        organization_type="연준 워킹페이퍼",
+        language="en",
+        category="미국 거시·금융 워킹페이퍼",
+        home_url="https://www.federalreserve.gov/econres/feds/index.htm",
+        feed_url="https://www.federalreserve.gov/feeds/feds.xml",
+        entry_limit=10,
+    ),
+    ResearchSource(
+        id="fed_ifdp_papers",
+        name="Federal Reserve IFDP Papers",
+        region_code="US",
+        organization_type="연준 국제금융 토론자료",
+        language="en",
+        category="국제금융·글로벌 매크로 연구",
+        home_url="https://www.federalreserve.gov/econres/ifdp/index.htm",
+        feed_url="https://www.federalreserve.gov/feeds/ifdp.xml",
+        entry_limit=10,
     ),
     ResearchSource(
         id="ecb_research_bulletin",
@@ -107,7 +140,26 @@ SOURCES: tuple[ResearchSource, ...] = (
         category="유로존 연구 브리프",
         home_url="https://www.ecb.europa.eu/press/research-publications/resbull/html/index.en.html",
         feed_url="https://www.ecb.europa.eu/rss/rbu.rss",
-        entry_limit=8,
+        entry_limit=10,
+    ),
+    ResearchSource(
+        id="ecb_publications",
+        name="ECB Publications",
+        region_code="EU",
+        organization_type="중앙은행 보고서",
+        language="en",
+        category="유로존 경제·금융 보고서",
+        home_url="https://www.ecb.europa.eu/pub/html/index.en.html",
+        feed_url="https://www.ecb.europa.eu/rss/pub.html",
+        entry_limit=10,
+        title_keywords=(
+            "economic bulletin",
+            "financial stability review",
+            "macroprudential bulletin",
+            "research bulletin",
+            "working paper",
+            "occasional paper",
+        ),
     ),
     ResearchSource(
         id="boj_policy_research_en",
@@ -118,7 +170,7 @@ SOURCES: tuple[ResearchSource, ...] = (
         category="통화정책·리서치",
         home_url="https://www.boj.or.jp/en/",
         feed_url="https://www.boj.or.jp/en/rss/whatsnew.xml",
-        entry_limit=8,
+        entry_limit=10,
         title_keywords=(
             "outlook",
             "economic activity",
@@ -477,7 +529,7 @@ async def list_public_research_reports(
     limit: int = 40,
     auto_refresh: bool = True,
 ) -> list[dict[str, Any]]:
-    normalized_region = region_code if region_code in SUPPORTED_REGIONS else "KR"
+    normalized_region = region_code if region_code in SUPPORTED_REGIONS else None
     allowed_sources = _allowed_source_ids()
     if source_id and source_id not in allowed_sources:
         return []
