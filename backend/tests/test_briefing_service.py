@@ -7,6 +7,70 @@ from app.services import briefing_service
 
 
 class BriefingServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_daily_briefing_persists_last_success_snapshot(self):
+        radar_payload = {
+            "country_code": "KR",
+            "generated_at": "2026-04-12T09:00:00",
+            "market_regime": {
+                "label": "상승 우위",
+                "stance": "risk_on",
+                "conviction": 71.2,
+                "summary": "상위 후보가 유지되고 있습니다.",
+            },
+            "total_scanned": 200,
+            "actionable_count": 6,
+            "bullish_count": 18,
+            "universe_source": "cache",
+            "universe_note": "cached",
+            "opportunities": [
+                {
+                    "ticker": "005930.KS",
+                    "name": "삼성전자",
+                    "sector": "Information Technology",
+                    "action": "분할 매수",
+                    "up_probability": 68.4,
+                    "confidence": 54.2,
+                    "predicted_return_pct": 2.3,
+                    "execution_note": "대표 후보 유지",
+                }
+            ],
+        }
+        cache_set = AsyncMock(return_value=None)
+        with (
+            patch("app.services.briefing_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.briefing_service.cache.set", new=cache_set),
+            patch(
+                "app.services.briefing_service.market_session_service.get_market_sessions",
+                new=AsyncMock(
+                    return_value={
+                        "sessions": [
+                            {
+                                "country_code": "KR",
+                                "name_local": "한국",
+                                "is_open": False,
+                            }
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "app.services.briefing_service.db.research_report_status",
+                new=AsyncMock(return_value={"todays_reports": 0, "total_reports": 0, "source_count": 0, "last_synced_at": None}),
+            ),
+            patch("app.services.briefing_service._upcoming_events", new=AsyncMock(return_value=[])),
+            patch(
+                "app.services.briefing_service.market_service.get_cached_market_opportunities",
+                new=AsyncMock(return_value=radar_payload),
+            ),
+        ):
+            result = await briefing_service.get_daily_briefing()
+
+        self.assertFalse(result["partial"])
+        self.assertEqual(cache_set.await_count, 2)
+        written_keys = [call.args[0] for call in cache_set.await_args_list]
+        self.assertTrue(any(str(key).startswith("daily_briefing:v1:") for key in written_keys))
+        self.assertTrue(any(str(key).startswith("daily_briefing:last_success:v1:") for key in written_keys))
+
     async def test_daily_briefing_falls_back_when_radar_is_slow(self):
         with (
             patch("app.services.briefing_service.cache.get", new=AsyncMock(return_value=None)),

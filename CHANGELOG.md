@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.33 - 2026-04-12
+
+- `/api/briefing/daily`는 이제 5분 본캐시 miss 시 같은 날짜의 `daily_briefing:last_success` 스냅샷을 먼저 재사용하고, 백그라운드 warmup으로 최신 브리핑을 다시 채웁니다. 그래서 첫 요청이 6초 timeout shell로 떨어지기보다 직전 브리핑을 바로 보여 주고, 뒤에서 최신 스냅샷으로 자연스럽게 따라붙도록 정리했습니다.
+- `backend/app/services/briefing_service.py`는 이제 정상 브리핑 응답을 본캐시와 함께 `last_success` 키에도 저장합니다. partial snapshot이더라도 세션/시장 요약/포커스 카드가 있는 usable 응답은 더 오래 재사용할 수 있게 맞췄습니다.
+- `backend/tests/test_briefing_service.py`와 `backend/tests/test_public_dashboard_timeouts.py`에는 이 `last_success` 저장과 seed 우선 응답 회귀를 추가했습니다.
+
 ## v2.61.32 - 2026-04-12
 
 - startup prewarm은 이제 `KR country report`가 2초 안에 끝나지 않아도 `country_report_startup_seed`를 먼저 `last_success` 캐시에 고정합니다. 그래서 배포 직후나 cold wake 직후 첫 `/` 진입이 startup guard 빈 shell 대신, archived/quick 후보를 최대한 섞은 준비된 시장 스냅샷을 더 빨리 읽을 수 있습니다.

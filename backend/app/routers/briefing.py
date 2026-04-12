@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.data import cache as data_cache
 from app.errors import SP_5011, SP_5012, SP_5018
 from app.runtime import get_or_create_background_job, get_runtime_state
 from app.utils.lazy_module import LazyModuleProxy
@@ -29,6 +30,24 @@ PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS = 180
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO = 0.5
 PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO = 0.02
 PUBLIC_STARTUP_GUARD_SETTLED_TASK_STATUSES = frozenset({"ok", "warning"})
+
+
+def _daily_briefing_last_success_cache_key(day: str | None = None) -> str:
+    target_day = day or datetime.now().date().isoformat()
+    return f"daily_briefing:last_success:v1:{target_day}"
+
+
+async def _load_daily_briefing_last_success() -> dict | None:
+    payload = await data_cache.get(_daily_briefing_last_success_cache_key())
+    if not isinstance(payload, dict):
+        return None
+    if not (
+        list(payload.get("sessions") or [])
+        or list(payload.get("market_view") or [])
+        or list(payload.get("focus_cards") or [])
+    ):
+        return None
+    return dict(payload)
 
 
 def _maybe_trim_public_route_memory(reason: str) -> None:
@@ -218,6 +237,24 @@ async def get_daily_briefing():
         )
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
+    seeded_payload = await _load_daily_briefing_last_success()
+    if seeded_payload is not None:
+        _spawn_daily_briefing_warmup(label="Daily briefing seed refresh")
+        route_stability_service.record_route_trace(
+            "daily_briefing",
+            build_route_trace(
+                route_key="daily_briefing",
+                request_phase="seed",
+                cache_state="hit",
+                elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+                timeout_budget_ms=PUBLIC_ENDPOINT_TIMEOUT_SECONDS * 1000.0,
+                upstream_source="briefing_service",
+                payload=seeded_payload,
+                served_state="partial" if seeded_payload.get("partial") else "full",
+            ),
+        )
+        _schedule_public_route_memory_trim("daily_briefing")
+        return seeded_payload
     briefing_task: asyncio.Task | None = None
     try:
         briefing_task = asyncio.create_task(_load_daily_briefing_payload())

@@ -11,6 +11,7 @@ from app.services import calendar_service, market_service, market_session_servic
 log = logging.getLogger("stock_predict.briefing")
 BRIEFING_RADAR_TIMEOUT_SECONDS = 8
 BRIEFING_CACHE_TTL_SECONDS = 300
+BRIEFING_LAST_SUCCESS_TTL_SECONDS = 1800
 BRIEFING_CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 
 
@@ -41,6 +42,32 @@ def _event_summary(event: dict) -> str:
     if subtitle:
         return f"{base} · {subtitle}"
     return base
+
+
+def daily_briefing_cache_key(day: str | None = None) -> str:
+    target_day = day or datetime.now().date().isoformat()
+    return f"daily_briefing:v1:{target_day}"
+
+
+def daily_briefing_last_success_cache_key(day: str | None = None) -> str:
+    target_day = day or datetime.now().date().isoformat()
+    return f"daily_briefing:last_success:v1:{target_day}"
+
+
+async def _persist_daily_briefing_last_success(day: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    if not (
+        list(payload.get("sessions") or [])
+        or list(payload.get("market_view") or [])
+        or list(payload.get("focus_cards") or [])
+    ):
+        return
+    await cache.set(
+        daily_briefing_last_success_cache_key(day),
+        payload,
+        BRIEFING_LAST_SUCCESS_TTL_SECONDS,
+    )
 
 
 async def _upcoming_events() -> list[dict]:
@@ -165,7 +192,7 @@ async def _load_briefing_radar(country_code: str) -> dict:
 
 async def get_daily_briefing() -> dict:
     today = datetime.now().date().isoformat()
-    cache_key = f"daily_briefing:v1:{today}"
+    cache_key = daily_briefing_cache_key(today)
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -235,6 +262,7 @@ async def get_daily_briefing() -> dict:
         "priorities": _build_priority_lines(sessions_data["sessions"], radar_map, archive_status),
     }
     await cache.set(cache_key, response, BRIEFING_CACHE_TTL_SECONDS)
+    await _persist_daily_briefing_last_success(today, response)
     return response
 
 

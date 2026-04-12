@@ -844,6 +844,35 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(response.json()["fallback_reason"], "briefing_timeout")
         warmup.assert_not_called()
 
+    def test_daily_briefing_seed_returns_last_success_snapshot_before_full_fetch(self):
+        seeded_payload = {
+            "generated_at": "2026-04-12T09:00:00",
+            "partial": False,
+            "fallback_reason": None,
+            "sessions": [{"country_code": "KR", "name_local": "한국", "is_open": False}],
+            "market_view": [{"country_code": "KR", "label": "상승 우위", "summary": "직전 스냅샷"}],
+            "focus_cards": [{"ticker": "005930.KS", "name": "삼성전자"}],
+            "upcoming_events": [],
+            "research_archive": {"todays_reports": 0},
+            "priorities": ["직전 스냅샷을 먼저 표시합니다."],
+        }
+        with (
+            patch("app.routers.briefing._should_use_ultra_fast_public_fallback", return_value=False),
+            patch("app.routers.briefing._should_use_startup_public_route_guard", return_value=False),
+            patch("app.routers.briefing._load_daily_briefing_last_success", new=AsyncMock(return_value=seeded_payload)),
+            patch(
+                "app.routers.briefing._load_daily_briefing_payload",
+                new=AsyncMock(side_effect=AssertionError("seeded snapshot should bypass full briefing fetch")),
+            ),
+            patch("app.routers.briefing._spawn_daily_briefing_warmup") as warmup,
+            patched_client() as client,
+        ):
+            response = client.get("/api/briefing/daily")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), seeded_payload)
+        warmup.assert_called_once()
+
     def test_screener_timeout_returns_snapshot_fallback(self):
         async def _slow_gather(*args, **kwargs):
             await asyncio.sleep(0.05)
