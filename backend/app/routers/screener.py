@@ -111,6 +111,10 @@ def _build_screener_cache_key(
     )
 
 
+def _build_public_screener_startup_seed_cache_key(country: str) -> str:
+    return f"screener:startup_seed:v1:{country}:default"
+
+
 def _select_candidate_tickers(universe: dict[str, list[str]], sector: str | None) -> list[str]:
     seen: set[str] = set()
     tickers: list[str] = []
@@ -259,6 +263,83 @@ def _with_screener_partial(payload: dict, *, fallback_reason: str) -> dict:
     return response
 
 
+def _is_default_public_screener_query(
+    *,
+    country: str,
+    sector: str | None,
+    market_cap_min: float | None,
+    market_cap_max: float | None,
+    price_min: float | None,
+    price_max: float | None,
+    pe_min: float | None,
+    pe_max: float | None,
+    pb_max: float | None,
+    dividend_yield_min: float | None,
+    beta_max: float | None,
+    change_pct_min: float | None,
+    change_pct_max: float | None,
+    pct_from_52w_high_min: float | None,
+    pct_from_52w_high_max: float | None,
+    revenue_growth_min: float | None,
+    roe_min: float | None,
+    debt_to_equity_max: float | None,
+    avg_volume_min: float | None,
+    profitable_only: bool,
+    score_min: float | None,
+    sort_by: str,
+    sort_dir: str,
+) -> bool:
+    return (
+        country == "KR"
+        and sector is None
+        and market_cap_min is None
+        and market_cap_max is None
+        and price_min is None
+        and price_max is None
+        and pe_min is None
+        and pe_max is None
+        and pb_max is None
+        and dividend_yield_min is None
+        and beta_max is None
+        and change_pct_min is None
+        and change_pct_max is None
+        and pct_from_52w_high_min is None
+        and pct_from_52w_high_max is None
+        and revenue_growth_min is None
+        and roe_min is None
+        and debt_to_equity_max is None
+        and avg_volume_min is None
+        and not profitable_only
+        and score_min is None
+        and sort_by == "market_cap"
+        and sort_dir == "desc"
+    )
+
+
+def _clone_seeded_screener_response(
+    payload: dict,
+    *,
+    sort_by: str,
+    sort_dir: str,
+    limit: int,
+    fallback_reason: str,
+) -> dict:
+    response = dict(payload)
+    seeded_results = [dict(item) for item in list(payload.get("results") or [])]
+    sorted_results = _sort_screened_results(
+        seeded_results,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+    )
+    response["results"] = sorted_results
+    response["total"] = len(sorted_results)
+    response["sectors"] = list(payload.get("sectors") or [])
+    response["partial"] = True
+    response["fallback_reason"] = fallback_reason
+    return response
+
+
 def _screener_last_success_key(cache_key: str) -> str:
     return f"{cache_key}:last_success"
 
@@ -328,12 +409,33 @@ async def _load_screener_last_success(cache_key: str) -> dict | None:
     return payload
 
 
+async def _load_public_screener_startup_seed(country: str) -> dict | None:
+    payload = await cache.get(_build_public_screener_startup_seed_cache_key(country))
+    if not isinstance(payload, dict):
+        return None
+    if not list(payload.get("results") or []):
+        return None
+    return payload
+
+
 async def _persist_screener_last_success(cache_key: str, payload: dict) -> None:
     if not isinstance(payload, dict):
         return
     if not list(payload.get("results") or []):
         return
     await cache.set(_screener_last_success_key(cache_key), payload, SCREENER_LAST_SUCCESS_TTL)
+
+
+async def _persist_public_screener_startup_seed(country: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    if not list(payload.get("results") or []):
+        return
+    await cache.set(
+        _build_public_screener_startup_seed_cache_key(country),
+        payload,
+        SCREENER_SAFE_MODE_SEED_TTL,
+    )
 
 
 def _build_safe_mode_shell_response(
@@ -588,6 +690,7 @@ async def _build_seeded_safe_mode_shell_response(
     sort_dir: str,
     limit: int,
     log_message: str,
+    persist_startup_seed: bool = False,
 ) -> dict:
     response = _build_safe_mode_shell_response(
         tickers=tickers,
@@ -603,6 +706,11 @@ async def _build_seeded_safe_mode_shell_response(
         cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
         label=f"screener safe-shell cache write {cache_key}",
     )
+    if persist_startup_seed:
+        await _timed_screener_cache_write(
+            _persist_public_screener_startup_seed(country, response),
+            label=f"screener startup seed write {country}",
+        )
     logging.info(log_message, cache_key)
     _maybe_trim_public_route_memory("screener")
     return response
@@ -612,32 +720,7 @@ async def prewarm_public_screener_cache_seed() -> None:
     if not getattr(settings, "startup_memory_safe_mode", False):
         return
 
-    cache_key = _build_screener_cache_key(
-        country="KR",
-        sector=None,
-        market_cap_min=None,
-        market_cap_max=None,
-        price_min=None,
-        price_max=None,
-        pe_min=None,
-        pe_max=None,
-        pb_max=None,
-        dividend_yield_min=None,
-        beta_max=None,
-        change_pct_min=None,
-        change_pct_max=None,
-        pct_from_52w_high_min=None,
-        pct_from_52w_high_max=None,
-        revenue_growth_min=None,
-        roe_min=None,
-        debt_to_equity_max=None,
-        avg_volume_min=None,
-        profitable_only=False,
-        score_min=None,
-        sort_by="market_cap",
-        sort_dir="desc",
-        limit=SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
-    )
+    cache_key = _build_public_screener_startup_seed_cache_key("KR")
     cached_response = await _timed_screener_cache_lookup(
         cache.get(cache_key),
         label=f"screener startup seed lookup {cache_key}",
@@ -962,10 +1045,33 @@ async def screen_stocks(
 
     universe: dict[str, list[str]] = {}
     use_direct_kr_quick_path = country == "KR" and not needs_enrichment
+    is_default_public_query = _is_default_public_screener_query(
+        country=country,
+        sector=sector,
+        market_cap_min=market_cap_min,
+        market_cap_max=market_cap_max,
+        price_min=price_min,
+        price_max=price_max,
+        pe_min=pe_min,
+        pe_max=pe_max,
+        pb_max=pb_max,
+        dividend_yield_min=dividend_yield_min,
+        beta_max=beta_max,
+        change_pct_min=change_pct_min,
+        change_pct_max=change_pct_max,
+        pct_from_52w_high_min=pct_from_52w_high_min,
+        pct_from_52w_high_max=pct_from_52w_high_max,
+        revenue_growth_min=revenue_growth_min,
+        roe_min=roe_min,
+        debt_to_equity_max=debt_to_equity_max,
+        avg_volume_min=avg_volume_min,
+        profitable_only=profitable_only,
+        score_min=score_min,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
     try:
         if use_direct_kr_quick_path:
-            current_universe = await _load_universe()
-            selected_tickers = _select_candidate_tickers(current_universe, sector)
             if _should_avoid_cold_kr_quote_import():
                 cached_response = await _timed_screener_cache_lookup(
                     cache.get(cache_key),
@@ -993,6 +1099,31 @@ async def screen_stocks(
                     )
                     _maybe_trim_public_route_memory("screener")
                     return response
+                if is_default_public_query:
+                    startup_seed_response = await _timed_screener_cache_lookup(
+                        _load_public_screener_startup_seed(country),
+                        label=f"screener startup seed lookup {country}",
+                    )
+                    if startup_seed_response is not None:
+                        response = _clone_seeded_screener_response(
+                            startup_seed_response,
+                            sort_by=sort_by,
+                            sort_dir=sort_dir,
+                            limit=limit,
+                            fallback_reason="kr_safe_shell_warming",
+                        )
+                        await _timed_screener_cache_write(
+                            cache.set(cache_key, response, SCREENER_SAFE_MODE_SEED_TTL),
+                            label=f"screener startup seed hydrate {cache_key}",
+                        )
+                        logging.info(
+                            "Serving screener startup seed for %s from shared safe-mode cache.",
+                            cache_key,
+                        )
+                        _maybe_trim_public_route_memory("screener")
+                        return response
+                current_universe = await _load_universe()
+                selected_tickers = _select_candidate_tickers(current_universe, sector)
                 return await _build_seeded_safe_mode_shell_response(
                     cache_key=cache_key,
                     tickers=selected_tickers,
@@ -1003,7 +1134,10 @@ async def screen_stocks(
                     sort_dir=sort_dir,
                     limit=limit,
                     log_message="Serving screener safe shell for %s because Render safe mode avoids cold KR quote import.",
+                    persist_startup_seed=is_default_public_query,
                 )
+            current_universe = await _load_universe()
+            selected_tickers = _select_candidate_tickers(current_universe, sector)
             should_use_cold_start_partial = limit > SCREENER_COLD_START_KR_CANDIDATES and len(selected_tickers) > SCREENER_COLD_START_KR_CANDIDATES
             if should_use_cold_start_partial:
                 cached_response = await _timed_screener_cache_lookup(
@@ -1103,6 +1237,7 @@ async def screen_stocks(
                         sort_dir=sort_dir,
                         limit=limit,
                         log_message="Skipping screener cache warmup for %s because Render safe mode is active and shell fallback already served.",
+                        persist_startup_seed=is_default_public_query,
                     )
                 response, response_timed_out = await _run_screener_timeboxed(
                     _build_response(

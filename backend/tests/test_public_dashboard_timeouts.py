@@ -1525,32 +1525,7 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
             "Information Technology": ["005930.KS", "000660.KS"],
             "Financials": ["105560.KS"],
         }
-        expected_cache_key = screener_router._build_screener_cache_key(
-            country="KR",
-            sector=None,
-            market_cap_min=None,
-            market_cap_max=None,
-            price_min=None,
-            price_max=None,
-            pe_min=None,
-            pe_max=None,
-            pb_max=None,
-            dividend_yield_min=None,
-            beta_max=None,
-            change_pct_min=None,
-            change_pct_max=None,
-            pct_from_52w_high_min=None,
-            pct_from_52w_high_max=None,
-            revenue_growth_min=None,
-            roe_min=None,
-            debt_to_equity_max=None,
-            avg_volume_min=None,
-            profitable_only=False,
-            score_min=None,
-            sort_by="market_cap",
-            sort_dir="desc",
-            limit=screener_router.SCREENER_STARTUP_SAFE_MODE_SEED_LIMIT,
-        )
+        expected_cache_key = screener_router._build_public_screener_startup_seed_cache_key("KR")
 
         with (
             patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
@@ -1573,6 +1548,70 @@ class PublicDashboardTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["ticker"], "005930.KS")
         self.assertEqual(payload["results"][0]["current_price"], 0.0)
         trim_memory.assert_called_once_with("screener_startup_prewarm")
+
+    def test_screener_safe_mode_reuses_shared_startup_seed_across_limit_mismatch(self):
+        seed_payload = {
+            "results": [
+                {
+                    "ticker": f"{index:06d}.KS",
+                    "name": f"Seed {index}",
+                    "sector": "Information Technology",
+                    "industry": "N/A",
+                    "market_cap": float(1_000_000_000 - index),
+                    "current_price": 0.0,
+                    "change_pct": 0.0,
+                    "pe_ratio": None,
+                    "pb_ratio": None,
+                    "dividend_yield": None,
+                    "beta": None,
+                    "week52_high": None,
+                    "week52_low": None,
+                    "pct_from_52w_high": None,
+                    "revenue_growth": None,
+                    "roe": None,
+                    "debt_to_equity": None,
+                    "avg_volume": None,
+                    "profit_margins": None,
+                    "score": None,
+                    "country_code": "KR",
+                }
+                for index in range(1, 21)
+            ],
+            "total": 20,
+            "sectors": ["Information Technology"],
+            "partial": True,
+            "fallback_reason": "kr_safe_shell_warming",
+        }
+        shared_seed_key = screener_router._build_public_screener_startup_seed_cache_key("KR")
+
+        async def _cache_get(key):
+            if key == shared_seed_key:
+                return seed_payload
+            return None
+
+        with (
+            patch("app.routers.screener.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.screener._allow_public_screener_warmup", return_value=False),
+            patch("app.routers.screener._is_kr_market_quote_module_warm", return_value=False),
+            patch("app.routers.screener.cache.get", new=AsyncMock(side_effect=_cache_get)),
+            patch("app.routers.screener.cache.set", new=AsyncMock()) as cache_set,
+            patch(
+                "app.routers.screener.get_universe",
+                new=AsyncMock(side_effect=AssertionError("shared startup seed should avoid fallback universe lookup")),
+            ),
+            patch("app.routers.screener.get_or_create_background_job") as background_job,
+            patched_client() as client,
+        ):
+            response = client.get("/api/screener?country=KR&limit=10")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "kr_safe_shell_warming")
+        self.assertEqual(len(payload["results"]), 10)
+        self.assertEqual(payload["results"][0]["ticker"], "000001.KS")
+        background_job.assert_not_called()
+        cache_set.assert_awaited_once()
 
 
 if __name__ == "__main__":

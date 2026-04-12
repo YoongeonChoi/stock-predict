@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.61.36 - 2026-04-12
+
+- `backend/app/routers/screener.py`는 이제 startup safe mode에서 exact cache miss가 나더라도 기본 공개 쿼리라면 공용 `startup seed`를 먼저 재사용합니다. 그래서 `/screener` 첫 진입의 `limit=10` seed와 운영 스모크의 `limit=20/50` 요청이 서로 다른 cache key 때문에 다시 cold shell을 만들던 경로를 줄이고, 첫 usable partial을 더 빨리 되돌릴 수 있게 정리했습니다.
+- `backend/app/routers/screener.py`의 startup prewarm은 이제 limit-specific exact key 대신 공용 `screener:startup_seed:v1:KR:default` seed를 기록합니다. 이후 기본 공개 스크리너 요청은 이 seed를 정확한 요청 key로 hydrate해 재사용하므로, 배포 직후 첫 스크리너 hit이 fallback universe 재계산까지 다시 내려가는 빈도를 더 낮췄습니다.
+- `backend/tests/test_public_dashboard_timeouts.py`에는 startup screener seed가 공용 key에 기록되는지, 그리고 `limit` mismatch가 있어도 같은 seed를 먼저 재사용해 universe lookup 없이 응답하는지 확인하는 회귀를 추가했습니다.
+
 ## v2.61.35 - 2026-04-12
 
 - `backend/app/routers/briefing.py`는 이제 startup guard와 memory guard 응답을 각각 `briefing_startup_guard`, `briefing_memory_guard`로 명시합니다. 기존에는 이 구간도 payload 상 `briefing_timeout`으로 보여서, 첫 진입 보호 응답이 실제 timeout처럼 오해되던 문제가 있었습니다.
