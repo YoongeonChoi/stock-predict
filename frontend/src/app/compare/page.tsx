@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import ErrorBanner from "@/components/ErrorBanner";
 import PageHeader from "@/components/PageHeader";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { changeColor, cn, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
@@ -51,11 +53,31 @@ function bestValue(results: Array<Record<string, unknown>>, key: string): number
   return Math.max(...values);
 }
 
+interface CompareResult {
+  ticker: string;
+  name?: string;
+  error?: string;
+  current_price?: number;
+  change_pct?: number;
+  market_cap?: number;
+  pe_ratio?: number;
+  pb_ratio?: number;
+  ev_ebitda?: number;
+  roe?: number;
+  revenue_growth?: number;
+  dividend_yield?: number;
+  beta?: number;
+  score?: { total?: number };
+  [key: string]: unknown;
+}
+
 export default function ComparePage() {
-  const [input, setInput] = useState("");
-  const [results, setResults] = useState<Array<Record<string, any>>>([]);
+  const searchParams = useSearchParams();
+  const [input, setInput] = useState(searchParams.get("tickers") ?? "");
+  const [results, setResults] = useState<CompareResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const { toast } = useToast();
 
   const handleCompare = async () => {
     const tickers = input
@@ -67,12 +89,27 @@ export default function ComparePage() {
     setError(null);
     try {
       const data = await api.compare(tickers);
-      setResults(Array.isArray(data) ? (data as Array<Record<string, any>>) : []);
+      setResults(Array.isArray(data) ? (data as CompareResult[]) : []);
+      const url = new URL(window.location.href);
+      url.searchParams.set("tickers", tickers.join(","));
+      window.history.replaceState(null, "", url.toString());
     } catch (caught) {
       setError(toError(caught));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleShareLink = () => {
+    const tickers = input.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
+    if (tickers.length < 2) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tickers", tickers.join(","));
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      toast("비교 링크가 클립보드에 복사되었습니다.", "success");
+    }).catch(() => {
+      toast("링크 복사에 실패했습니다.", "error");
+    });
   };
 
   const validResults = results.filter((result) => !result.error);
@@ -114,6 +151,11 @@ export default function ComparePage() {
           <button onClick={handleCompare} disabled={loading} className="ui-button-primary px-6">
             {loading ? "불러오는 중..." : "비교 시작"}
           </button>
+          {validResults.length > 0 ? (
+            <button onClick={handleShareLink} className="ui-button-secondary px-4">
+              링크 복사
+            </button>
+          ) : null}
         </div>
       </section>
 

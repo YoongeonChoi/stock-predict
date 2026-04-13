@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import dynamic from "next/dynamic";
+
 import { useAuth } from "@/components/AuthProvider";
 import { WarningBanner } from "@/components/ErrorBanner";
 import ForecastDeltaCard from "@/components/ForecastDeltaCard";
@@ -13,23 +15,21 @@ import MetricValueCard from "@/components/MetricValueCard";
 import PageHeader from "@/components/PageHeader";
 import PivotLevelsCard from "@/components/PivotLevelsCard";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
-import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
+import { useToast } from "@/components/Toast";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
-const CandlestickChart = dynamic(() => import("@/components/charts/CandlestickChart"), { ssr: false });
 import FreeKrForecastCard from "@/components/charts/FreeKrForecastCard";
-import dynamic from "next/dynamic";
 import NextDayForecastCard from "@/components/charts/NextDayForecastCard";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
+import TechnicalSummary from "@/components/charts/TechnicalSummary";
+import { api } from "@/lib/api";
 
+const CandlestickChart = dynamic(() => import("@/components/charts/CandlestickChart"), { ssr: false });
 const PriceChart = dynamic(() => import("@/components/charts/PriceChart"), { ssr: false });
 const ScoreRadial = dynamic(() => import("@/components/charts/ScoreRadial"), { ssr: false });
 const EarningsSurprise = dynamic(() => import("@/components/charts/EarningsSurprise"), { ssr: false });
-import TechnicalSummary from "@/components/charts/TechnicalSummary";
-import { useToast } from "@/components/Toast";
-import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
-import { api } from "@/lib/api";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
 import type { StockDetail, WatchlistItem } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
