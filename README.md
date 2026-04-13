@@ -30,12 +30,18 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.61.40`
+현재 릴리즈: `v2.62.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+<<<<<<< HEAD
 >>>>>>> main
+=======
+- `/archive` 기관 리서치 아카이브는 이제 한국 단일 기본값 대신 전체 지역 집계를 먼저 보여주고, 기본 표본도 `40건`까지 넓혀 더 많은 원문을 바로 읽을 수 있습니다. 기존 6개 소스에 더해 `Federal Reserve FEDS Notes`, `FEDS`, `IFDP`, `ECB Publications`를 추가해 해외 정책·연구 리포트 표본도 함께 보강했습니다.
+- `/calendar`는 이제 한국 일정만 따로 보는 화면이 아니라, 같은 월간 보드 안에서 미국·유로존·일본 핵심 매크로와 대표 기업 실적까지 함께 읽습니다. `upcoming_events` 기본 노출은 `12건`, 상단 핵심 카드도 `4건`으로 늘려 실제로 먼저 볼 일정 수가 더 풍부하게 보이도록 맞췄습니다.
+- `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 전체 지역 아카이브 조회, 추가 해외 소스 등록, 글로벌 CPI/금리결정/대표 실적 포함, 국가별 recurring dedupe 유지 회귀를 함께 추가했습니다. 앞으로는 아카이브 표본이 다시 줄거나 해외 캘린더 이벤트가 한국 recurring 일정과 섞여 사라지는 회귀를 테스트에서 바로 잡을 수 있습니다.
+>>>>>>> dev-local-20260413
 - `country report` PDF export는 이제 한글 폰트에 없는 이모지를 그대로 밀어 넣지 않고, `[하락]`, `[상승]`, `[현금유출]` 같은 한국어 표식으로 먼저 치환합니다. 그래서 `/api/country/KR/report/pdf`가 운영 로그에 missing glyph 경고를 남기던 경로를 줄이고, 같은 요약 문구도 더 안정적으로 PDF로 내려가게 맞췄습니다.
 - `/api/screener` startup guard가 shared seed가 없을 때 `limit=10` safe shell을 먼저 보여줘도, 공용 startup seed는 별도로 `36개` 기준으로 남깁니다. 그래서 첫 작은 요청 하나 때문에 직후 `limit=50` 요청까지 `10개짜리 partial`로 줄어드는 seed 오염을 막고, 빠른 첫 응답과 충분한 후속 후보 수를 같이 유지하도록 맞췄습니다.
 - `/api/screener` startup guard는 이제 shared startup seed가 아직 준비되지 않은 첫 찰나에도 live KR bulk quote path로 흘러가지 않고, 즉시 safe shell을 만들어 반환합니다. 그래서 배포 직후 첫 `/screener?country=KR&limit=10` hit이 seed race 때문에 다시 10초 안팎 full 계산으로 새던 빈틈을 한 번 더 줄였습니다.
