@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { useToast } from "@/components/Toast";
 import WorkspaceStateCard from "@/components/WorkspaceStateCard";
 import type {
   PortfolioRecommendationBudget,
@@ -194,6 +195,21 @@ export default function PortfolioRecommendationPanel({
   errorActionLabel = "다시 불러오기",
   onRetry,
 }: Props) {
+  const { toast } = useToast();
+
+  function handleCopyRecommendations() {
+    if (recommendations.length === 0) return;
+    const lines = recommendations.map((item) =>
+      `${item.name} (${item.ticker}) · 목표 ${item.target_weight_pct.toFixed(1)}% · ${actionLabel(item.action)} · 기대수익 ${formatPct(expectedReturn20d(item))}`
+    );
+    const text = `[${title}]\n${lines.join("\n")}`;
+    navigator.clipboard.writeText(text).then(() => {
+      toast("추천 결과가 클립보드에 복사되었습니다.", "success");
+    }).catch(() => {
+      toast("복사에 실패했습니다.", "error");
+    });
+  }
+
   return (
     <div className="card min-w-0 !p-0 overflow-hidden">
       <div className="border-b border-border px-5 py-4">
@@ -202,7 +218,14 @@ export default function PortfolioRecommendationPanel({
             <h2 className="section-title">{title}</h2>
             <p className="section-copy">{description}</p>
           </div>
-          {budget ? <span className="info-chip">{budget.style_label}</span> : null}
+          <div className="flex items-center gap-2">
+            {budget ? <span className="info-chip">{budget.style_label}</span> : null}
+            {recommendations.length > 0 ? (
+              <button onClick={handleCopyRecommendations} className="ui-button-secondary px-3 text-xs">
+                복사
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
