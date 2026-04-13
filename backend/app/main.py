@@ -1,8 +1,24 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Awaitable, Callable
+
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            traces_sample_rate=0.05,
+            profiles_sample_rate=0.0,
+            send_default_pii=False,
+            enable_tracing=True,
+            environment=os.getenv("RENDER_SERVICE_NAME", "local"),
+        )
+    except Exception:
+        pass
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -343,6 +359,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://*.yoongeon.xyz; frame-ancestors 'none'"
     return response
 
 

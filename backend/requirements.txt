@@ -17,3 +17,4 @@ pykrx==1.0.51
 pandas-market-calendars==5.3.2
 lxml==6.0.3
 requests==2.33.1
+sentry-sdk[fastapi]==2.57.0
