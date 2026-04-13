@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypedDict
 
 from fastapi import Header
 
 from app.data.supabase_client import SupabaseConfigError, supabase_client
 from app.errors import SP_1006, SP_5001, SP_6014
 from app.exceptions import ApiAppException
+
+
+class SupabaseUserDict(TypedDict, total=False):
+    id: str
+    email: str | None
+    new_email: str | None
+    email_confirmed_at: str | None
+    confirmed_at: str | None
+    email_change_sent_at: str | None
+    user_metadata: dict
+    raw_user_meta_data: dict
 
 
 @dataclass(frozen=True)
@@ -23,7 +35,7 @@ class AuthenticatedUser:
     birth_date: str | None = None
 
 
-def _extract_profile_fields(user: dict) -> dict[str, str | None]:
+def _extract_profile_fields(user: SupabaseUserDict) -> dict[str, str | None]:
     metadata = user.get("user_metadata")
     if not isinstance(metadata, dict):
         metadata = user.get("raw_user_meta_data")

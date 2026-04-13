@@ -1,5 +1,7 @@
+import dynamic from "next/dynamic";
 import PageHeader from "@/components/PageHeader";
-import PredictionLabDashboard from "@/components/PredictionLabDashboard";
+
+const PredictionLabDashboard = dynamic(() => import("@/components/PredictionLabDashboard"), { ssr: false });
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard from "@/components/WorkspaceStateCard";
 import { getPublicPredictionAccuracy, getPublicPredictionLab } from "@/lib/public-server-api";

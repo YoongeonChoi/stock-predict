@@ -17,7 +17,7 @@ import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/Workspace
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
-import CandlestickChart from "@/components/charts/CandlestickChart";
+const CandlestickChart = dynamic(() => import("@/components/charts/CandlestickChart"), { ssr: false });
 import FreeKrForecastCard from "@/components/charts/FreeKrForecastCard";
 import dynamic from "next/dynamic";
 import NextDayForecastCard from "@/components/charts/NextDayForecastCard";

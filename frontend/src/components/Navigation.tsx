@@ -70,6 +70,15 @@ export default function Navigation() {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileOpen]);
+
   const isDarkMode = themeReady && theme === "dark";
   const themeButtonLabel = isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환";
 
@@ -182,7 +191,7 @@ export default function Navigation() {
       </div>
 
       {mobileOpen ? (
-        <div className="fixed inset-0 z-40 overflow-hidden lg:hidden">
+        <div className="fixed inset-0 z-40 overflow-hidden lg:hidden" role="dialog" aria-modal="true" aria-label="내비게이션 메뉴">
           <button
             aria-label="메뉴 닫기"
             onClick={() => setMobileOpen(false)}
