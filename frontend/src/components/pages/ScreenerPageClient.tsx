@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
+import { useToast } from "@/components/Toast";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
 import type { ScreenerResponse, ScreenerResult } from "@/lib/api";
@@ -141,8 +143,44 @@ interface ScreenerPageClientProps {
   initialSeed?: (ScreenerResponse & { generated_at?: string; partial?: boolean; fallback_reason?: string | null }) | null;
 }
 
+function filtersFromSearchParams(sp: URLSearchParams): ScreenerFilters | null {
+  if (sp.size === 0) return null;
+  const get = (key: string) => sp.get(key) ?? "";
+  return {
+    country: get("country") || DEFAULT_FILTERS.country,
+    sector: get("sector"),
+    marketCapMin: get("market_cap_min"),
+    marketCapMax: get("market_cap_max"),
+    priceMin: get("price_min"),
+    priceMax: get("price_max"),
+    peMax: get("pe_max"),
+    pbMax: get("pb_max"),
+    dividendMin: get("dividend_min"),
+    betaMax: get("beta_max"),
+    revenueGrowthMin: get("revenue_growth_min"),
+    roeMin: get("roe_min"),
+    debtToEquityMax: get("debt_to_equity_max"),
+    avgVolumeMin: get("avg_volume_min"),
+    changePctMin: get("change_pct_min"),
+    changePctMax: get("change_pct_max"),
+    pctFrom52wHighMin: get("pct_from_52w_high_min"),
+    pctFrom52wHighMax: get("pct_from_52w_high_max"),
+    scoreMin: get("score_min"),
+    profitableOnly: get("profitable_only") === "true",
+    sortBy: get("sort_by") || DEFAULT_FILTERS.sortBy,
+    sortDir: get("sort_dir") || DEFAULT_FILTERS.sortDir,
+  };
+}
+
+function filtersToSearchParams(filters: ScreenerFilters): string {
+  const params = buildParams(filters);
+  return new URLSearchParams(params).toString();
+}
+
 export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageClientProps) {
-  const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
+  const searchParams = useSearchParams();
+  const urlFilters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams]);
+  const [filters, setFilters] = useState<ScreenerFilters>(urlFilters ?? DEFAULT_FILTERS);
   const [results, setResults] = useState<ScreenerResult[]>(initialSeed?.results ?? []);
   const [sectors, setSectors] = useState<string[]>(initialSeed?.sectors ?? []);
   const [loading, setLoading] = useState(false);
@@ -151,6 +189,24 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
     initialSeed ? { generated_at: initialSeed.generated_at, partial: initialSeed.partial, fallback_reason: initialSeed.fallback_reason } : null,
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { toast } = useToast();
+  const autoSearchedRef = useRef(false);
+
+  useEffect(() => {
+    if (autoSearchedRef.current || !urlFilters) return;
+    const hasNonDefault = Object.entries(urlFilters).some(
+      ([key, val]) => val !== DEFAULT_FILTERS[key as keyof ScreenerFilters],
+    );
+    if (hasNonDefault) {
+      autoSearchedRef.current = true;
+      runSearch(urlFilters);
+    }
+  }, []);
+
+  const handleShareLink = useCallback(() => {
+    const url = `${window.location.origin}${window.location.pathname}?${filtersToSearchParams(filters)}`;
+    navigator.clipboard.writeText(url).then(() => toast("스크리너 링크가 복사되었습니다.", "success")).catch(() => toast("복사 실패", "error"));
+  }, [filters, toast]);
 
   const runSearch = async (nextFilters: ScreenerFilters = filters) => {
     setLoading(true);
@@ -160,6 +216,8 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
       const data = await api.getScreener(buildParams(nextFilters), { timeoutMs: SCREENER_TIMEOUT_MS });
       setResults(data.results);
       setSectors(data.sectors);
+      const qs = filtersToSearchParams(nextFilters);
+      window.history.replaceState(null, "", `${window.location.pathname}?${qs}`);
       setSeedAudit({
         generated_at: (data as ScreenerResponse & { generated_at?: string }).generated_at,
         partial: (data as ScreenerResponse & { partial?: boolean }).partial,
@@ -264,6 +322,9 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
           <div className="ui-inline-actions">
             <button onClick={resetFilters} className="ui-button-secondary">기본값으로 되돌리기</button>
             <button onClick={() => runSearch()} className="ui-button-primary">조건 검색</button>
+            {results.length > 0 ? (
+              <button onClick={handleShareLink} className="ui-button-secondary">링크 복사</button>
+            ) : null}
           </div>
         </div>
 
