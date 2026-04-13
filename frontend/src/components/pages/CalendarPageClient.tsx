@@ -459,6 +459,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                           : "border-border bg-surface/60 hover:border-accent/35 hover:bg-surface"
                       } ${!inMonth ? "opacity-45" : "opacity-100"} ${hasHighImpact && !isSelected ? "border-rose-300/45" : ""}`}
                       aria-pressed={isSelected}
+                      aria-label={`${date.getMonth() + 1}월 ${date.getDate()}일${dayEvents.length > 0 ? `, 일정 ${dayEvents.length}건` : ""}${isToday ? ", 오늘" : ""}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span

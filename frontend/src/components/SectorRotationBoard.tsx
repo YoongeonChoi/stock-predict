@@ -67,7 +67,12 @@ export default function SectorRotationBoard({ data, countryCode = "KR" }: Props)
               className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/30"
             >
               <div className="min-w-[140px] shrink-0 sm:min-w-[180px]">
-                <div className="text-sm font-medium text-text">{sector.sector}</div>
+                <Link
+                  href={`/country/${countryCode}/sector/${encodeURIComponent(sector.sector)}`}
+                  className="text-sm font-medium text-text hover:text-accent transition-colors"
+                >
+                  {sector.sector}
+                </Link>
                 <div className="mt-0.5 text-[11px] text-text-secondary">
                   <Link
                     href={`/stock/${encodeURIComponent(sector.ticker)}`}

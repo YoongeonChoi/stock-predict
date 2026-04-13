@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import PublicAuditStrip from "@/components/PublicAuditStrip";
+import { useToast } from "@/components/Toast";
 import type { OpportunityRadarResponse } from "@/lib/types";
 import { cn, changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -73,6 +74,7 @@ function priceRange(low?: number | null, high?: number | null, key = "KR") {
 }
 
 export default function OpportunityRadarBoard({ data, compact = false, embedded = false }: Props) {
+  const { toast } = useToast();
   const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
   const usingFallbackUniverse = data.universe_source === "fallback";
   const usingKrxListingUniverse = data.universe_source === "krx_listing";
@@ -283,6 +285,17 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             <Link href="/lab" className="ui-button-secondary px-4">
               유사 셋업 검증 보기
             </Link>
+            {items.length > 0 ? (
+              <button
+                onClick={() => {
+                  const lines = items.map((o) => `${o.name} (${o.ticker}) · 기대수익 ${formatPct(o.expected_return_pct)} · 상승확률 ${(o.up_probability * 100).toFixed(0)}%`);
+                  navigator.clipboard.writeText(`[기회 레이더 후보]\n${lines.join("\n")}`).then(() => toast("후보 목록이 복사되었습니다.", "success")).catch(() => {});
+                }}
+                className="ui-button-secondary px-4"
+              >
+                목록 복사
+              </button>
+            ) : null}
           </div>
           <div className="ui-panel-muted mt-3 text-sm leading-6 text-text-secondary">
             {usingFallbackUniverse

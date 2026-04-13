@@ -316,6 +316,19 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         }
         actions={
           <div className="ui-inline-actions">
+            <button
+              onClick={() => {
+                const url = window.location.href;
+                if (navigator.share) {
+                  navigator.share({ title: `${stock.name} 분석`, url }).catch(() => {});
+                } else {
+                  navigator.clipboard.writeText(url).then(() => toast("종목 분석 링크가 복사되었습니다.", "success")).catch(() => {});
+                }
+              }}
+              className="ui-button-secondary px-4"
+            >
+              공유
+            </button>
             <Link href="/" className="ui-button-secondary px-4">
               홈으로
             </Link>
