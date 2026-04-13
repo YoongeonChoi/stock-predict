@@ -13,10 +13,15 @@ from pathlib import Path
 from dev_runtime import (
     IS_WINDOWS,
     ROOT,
+    current_python_command,
+    display_command,
     display_path,
     ensure_runtime_dir,
     find_project_python,
     frontend_dev_command,
+    local_project_python_command,
+    python_command_supports_modules,
+    windows_py_launcher_command,
 )
 
 
@@ -24,11 +29,22 @@ BACKEND_URL = "http://127.0.0.1:8000/api/health"
 FRONTEND_URL = "http://127.0.0.1:3000"
 
 
+def preferred_python_command() -> list[str]:
+    return (
+        find_project_python()
+        or local_project_python_command()
+        or current_python_command()
+        or windows_py_launcher_command()
+        or ["python"]
+    )
+
+
 def canonical_python_command(script_name: str, *args: str) -> str:
-    python_path = display_path(ROOT / "venv" / "Scripts" / "python.exe")
+    python_command = preferred_python_command()
     script_path = display_path(ROOT / script_name)
-    command = [f'"{python_path}"', f'"{script_path}"', *args]
-    return "& " + " ".join(command)
+    command = [*python_command, script_path, *args]
+    rendered = display_command(command)
+    return f"& {rendered}" if IS_WINDOWS else rendered
 
 
 def runtime_paths() -> dict[str, Path]:
@@ -141,35 +157,34 @@ def stop_pid(pid: int | None) -> bool:
     return not is_process_running(pid)
 
 
-def check_backend_imports(python_path: str) -> bool:
-    probe = subprocess.run(
-        [python_path, "-c", "import fastapi, uvicorn"],
-        cwd=display_path(ROOT),
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return probe.returncode == 0
+def check_backend_imports(python_command: list[str]) -> bool:
+    return python_command_supports_modules(python_command, "fastapi", "uvicorn")
 
 
-def run_check() -> int:
+def run_check(*, skip_frontend: bool = False) -> int:
     backend_main = ROOT / "backend" / "app" / "main.py"
     frontend_package = ROOT / "frontend" / "package.json"
     backend_env = ROOT / "backend" / ".env"
     frontend_node_modules = ROOT / "frontend" / "node_modules"
-    python_path = find_project_python()
-    frontend_command = frontend_dev_command()
+    python_command = find_project_python()
+    frontend_command = None if skip_frontend else frontend_dev_command()
 
     failures: list[str] = []
 
     print("[check] 개발 런처 환경 점검")
     print(f"[ok] 프로젝트 루트: {display_path(ROOT)}")
-    print(f"[hint] 어디서 실행하든 아래 명령 1개만 사용하세요: {canonical_python_command('start.py', '--check')}")
+    hint_args = ["--check"]
+    if skip_frontend:
+        hint_args.append("--skip-frontend")
+    print(f"[hint] 어디서 실행하든 아래 명령 1개만 사용하세요: {canonical_python_command('start.py', *hint_args)}")
 
-    if python_path:
-        print(f"[ok] 가상환경 Python: {python_path}")
+    if python_command:
+        print(f"[ok] Python 실행기: {display_command(python_command)}")
     else:
-        failures.append("가상환경 Python을 찾을 수 없습니다. `python -m venv venv`와 패키지 설치를 먼저 완료하세요.")
+        failures.append(
+            "프로젝트용 Python 실행기를 찾을 수 없습니다. "
+            "우선순위는 `repo-local venv -> 현재 Python -> Windows py -3` 입니다."
+        )
 
     if backend_main.exists():
         print(f"[ok] 백엔드 엔트리포인트: {display_path(backend_main)}")
@@ -181,26 +196,33 @@ def run_check() -> int:
     else:
         failures.append(f"프론트 패키지 설정이 없습니다: {display_path(frontend_package)}")
 
-    if frontend_command:
-        print(f"[ok] 프론트 실행 명령 준비: {' '.join(frontend_command[:2])}")
+    if skip_frontend:
+        print("[skip] 프론트 실행 명령 점검은 건너뜁니다 (--skip-frontend)")
+    elif frontend_command:
+        print(f"[ok] 프론트 실행 명령 준비: {display_command(frontend_command)}")
     else:
-        failures.append("프론트 실행 명령을 만들 수 없습니다. Node.js와 npm 설치를 확인하세요.")
+        failures.append(
+            "프론트 실행 명령을 만들 수 없습니다. "
+            "우선순위는 `frontend/node_modules/.bin -> PATH npm/npx -> 표준 Windows nodejs 설치 경로` 입니다."
+        )
 
     if backend_env.exists():
         print(f"[ok] 환경 변수 파일: {display_path(backend_env)}")
     else:
         print(f"[warn] 환경 변수 파일이 없습니다: {display_path(backend_env)}")
 
-    if frontend_node_modules.exists():
+    if skip_frontend:
+        print("[skip] 프론트 의존성 디렉터리 점검은 건너뜁니다 (--skip-frontend)")
+    elif frontend_node_modules.exists():
         print(f"[ok] 프론트 의존성 디렉터리: {display_path(frontend_node_modules)}")
     else:
         print(f"[warn] 프론트 의존성 디렉터리가 없습니다: {display_path(frontend_node_modules)}")
 
-    if python_path:
-        if check_backend_imports(python_path):
+    if python_command:
+        if check_backend_imports(python_command):
             print("[ok] 백엔드 핵심 패키지 import 확인")
         else:
-            failures.append("가상환경에 fastapi/uvicorn이 준비되지 않았습니다. backend/requirements.txt 설치를 확인하세요.")
+            failures.append("선택된 Python 실행기에 fastapi/uvicorn이 준비되지 않았습니다. backend/requirements.txt 설치를 확인하세요.")
 
     if failures:
         print("[fail] 시작 전 점검에서 문제가 발견되었습니다.")
@@ -313,11 +335,11 @@ def prepare_services_for_launch() -> bool:
 
 
 def launch_services() -> int:
-    python_path = find_project_python()
+    python_command = find_project_python()
     frontend_command = frontend_dev_command()
 
-    if not python_path:
-        print("[fail] 가상환경 Python을 찾지 못했습니다. 먼저 `python -m venv venv`와 패키지 설치를 완료하세요.")
+    if not python_command:
+        print("[fail] 프로젝트용 Python 실행기를 찾지 못했습니다. `repo-local venv`, 현재 Python, `py -3` 순서로 확인합니다.")
         return 1
 
     if not frontend_command:
@@ -345,7 +367,7 @@ def launch_services() -> int:
         print(f"[start] 로그 위치: {display_path(paths['dir'])}")
 
         backend_proc = subprocess.Popen(
-            [python_path, "-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
+            [*python_command, "-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
             cwd=display_path(backend_dir),
             stdout=backend_stream,
             stderr=subprocess.STDOUT,
@@ -397,13 +419,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--check", action="store_true", help="개발 서버 시작 전에 환경만 점검합니다.")
     parser.add_argument("--status", action="store_true", help="현재 개발 서버 상태를 확인합니다.")
     parser.add_argument("--stop", action="store_true", help="실행 중인 개발 서버를 종료합니다.")
+    parser.add_argument("--skip-frontend", action="store_true", help="--check에서 프론트 실행기 점검을 건너뜁니다.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     if args.check:
-        return run_check()
+        return run_check(skip_frontend=args.skip_frontend)
     if args.status:
         return print_status()
     if args.stop:

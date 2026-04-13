@@ -3,6 +3,7 @@
 All notable changes to this project are tracked here.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## v2.53.0 - 2026-04-01
 
 - 전체 워크스페이스 안정성 패스를 위해 `stock detail`, `daily briefing`, `market opportunities`에 공통 `request_trace`와 `fallback_tier` 기준을 맞췄습니다. 각 응답은 이제 `shell | quick | full`, `memory_hit | sqlite_hit | miss`, `fresh | partial | stale | degraded` 축으로 원인을 더 일관되게 분류할 수 있습니다.
@@ -28,6 +29,8 @@ All notable changes to this project are tracked here.
 - `frontend/src/components/pages/CalendarPageClient.tsx`는 상단 핵심 일정 카드를 `4건`, 우측 upcoming 목록을 `12건`까지 보여 주고, 각 일정에 국가 라벨을 함께 붙입니다. 그래서 `/calendar` 첫 화면에서 한국장 기준 흐름은 유지하면서도 해외 매크로와 대표 기업 실적을 더 빨리 구분해 읽을 수 있습니다.
 - `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 추가 해외 소스 회귀, 전체 지역 조회 회귀, 글로벌 매크로/실적 포함 회귀, 국가별 recurring dedupe 회귀를 추가했습니다.
 
+=======
+>>>>>>> main
 ## v2.61.40 - 2026-04-12
 
 - `backend/app/services/export_service.py`의 PDF sanitize는 이제 `📉`, `📈`, `🔻`, `🔺`, `💸`, `💰`, `⚠️` 같은 미지원 이모지를 한글 표식이나 안전한 ASCII 표기로 먼저 치환한 뒤 남은 variation selector와 기호 이모지를 제거합니다. 그래서 `country report` PDF export가 한글 폰트 missing glyph 경고를 남기거나 문장 중간에서 깨질 가능성을 더 줄였습니다.
@@ -682,7 +685,10 @@ All notable changes to this project are tracked here.
 - `get_cached_market_opportunities()`는 이제 `detailed_scanned_count > 0`인 실제 정밀 snapshot만 `cached full`로 승격합니다. 그래서 quote-only 결과가 full cache처럼 보이며 `/radar`에서 정밀 계산이 끝난 것처럼 읽히는 혼선을 줄였습니다.
 - background full refresh는 최근 usable quick 후보를 seed로 재사용해 상위 종목 정밀 스캔을 다시 시도합니다. 응답은 계속 quick로 먼저 살리되, 뒤에서는 이미 확보된 후보를 바로 분석하게 바꿔 full snapshot이 올라올 가능성을 높였습니다.
 - 레이더/포트폴리오/관심종목 UI에서도 `전수 1차 스캔` 후보는 `레이더 점수` 대신 `1차 스캔 점수`로 표시하도록 정리했습니다. 그래서 quick quote-only 후보를 정밀 레이더 점수처럼 오해하기 어렵게 맞췄습니다.
+<<<<<<< HEAD
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
+=======
+>>>>>>> main
 
 ## v2.52.10 - 2026-03-30
 

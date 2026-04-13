@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
 from app.analysis.next_day_forecast import MODEL_VERSION
 from app.data import cache
@@ -13,6 +14,8 @@ from app.services import (
     archive_service,
     confidence_calibration_service,
     learned_fusion_profile_service,
+    opportunity_radar_lab_service,
+    prediction_capture_service,
 )
 
 PREDICTION_LAB_CACHE_TTL_SECONDS = 180
@@ -20,8 +23,12 @@ PREDICTION_LAB_WAIT_TIMEOUT_SECONDS = 2.5
 PREDICTION_LAB_BUILD_TIMEOUT_SECONDS = 8.0
 PREDICTION_LAB_STATS_TIMEOUT_SECONDS = 2.0
 PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS = 8.0
+PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS = 3.0
+PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT = 25
 PREDICTION_LAB_RECENT_TIMEOUT_SECONDS = 1.5
 PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS = 1.5
+
+logger = logging.getLogger("stock_predict.research")
 
 
 def _prediction_label(prediction_type: str) -> str:
@@ -57,6 +64,33 @@ def _normalize_breakdown(rows: list[dict]) -> list[dict]:
     return normalized
 
 
+def _normalize_collection_breakdown(rows: list[dict]) -> list[dict]:
+    normalized = []
+    for row in rows:
+        normalized.append(
+            {
+                "label": row.get("label") or "N/A",
+                "stored_predictions": int(row.get("stored_predictions") or 0),
+                "pending_predictions": int(row.get("pending_predictions") or 0),
+                "evaluated_predictions": int(row.get("evaluated_predictions") or 0),
+            }
+        )
+    return normalized
+
+
+def _normalize_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+    if isinstance(value, str):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+        except (TypeError, ValueError):
+            return value
+    return None
+
+
 def _parse_calibration_json(raw_snapshot: str | dict | None) -> dict:
     if raw_snapshot is None:
         return {}
@@ -74,6 +108,7 @@ def _parse_calibration_json(raw_snapshot: str | dict | None) -> dict:
 def _normalize_recent(rows: list[dict]) -> list[dict]:
     records = []
     for row in rows:
+        prediction_type = str(row.get("prediction_type") or "next_day")
         actual_close = row.get("actual_close")
         reference_price = float(row.get("reference_price") or 0)
         predicted_close = float(row.get("predicted_close") or 0)
@@ -101,6 +136,8 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
         records.append(
             {
                 "id": row["id"],
+                "prediction_type": prediction_type,
+                "prediction_label": _prediction_label(prediction_type),
                 "scope": row["scope"],
                 "symbol": row["symbol"],
                 "country_code": row.get("country_code"),
@@ -297,12 +334,19 @@ def _build_insights(
     fusion_status_summary: dict,
 ) -> list[str]:
     insights: list[str] = []
+    stored_predictions = int(accuracy.get("stored_predictions", 0) or 0)
+    pending_predictions = int(accuracy.get("pending_predictions", 0) or 0)
     total_predictions = int(accuracy.get("total_predictions", 0) or 0)
     direction_accuracy = float(accuracy.get("direction_accuracy", 0.0) or 0.0) * 100.0
     within_range_rate = float(accuracy.get("within_range_rate", 0.0) or 0.0) * 100.0
     avg_error_pct = float(accuracy.get("avg_error_pct", 0.0) or 0.0)
 
     if total_predictions == 0:
+        if stored_predictions > 0 and pending_predictions > 0:
+            return [
+                f"예측 로그 {stored_predictions}건은 저장됐지만, 아직 실측 평가가 끝난 표본은 없습니다. "
+                f"현재 대기 중인 {pending_predictions}건은 목표일이 지나면 연구실에서 다시 검증합니다."
+            ]
         return ["검증 완료 표본이 아직 많지 않아 예측 연구실은 실측 로그를 더 쌓는 단계에 있습니다."]
 
     insights.append(
@@ -353,6 +397,278 @@ def _build_insights(
     return insights[:6]
 
 
+def _severity_rank(level: str) -> int:
+    if level == "high":
+        return 0
+    if level == "medium":
+        return 1
+    return 2
+
+
+def _build_action_queue(
+    *,
+    accuracy: dict,
+    horizon_accuracy: list[dict],
+    empirical_calibration: list[dict],
+    fusion_profiles: list[dict],
+    graph_context_summary: dict,
+    recent_records: list[dict],
+) -> list[dict]:
+    actions: list[dict] = []
+    stored_predictions = int(accuracy.get("stored_predictions") or 0)
+    pending_predictions = int(accuracy.get("pending_predictions") or 0)
+    total_predictions = int(accuracy.get("total_predictions") or 0)
+    empirical_by_type = {row["prediction_type"]: row for row in empirical_calibration}
+    fusion_by_type = {row["prediction_type"]: row for row in fusion_profiles}
+
+    if total_predictions == 0 and stored_predictions > 0 and pending_predictions > 0:
+        actions.append(
+            {
+                "key": "next_day:pending-evaluation",
+                "severity": "medium",
+                "title": "실측 평가 대기 표본 확인",
+                "detail": f"저장된 예측 로그 {stored_predictions}건 중 {pending_predictions}건이 아직 목표일 평가 대기 상태입니다.",
+                "metric_label": "평가 대기",
+                "metric_value": f"{pending_predictions}건",
+            }
+        )
+
+    for row in horizon_accuracy:
+        prediction_type = row["prediction_type"]
+        label = row["label"]
+        total_predictions = int(row.get("total_predictions") or 0)
+        direction_accuracy = float(row.get("direction_accuracy") or 0.0) * 100.0
+        avg_error_pct = float(row.get("avg_error_pct") or 0.0)
+        profile = fusion_by_type.get(prediction_type) or {}
+        empirical = empirical_by_type.get(prediction_type) or {}
+        reliability_gap = float(empirical.get("max_reliability_gap") or 0.0)
+        prior_brier_delta = profile.get("prior_brier_delta")
+
+        if 0 < total_predictions < 30:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:sample",
+                    "severity": "medium",
+                    "title": f"{label} 검증 표본 축적 필요",
+                    "detail": f"{label} 검증 완료 표본이 {total_predictions}건이라 방향 적중과 보정 상태를 단정하기엔 아직 얕습니다.",
+                    "metric_label": "검증 표본",
+                    "metric_value": f"{total_predictions}건",
+                }
+            )
+
+        if reliability_gap >= 8.0:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:gap",
+                    "severity": "high",
+                    "title": f"{label} reliability gap 점검",
+                    "detail": f"{label} calibrator의 최대 gap이 {reliability_gap:.1f}%로 커서 confidence 해석이 흔들릴 수 있습니다.",
+                    "metric_label": "최대 gap",
+                    "metric_value": f"{reliability_gap:.1f}%",
+                }
+            )
+
+        if total_predictions >= 20 and prior_brier_delta is not None and float(prior_brier_delta) <= 0:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:fusion",
+                    "severity": "high",
+                    "title": f"{label} fusion 성능 재점검",
+                    "detail": f"{label} learned fusion이 prior 대비 Brier 개선을 만들지 못해 현재 조합 가중치 점검이 필요합니다.",
+                    "metric_label": "prior delta",
+                    "metric_value": f"{float(prior_brier_delta):.4f}",
+                }
+            )
+
+        if total_predictions >= 20 and direction_accuracy < 55.0 and avg_error_pct >= 2.5:
+            actions.append(
+                {
+                    "key": f"{prediction_type}:accuracy",
+                    "severity": "medium",
+                    "title": f"{label} 방향/오차 동시 점검",
+                    "detail": f"{label}는 방향 적중 {direction_accuracy:.1f}%에 평균 오차 {avg_error_pct:.2f}%로 최근 안정성이 약합니다.",
+                    "metric_label": "방향 적중",
+                    "metric_value": f"{direction_accuracy:.1f}%",
+                }
+            )
+
+    if graph_context_summary.get("coverage_available"):
+        graph_used_rate = float(graph_context_summary.get("used_rate") or 0.0) * 100.0
+        avg_coverage = float(graph_context_summary.get("avg_coverage") or 0.0) * 100.0
+        if graph_used_rate < 40.0:
+            actions.append(
+                {
+                    "key": "graph:usage",
+                    "severity": "medium",
+                    "title": "Graph context 활용률 점검",
+                    "detail": f"최근 검증 로그에서 graph context 사용률이 {graph_used_rate:.1f}%로 낮아, 관계형 보강이 충분히 쓰이지 못하고 있습니다.",
+                    "metric_label": "활용률",
+                    "metric_value": f"{graph_used_rate:.1f}%",
+                }
+            )
+        elif avg_coverage < 35.0:
+            actions.append(
+                {
+                    "key": "graph:coverage",
+                    "severity": "medium",
+                    "title": "Graph context coverage 보강",
+                    "detail": f"graph context가 쓰이더라도 평균 coverage가 {avg_coverage:.1f}%라, peer/sector 관계 정보가 얕게 들어가고 있습니다.",
+                    "metric_label": "평균 coverage",
+                    "metric_value": f"{avg_coverage:.1f}%",
+                }
+            )
+
+    high_confidence_misses = [
+        record
+        for record in recent_records
+        if record.get("direction_hit") is False and float(record.get("confidence") or 0.0) >= 60.0
+    ]
+    if high_confidence_misses:
+        avg_error = sum(float(record.get("abs_error_pct") or 0.0) for record in high_confidence_misses) / max(
+            len(high_confidence_misses), 1
+        )
+        actions.append(
+            {
+                "key": "recent:high-confidence-miss",
+                "severity": "high",
+                "title": "고신뢰 미스 리뷰 필요",
+                "detail": f"최근 고신뢰 미스가 {len(high_confidence_misses)}건 있어 confidence 표시와 실제 적중률의 간극을 다시 확인해야 합니다.",
+                "metric_label": "평균 오차",
+                "metric_value": f"{avg_error:.2f}%",
+            }
+        )
+
+    if not actions and total_predictions > 0:
+        actions.append(
+            {
+                "key": "baseline:stable",
+                "severity": "info",
+                "title": "연구실 기본 점검 상태 유지",
+                "detail": "현재 공개 검증 지표에서는 즉시 손봐야 할 큰 붕괴 신호가 없으므로, 최근 miss review와 horizon별 추세를 계속 확인하면 됩니다.",
+                "metric_label": "검증 표본",
+                "metric_value": f"{total_predictions}건",
+            }
+        )
+
+    actions.sort(key=lambda item: (_severity_rank(item["severity"]), item["title"]))
+    return actions[:4]
+
+
+def _build_failure_patterns(recent_records: list[dict]) -> list[dict]:
+    misses = [record for record in recent_records if record.get("direction_hit") is False]
+    if not misses:
+        return []
+
+    patterns: list[dict] = []
+    pattern_defs = [
+        (
+            "high_confidence_miss",
+            "고신뢰 미스",
+            lambda row: float(row.get("confidence") or 0.0) >= 60.0,
+            "confidence가 높았는데도 방향이 빗나간 사례입니다.",
+        ),
+        (
+            "range_miss",
+            "밴드 이탈",
+            lambda row: row.get("within_range") is False,
+            "예측 밴드 밖으로 실제 종가가 벗어난 사례입니다.",
+        ),
+        (
+            "prior_only_miss",
+            "prior-only 미스",
+            lambda row: (row.get("fusion_method") or "prior_only") == "prior_only",
+            "fusion 보강 없이 prior backbone만으로 처리된 미스입니다.",
+        ),
+        (
+            "graph_unused_miss",
+            "graph 미사용 미스",
+            lambda row: not bool(row.get("graph_context_used")),
+            "graph context가 붙지 않은 상태에서 난 미스입니다.",
+        ),
+    ]
+
+    for key, title, predicate, detail in pattern_defs:
+        matched = [row for row in misses if predicate(row)]
+        if not matched:
+            continue
+        avg_error_pct = sum(float(row.get("abs_error_pct") or 0.0) for row in matched) / max(len(matched), 1)
+        patterns.append(
+            {
+                "key": key,
+                "title": title,
+                "detail": detail,
+                "count": len(matched),
+                "avg_error_pct": round(avg_error_pct, 2),
+                "avg_confidence": round(
+                    sum(float(row.get("confidence") or 0.0) for row in matched) / max(len(matched), 1),
+                    1,
+                ),
+                "example_symbol": matched[0].get("symbol"),
+                "severity": "high" if len(matched) >= 2 else "medium",
+            }
+        )
+
+    patterns.sort(key=lambda item: (-item["count"], -item["avg_error_pct"], _severity_rank(item["severity"])))
+    return patterns[:4]
+
+
+def _build_review_queue(recent_records: list[dict]) -> list[dict]:
+    if not recent_records:
+        return []
+
+    def _record_rank(row: dict) -> tuple[int, float, float]:
+        miss_priority = 0 if row.get("direction_hit") is False else 1 if row.get("direction_hit") is True else 2
+        confidence = float(row.get("confidence") or 0.0)
+        abs_error_pct = float(row.get("abs_error_pct") or 0.0)
+        return (miss_priority, -abs_error_pct, -confidence)
+
+    queue: list[dict] = []
+    for row in sorted(recent_records, key=_record_rank):
+        direction_hit = row.get("direction_hit")
+        within_range = row.get("within_range")
+        symbol = row.get("symbol")
+        prediction_label = _prediction_label(str(row.get("prediction_type") or "next_day"))
+        if direction_hit is False:
+            summary = (
+                f"{prediction_label} 예측에서 {symbol} 방향 판단이 빗나갔고, "
+                f"오차 {float(row.get('abs_error_pct') or 0.0):.2f}%를 기록했습니다."
+            )
+            review_kind = "miss"
+        elif direction_hit is True and within_range is True:
+            summary = f"{prediction_label} 예측에서 {symbol}은 방향과 밴드를 모두 맞췄습니다."
+            review_kind = "clean-hit"
+        elif direction_hit is True:
+            summary = f"{prediction_label} 예측에서 {symbol}은 방향은 맞췄지만 밴드는 벗어났습니다."
+            review_kind = "direction-hit"
+        else:
+            summary = f"{prediction_label} 예측에서 {symbol}은 아직 실제 종가 평가가 끝나지 않았습니다."
+            review_kind = "pending"
+
+        queue.append(
+            {
+                "id": row["id"],
+                "prediction_type": row.get("prediction_type") or "next_day",
+                "prediction_label": prediction_label,
+                "scope": row["scope"],
+                "symbol": symbol,
+                "country_code": row.get("country_code"),
+                "target_date": row["target_date"],
+                "direction": row["direction"],
+                "direction_hit": direction_hit,
+                "within_range": within_range,
+                "abs_error_pct": row.get("abs_error_pct"),
+                "confidence": row["confidence"],
+                "fusion_method": row.get("fusion_method") or "prior_only",
+                "graph_context_used": bool(row.get("graph_context_used")),
+                "graph_coverage": row.get("graph_coverage"),
+                "review_kind": review_kind,
+                "review_summary": summary,
+                "stock_path": f"/stock/{symbol}" if row.get("scope") == "stock" and symbol else None,
+            }
+        )
+    return queue[:6]
+
+
 def _zero_prediction_stats() -> dict:
     return {
         "stored_predictions": 0,
@@ -365,6 +681,159 @@ def _zero_prediction_stats() -> dict:
         "avg_error_pct": 0.0,
         "avg_confidence": 0.0,
     }
+
+
+def _empty_prediction_activity_summary() -> dict:
+    return {
+        "last_created_at": None,
+        "last_evaluated_at": None,
+        "stale_pending_predictions": 0,
+    }
+
+
+def _empty_backfill_summary() -> dict:
+    return {
+        "checked_at": None,
+        "checked_reports": 0,
+        "updated_reports": 0,
+        "captured_predictions": 0,
+    }
+
+
+def _empty_radar_cohort_summary() -> dict:
+    return {
+        "stored_snapshots": 0,
+        "capture_days": 0,
+        "latest_reference_date": None,
+        "last_evaluated_at": None,
+        "direction_accuracy_1d": 0.0,
+        "direction_accuracy_5d": 0.0,
+        "direction_accuracy_20d": 0.0,
+        "band_hit_rate_20d": 0.0,
+        "avg_return_pct_5d": 0.0,
+        "avg_return_pct_20d": 0.0,
+        "pending_20d": 0,
+        "tag_breakdown": [],
+        "recent_cohorts": [],
+        "review_queue": [],
+        "profile": opportunity_radar_lab_service.get_profile_summary(),
+    }
+
+
+def _build_pipeline_health(
+    *,
+    horizon_accuracy: list[dict],
+    activity_summary: dict,
+    checked_at: str,
+    backfill_summary: dict,
+) -> dict:
+    stored_predictions = sum(int(row.get("stored_predictions") or 0) for row in horizon_accuracy)
+    pending_predictions = sum(int(row.get("pending_predictions") or 0) for row in horizon_accuracy)
+    evaluated_predictions = sum(int(row.get("total_predictions") or 0) for row in horizon_accuracy)
+    return {
+        "stored_predictions": stored_predictions,
+        "pending_predictions": pending_predictions,
+        "evaluated_predictions": evaluated_predictions,
+        "stale_pending_predictions": int(activity_summary.get("stale_pending_predictions") or 0),
+        "last_saved_at": _normalize_timestamp(activity_summary.get("last_created_at")),
+        "last_evaluated_at": _normalize_timestamp(activity_summary.get("last_evaluated_at")),
+        "last_checked_at": checked_at,
+        "backfill_checked_reports": int(backfill_summary.get("checked_reports") or 0),
+        "backfill_updated_reports": int(backfill_summary.get("updated_reports") or 0),
+        "backfill_captured_predictions": int(backfill_summary.get("captured_predictions") or 0),
+    }
+
+
+def _build_pipeline_alerts(
+    *,
+    horizon_accuracy: list[dict],
+    activity_summary: dict,
+    backfill_reason: str | None,
+    refresh_reason: str | None,
+) -> list[dict]:
+    alerts: list[dict] = []
+    horizon_map = {row["prediction_type"]: row for row in horizon_accuracy}
+    stored_predictions = sum(int(row.get("stored_predictions") or 0) for row in horizon_accuracy)
+    pending_predictions = sum(int(row.get("pending_predictions") or 0) for row in horizon_accuracy)
+    evaluated_predictions = sum(int(row.get("total_predictions") or 0) for row in horizon_accuracy)
+    next_day = horizon_map.get("next_day", {})
+    five_day = horizon_map.get("distributional_5d", {})
+    twenty_day = horizon_map.get("distributional_20d", {})
+    stale_pending = int(activity_summary.get("stale_pending_predictions") or 0)
+
+    if stored_predictions <= 0:
+        alerts.append(
+            {
+                "key": "no_samples",
+                "severity": "high",
+                "title": "표본이 아직 저장되지 않았습니다",
+                "detail": "공개 예측을 불러와도 prediction log가 거의 쌓이지 않아 연구실이 성과와 보정을 계산하지 못하고 있습니다.",
+            }
+        )
+    if stored_predictions > 0 and evaluated_predictions <= 0 and pending_predictions > 0:
+        alerts.append(
+            {
+                "key": "pending_only",
+                "severity": "medium",
+                "title": "저장만 되고 평가가 아직 없습니다",
+                "detail": f"현재 저장된 표본 {stored_predictions}건 가운데 목표일이 지난 평가 표본이 없어 대기 상태만 보이고 있습니다.",
+            }
+        )
+    if int(five_day.get("stored_predictions") or 0) <= 0:
+        alerts.append(
+            {
+                "key": "missing_5d",
+                "severity": "high" if int(next_day.get("stored_predictions") or 0) > 0 else "medium",
+                "title": "5D 표본이 비어 있습니다",
+                "detail": "종목 흐름은 들어오지만 5거래일 distributional forecast 표본이 거의 저장되지 않아 중기 검증이 멈춰 있습니다.",
+            }
+        )
+    if int(twenty_day.get("stored_predictions") or 0) <= 0:
+        alerts.append(
+            {
+                "key": "missing_20d",
+                "severity": "high" if int(next_day.get("stored_predictions") or 0) > 0 else "medium",
+                "title": "20D 표본이 비어 있습니다",
+                "detail": "20거래일 distributional forecast가 쌓이지 않아 longer-horizon calibration과 failure review가 비어 있습니다.",
+            }
+        )
+    if int(next_day.get("stored_predictions") or 0) > 0 and int(five_day.get("stored_predictions") or 0) <= 0 and int(twenty_day.get("stored_predictions") or 0) <= 0:
+        alerts.append(
+            {
+                "key": "capture_gap",
+                "severity": "high",
+                "title": "다중 horizon 수집 경로를 점검해야 합니다",
+                "detail": "1D 표본은 있는데 5D/20D 표본이 함께 늘지 않아 stock distributional capture 경로가 끊긴 상태로 보입니다.",
+            }
+        )
+    if stale_pending > 0:
+        alerts.append(
+            {
+                "key": "evaluation_delay",
+                "severity": "medium",
+                "title": "실측 평가가 늦어진 표본이 남아 있습니다",
+                "detail": f"목표일이 지난 미평가 표본 {stale_pending}건이 남아 있어 accuracy refresh를 다시 확인해야 합니다.",
+            }
+        )
+    if backfill_reason:
+        alerts.append(
+            {
+                "key": "capture_backfill_partial",
+                "severity": "info",
+                "title": "최근 archive backfill이 부분 상태로 끝났습니다",
+                "detail": f"누락 표본 복구는 계속 시도 중이지만 이번 응답에서는 {backfill_reason} 상태가 함께 기록됐습니다.",
+            }
+        )
+    if refresh_reason:
+        alerts.append(
+            {
+                "key": "refresh_partial",
+                "severity": "info",
+                "title": "accuracy refresh가 부분 상태로 끝났습니다",
+                "detail": f"실측 평가 갱신이 이번 응답에서는 {refresh_reason} 상태로 마무리돼 cached summary를 함께 보여주고 있습니다.",
+            }
+        )
+    return alerts[:6]
 
 
 async def _safe_prediction_query(query, fallback, *, timeout: float):
@@ -384,16 +853,114 @@ async def _safe_prediction_stats(prediction_type: str) -> dict:
         return _zero_prediction_stats()
 
 
+async def _backfill_prediction_lab_predictions(refresh: bool) -> tuple[dict, str | None]:
+    limit = 50 if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT
+    timeout = PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS
+    try:
+        result = await asyncio.wait_for(
+            prediction_capture_service.backfill_recent_archive_predictions(limit=limit),
+            timeout=timeout,
+        )
+        return result, None
+    except asyncio.TimeoutError:
+        return _empty_backfill_summary(), "prediction_capture_backfill_timeout"
+    except Exception:
+        return _empty_backfill_summary(), "prediction_capture_backfill_error"
+
+
+async def _refresh_prediction_lab_accuracy(refresh: bool) -> str | None:
+    limit = 200 if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_LIMIT
+    timeout = PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS if refresh else PREDICTION_LAB_BACKGROUND_REFRESH_TIMEOUT_SECONDS
+    try:
+        await asyncio.wait_for(
+            archive_service.refresh_prediction_accuracy(limit=limit),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        return "prediction_accuracy_refresh_timeout"
+    except Exception:
+        return "prediction_accuracy_refresh_error"
+    return None
+
+
+def _log_prediction_lab_background_completion(task: asyncio.Task, label: str) -> None:
+    try:
+        result = task.result()
+    except asyncio.CancelledError:
+        logger.info("prediction lab %s background task was cancelled.", label)
+        return
+    except Exception:
+        logger.warning("prediction lab %s background task failed.", label, exc_info=True)
+        return
+
+    reason = None
+    if isinstance(result, tuple) and len(result) == 2:
+        _, reason = result
+    elif isinstance(result, str):
+        reason = result
+
+    if reason:
+        logger.info("prediction lab %s background task finished with %s.", label, reason)
+
+
+def _schedule_prediction_lab_background_maintenance() -> None:
+    backfill_task = asyncio.create_task(
+        _backfill_prediction_lab_predictions(False),
+        name="prediction-lab-backfill",
+    )
+    backfill_task.add_done_callback(
+        lambda task, label="backfill": _log_prediction_lab_background_completion(task, label)
+    )
+
+    refresh_task = asyncio.create_task(
+        _refresh_prediction_lab_accuracy(False),
+        name="prediction-lab-accuracy-refresh",
+    )
+    refresh_task.add_done_callback(
+        lambda task, label="accuracy-refresh": _log_prediction_lab_background_completion(task, label)
+    )
+
+
 async def _build_prediction_lab_fallback(
     *,
     limit_recent: int,
     reason: str,
 ) -> dict:
     accuracy = await archive_service.get_accuracy(refresh=False)
-    stats_5d, stats_20d = await asyncio.gather(
+    stats_5d, stats_20d, scope_coverage_rows, prediction_type_coverage_rows, model_coverage_rows, activity_summary, radar_summary_result = await asyncio.gather(
         _safe_prediction_stats("distributional_5d"),
         _safe_prediction_stats("distributional_20d"),
+        _safe_prediction_query(
+            lambda: db.prediction_collection_breakdown(field="scope", limit=10),
+            [],
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
+        _safe_prediction_query(
+            lambda: db.prediction_collection_breakdown(field="prediction_type", limit=10),
+            [],
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
+        _safe_prediction_query(
+            lambda: db.prediction_collection_breakdown(field="model_version", limit=10),
+            [],
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
+        _safe_prediction_query(
+            lambda: db.prediction_activity_summary(due_date_to=datetime.now().date().isoformat()),
+            _empty_prediction_activity_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
+        _safe_prediction_query(
+            lambda: opportunity_radar_lab_service.get_lab_summary(limit=300),
+            _empty_radar_cohort_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
     )
+    scope_coverage, _ = scope_coverage_rows
+    prediction_type_coverage, _ = prediction_type_coverage_rows
+    model_coverage, _ = model_coverage_rows
+    activity_summary_payload, _ = activity_summary
+    radar_summary, _ = radar_summary_result
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
     runtime_summary_map = _runtime_summary_map()
@@ -425,16 +992,36 @@ async def _build_prediction_lab_fallback(
         fusion_profiles,
         graph_context_summary,
     )
+    checked_at = datetime.now().isoformat()
+    pipeline_health = _build_pipeline_health(
+        horizon_accuracy=horizon_accuracy,
+        activity_summary=activity_summary_payload,
+        checked_at=checked_at,
+        backfill_summary=_empty_backfill_summary(),
+    )
     response = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": checked_at,
         "partial": True,
         "fallback_reason": reason,
         "accuracy": accuracy,
         "horizon_accuracy": horizon_accuracy,
+        "pipeline_health": pipeline_health,
+        "coverage_breakdown": {
+            "by_scope": _normalize_collection_breakdown(scope_coverage),
+            "by_prediction_type": _normalize_collection_breakdown(prediction_type_coverage),
+            "by_model_version": _normalize_collection_breakdown(model_coverage),
+        },
+        "pipeline_alerts": _build_pipeline_alerts(
+            horizon_accuracy=horizon_accuracy,
+            activity_summary=activity_summary_payload,
+            backfill_reason=reason if reason.startswith("prediction_capture_backfill") else None,
+            refresh_reason=None,
+        ),
         "empirical_calibration": empirical_calibration,
         "fusion_profiles": fusion_profiles,
         "graph_context_summary": graph_context_summary,
         "fusion_status_summary": fusion_status_summary,
+        "radar_cohorts": radar_summary,
         "breakdown": {
             "by_country": [],
             "by_scope": [],
@@ -443,6 +1030,16 @@ async def _build_prediction_lab_fallback(
         "calibration": [],
         "recent_trend": [],
         "recent_records": [],
+        "action_queue": _build_action_queue(
+            accuracy=accuracy,
+            horizon_accuracy=horizon_accuracy,
+            empirical_calibration=empirical_calibration,
+            fusion_profiles=fusion_profiles,
+            graph_context_summary=graph_context_summary,
+            recent_records=[],
+        ),
+        "failure_patterns": [],
+        "review_queue": [],
         "insights": _build_insights(
             accuracy,
             [],
@@ -464,10 +1061,13 @@ async def _build_prediction_lab_fallback(
 
 async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dict:
     if refresh:
-        await asyncio.wait_for(
-            archive_service.refresh_prediction_accuracy(limit=200),
-            timeout=PREDICTION_LAB_REFRESH_TIMEOUT_SECONDS,
-        )
+        backfill_summary, backfill_reason = await _backfill_prediction_lab_predictions(True)
+        refresh_reason = await _refresh_prediction_lab_accuracy(True)
+    else:
+        backfill_summary = _empty_backfill_summary()
+        backfill_reason = None
+        refresh_reason = None
+        _schedule_prediction_lab_background_maintenance()
 
     fusion_profiles = learned_fusion_profile_service.get_profile_summary()
     fusion_profile_map = {row["prediction_type"]: row for row in fusion_profiles}
@@ -485,6 +1085,11 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         by_scope_rows_result,
         by_model_rows_result,
         calibration_rows_result,
+        coverage_scope_result,
+        coverage_prediction_type_result,
+        coverage_model_result,
+        activity_summary_result,
+        radar_summary_result,
     ) = await asyncio.gather(
         _safe_prediction_query(lambda: db.prediction_stats("next_day"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_stats("distributional_5d"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
@@ -495,6 +1100,19 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         _safe_prediction_query(lambda: db.prediction_scope_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_model_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_confidence_buckets("next_day"), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_collection_breakdown(field="scope", limit=10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_collection_breakdown(field="prediction_type", limit=10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_collection_breakdown(field="model_version", limit=10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(
+            lambda: db.prediction_activity_summary(due_date_to=datetime.now().date().isoformat()),
+            _empty_prediction_activity_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
+        _safe_prediction_query(
+            lambda: opportunity_radar_lab_service.get_lab_summary(limit=300),
+            _empty_radar_cohort_summary(),
+            timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS,
+        ),
     )
     accuracy, accuracy_reason = accuracy_result
     stats_5d, stats_5d_reason = stats_5d_result
@@ -505,9 +1123,16 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
     by_scope_rows, by_scope_rows_reason = by_scope_rows_result
     by_model_rows, by_model_rows_reason = by_model_rows_result
     calibration_rows, calibration_rows_reason = calibration_rows_result
+    coverage_scope_rows, coverage_scope_reason = coverage_scope_result
+    coverage_prediction_type_rows, coverage_prediction_type_reason = coverage_prediction_type_result
+    coverage_model_rows, coverage_model_reason = coverage_model_result
+    activity_summary, activity_summary_reason = activity_summary_result
+    radar_summary, radar_summary_reason = radar_summary_result
     partial_reasons = [
         reason
         for reason in (
+            backfill_reason,
+            refresh_reason,
             accuracy_reason,
             stats_5d_reason,
             stats_20d_reason,
@@ -517,6 +1142,11 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             by_scope_rows_reason,
             by_model_rows_reason,
             calibration_rows_reason,
+            coverage_scope_reason,
+            coverage_prediction_type_reason,
+            coverage_model_reason,
+            activity_summary_reason,
+            radar_summary_reason,
         )
         if reason
     ]
@@ -568,17 +1198,37 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         fusion_profiles,
         graph_context_summary,
     )
+    checked_at = datetime.now().isoformat()
+    pipeline_health = _build_pipeline_health(
+        horizon_accuracy=horizon_accuracy,
+        activity_summary=activity_summary,
+        checked_at=checked_at,
+        backfill_summary=backfill_summary,
+    )
 
     response = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": checked_at,
         "partial": bool(partial_reasons),
         "fallback_reason": "prediction_lab_partial_data" if partial_reasons else None,
         "accuracy": accuracy,
         "horizon_accuracy": horizon_accuracy,
+        "pipeline_health": pipeline_health,
+        "coverage_breakdown": {
+            "by_scope": _normalize_collection_breakdown(coverage_scope_rows),
+            "by_prediction_type": _normalize_collection_breakdown(coverage_prediction_type_rows),
+            "by_model_version": _normalize_collection_breakdown(coverage_model_rows),
+        },
+        "pipeline_alerts": _build_pipeline_alerts(
+            horizon_accuracy=horizon_accuracy,
+            activity_summary=activity_summary,
+            backfill_reason=backfill_reason,
+            refresh_reason=refresh_reason,
+        ),
         "empirical_calibration": empirical_calibration,
         "fusion_profiles": fusion_profiles,
         "graph_context_summary": graph_context_summary,
         "fusion_status_summary": fusion_status_summary,
+        "radar_cohorts": radar_summary,
         "breakdown": {
             "by_country": by_country,
             "by_scope": by_scope,
@@ -587,6 +1237,16 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         "calibration": calibration,
         "recent_trend": trend,
         "recent_records": recent_records,
+        "action_queue": _build_action_queue(
+            accuracy=accuracy,
+            horizon_accuracy=horizon_accuracy,
+            empirical_calibration=empirical_calibration,
+            fusion_profiles=fusion_profiles,
+            graph_context_summary=graph_context_summary,
+            recent_records=recent_records,
+        ),
+        "failure_patterns": _build_failure_patterns(recent_records),
+        "review_queue": _build_review_queue(recent_records),
         "insights": _build_insights(
             accuracy,
             by_country,
@@ -603,7 +1263,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v6:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v8:{limit_recent}:{int(refresh)}"
 
     async def _fetch_prediction_lab():
         try:

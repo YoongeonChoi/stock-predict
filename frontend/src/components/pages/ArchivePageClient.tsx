@@ -159,7 +159,7 @@ export default function ArchivePageClient({
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Archive"
+        eyebrow="리서치 기록"
         title="리포트 아카이브"
         description="내부 분석 리포트와 공식 기관 원문 리서치를 한곳에서 다시 열어보고, 필요한 자료는 바로 내려받거나 원문으로 이동할 수 있습니다."
         meta={
@@ -211,7 +211,7 @@ export default function ArchivePageClient({
                       href={report.pdf_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                      className="ui-button-primary px-4"
                     >
                       PDF 열기
                     </a>
@@ -220,7 +220,7 @@ export default function ArchivePageClient({
                     href={report.report_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                    className="ui-button-secondary px-4"
                   >
                     원문 보기
                   </a>
@@ -247,6 +247,7 @@ export default function ArchivePageClient({
             </p>
           </div>
 <<<<<<< HEAD
+<<<<<<< HEAD
           <div className="flex flex-wrap gap-2">
             {RESEARCH_REGIONS.map((region) => (
               <button
@@ -262,6 +263,8 @@ export default function ArchivePageClient({
               </button>
             ))}
 =======
+=======
+>>>>>>> main
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <div className="ui-segmented-control-responsive">
               {RESEARCH_REGIONS.map((region) => (
@@ -275,15 +278,22 @@ export default function ArchivePageClient({
                     .filter(Boolean)
                     .join(" ")}
                 >
+<<<<<<< HEAD
                   {RESEARCH_REGION_LABELS[region]}
                 </button>
               ))}
             </div>
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
+=======
+                  {REGION_LABELS[region]}
+                </button>
+              ))}
+            </div>
+>>>>>>> main
             <button
               onClick={handleResearchRefresh}
               disabled={refreshingResearch}
-              className="rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text disabled:opacity-50"
+              className="ui-button-secondary px-4 sm:shrink-0"
             >
               {refreshingResearch ? "새로고침 중..." : "기관 리포트 새로고침"}
             </button>
@@ -399,7 +409,7 @@ export default function ArchivePageClient({
                         href={report.pdf_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                        className="ui-button-primary px-4"
                       >
                         PDF 열기
                       </a>
@@ -408,7 +418,7 @@ export default function ArchivePageClient({
                       href={report.report_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                      className="ui-button-secondary px-4"
                     >
                       원문 보기
                     </a>
@@ -429,7 +439,7 @@ export default function ArchivePageClient({
                 예측 연구실에서 보정 상태, 최근 오차, 모델 버전별 신뢰도를 함께 확인할 수 있습니다.
               </div>
             </div>
-            <Link href="/lab" className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">
+            <Link href="/lab" className="ui-button-primary px-4">
               예측 연구실 열기
             </Link>
           </div>
@@ -499,19 +509,19 @@ export default function ArchivePageClient({
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <button
                       onClick={() => handleDownload(archive.id, "pdf")}
-                      className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                      className="ui-button-primary px-4"
                     >
                       PDF 바로받기
                     </button>
                     <button
                       onClick={() => handleDownload(archive.id, "csv")}
-                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                      className="ui-button-secondary px-4"
                     >
                       CSV 바로받기
                     </button>
                     <Link
                       href={`/archive/export/${archive.id}`}
-                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text"
+                      className="ui-button-secondary px-4"
                     >
                       내보내기 허브
                     </Link>

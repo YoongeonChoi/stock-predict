@@ -10,7 +10,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: DB_PATH
-        value: /tmp/stock_predict.db
+        value: data/stock_predict.db
       - key: PYTHON_VERSION
         value: 3.10.16
       - key: SUPABASE_URL
@@ -24,9 +24,11 @@ services:
       - key: FRONTEND_ORIGIN_REGEX
         sync: false
       - key: STARTUP_PREDICTION_ACCURACY_REFRESH
-        value: "false"
+        value: "true"
       - key: STARTUP_PREDICTION_ACCURACY_REFRESH_TIMEOUT
         value: "20"
+      - key: STARTUP_PREDICTION_ACCURACY_REFRESH_ON_RENDER
+        value: "true"
       - key: STARTUP_LEARNED_FUSION_REFRESH
         value: "false"
       - key: STARTUP_LEARNED_FUSION_REFRESH_TIMEOUT

@@ -291,6 +291,8 @@
 & .\venv\Scripts\python.exe .\verify.py
 ```
 
+repo-local `venv`가 없는 Windows 환경에서는 `verify.py`와 `start.py --check`가 현재 Python, 그다음 `py -3`까지 자동 fallback합니다. 프론트 수정이 없는 backend-only 점검에서는 `--skip-frontend`가 프론트 실행기 점검까지 함께 건너뜁니다.
+
 프론트 수정이 없거나 백엔드만 빠르게 볼 때는 아래처럼 실행합니다.
 
 ```powershell
@@ -309,6 +311,12 @@
 
 ```powershell
 & .\venv\Scripts\python.exe .\verify.py --deployed-site-smoke
+```
+
+전체 단계형 스윕을 한 번에 다시 돌릴 때는 아래 옵션을 사용합니다.
+
+```powershell
+& .\venv\Scripts\python.exe .\verify.py --full-sweep
 ```
 
 `--deployed-site-smoke`는 현재 운영 중인 `Vercel`/`Render` URL을 직접 호출해 프론트 HTML 응답, 핵심 공개 API, 인증 필요 API의 `401 / SP-6014` 계약을 함께 확인합니다. Render free 워밍업이나 배포 전환 구간의 일시적인 `502/503/504`와 timeout은 짧게 재시도하며, 느린 공개 API는 `partial` fallback까지 함께 확인합니다.

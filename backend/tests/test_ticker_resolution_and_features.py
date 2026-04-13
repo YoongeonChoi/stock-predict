@@ -30,7 +30,7 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
     def test_daily_briefing_and_portfolio_event_routes_exist(self):
         with (
             patch(
-                "app.routers.briefing.briefing_service.get_daily_briefing",
+                "app.routers.briefing._load_daily_briefing_payload",
                 new=AsyncMock(return_value={"generated_at": "2026-03-24T00:00:00", "sessions": [], "market_view": [], "focus_cards": [], "upcoming_events": [], "research_archive": {}, "priorities": []}),
             ),
             patch(

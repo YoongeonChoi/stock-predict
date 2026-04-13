@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -29,10 +29,19 @@ def patched_client(
 
     with (
         patch("app.main.db.initialize", new=AsyncMock()),
+        patch("app.main._prewarm_public_dashboard_payloads", new=AsyncMock(return_value=None)),
+        patch.object(type(app_settings), "startup_memory_safe_mode", new_callable=PropertyMock, return_value=False),
+        patch.object(
+            type(app_settings),
+            "effective_startup_public_dashboard_prewarm",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
         patch.object(app_settings, "startup_learned_fusion_refresh", False),
         patch.object(app_settings, "startup_prediction_accuracy_refresh", False),
         patch.object(app_settings, "startup_research_archive_sync", False),
         patch.object(app_settings, "startup_market_opportunity_prewarm", False),
+        patch.object(app_settings, "startup_public_dashboard_prewarm", False),
     ):
         try:
             with TestClient(app) as client:

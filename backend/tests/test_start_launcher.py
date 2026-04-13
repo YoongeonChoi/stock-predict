@@ -26,6 +26,23 @@ start_launcher = _load_start_module()
 
 
 class StartLauncherTests(unittest.TestCase):
+    def test_canonical_python_command_uses_resolved_launcher_command(self) -> None:
+        with patch.object(start_launcher, "preferred_python_command", return_value=["py", "-3"]):
+            rendered = start_launcher.canonical_python_command("start.py", "--check")
+
+        self.assertIn("py", rendered)
+        self.assertIn("-3", rendered)
+        self.assertIn("start.py", rendered)
+        self.assertIn("--check", rendered)
+
+    def test_run_check_can_skip_frontend_runtime_probe(self) -> None:
+        with (
+            patch.object(start_launcher, "find_project_python", return_value=["python"]),
+            patch.object(start_launcher, "frontend_dev_command", return_value=None),
+            patch.object(start_launcher, "check_backend_imports", return_value=True),
+        ):
+            self.assertEqual(start_launcher.run_check(skip_frontend=True), 0)
+
     def test_prepare_services_for_launch_stops_running_servers_automatically(self) -> None:
         running_status = {
             "backend": {"pid": 111, "running": True, "healthy": True, "log": Path("backend.log")},
@@ -56,19 +73,23 @@ class StartLauncherTests(unittest.TestCase):
             frontend_proc = SimpleNamespace(pid=222)
 
             with (
-                patch.object(start_launcher, "find_project_python", return_value="python"),
+                patch.object(start_launcher, "find_project_python", return_value=["python"]),
                 patch.object(start_launcher, "frontend_dev_command", return_value=["npm", "run", "dev"]),
                 patch.object(start_launcher, "prepare_services_for_launch", return_value=True) as prepare,
                 patch.object(start_launcher, "runtime_paths", return_value=paths),
                 patch.object(start_launcher, "wait_for_http", return_value=True),
                 patch.object(start_launcher, "write_pid") as write_pid,
-                patch.object(start_launcher.subprocess, "Popen", side_effect=[backend_proc, frontend_proc]),
+                patch.object(start_launcher.subprocess, "Popen", side_effect=[backend_proc, frontend_proc]) as popen,
             ):
                 self.assertEqual(start_launcher.launch_services(), 0)
 
             prepare.assert_called_once()
             self.assertEqual(write_pid.call_args_list[0].args, (paths["backend_pid"], 111))
             self.assertEqual(write_pid.call_args_list[1].args, (paths["frontend_pid"], 222))
+            self.assertEqual(
+                popen.call_args_list[0].args[0],
+                ["python", "-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
+            )
 
 
 if __name__ == "__main__":

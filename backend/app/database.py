@@ -1,7 +1,9 @@
+import asyncio
 import aiosqlite
 import json
 import logging
 import sqlite3
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -108,6 +110,44 @@ ON prediction_records(country_code, prediction_type, target_date DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_records_model
 ON prediction_records(model_version, prediction_type, target_date DESC);
 
+CREATE TABLE IF NOT EXISTS opportunity_radar_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country_code TEXT NOT NULL,
+    reference_date TEXT NOT NULL,
+    anchor_date TEXT,
+    target_date_1d TEXT,
+    target_date_5d TEXT,
+    target_date_20d TEXT,
+    rank INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    name TEXT,
+    sector TEXT,
+    reference_price REAL NOT NULL,
+    base_score REAL NOT NULL,
+    adjusted_score REAL,
+    up_probability_20d REAL,
+    confidence_20d REAL,
+    predicted_close_20d REAL,
+    predicted_low_20d REAL,
+    predicted_high_20d REAL,
+    thesis_json TEXT,
+    tags_json TEXT,
+    support_json TEXT,
+    evaluation_json TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    evaluated_at REAL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_unique
+ON opportunity_radar_snapshots(country_code, reference_date, symbol);
+
+CREATE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_reference
+ON opportunity_radar_snapshots(reference_date DESC, country_code, rank ASC);
+
+CREATE INDEX IF NOT EXISTS idx_opportunity_radar_snapshots_symbol
+ON opportunity_radar_snapshots(symbol, reference_date DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -149,6 +189,7 @@ SQLITE_PUBLIC_READ_CONNECT_TIMEOUT_SECONDS = 0.75
 SQLITE_PUBLIC_READ_BUSY_TIMEOUT_MS = 500
 
 log = logging.getLogger("stock_predict.database")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _is_sqlite_lock_error(exc: Exception) -> bool:
@@ -159,7 +200,50 @@ def _is_sqlite_lock_error(exc: Exception) -> bool:
 
 class Database:
     def __init__(self):
-        self.db_path = get_settings().db_path
+        self.db_path = str(self._resolve_db_path(get_settings().db_path))
+        self._bootstrap_lock = threading.Lock()
+        self._bootstrap_complete = False
+        self._ensure_db_parent_dir()
+        self._ensure_bootstrap_schema_sync_once()
+
+    def _resolve_db_path(self, raw_path: str | Path) -> Path:
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = (BACKEND_ROOT / path).resolve()
+        return path
+
+    def _ensure_db_parent_dir(self) -> None:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_prediction_record_schema_sync(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(prediction_records)").fetchall()
+        existing_columns = {row[1] for row in rows}
+        if "calibration_json" not in existing_columns:
+            conn.execute("ALTER TABLE prediction_records ADD COLUMN calibration_json TEXT")
+
+    def _bootstrap_schema_sync(self) -> None:
+        self._ensure_db_parent_dir()
+        with sqlite3.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT_SECONDS) as conn:
+            conn.executescript(_SCHEMA)
+            self._ensure_prediction_record_schema_sync(conn)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO portfolio_profile (
+                    id, total_assets, cash_balance, monthly_budget, updated_at
+                ) VALUES (1, 0, 0, 0, ?)
+                """,
+                (time.time(),),
+            )
+            conn.commit()
+
+    def _ensure_bootstrap_schema_sync_once(self) -> None:
+        if self._bootstrap_complete:
+            return
+        with self._bootstrap_lock:
+            if self._bootstrap_complete:
+                return
+            self._bootstrap_schema_sync()
+            self._bootstrap_complete = True
 
     @asynccontextmanager
     async def _connect(
@@ -168,6 +252,7 @@ class Database:
         timeout_seconds: float = SQLITE_CONNECT_TIMEOUT_SECONDS,
         busy_timeout_ms: int = SQLITE_BUSY_TIMEOUT_MS,
     ):
+        self._ensure_db_parent_dir()
         conn = await aiosqlite.connect(self.db_path, timeout=timeout_seconds)
         try:
             await conn.execute("PRAGMA journal_mode=WAL")
@@ -195,19 +280,7 @@ class Database:
             yield conn
 
     async def initialize(self):
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        async with self._connect() as conn:
-            await conn.executescript(_SCHEMA)
-            await self._ensure_prediction_record_schema(conn)
-            await conn.execute(
-                """
-                INSERT OR IGNORE INTO portfolio_profile (
-                    id, total_assets, cash_balance, monthly_budget, updated_at
-                ) VALUES (1, 0, 0, 0, ?)
-                """,
-                (time.time(),),
-            )
-            await conn.commit()
+        await asyncio.to_thread(self._ensure_bootstrap_schema_sync_once)
 
     async def _ensure_prediction_record_schema(self, conn) -> None:
         cur = await conn.execute("PRAGMA table_info(prediction_records)")
@@ -641,6 +714,27 @@ class Database:
             )
             await conn.commit()
 
+    async def prediction_record_exists(
+        self,
+        *,
+        scope: str,
+        symbol: str,
+        prediction_type: str,
+        target_date: str,
+    ) -> bool:
+        async with self._connect() as conn:
+            cur = await conn.execute(
+                """
+                SELECT 1
+                FROM prediction_records
+                WHERE scope = ? AND symbol = ? AND prediction_type = ? AND target_date = ?
+                LIMIT 1
+                """,
+                (scope, symbol, prediction_type, target_date),
+            )
+            row = await cur.fetchone()
+            return row is not None
+
     async def prediction_pending(self, target_date_to: str, limit: int = 200) -> list[dict]:
         async with self._connect() as conn:
             conn.row_factory = aiosqlite.Row
@@ -809,6 +903,69 @@ class Database:
                 (prediction_type, scope, symbol, limit),
             )
             return [dict(r) for r in await cur.fetchall()]
+
+    async def prediction_collection_breakdown(self, *, field: str, limit: int = 10) -> list[dict]:
+        field_map = {
+            "scope": "scope",
+            "prediction_type": "prediction_type",
+            "model_version": "COALESCE(model_version, 'unknown')",
+        }
+        group_expr = field_map.get(field)
+        if group_expr is None:
+            raise ValueError(f"Unsupported prediction breakdown field: {field}")
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    f"""
+                    SELECT
+                        {group_expr} AS label,
+                        COUNT(*) AS stored_predictions,
+                        SUM(CASE WHEN actual_close IS NULL THEN 1 ELSE 0 END) AS pending_predictions,
+                        SUM(CASE WHEN actual_close IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_predictions
+                    FROM prediction_records
+                    GROUP BY {group_expr}
+                    ORDER BY stored_predictions DESC, label ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_collection_breakdown lock fallback for %s", field)
+                return []
+            raise
+
+    async def prediction_activity_summary(self, *, due_date_to: str) -> dict:
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT
+                        MAX(created_at) AS last_created_at,
+                        MAX(evaluated_at) AS last_evaluated_at,
+                        SUM(CASE WHEN actual_close IS NULL AND target_date < ? THEN 1 ELSE 0 END) AS stale_pending_predictions
+                    FROM prediction_records
+                    """,
+                    (due_date_to,),
+                )
+                row = await cur.fetchone()
+                return dict(row) if row else {
+                    "last_created_at": None,
+                    "last_evaluated_at": None,
+                    "stale_pending_predictions": 0,
+                }
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_activity_summary lock fallback")
+                return {
+                    "last_created_at": None,
+                    "last_evaluated_at": None,
+                    "stale_pending_predictions": 0,
+                }
+            raise
 
     async def prediction_daily_trend(self, prediction_type: str = "next_day", limit: int = 14) -> list[dict]:
         try:
@@ -1049,6 +1206,146 @@ class Database:
                 log.warning("prediction_confidence_buckets lock fallback for %s", prediction_type)
                 return []
             raise
+
+    async def opportunity_radar_snapshot_upsert(
+        self,
+        *,
+        country_code: str,
+        reference_date: str,
+        rank: int,
+        symbol: str,
+        name: str | None,
+        sector: str | None,
+        reference_price: float,
+        base_score: float,
+        adjusted_score: float | None,
+        up_probability_20d: float | None,
+        confidence_20d: float | None,
+        predicted_close_20d: float | None,
+        predicted_low_20d: float | None,
+        predicted_high_20d: float | None,
+        target_date_20d: str | None,
+        thesis_json: list[str] | None,
+        tags_json: list[str] | None,
+        support_json: dict | None,
+    ) -> None:
+        timestamp = time.time()
+        async with self._connect() as conn:
+            await conn.execute(
+                """
+                INSERT INTO opportunity_radar_snapshots (
+                    country_code, reference_date, rank, symbol, name, sector,
+                    reference_price, base_score, adjusted_score,
+                    up_probability_20d, confidence_20d,
+                    predicted_close_20d, predicted_low_20d, predicted_high_20d,
+                    target_date_20d, thesis_json, tags_json, support_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(country_code, reference_date, symbol)
+                DO UPDATE SET
+                    rank = excluded.rank,
+                    name = excluded.name,
+                    sector = excluded.sector,
+                    reference_price = excluded.reference_price,
+                    base_score = excluded.base_score,
+                    adjusted_score = excluded.adjusted_score,
+                    up_probability_20d = excluded.up_probability_20d,
+                    confidence_20d = excluded.confidence_20d,
+                    predicted_close_20d = excluded.predicted_close_20d,
+                    predicted_low_20d = excluded.predicted_low_20d,
+                    predicted_high_20d = excluded.predicted_high_20d,
+                    target_date_20d = excluded.target_date_20d,
+                    thesis_json = excluded.thesis_json,
+                    tags_json = excluded.tags_json,
+                    support_json = excluded.support_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    country_code,
+                    reference_date,
+                    rank,
+                    symbol,
+                    name,
+                    sector,
+                    reference_price,
+                    base_score,
+                    adjusted_score,
+                    up_probability_20d,
+                    confidence_20d,
+                    predicted_close_20d,
+                    predicted_low_20d,
+                    predicted_high_20d,
+                    target_date_20d,
+                    json.dumps(thesis_json, ensure_ascii=False, default=str) if thesis_json is not None else None,
+                    json.dumps(tags_json, ensure_ascii=False, default=str) if tags_json is not None else None,
+                    json.dumps(support_json, ensure_ascii=False, default=str) if support_json is not None else None,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            await conn.commit()
+
+    async def opportunity_radar_snapshot_recent(self, limit: int = 200) -> list[dict]:
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT *
+                    FROM opportunity_radar_snapshots
+                    ORDER BY reference_date DESC, rank ASC, updated_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("opportunity_radar_snapshot_recent lock fallback")
+                return []
+            raise
+
+    async def opportunity_radar_snapshot_update_evaluation(
+        self,
+        *,
+        record_id: int,
+        anchor_date: str | None,
+        target_date_1d: str | None,
+        target_date_5d: str | None,
+        target_date_20d: str | None,
+        evaluation_json: dict,
+        evaluation_complete: bool,
+    ) -> None:
+        evaluated_at = time.time() if evaluation_complete else None
+        async with self._connect() as conn:
+            await conn.execute(
+                """
+                UPDATE opportunity_radar_snapshots
+                SET anchor_date = ?,
+                    target_date_1d = ?,
+                    target_date_5d = ?,
+                    target_date_20d = ?,
+                    evaluation_json = ?,
+                    updated_at = ?,
+                    evaluated_at = CASE
+                        WHEN ? IS NOT NULL THEN ?
+                        ELSE evaluated_at
+                    END
+                WHERE id = ?
+                """,
+                (
+                    anchor_date,
+                    target_date_1d,
+                    target_date_5d,
+                    target_date_20d,
+                    json.dumps(evaluation_json, ensure_ascii=False, default=str),
+                    time.time(),
+                    evaluated_at,
+                    evaluated_at,
+                    record_id,
+                ),
+            )
+            await conn.commit()
 
 
     # ── portfolio ────────────────────────────────────────────

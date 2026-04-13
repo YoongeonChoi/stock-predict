@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import AuthGateCard from "@/components/AuthGateCard";
 import { useAuth } from "@/components/AuthProvider";
+import PageHeader from "@/components/PageHeader";
 import PortfolioConditionalRecommendationPanel from "@/components/PortfolioConditionalRecommendationPanel";
 import PortfolioEventRadar from "@/components/PortfolioEventRadar";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
@@ -15,7 +16,6 @@ import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { ApiError, api } from "@/lib/api";
-import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type {
   PortfolioConditionalRecommendationFilters,
   PortfolioConditionalRecommendationResponse,
@@ -28,6 +28,7 @@ import type {
 } from "@/lib/api";
 import type { OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
+import { usePortfolioWorkspaceLoader } from "@/components/pages/usePortfolioWorkspaceLoader";
 
 const COLORS = ["#2563eb", "#0f172a", "#f59e0b", "#0ea5e9", "#22c55e", "#64748b", "#14b8a6", "#e11d48"];
 const DEFAULT_RECOMMENDATION_FILTERS: PortfolioConditionalRecommendationFilters = {
@@ -47,6 +48,13 @@ const TICKER_GUIDE = {
     helper: "국내 종목은 숫자 6자리만 입력해도 표준 티커 형식으로 자동 해석합니다.",
   },
 } as const;
+
+const PORTFOLIO_PRIMARY_TIMEOUT_MS = 14_000;
+const PORTFOLIO_PANEL_TIMEOUT_MS = 12_000;
+
+function opportunityScoreLabel(setupLabel?: string) {
+  return setupLabel === "전수 1차 스캔" ? "1차 스캔 점수" : "레이더 점수";
+}
 
 interface HoldingFormState {
   ticker: string;
@@ -155,6 +163,9 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
   const [portfolioLoadError, setPortfolioLoadError] = useState<string | null>(null);
+  const [eventRadarError, setEventRadarError] = useState<string | null>(null);
+  const [conditionalError, setConditionalError] = useState<string | null>(null);
+  const [optimalError, setOptimalError] = useState<string | null>(null);
   const [submittingHolding, setSubmittingHolding] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [formError, setFormError] = useState("");
@@ -176,13 +187,26 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const [eventRadarLoading, setEventRadarLoading] = useState(true);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
+  const hasSession = Boolean(session);
 
   const activeGuide = TICKER_GUIDE[holdingForm.countryCode as keyof typeof TICKER_GUIDE] ?? TICKER_GUIDE.KR;
   const summary = data?.summary;
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
   const mixedCountries = useMemo(() => false, []);
   const demoPreviewItems = (demoData?.opportunities || []).slice(0, 2);
+  const portfolioHeaderDescription = "총자산과 보유 종목을 먼저 정리하고, 추천과 이벤트 레이더는 그 다음 순서로 확인합니다.";
+  const portfolioHeaderMeta = (
+    <>
+      <span className="info-chip">보유 종목 {summary?.holding_count ?? 0}개</span>
+      <span className="info-chip">투입 가능 자금 {formatAssetValue(summary?.deployable_cash ?? 0)}</span>
+    </>
+  );
+  const handlePortfolioLoaded = useCallback((next: PortfolioData) => {
+    setData(next);
+    setProfileForm(buildProfileForm(next.profile));
+  }, []);
 
+<<<<<<< HEAD
   const loadPortfolio = async (showFailureToast = false) => {
     if (!session) {
       return;
@@ -308,6 +332,34 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
 
     loadWorkspace();
   }, [authLoading, session]);
+=======
+  const { loadPortfolio, refreshSupportPanels } = usePortfolioWorkspaceLoader({
+    hasSession,
+    authLoading,
+    data,
+    loading,
+    portfolioLoadError,
+    conditionalFilters,
+    initialFilters: DEFAULT_RECOMMENDATION_FILTERS,
+    primaryTimeoutMs: PORTFOLIO_PRIMARY_TIMEOUT_MS,
+    panelTimeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS,
+    onPortfolioLoaded: handlePortfolioLoaded,
+    setData,
+    setLoading,
+    setPortfolioLoadError,
+    setEventRadar,
+    setEventRadarError,
+    setConditionalRecommendation,
+    setConditionalError,
+    setOptimalRecommendation,
+    setOptimalError,
+    setConditionalLoading,
+    setOptimalLoading,
+    setEventRadarLoading,
+    toast,
+    formatApiErrorMessage: getApiErrorMessage,
+  });
+>>>>>>> main
 
   useEffect(() => {
     const trimmed = holdingForm.ticker.trim();
@@ -437,13 +489,19 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     setConditionalRunning(true);
     setConditionalLoading(true);
     try {
-      const response = await api.getPortfolioConditionalRecommendation(conditionalFilters);
+      const response = await api.getPortfolioConditionalRecommendation(conditionalFilters, { timeoutMs: PORTFOLIO_PANEL_TIMEOUT_MS });
       setConditionalRecommendation(response);
       setConditionalError(null);
     } catch (error) {
       console.error(error);
+<<<<<<< HEAD
       setConditionalError(getUserFacingErrorMessage(error, "조건 추천을 계산하지 못했습니다."));
       toast(getApiErrorMessage(error, "조건 추천을 계산하지 못했습니다."), "error");
+=======
+      const message = getApiErrorMessage(error, "조건 추천을 계산하지 못했습니다.");
+      setConditionalError(message);
+      toast(message, "error");
+>>>>>>> main
     } finally {
       setConditionalRunning(false);
       setConditionalLoading(false);
@@ -499,7 +557,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                         <div className={changeColor(item.change_pct ?? 0)}>{formatPct(item.change_pct)}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                        <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(item.setup_label)}</div>
                         <div className="font-semibold text-text">{item.opportunity_score?.toFixed(1) ?? "대기"}</div>
                       </div>
                       <div>
@@ -605,12 +663,46 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             ) : null}
           </div>
         </section>
+        <section className="space-y-5">
+          <div className="section-heading">
+            <div>
+              <h2 className="section-title">추천</h2>
+              <p className="section-copy">계정 자산 요약이 늦어져도 추천 패널은 가능한 범위 안에서 따로 확인할 수 있습니다.</p>
+            </div>
+            <Link href="/lab" className="ui-button-secondary w-full px-4 sm:w-auto sm:shrink-0">
+              검증 기준 보기
+            </Link>
+          </div>
+          <div className="workspace-grid-balanced">
+            <div className="min-w-0">
+              <PortfolioConditionalRecommendationPanel
+                data={conditionalRecommendation}
+                filters={conditionalFilters}
+                loading={conditionalLoading}
+                running={conditionalRunning}
+                errorMessage={conditionalError}
+                onRetry={() => void refreshSupportPanels(conditionalFilters)}
+                onChange={setConditionalFilters}
+                onRun={runConditionalRecommendation}
+              />
+            </div>
+            <div className="min-w-0">
+              <PortfolioOptimalRecommendationPanel
+                data={optimalRecommendation}
+                loading={optimalLoading}
+                errorMessage={optimalError}
+                onRetry={() => void refreshSupportPanels(conditionalFilters)}
+              />
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="page-shell">
+<<<<<<< HEAD
       {data && portfolioLoadError ? (
         <WorkspaceStateCard
           eyebrow="자산 요약 재동기화 지연"
@@ -622,6 +714,27 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             void loadPortfolio(true);
           }}
           aside={<span className="info-chip">마지막 성공 요약 유지</span>}
+=======
+      <PageHeader
+        variant="compact"
+        eyebrow="자산 관리"
+        title="포트폴리오"
+        description={portfolioHeaderDescription}
+        meta={portfolioHeaderMeta}
+      />
+      {portfolioLoadError ? (
+        <WorkspaceStateCard
+          kind="partial"
+          eyebrow="부분 업데이트"
+          title="자산 요약 최신 응답이 늦어지고 있습니다"
+          message={`${portfolioLoadError} 직전 포트폴리오 스냅샷은 유지한 채 다시 불러오기를 기다립니다.`}
+          actionLabel="포트폴리오 다시 불러오기"
+          onAction={() => {
+            setLoading(true);
+            setPortfolioLoadError(null);
+            void loadPortfolio(true).finally(() => setLoading(false));
+          }}
+>>>>>>> main
         />
       ) : null}
       <section className="workspace-grid">
@@ -679,66 +792,66 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           </div>
         </div>
 
-        <div className="card !p-5 space-y-4 h-fit xl:sticky xl:top-5">
+        <div className="card h-fit space-y-4 xl:sticky xl:top-5">
           <div>
             <h2 className="section-title">총자산 설정</h2>
           </div>
           <div className="space-y-3">
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">총자산</label>
-              <input value={profileForm.totalAssets} onChange={(e) => setProfileForm((prev) => ({ ...prev, totalAssets: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">총자산</label>
+              <input value={profileForm.totalAssets} onChange={(e) => setProfileForm((prev) => ({ ...prev, totalAssets: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">예수금</label>
-              <input value={profileForm.cashBalance} onChange={(e) => setProfileForm((prev) => ({ ...prev, cashBalance: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">예수금</label>
+              <input value={profileForm.cashBalance} onChange={(e) => setProfileForm((prev) => ({ ...prev, cashBalance: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
             <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">월 추가 자금</label>
-              <input value={profileForm.monthlyBudget} onChange={(e) => setProfileForm((prev) => ({ ...prev, monthlyBudget: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+              <label className="ui-field-label">월 추가 자금</label>
+              <input value={profileForm.monthlyBudget} onChange={(e) => setProfileForm((prev) => ({ ...prev, monthlyBudget: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
             </div>
           </div>
-          {profileError ? <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">{profileError}</div> : null}
-          <button onClick={saveProfile} disabled={savingProfile} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+          {profileError ? <div className="rounded-[24px] border border-negative/20 bg-negative/5 px-4 py-3 text-[0.95rem] text-negative">{profileError}</div> : null}
+          <button onClick={saveProfile} disabled={savingProfile} className="ui-button-primary w-full">
             {savingProfile ? "자산 기준 저장 중..." : "자산 기준 저장"}
           </button>
         </div>
       </section>
-      <section className="card !p-5 space-y-5">
+      <section className="card space-y-5">
         <div className="section-heading">
           <div>
             <h2 className="section-title">보유 종목 관리</h2>
           </div>
-          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="action-chip-secondary">수정 취소</button> : null}
+          {editingHoldingId != null ? <button onClick={resetHoldingForm} className="ui-button-secondary w-full sm:w-auto">수정 취소</button> : null}
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.1fr)_180px_140px_180px_auto]">
           <div className="min-w-0">
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">티커</label>
-            <input value={holdingForm.ticker} onChange={(e) => setHoldingForm((prev) => ({ ...prev, ticker: e.target.value }))} placeholder={activeGuide.placeholder} className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">티커</label>
+            <input value={holdingForm.ticker} onChange={(e) => setHoldingForm((prev) => ({ ...prev, ticker: e.target.value }))} placeholder={activeGuide.placeholder} className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수가</label>
-            <input value={holdingForm.buyPrice} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyPrice: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">매수가</label>
+            <input value={holdingForm.buyPrice} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyPrice: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">수량</label>
-            <input value={holdingForm.quantity} onChange={(e) => setHoldingForm((prev) => ({ ...prev, quantity: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">수량</label>
+            <input value={holdingForm.quantity} onChange={(e) => setHoldingForm((prev) => ({ ...prev, quantity: e.target.value }))} type="number" min="0" step="0.01" className="ui-input" />
           </div>
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">매수일</label>
-            <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm" />
+            <label className="ui-field-label">매수일</label>
+            <input value={holdingForm.buyDate} onChange={(e) => setHoldingForm((prev) => ({ ...prev, buyDate: e.target.value }))} type="date" className="ui-input" />
           </div>
           <div className="flex items-end">
-            <button onClick={submitHolding} disabled={submittingHolding} className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+            <button onClick={submitHolding} disabled={submittingHolding} className="ui-button-primary w-full">
               {submittingHolding ? "저장 중..." : editingHoldingId != null ? "보유 종목 수정" : "보유 종목 추가"}
             </button>
           </div>
         </div>
 
-        <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-3 space-y-2">
+        <div className="ui-panel-muted space-y-2">
           <div className="text-xs text-text-secondary">{activeGuide.label}: {activeGuide.helper}</div>
           <TickerResolutionHint resolution={resolution} />
-          {formError ? <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">{formError}</div> : null}
+          {formError ? <div className="rounded-[22px] border border-negative/20 bg-negative/5 px-4 py-3 text-[0.95rem] text-negative">{formError}</div> : null}
         </div>
       </section>
 
@@ -747,7 +860,60 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           <h2 className="section-title">보유 종목</h2>
         </div>
         {hasHoldings ? (
-          <div className="overflow-x-auto px-2 pb-2 pt-1 md:px-3">
+          <>
+          <div className="space-y-3 px-4 py-4 md:hidden">
+            {data?.holdings.map((holding) => (
+              <article key={holding.id} className="ui-panel space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/stock/${holding.ticker}`} className="font-semibold text-text hover:text-accent">
+                      {holding.name}
+                    </Link>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{holding.ticker} · {holding.country_code} · {holding.sector}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">비중</div>
+                    <div className="mt-1 text-lg font-semibold text-text">{holding.weight_pct.toFixed(1)}%</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[0.9rem]">
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">매수 정보</div>
+                    <div className="mt-1 font-medium text-text">{formatPrice(holding.buy_price, holding.country_code)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{formatQuantity(holding.quantity)}주 · {holding.buy_date}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">평가</div>
+                    <div className="mt-1 font-medium text-text">{formatPrice(holding.current_price, holding.country_code)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">평가액 {formatAssetValue(holding.current_value)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">손익</div>
+                    <div className={`mt-1 font-semibold ${changeColor(holding.pnl)}`}>{holding.pnl >= 0 ? "+" : ""}{formatAssetValue(holding.pnl)}</div>
+                    <div className={`mt-1 text-[0.78rem] ${changeColor(holding.pnl_pct)}`}>{formatPct(holding.pnl_pct)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">리스크 / 확률</div>
+                    <div className="mt-1 font-medium text-text">{riskLevelLabel(holding.risk_level)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">상승 확률 {holding.up_probability != null ? `${holding.up_probability.toFixed(1)}%` : "없음"}</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">실행</div>
+                    <div className="mt-1 font-semibold text-text">{tradeActionLabel(holding.trade_action)}</div>
+                    <div className="mt-1 text-[0.78rem] text-text-secondary">{holding.trade_setup || "설정된 셋업 없음"}</div>
+                  </div>
+                  <div className="ui-inline-actions w-full sm:w-auto">
+                    <button onClick={() => startEdit(holding)} className="ui-button-secondary">수정</button>
+                    <button onClick={() => removeHolding(holding.id)} className="ui-button-warning">삭제</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="hidden px-2 pb-2 pt-1 md:block md:px-3">
+            <div className="ui-table-shell">
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface/40 text-left text-text-secondary">
@@ -796,16 +962,18 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                       {holding.risk_flags.length > 0 ? <div className="mt-2 max-w-[220px] text-[11px] text-amber-600">{holding.risk_flags[0]}</div> : null}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-3 text-xs">
-                        <button onClick={() => startEdit(holding)} className="text-accent hover:underline">수정</button>
-                        <button onClick={() => removeHolding(holding.id)} className="text-negative hover:underline">삭제</button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button onClick={() => startEdit(holding)} className="ui-button-secondary px-4">수정</button>
+                        <button onClick={() => removeHolding(holding.id)} className="ui-button-warning px-4">삭제</button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
+          </>
         ) : (
           <div className="px-5 py-12 text-center text-text-secondary">
             <p className="text-lg">아직 등록된 보유 종목이 없습니다.</p>
@@ -855,6 +1023,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
 
       {hasHoldings && data ? <PortfolioRiskPanel risk={data.risk} stressTest={data.stress_test} /> : null}
       {hasHoldings && data ? <PortfolioModelPanel model={data.model_portfolio} /> : null}
+<<<<<<< HEAD
       {hasHoldings ? (
         eventRadar && !eventRadarLoading ? (
           <div className="space-y-3">
@@ -892,6 +1061,19 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           />
         )
       ) : null}
+=======
+      {hasHoldings && eventRadarError ? (
+        <WorkspaceStateCard
+          eyebrow="이벤트 레이더 지연"
+          title={eventRadar ? "포트폴리오 이벤트 레이더 최신 응답이 늦어지고 있습니다" : "포트폴리오 이벤트 레이더를 아직 불러오지 못했습니다"}
+          message={eventRadar ? `${eventRadarError} 직전 이벤트 레이더는 유지한 채 다시 불러오기를 기다립니다.` : eventRadarError}
+          tone="warning"
+          actionLabel="이벤트 레이더 다시 불러오기"
+          onAction={() => void refreshSupportPanels(conditionalFilters)}
+        />
+      ) : null}
+      {hasHoldings && eventRadar && !eventRadarLoading ? <PortfolioEventRadar data={eventRadar} /> : null}
+>>>>>>> main
 
       <section className="space-y-5">
         <div className="section-heading">
@@ -899,12 +1081,13 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             <h2 className="section-title">추천</h2>
             <p className="section-copy">늘릴 종목과 방어 행동을 함께 보고, 검증 기준은 예측 연구실에서 같은 척도로 확인합니다.</p>
           </div>
-          <Link href="/lab" className="action-chip-secondary">
+          <Link href="/lab" className="ui-button-secondary w-full px-4 sm:w-auto sm:shrink-0">
             검증 기준 보기
           </Link>
         </div>
         <div className="workspace-grid-balanced">
           <div className="min-w-0">
+<<<<<<< HEAD
             <div className="space-y-3">
               {conditionalError && conditionalRecommendation ? (
                 <WorkspaceStateCard
@@ -972,6 +1155,26 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                 <PortfolioOptimalRecommendationPanel data={optimalRecommendation} loading={optimalLoading} />
               )}
             </div>
+=======
+            <PortfolioConditionalRecommendationPanel
+              data={conditionalRecommendation}
+              filters={conditionalFilters}
+              loading={conditionalLoading}
+              running={conditionalRunning}
+              errorMessage={conditionalError}
+              onRetry={() => void refreshSupportPanels(conditionalFilters)}
+              onChange={setConditionalFilters}
+              onRun={runConditionalRecommendation}
+            />
+          </div>
+          <div className="min-w-0">
+            <PortfolioOptimalRecommendationPanel
+              data={optimalRecommendation}
+              loading={optimalLoading}
+              errorMessage={optimalError}
+              onRetry={() => void refreshSupportPanels(conditionalFilters)}
+            />
+>>>>>>> main
           </div>
         </div>
       </section>

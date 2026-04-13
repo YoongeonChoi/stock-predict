@@ -212,3 +212,119 @@ def build_trade_plan(
         thesis=thesis,
         invalidation=invalidation,
     )
+
+
+def build_short_horizon_trade_plan(
+    *,
+    ticker: str,
+    current_price: float,
+    price_history: list[PricePoint],
+    technical: TechnicalIndicators,
+    buy_sell_guide: BuySellGuide,
+    next_day_forecast: NextDayForecast | None,
+    market_regime: MarketRegime | None = None,
+) -> TradePlan:
+    if current_price <= 0 or next_day_forecast is None:
+        return TradePlan(
+            setup_label=f"{ticker} 단기 관찰",
+            action="avoid",
+            conviction=26.0,
+            expected_holding_days=1,
+            thesis=["다음 거래일 전용 플랜을 만들 데이터가 부족해 관찰 우선으로 둡니다."],
+            invalidation="다음 거래일 예측과 가격 데이터가 함께 확보되면 다시 계산합니다.",
+        )
+
+    ma20 = _last_value(technical.ma_20)
+    atr_pct = _atr_pct(price_history, current_price)
+    up_probability = float(next_day_forecast.up_probability or 0.0)
+    confidence = float(next_day_forecast.confidence or 0.0)
+    predicted_return_pct = float(next_day_forecast.predicted_return_pct or 0.0)
+    predicted_open = float(next_day_forecast.predicted_open or current_price or 0.0)
+    predicted_close = float(next_day_forecast.predicted_close or current_price or 0.0)
+    predicted_high = float(next_day_forecast.predicted_high or current_price or 0.0)
+    predicted_low = float(next_day_forecast.predicted_low or current_price or 0.0)
+    regime_stance = getattr(market_regime, "stance", "neutral")
+    trend_supported = ma20 is None or current_price >= ma20 * 0.992
+    risk_off_tape = regime_stance == "risk_off"
+
+    base_entry = predicted_open if predicted_open > 0 else current_price
+    buy_low = float(getattr(buy_sell_guide, "buy_zone_low", 0.0) or current_price)
+    buy_high = float(getattr(buy_sell_guide, "buy_zone_high", 0.0) or current_price)
+    entry_low = max(min(base_entry, current_price) * 0.997, buy_low * 0.995)
+    entry_high = min(max(base_entry, current_price) * 1.003, max(buy_high * 1.005, current_price * 1.008))
+    if entry_low > entry_high:
+        midpoint = max(base_entry, current_price)
+        entry_low = midpoint * 0.997
+        entry_high = midpoint * 1.003
+
+    entry_reference = (entry_low + entry_high) / 2.0
+    intraday_risk_pct = max(((entry_reference - predicted_low) / entry_reference) * 100.0, 0.0) if entry_reference > 0 else 0.0
+    stop_buffer_pct = _clip(max(intraday_risk_pct * 0.9, atr_pct * 0.45, 1.4), 1.4, 4.8)
+    stop_loss = max(entry_reference * (1.0 - stop_buffer_pct / 100.0), predicted_low * 0.998 if predicted_low > 0 else 0.0)
+    take_profit_1 = max(predicted_close, entry_reference * 1.006)
+    take_profit_2 = max(predicted_high, take_profit_1 * 1.01)
+
+    action = "wait_pullback"
+    setup_label = "장중 확인 대기"
+    if predicted_return_pct <= 0 or up_probability < 52.0 or next_day_forecast.direction == "down":
+        action = "reduce_risk" if (risk_off_tape or predicted_return_pct < 0) else "wait_pullback"
+        setup_label = "리스크 축소" if action == "reduce_risk" else "짧은 반등 확인"
+    elif up_probability >= 61.0 and confidence >= 64.0 and trend_supported and not risk_off_tape:
+        action = "accumulate"
+        setup_label = "다음 거래일 집중 매수"
+    elif up_probability >= 56.0 and predicted_return_pct >= 0.25:
+        action = "breakout_watch"
+        setup_label = "장초반 돌파 확인"
+
+    if action == "reduce_risk":
+        entry_low = None
+        entry_high = None
+        stop_loss = current_price * (1.0 - _clip(max(atr_pct * 0.35, 1.2), 1.2, 3.0) / 100.0)
+        take_profit_1 = max(predicted_close, current_price * 1.003)
+        take_profit_2 = max(predicted_high, take_profit_1 * 1.006)
+        entry_reference = current_price
+
+    risk_reward = 0.0
+    if stop_loss and take_profit_1 and entry_reference > stop_loss:
+        risk_reward = max((take_profit_1 - entry_reference) / (entry_reference - stop_loss), 0.0)
+
+    regime_note = (
+        "시장 국면이 risk-on이라 단기 추세 추종에 상대적으로 유리합니다."
+        if regime_stance == "risk_on"
+        else "시장 국면이 risk-off라 장중 반등도 짧게 보는 편이 낫습니다."
+        if regime_stance == "risk_off"
+        else "시장 국면이 혼조라 진입 가격과 손절을 더 엄격하게 봐야 합니다."
+    )
+    thesis = [
+        f"{next_day_forecast.target_date} 기준 상승 확률 {up_probability:.1f}%, 예상 수익률 {predicted_return_pct:+.2f}%입니다.",
+        f"예상 고가 {predicted_high:.2f}, 예상 저가 {predicted_low:.2f} 범위 안에서 짧게 대응하는 구조입니다.",
+        regime_note,
+    ]
+    if next_day_forecast.execution_note:
+        thesis.append(next_day_forecast.execution_note)
+
+    conviction = 20.0 + up_probability * 0.35 + confidence * 0.35 + min(risk_reward, 3.2) * 8.0
+    if regime_stance == "risk_on":
+        conviction += 5.0
+    elif regime_stance == "risk_off":
+        conviction -= 6.0
+    conviction = round(_clip(conviction, 24.0, 92.0), 1)
+
+    invalidation = "다음 거래일 장중 손절가를 이탈하면 같은 날 재진입보다 시나리오 종료를 우선합니다."
+    if action == "reduce_risk":
+        invalidation = "다음 거래일 상방 확률과 종가 구조가 함께 회복되기 전까지 방어 대응을 유지합니다."
+
+    return TradePlan(
+        setup_label=setup_label,
+        action=action,
+        conviction=conviction,
+        entry_low=round(entry_low, 2) if entry_low is not None else None,
+        entry_high=round(entry_high, 2) if entry_high is not None else None,
+        stop_loss=round(stop_loss, 2) if stop_loss is not None else None,
+        take_profit_1=round(take_profit_1, 2) if take_profit_1 is not None else None,
+        take_profit_2=round(take_profit_2, 2) if take_profit_2 is not None else None,
+        expected_holding_days=1,
+        risk_reward_estimate=round(risk_reward, 2),
+        thesis=thesis[:4],
+        invalidation=invalidation,
+    )

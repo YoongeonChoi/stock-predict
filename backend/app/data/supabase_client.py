@@ -26,6 +26,12 @@ def _normalize_response_rows(payload: Any) -> list[dict]:
     return []
 
 
+WATCHLIST_BASE_SELECT = "id,ticker,country_code,added_at"
+WATCHLIST_TRACKING_SELECT = (
+    "id,ticker,country_code,added_at,tracking_enabled,tracking_started_at,tracking_updated_at"
+)
+
+
 class SupabaseClient:
     def __init__(self):
         self._settings = get_settings()
@@ -155,17 +161,75 @@ class SupabaseClient:
         )
 
     async def watchlist_list(self, user_id: str) -> list[dict]:
-        payload = await self._request_json(
-            "GET",
-            "/rest/v1/watchlist",
-            headers=self._service_headers(),
-            params={
-                "select": "id,ticker,country_code,added_at",
-                "user_id": f"eq.{user_id}",
-                "order": "added_at.desc",
-            },
-        )
-        return _normalize_response_rows(payload)
+        try:
+            payload = await self._request_json(
+                "GET",
+                "/rest/v1/watchlist",
+                headers=self._service_headers(),
+                params={
+                    "select": WATCHLIST_TRACKING_SELECT,
+                    "user_id": f"eq.{user_id}",
+                    "order": "added_at.desc",
+                },
+            )
+            return _normalize_response_rows(payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            payload = await self._request_json(
+                "GET",
+                "/rest/v1/watchlist",
+                headers=self._service_headers(),
+                params={
+                    "select": WATCHLIST_BASE_SELECT,
+                    "user_id": f"eq.{user_id}",
+                    "order": "added_at.desc",
+                },
+            )
+            rows = _normalize_response_rows(payload)
+            for row in rows:
+                row.setdefault("tracking_enabled", False)
+                row.setdefault("tracking_started_at", None)
+                row.setdefault("tracking_updated_at", None)
+            return rows
+
+    async def watchlist_get(self, user_id: str, ticker: str) -> dict[str, Any] | None:
+        try:
+            payload = await self._request_json(
+                "GET",
+                "/rest/v1/watchlist",
+                headers=self._service_headers(),
+                params={
+                    "select": WATCHLIST_TRACKING_SELECT,
+                    "user_id": f"eq.{user_id}",
+                    "ticker": f"eq.{ticker}",
+                    "limit": 1,
+                },
+            )
+            rows = _normalize_response_rows(payload)
+            return rows[0] if rows else None
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            payload = await self._request_json(
+                "GET",
+                "/rest/v1/watchlist",
+                headers=self._service_headers(),
+                params={
+                    "select": WATCHLIST_BASE_SELECT,
+                    "user_id": f"eq.{user_id}",
+                    "ticker": f"eq.{ticker}",
+                    "limit": 1,
+                },
+            )
+            rows = _normalize_response_rows(payload)
+            if not rows:
+                return None
+            row = rows[0]
+            row.setdefault("tracking_enabled", False)
+            row.setdefault("tracking_started_at", None)
+            row.setdefault("tracking_updated_at", None)
+            return row
 
     async def watchlist_add(self, user_id: str, ticker: str, country_code: str) -> dict:
         payload = await self._request_json(
@@ -210,6 +274,37 @@ class SupabaseClient:
             headers=self._service_headers(prefer="return=minimal"),
             params={"user_id": f"eq.{user_id}", "ticker": f"eq.{ticker}"},
         )
+
+    async def watchlist_set_tracking(
+        self,
+        user_id: str,
+        ticker: str,
+        *,
+        enabled: bool,
+    ) -> dict[str, Any] | None:
+        existing = await self.watchlist_get(user_id, ticker)
+        if not existing:
+            return None
+
+        tracking_updated_at = _utcnow_iso()
+        payload = {
+            "tracking_enabled": enabled,
+            "tracking_updated_at": tracking_updated_at,
+        }
+        if enabled and not existing.get("tracking_started_at"):
+            payload["tracking_started_at"] = tracking_updated_at
+
+        result = await self._request_json(
+            "PATCH",
+            "/rest/v1/watchlist",
+            headers=self._service_headers(prefer="return=representation"),
+            params={"user_id": f"eq.{user_id}", "ticker": f"eq.{ticker}"},
+            json=payload,
+        )
+        rows = _normalize_response_rows(result)
+        if rows:
+            return rows[0]
+        return {**existing, **payload}
 
     async def portfolio_list(self, user_id: str) -> list[dict]:
         payload = await self._request_json(

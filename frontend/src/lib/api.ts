@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import type { RequestTrace } from "@/lib/types";
 
@@ -21,6 +22,25 @@ export interface RequestOptions extends RequestInit {
 export interface StockDetailRequestOptions extends RequestOptions {
   preferFull?: boolean;
 }
+=======
+import { apiPath, del, get, post, put, request } from "@/lib/api/client";
+import { accountApi } from "@/lib/api/account";
+import { marketApi } from "@/lib/api/market";
+import { portfolioApi } from "@/lib/api/portfolio";
+import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
+import { systemApi } from "@/lib/api/system";
+export { apiPath };
+export {
+  AUTH_REQUIRED_EVENT,
+  ApiError,
+  ApiTimeoutError,
+  getApiRetryAfterSeconds,
+  isApiErrorCode,
+  isAuthRequiredError,
+} from "@/lib/api/errors";
+export type { ApiErrorInfo, AuthRequiredEventDetail } from "@/lib/api/errors";
+export type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
+>>>>>>> main
 
 export interface AccountProfile {
   user_id: string;
@@ -80,187 +100,6 @@ export interface UsernameAvailabilityResponse {
   message: string;
 }
 
-export interface AuthRequiredEventDetail {
-  path: string;
-  status: number;
-  errorCode: string;
-  message: string;
-  detail: string;
-  occurredAt: number;
-}
-
-export class ApiError extends Error {
-  status: number;
-  errorCode: string;
-  detail: string;
-  retryAfterSeconds: number | null;
-
-  constructor(status: number, info: ApiErrorInfo, headers?: Headers) {
-    super(info.message);
-    this.status = status;
-    this.errorCode = info.error_code || `HTTP-${status}`;
-    this.detail = info.detail || "";
-    const retryAfterHeader = headers?.get("Retry-After") || headers?.get("retry-after") || "";
-    const retryAfterSeconds = Number.parseInt(retryAfterHeader, 10);
-    this.retryAfterSeconds = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : null;
-  }
-}
-
-export class ApiTimeoutError extends Error {
-  path: string;
-  timeoutMs: number;
-
-  constructor(path: string, timeoutMs: number) {
-    super(`${Math.round(timeoutMs / 1000)}초 안에 응답이 오지 않았습니다.`);
-    this.name = "ApiTimeoutError";
-    this.path = path;
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-export function isApiErrorCode(error: unknown, code: string): error is ApiError {
-  return error instanceof ApiError && error.errorCode === code;
-}
-
-export function getApiRetryAfterSeconds(error: unknown): number | null {
-  if (!(error instanceof ApiError)) {
-    return null;
-  }
-  if (error.retryAfterSeconds) {
-    return error.retryAfterSeconds;
-  }
-  const match = `${error.detail} ${error.message}`.match(/(\d+)초\s*후/);
-  if (!match) {
-    return null;
-  }
-  const seconds = Number.parseInt(match[1] ?? "", 10);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
-}
-
-export function isAuthRequiredError(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 401 || error.errorCode === "SP-6014");
-}
-
-function emitAuthRequired(detail: AuthRequiredEventDetail) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.dispatchEvent(new CustomEvent<AuthRequiredEventDetail>(AUTH_REQUIRED_EVENT, { detail }));
-}
-
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  const client = getSupabaseBrowserClient();
-  if (!client) {
-    return {};
-  }
-  try {
-    const {
-      data: { session },
-    } = await client.auth.getSession();
-    if (!session?.access_token) {
-      return {};
-    }
-    return {
-      Authorization: `Bearer ${session.access_token}`,
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
-  const { timeoutMs = 0, ...requestInit } = init;
-  const authHeaders = await getAuthHeaders();
-  const headers = new Headers(requestInit.headers || {});
-  Object.entries(authHeaders).forEach(([key, value]) => {
-    if (!headers.has(key)) {
-      headers.set(key, value);
-    }
-  });
-
-  const controller = new AbortController();
-  if (requestInit.signal) {
-    if (requestInit.signal.aborted) {
-      controller.abort();
-    } else {
-      requestInit.signal.addEventListener("abort", () => controller.abort(), { once: true });
-    }
-  }
-
-  let timedOut = false;
-  const timeoutHandle = timeoutMs > 0
-    ? globalThis.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs)
-    : null;
-
-  let res: Response;
-  try {
-    res = await fetch(apiPath(path), {
-      ...requestInit,
-      headers,
-      cache: requestInit.cache ?? "no-store",
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (timeoutHandle != null) {
-      globalThis.clearTimeout(timeoutHandle);
-    }
-    if (timedOut && error instanceof Error && error.name === "AbortError") {
-      throw new ApiTimeoutError(path, timeoutMs);
-    }
-    throw error;
-  }
-  if (timeoutHandle != null) {
-    globalThis.clearTimeout(timeoutHandle);
-  }
-  if (!res.ok) {
-    let info: ApiErrorInfo;
-    try {
-      info = await res.json();
-    } catch {
-      info = { error_code: `HTTP-${res.status}`, message: res.statusText };
-    }
-    const error = new ApiError(res.status, info, res.headers);
-    if (isAuthRequiredError(error)) {
-      emitAuthRequired({
-        path,
-        status: error.status,
-        errorCode: error.errorCode,
-        message: error.message,
-        detail: error.detail,
-        occurredAt: Date.now(),
-      });
-    }
-    throw error;
-  }
-  return res.json();
-}
-
-async function get<T>(path: string, init: RequestOptions = {}): Promise<T> {
-  return request<T>(path, init);
-}
-
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-
-async function put<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-
-async function del<T>(path: string): Promise<T> {
-  return request<T>(path, { method: "DELETE" });
-}
 
 export interface CompositeScoreItem {
   name: string;
@@ -302,6 +141,9 @@ export interface HeatmapSector {
 
 export interface HeatmapData {
   children: HeatmapSector[];
+  partial?: boolean;
+  fallback_reason?: string | null;
+  generated_at?: string | null;
 }
 
 export interface TechSignalItem {
@@ -499,6 +341,9 @@ export interface PortfolioModelItem {
   model_score: number;
   action: "new" | "add" | "hold" | "trim" | "exit" | "watch";
   priority: "high" | "medium" | "low";
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   target_horizon_days?: number | null;
   target_date_20d?: string | null;
   expected_return_pct_20d?: number | null;
@@ -594,6 +439,9 @@ export interface PortfolioRecommendationItem {
   delta_weight_pct: number;
   model_score: number;
   opportunity_score: number;
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   target_horizon_days?: number | null;
   target_date_20d?: string | null;
   expected_return_pct_20d?: number | null;
@@ -694,6 +542,9 @@ export interface DailyIdealPortfolioPosition {
   target_weight_pct: number;
   selection_score: number;
   opportunity_score: number;
+  base_opportunity_score?: number | null;
+  empirical_adjustment_points?: number | null;
+  empirical_adjustment_reason?: string | null;
   expected_return_pct_20d?: number | null;
   expected_excess_return_pct_20d?: number | null;
   median_return_pct_20d?: number | null;
@@ -941,6 +792,8 @@ export interface PredictionRecentRecord {
   scope: string;
   symbol: string;
   country_code?: string | null;
+  prediction_type?: string;
+  prediction_label?: string;
   target_date: string;
   reference_date?: string | null;
   reference_price: number;
@@ -959,11 +812,148 @@ export interface PredictionRecentRecord {
   evaluated_at?: number | null;
 }
 
+export interface PredictionLabActionItem {
+  key: string;
+  severity: "high" | "medium" | "info";
+  title: string;
+  detail: string;
+  metric_label?: string | null;
+  metric_value?: string | null;
+}
+
+export interface PredictionLabFailurePattern {
+  key: string;
+  title: string;
+  detail: string;
+  count: number;
+  avg_error_pct: number;
+  avg_confidence: number;
+  example_symbol?: string | null;
+  severity: "high" | "medium" | "info";
+}
+
+export interface PredictionLabReviewItem {
+  id: number;
+  prediction_type: string;
+  prediction_label: string;
+  scope: string;
+  symbol: string;
+  country_code?: string | null;
+  target_date: string;
+  direction: "up" | "down" | "flat";
+  direction_hit?: boolean | null;
+  within_range?: boolean | null;
+  abs_error_pct?: number | null;
+  confidence: number;
+  fusion_method: string;
+  graph_context_used: boolean;
+  graph_coverage?: number | null;
+  review_kind: string;
+  review_summary: string;
+  stock_path?: string | null;
+}
+
+export interface PredictionLabRadarTagStat {
+  label: string;
+  count: number;
+}
+
+export interface PredictionLabRadarCohort {
+  reference_date: string;
+  capture_count: number;
+  evaluated_count: number;
+  pending_count: number;
+  direction_accuracy_1d: number;
+  direction_accuracy_5d: number;
+  direction_accuracy_20d: number;
+  band_hit_rate_20d: number;
+  avg_return_pct_20d: number;
+  top_symbols: string[];
+}
+
+export interface PredictionLabRadarReviewItem {
+  reference_date: string;
+  symbol: string;
+  name: string;
+  rank: number;
+  kind: string;
+  summary: string;
+  detail: string;
+  return_pct_20d: number;
+  direction_hit_20d?: boolean | null;
+  within_band_20d?: boolean | null;
+}
+
+export interface PredictionLabRadarProfile {
+  status: string;
+  sample_count: number;
+  baseline_success_score?: number | null;
+  updated_at?: string | null;
+  top_positive: Array<{ key: string; label: string; delta: number }>;
+  top_negative: Array<{ key: string; label: string; delta: number }>;
+}
+
+export interface PredictionLabRadarSummary {
+  stored_snapshots: number;
+  capture_days: number;
+  latest_reference_date?: string | null;
+  last_evaluated_at?: string | null;
+  direction_accuracy_1d: number;
+  direction_accuracy_5d: number;
+  direction_accuracy_20d: number;
+  band_hit_rate_20d: number;
+  avg_return_pct_5d: number;
+  avg_return_pct_20d: number;
+  pending_20d: number;
+  tag_breakdown: PredictionLabRadarTagStat[];
+  recent_cohorts: PredictionLabRadarCohort[];
+  review_queue: PredictionLabRadarReviewItem[];
+  profile: PredictionLabRadarProfile;
+}
+
 export interface PredictionLabResponse {
   generated_at: string;
   partial?: boolean;
   fallback_reason?: string | null;
   accuracy: PredictionAccuracyStats;
+  pipeline_health: {
+    stored_predictions: number;
+    pending_predictions: number;
+    evaluated_predictions: number;
+    stale_pending_predictions: number;
+    last_saved_at?: string | null;
+    last_evaluated_at?: string | null;
+    last_checked_at: string;
+    backfill_checked_reports: number;
+    backfill_updated_reports: number;
+    backfill_captured_predictions: number;
+  };
+  coverage_breakdown: {
+    by_scope: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+    by_prediction_type: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+    by_model_version: {
+      label: string;
+      stored_predictions: number;
+      pending_predictions: number;
+      evaluated_predictions: number;
+    }[];
+  };
+  pipeline_alerts: {
+    key: string;
+    severity: "high" | "medium" | "info";
+    title: string;
+    detail: string;
+  }[];
   horizon_accuracy: {
     prediction_type: string;
     label: string;
@@ -1057,6 +1047,7 @@ export interface PredictionLabResponse {
       status: string;
     }[];
   };
+  radar_cohorts?: PredictionLabRadarSummary;
   calibration: PredictionCalibrationBucket[];
   recent_trend: PredictionTrendPoint[];
   recent_records: (PredictionRecentRecord & {
@@ -1065,6 +1056,9 @@ export interface PredictionLabResponse {
     graph_context_used?: boolean;
     graph_coverage?: number;
   })[];
+  action_queue: PredictionLabActionItem[];
+  failure_patterns: PredictionLabFailurePattern[];
+  review_queue: PredictionLabReviewItem[];
   insights: string[];
 }
 
@@ -1091,10 +1085,61 @@ export interface ForecastModelSummary {
   notes: string[];
 }
 
+export interface RouteStabilitySummaryRow {
+  route: string;
+  total: number;
+  p50_elapsed_ms: number;
+  p95_elapsed_ms: number;
+  fallback_served_rate: number;
+  partial_rate: number;
+  stale_rate: number;
+  degraded_rate: number;
+  cold_start_suspected_rate: number;
+  request_phase_mix: Record<string, number>;
+  operation_kind_mix: Record<string, number>;
+  cache_state_mix: Record<string, number>;
+  failure_class_mix: Record<string, number>;
+  recovered_failure_rate: number;
+}
+
+export interface RouteStabilityFirstUsableMetrics {
+  tracked_routes: number;
+  total_requests: number;
+  p50_elapsed_ms: number;
+  p95_elapsed_ms: number;
+  fallback_served_rate: number;
+  stale_served_rate: number;
+  first_request_cold_failure_rate: number;
+  blank_screen_rate: number;
+  error_only_screen_rate: number;
+}
+
+export interface RouteStabilityFailureSummary {
+  tracked: boolean;
+  total: number;
+  failure_count: number;
+  failure_rate: number;
+  by_route: {
+    route: string;
+    total: number;
+    failure_count: number;
+    failure_rate: number;
+  }[];
+}
+
+export interface RouteStabilityFailureClassSummary {
+  tracked: boolean;
+  total: number;
+  by_class: Record<string, number>;
+  recovered_count: number;
+  recovered_rate: number;
+}
+
 export interface SystemDiagnostics {
   status: "ok" | "degraded" | "starting";
   version: string;
   started_at: string;
+  render_memory_safe_mode?: boolean | null;
   startup_tasks: StartupTaskStatus[];
   data_sources: DataSourceStatus[];
   forecast_models: ForecastModelSummary[];
@@ -1158,6 +1203,11 @@ export interface SystemDiagnostics {
   prediction_accuracy_error?: string | null;
   research_archive?: ResearchArchiveStatus | null;
   research_archive_error?: string | null;
+  route_stability_summary?: RouteStabilitySummaryRow[];
+  first_usable_metrics?: RouteStabilityFirstUsableMetrics | null;
+  hydration_failure_summary?: RouteStabilityFailureSummary | null;
+  session_recovery_summary?: RouteStabilityFailureSummary | null;
+  failure_class_summary?: RouteStabilityFailureClassSummary | null;
 }
 
 export interface CalendarMajorEvent {
@@ -1370,33 +1420,87 @@ export interface ForecastDeltaResponse {
   history: ForecastDeltaHistoryItem[];
 }
 
+export type WatchlistTrackingState = "active" | "inactive";
+
+export interface WatchlistTrackingSnapshot {
+  available: boolean;
+  ticker: string;
+  name: string;
+  country_code: string;
+  current_price?: number | null;
+  target_date?: string | null;
+  predicted_close?: number | null;
+  predicted_low?: number | null;
+  predicted_high?: number | null;
+  direction?: string | null;
+  direction_label: string;
+  up_probability?: number | null;
+  confidence?: number | null;
+  confidence_note?: string | null;
+  summary?: string | null;
+  generated_at?: string | null;
+  last_prediction_at?: string | null;
+}
+
+export interface WatchlistTrackingAccuracySummary {
+  available: boolean;
+  sample_count: number;
+  evaluated_count: number;
+  direction_hit_rate?: number | null;
+  average_absolute_error_pct?: number | null;
+  message: string;
+}
+
+export interface WatchlistCurrentContextSummary {
+  available: boolean;
+  summary: string;
+  setup_label?: string | null;
+  action?: string | null;
+  market_regime_label?: string | null;
+  confidence_note?: string | null;
+  key_risks: string[];
+  key_catalysts: string[];
+}
+
+export interface WatchlistTrackingDetailResponse {
+  watchlist_meta: {
+    id: number;
+    ticker: string;
+    country_code: string;
+    added_at?: string | null;
+    tracking_enabled: boolean;
+    tracking_started_at?: string | null;
+    tracking_updated_at?: string | null;
+    name?: string | null;
+    current_price?: number | null;
+    last_prediction_at?: string | null;
+    last_outlook_label?: string | null;
+    last_confidence?: number | null;
+  };
+  tracking_state: WatchlistTrackingState;
+  latest_snapshot: WatchlistTrackingSnapshot;
+  prediction_change_summary: ForecastDeltaResponse["summary"];
+  prediction_history: ForecastDeltaHistoryItem[];
+  realized_accuracy_summary: WatchlistTrackingAccuracySummary;
+  current_context_summary: WatchlistCurrentContextSummary;
+  partial?: boolean;
+  fallback_reason?: string | null;
+  panel_states: Record<string, string>;
+}
+
+export interface WatchlistTrackingToggleResponse {
+  status: "tracking_enabled" | "tracking_disabled";
+  ticker: string;
+  country_code: string;
+  tracking_enabled: boolean;
+  tracking_started_at?: string | null;
+  tracking_updated_at?: string | null;
+}
+
 export const api = {
-  getMyAccountProfile: () => get<AccountProfile>("/api/account/me"),
-  updateMyAccountProfile: (payload: AccountProfileUpdateRequest) =>
-    request<AccountProfile>("/api/account/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  deleteMyAccount: (payload: AccountDeleteRequest) =>
-    request<AccountDeleteResponse>("/api/account/me", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  validateSignup: (payload: SignUpValidationRequest) =>
-    post<SignUpValidationResponse>("/api/account/signup/validate", payload),
-  checkUsernameAvailability: (username: string) =>
-    get<UsernameAvailabilityResponse>(`/api/account/username-availability?username=${encodeURIComponent(username)}`),
-  getCountries: () => get<import("./types").CountryListItem[]>("/api/countries"),
-  getMarketIndicators: () => get<{ name: string; price: number; change_pct: number }[]>("/api/market/indicators"),
-  getSectorPerformance: (code: string) => get<{ sector: string; ticker: string; price: number; change_pct: number }[]>(`/api/country/${code}/sector-performance`),
-  getHeatmap: (code: string, options?: RequestOptions) => get<HeatmapData>(`/api/country/${code}/heatmap`, options),
-  getCountryReport: (code: string, options?: RequestOptions) => get<import("./types").CountryReport>(`/api/country/${code}/report`, options),
-  getCountryForecast: (code: string) => get<import("./types").IndexForecast>(`/api/country/${code}/forecast`),
-  getSectors: (code: string) => get<import("./types").SectorListItem[]>(`/api/country/${code}/sectors`),
-  getSectorReport: (code: string, sectorId: string) =>
-    get<import("./types").SectorReport>(`/api/country/${code}/sector/${sectorId}/report`),
+  ...accountApi,
+  ...marketApi,
+  ...portfolioApi,
   getStockDetail: (ticker: string, options: StockDetailRequestOptions = {}) => {
     const { preferFull = false, ...requestOptions } = options;
     const query = preferFull ? "?prefer_full=true" : "";
@@ -1406,9 +1510,18 @@ export const api = {
     get<{ data: import("./types").PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${encodeURIComponent(ticker)}/technical-summary`),
   getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${encodeURIComponent(ticker)}/pivot-points`),
-  getWatchlist: () => get<import("./types").WatchlistItem[]>("/api/watchlist"),
+  getWatchlist: (options?: RequestOptions) => get<import("./types").WatchlistItem[]>("/api/watchlist", options),
   addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
+  enableWatchlistTracking: (ticker: string, countryCode = "KR") =>
+    post<WatchlistTrackingToggleResponse>(`/api/watchlist/${encodeURIComponent(ticker)}/tracking?country_code=${encodeURIComponent(countryCode)}`),
+  disableWatchlistTracking: (ticker: string, countryCode = "KR") =>
+    del<WatchlistTrackingToggleResponse>(`/api/watchlist/${encodeURIComponent(ticker)}/tracking?country_code=${encodeURIComponent(countryCode)}`),
+  getWatchlistTrackingDetail: (ticker: string, countryCode = "KR", options?: RequestOptions) =>
+    get<WatchlistTrackingDetailResponse>(
+      `/api/watchlist/${encodeURIComponent(ticker)}/tracking-detail?country_code=${encodeURIComponent(countryCode)}`,
+      options,
+    ),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),
@@ -1420,59 +1533,9 @@ export const api = {
     qs.set("auto_refresh", String(autoRefresh));
     return get<ResearchArchiveEntry[]>(`/api/archive/research?${qs.toString()}`);
   },
-  getResearchArchiveStatus: (refreshIfMissing = false, options?: RequestOptions) =>
-    get<ResearchArchiveStatus>(`/api/archive/research/status?refresh_if_missing=${refreshIfMissing}`, options),
-  refreshResearchArchive: () => post("/api/archive/research/refresh"),
+  ...systemApi,
   getPredictionLab: (limitRecent = 40, refresh = true) =>
     get<PredictionLabResponse>(`/api/research/predictions?limit_recent=${limitRecent}&refresh=${refresh}`),
-  getDiagnostics: (options?: RequestOptions) => get<SystemDiagnostics>("/api/system/diagnostics", options),
-  getDailyBriefing: (options?: RequestOptions) => get<DailyBriefingResponse>("/api/briefing/daily", options),
-  getMarketSessions: (options?: RequestOptions) => get<MarketSessionsResponse>("/api/market/sessions", options),
-  getMarketOpportunities: (code: string, limit = 12, options?: RequestOptions) =>
-    get<import("./types").OpportunityRadarResponse>(`/api/market/opportunities/${code}?limit=${limit}`, options),
-  getCalendar: (code: string, year?: number, month?: number, options?: RequestOptions) => {
-    const qs = new URLSearchParams();
-    if (year) qs.set("year", String(year));
-    if (month) qs.set("month", String(month));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return get<CalendarResponse>(`/api/calendar/${code}${suffix}`, options);
-  },
-  getScreener: (params: Record<string, string>, options?: RequestOptions) => {
-    const qs = new URLSearchParams(params).toString();
-    return get<ScreenerResponse>(`/api/screener?${qs}`, options);
-  },
-  getPortfolio: () => get<PortfolioData>("/api/portfolio"),
-  getPortfolioProfile: () => get<PortfolioProfile>("/api/portfolio/profile"),
-  updatePortfolioProfile: (data: PortfolioProfile) => put<PortfolioProfile>("/api/portfolio/profile", data),
-  getPortfolioConditionalRecommendation: (params: {
-    country_code?: string;
-    sector?: string;
-    style?: PortfolioRecommendationStyle;
-    max_items?: number;
-    min_up_probability?: number;
-    exclude_holdings?: boolean;
-    watchlist_only?: boolean;
-  }) => {
-    const search = new URLSearchParams();
-    if (params.country_code) search.set("country_code", params.country_code);
-    if (params.sector) search.set("sector", params.sector);
-    if (params.style) search.set("style", params.style);
-    if (params.max_items != null) search.set("max_items", String(params.max_items));
-    if (params.min_up_probability != null) search.set("min_up_probability", String(params.min_up_probability));
-    if (params.exclude_holdings != null) search.set("exclude_holdings", String(params.exclude_holdings));
-    if (params.watchlist_only != null) search.set("watchlist_only", String(params.watchlist_only));
-    return get<PortfolioConditionalRecommendationResponse>(`/api/portfolio/recommendations/conditional?${search.toString()}`);
-  },
-  getPortfolioOptimalRecommendation: () => get<PortfolioOptimalRecommendationResponse>("/api/portfolio/recommendations/optimal"),
-  getPortfolioEventRadar: (days = 14) => get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`),
-  getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>
-    get<DailyIdealPortfolio>(`/api/portfolio/ideal?refresh=${refresh}&history_limit=${historyLimit}`),
-  addPortfolioHolding: (data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
-    post<PortfolioHoldingCreateResponse>("/api/portfolio/holdings", data),
-  updatePortfolioHolding: (id: number, data: { ticker: string; buy_price: number; quantity: number; buy_date: string; country_code?: string }) =>
-    put<PortfolioHoldingCreateResponse>(`/api/portfolio/holdings/${id}`, data),
-  removePortfolioHolding: (id: number) => del<{ status: "ok" }>(`/api/portfolio/holdings/${id}`),
-  getMarketMovers: (code: string, options?: RequestOptions) => get<MarketMovers>(`/api/market/movers/${code}`, options),
   search: (q: string) => get<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}`),
   resolveTicker: (query: string, countryCode = "KR") =>
     get<TickerResolution>(`/api/ticker/resolve?query=${encodeURIComponent(query)}&country_code=${countryCode}`),

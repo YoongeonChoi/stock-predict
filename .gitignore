@@ -31,6 +31,7 @@ backend/data/
 # IDE
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~
@@ -53,3 +54,7 @@ coverage/
 # Build
 *.tsbuildinfo
 next-env.d.ts
+
+# Verification artifacts
+output/browser-smoke/
+.vercel

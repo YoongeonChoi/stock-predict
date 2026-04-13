@@ -42,6 +42,15 @@ class DeploymentSettingsTests(unittest.TestCase):
         settings = Settings(SUPABASE_SECRET_KEY="secret-key")
         self.assertEqual(settings.supabase_server_key, "secret-key")
 
+    def test_safe_mode_disables_startup_prediction_accuracy_refresh(self):
+        settings = Settings(
+            RENDER=True,
+            startup_allow_heavy_render_jobs=False,
+            startup_prediction_accuracy_refresh=True,
+            startup_prediction_accuracy_refresh_on_render=True,
+        )
+        self.assertFalse(settings.effective_startup_prediction_accuracy_refresh)
+
 
 if __name__ == "__main__":
     unittest.main()

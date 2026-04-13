@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from client_helpers import patched_client
+from app.services.portfolio.recommendations import build_recommendation_context_maps
 from app.services import portfolio_recommendation_service
 
 
@@ -41,6 +42,39 @@ def _sample_opportunity(
 
 
 class PortfolioRecommendationTests(unittest.TestCase):
+    def test_build_recommendation_context_maps_groups_holdings_and_watchlist(self):
+        context_maps = build_recommendation_context_maps(
+            holdings=[
+                {
+                    "ticker": "005930.KS",
+                    "country_code": "KR",
+                    "sector": "Information Technology",
+                    "weight_pct": 42.0,
+                },
+                {
+                    "ticker": "035420.KS",
+                    "country_code": "KR",
+                    "sector": "Communication Services",
+                    "weight_pct": 18.0,
+                },
+            ],
+            watchlist_rows=[
+                {"ticker": "005930.KS", "country_code": "KR"},
+                {"ticker": "NVDA", "country_code": "US"},
+            ],
+        )
+
+        self.assertEqual(context_maps["watchlist_keys"], {"KR:005930.KS", "US:NVDA"})
+        self.assertIn("KR:005930.KS", context_maps["holding_lookup"])
+        self.assertEqual(context_maps["country_exposure"], {"KR": 60.0})
+        self.assertEqual(
+            context_maps["sector_exposure"],
+            {
+                "Information Technology": 42.0,
+                "Communication Services": 18.0,
+            },
+        )
+
     def test_conditional_recommendation_filters_country_sector_and_existing_holding(self):
         portfolio_snapshot = {
             "holdings": [

@@ -8,6 +8,7 @@ import PasswordStrengthChecklist from "@/components/auth/PasswordStrengthCheckli
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { useCooldownTimer } from "@/hooks/useCooldownTimer";
+import { useAccountProfileSection } from "@/components/settings/useAccountProfileSection";
 import {
   formatPhoneNumber,
   describeAuthErrorMessage,
@@ -26,21 +27,6 @@ import {
 import { api, getApiRetryAfterSeconds, isApiErrorCode, type AccountProfile } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-interface ProfileDraft {
-  username: string;
-  fullName: string;
-  phoneNumber: string;
-  birthDate: string;
-}
-
-interface UsernameState {
-  checkedValue: string;
-  valid: boolean;
-  available: boolean;
-  checking: boolean;
-  message: string;
-}
-
 interface PasswordDraft {
   nextPassword: string;
   confirmPassword: string;
@@ -50,26 +36,6 @@ interface PasswordDraft {
 interface EmailDraft {
   nextEmail: string;
   confirmEmail: string;
-}
-
-function buildDraft(profile: AccountProfile | null): ProfileDraft {
-  return {
-    username: profile?.username ?? "",
-    fullName: profile?.full_name ?? "",
-    phoneNumber: profile?.phone_number ?? "",
-    birthDate: profile?.birth_date ?? "",
-  };
-}
-
-function buildUsernameState(profile: AccountProfile | null): UsernameState {
-  const current = normalizeUsername(profile?.username ?? "");
-  return {
-    checkedValue: current,
-    valid: Boolean(current),
-    available: Boolean(current),
-    checking: false,
-    message: current ? "현재 아이디가 유지됩니다." : "아이디를 입력하고 중복 확인을 진행해 주세요.",
-  };
 }
 
 function Field({
@@ -83,9 +49,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">{label}</label>
+      <label className="ui-field-label">{label}</label>
       {children}
-      {helper ? <div className="mt-2 text-xs leading-5 text-text-secondary">{helper}</div> : null}
+      {helper ? <div className="ui-helper-text">{helper}</div> : null}
     </div>
   );
 }
@@ -93,9 +59,6 @@ function Field({
 export default function AccountSettingsPanel() {
   const { configured, loading, session, user, profile, profileLoading, refreshProfile, signOut, signOutEverywhere } = useAuth();
   const { toast } = useToast();
-  const [draft, setDraft] = useState<ProfileDraft>(buildDraft(profile));
-  const [usernameState, setUsernameState] = useState<UsernameState>(buildUsernameState(profile));
-  const [saving, setSaving] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -108,19 +71,29 @@ export default function AccountSettingsPanel() {
   const [passwordNonceRequired, setPasswordNonceRequired] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const usernameCooldown = useCooldownTimer();
   const emailChangeCooldown = useCooldownTimer();
   const verificationCooldown = useCooldownTimer();
   const resetCooldown = useCooldownTimer();
   const passwordNonceCooldown = useCooldownTimer();
-
-  useEffect(() => {
-    setDraft(buildDraft(profile));
-    setUsernameState(buildUsernameState(profile));
-  }, [profile?.birth_date, profile?.full_name, profile?.phone_number, profile?.user_id, profile?.username]);
+  const {
+    draft,
+    usernameState,
+    saving,
+    usernameCooldown,
+    usernameReady,
+    isDirty,
+    formValid,
+    updateDraft,
+    resetProfileDraft,
+    handleUsernameCheck,
+    handleSave,
+  } = useAccountProfileSection({
+    profile,
+    refreshProfile,
+    toast,
+  });
 
   const normalizedCurrentUsername = normalizeUsername(profile?.username ?? "");
-  const normalizedDraftUsername = normalizeUsername(draft.username);
   const passwordStrength = useMemo(
     () => getPasswordStrength(passwordDraft.nextPassword, passwordDraft.confirmPassword),
     [passwordDraft.confirmPassword, passwordDraft.nextPassword],
@@ -160,25 +133,6 @@ export default function AccountSettingsPanel() {
     normalizedNextEmail !== currentEmail &&
     normalizedNextEmail !== pendingEmail,
   );
-  const usernameReady =
-    Boolean(normalizedDraftUsername) &&
-    (
-      normalizedDraftUsername === normalizedCurrentUsername ||
-      (
-        usernameState.checkedValue === normalizedDraftUsername &&
-        usernameState.valid &&
-        usernameState.available
-      )
-    );
-
-  const isDirty = useMemo(() => {
-    return (
-      normalizeUsername(draft.username) !== normalizeUsername(profile?.username ?? "") ||
-      normalizeFullName(draft.fullName) !== normalizeFullName(profile?.full_name ?? "") ||
-      normalizePhoneNumber(draft.phoneNumber) !== normalizePhoneNumber(profile?.phone_number ?? "") ||
-      draft.birthDate !== (profile?.birth_date ?? "")
-    );
-  }, [draft, profile]);
   const emailDirty = Boolean(emailDraft.nextEmail.trim() || emailDraft.confirmEmail.trim());
   const passwordDirty = Boolean(passwordDraft.nextPassword || passwordDraft.confirmPassword || passwordDraft.reauthNonce.trim());
   const deleteDirty = Boolean(deleteConfirmation.trim());
@@ -200,13 +154,6 @@ export default function AccountSettingsPanel() {
     return sections.join(", ");
   }, [deleteDirty, emailDirty, isDirty, passwordDirty]);
 
-  const formValid =
-    isValidUsername(draft.username) &&
-    isValidFullName(draft.fullName) &&
-    isValidPhoneNumber(draft.phoneNumber) &&
-    isValidBirthDate(draft.birthDate) &&
-    usernameReady;
-
   useEffect(() => {
     if (!hasPendingChanges) {
       return undefined;
@@ -220,23 +167,6 @@ export default function AccountSettingsPanel() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasPendingChanges]);
-
-  const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
-    if (key === "username") {
-      setUsernameState((prev) => ({
-        ...prev,
-        valid: false,
-        available: false,
-        message: "아이디가 변경되었습니다. 다시 중복 확인해 주세요.",
-      }));
-    }
-  };
-
-  const resetProfileDraft = () => {
-    setDraft(buildDraft(profile));
-    setUsernameState(buildUsernameState(profile));
-  };
 
   const resetEmailDraft = () => {
     setEmailDraft({ nextEmail: "", confirmEmail: "" });
@@ -256,94 +186,6 @@ export default function AccountSettingsPanel() {
     resetEmailDraft();
     resetPasswordDraft();
     resetDeleteDraft();
-  };
-
-  const handleUsernameCheck = async () => {
-    if (usernameCooldown.active) {
-      setUsernameState((prev) => ({
-        ...prev,
-        checking: false,
-        message: `중복 확인 요청이 많아 ${usernameCooldown.seconds}초 후 다시 시도해 주세요.`,
-      }));
-      return;
-    }
-
-    if (!isValidUsername(draft.username)) {
-      setUsernameState({
-        checkedValue: normalizedDraftUsername,
-        valid: false,
-        available: false,
-        checking: false,
-        message: "아이디는 영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 4~20자까지 사용할 수 있습니다.",
-      });
-      return;
-    }
-
-    setUsernameState((prev) => ({ ...prev, checking: true }));
-    try {
-      const result = await api.checkUsernameAvailability(draft.username);
-      const available =
-        result.available || result.normalized_username === normalizedCurrentUsername;
-      setUsernameState({
-        checkedValue: result.normalized_username,
-        valid: result.valid,
-        available,
-        checking: false,
-        message: available
-          ? (result.normalized_username === normalizedCurrentUsername ? "현재 아이디를 그대로 사용할 수 있습니다." : "사용 가능한 아이디입니다.")
-          : result.message,
-      });
-    } catch (error) {
-      if (isApiErrorCode(error, "SP-6016")) {
-        const retryAfter = getApiRetryAfterSeconds(error) ?? 30;
-        usernameCooldown.start(retryAfter);
-        setUsernameState({
-          checkedValue: normalizedDraftUsername,
-          valid: false,
-          available: false,
-          checking: false,
-          message: error.detail || `중복 확인 요청이 많아 ${retryAfter}초 후 다시 시도해 주세요.`,
-        });
-        return;
-      }
-      setUsernameState({
-        checkedValue: normalizedDraftUsername,
-        valid: false,
-        available: false,
-        checking: false,
-        message: describeAuthErrorMessage(error, "중복 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."),
-      });
-    }
-  };
-
-  const handleSave = async () => {
-    if (!formValid) {
-      toast("필수 입력과 아이디 중복 확인을 먼저 완료해 주세요.", "error");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const nextProfile = await api.updateMyAccountProfile({
-        username: normalizedDraftUsername,
-        full_name: normalizeFullName(draft.fullName),
-        phone_number: normalizePhoneNumber(draft.phoneNumber),
-        birth_date: draft.birthDate,
-      });
-      const client = getSupabaseBrowserClient();
-      if (client) {
-        await client.auth.refreshSession();
-      }
-      await refreshProfile();
-      setDraft(buildDraft(nextProfile));
-      setUsernameState(buildUsernameState(nextProfile));
-      toast("계정 정보가 저장되었습니다.", "success");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "계정 정보 저장 중 문제가 발생했습니다.";
-      toast(message, "error");
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleResendVerification = async () => {
@@ -633,11 +475,11 @@ export default function AccountSettingsPanel() {
         <div className="rounded-[22px] border border-border/70 bg-surface/55 p-4 text-sm text-text-secondary">
           로그인 후에는 이름, 전화번호, 생년월일, 아이디를 수정하고 인증 메일 재전송, 비밀번호 변경, 세션 종료 같은 보안 작업도 바로 처리할 수 있습니다.
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/auth?next=/settings" className="action-chip-primary">
+        <div className="ui-inline-actions">
+          <Link href="/auth?next=/settings" className="ui-button-primary">
             로그인하러 가기
           </Link>
-          <Link href="/auth?mode=signup&next=/settings" className="action-chip-secondary">
+          <Link href="/auth?mode=signup&next=/settings" className="ui-button-secondary">
             회원가입하기
           </Link>
         </div>
@@ -659,9 +501,9 @@ export default function AccountSettingsPanel() {
             프로필 정보와 보안 관련 작업을 한 곳에서 관리합니다. 아이디를 바꾸는 경우에는 다시 중복 확인을 거쳐야 하며, 요청이 많으면 잠시 후 재시도 안내가 표시됩니다.
           </p>
         </div>
-        <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-3 text-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">로그인 계정</div>
-          <div className="mt-2 font-medium text-text">{profile.email ?? "이메일 없음"}</div>
+        <div className="ui-panel-muted text-[0.95rem]">
+          <div className="ui-field-label">로그인 계정</div>
+          <div className="mt-2 break-words font-medium text-text">{profile.email ?? "이메일 없음"}</div>
           <div className="mt-1 text-xs text-text-secondary">
             {profile.email_confirmed_at
               ? `인증 완료 시각 ${new Date(profile.email_confirmed_at).toLocaleString("ko-KR")}`
@@ -671,7 +513,7 @@ export default function AccountSettingsPanel() {
       </div>
 
       {hasPendingChanges ? (
-        <div className="rounded-[22px] border border-warning/30 bg-warning/10 px-4 py-4">
+        <div className="ui-panel-warning">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-text">저장되지 않은 입력이 있습니다.</div>
@@ -682,7 +524,7 @@ export default function AccountSettingsPanel() {
             <button
               type="button"
               onClick={resetAllDrafts}
-              className="inline-flex shrink-0 items-center justify-center rounded-2xl border border-warning/40 bg-white/80 px-4 py-3 text-sm font-semibold text-warning transition hover:bg-warning/10"
+              className="ui-button-warning w-full shrink-0 sm:w-auto"
             >
               변경 모두 초기화
             </button>
@@ -697,7 +539,7 @@ export default function AccountSettingsPanel() {
               label="아이디"
               helper="영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 4~20자까지 사용할 수 있습니다."
             >
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   value={draft.username}
                   onChange={(event) =>
@@ -710,14 +552,14 @@ export default function AccountSettingsPanel() {
                   autoCapitalize="none"
                   spellCheck={false}
                   maxLength={20}
-                  className="min-w-0 flex-1 rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input min-w-0 flex-1"
                   placeholder="alpha_user"
                 />
                 <button
                   type="button"
                   onClick={handleUsernameCheck}
                   disabled={usernameState.checking || usernameCooldown.active}
-                  className="action-chip-secondary shrink-0"
+                  className="ui-button-secondary shrink-0 sm:w-auto"
                 >
                   {usernameState.checking
                     ? "확인 중..."
@@ -732,7 +574,7 @@ export default function AccountSettingsPanel() {
               <input
                 value={profile.email ?? ""}
                 readOnly
-                className="w-full rounded-2xl border border-border bg-surface/40 px-4 py-3 text-sm text-text-secondary"
+                className="ui-input w-full text-text-secondary"
               />
             </Field>
 
@@ -742,7 +584,7 @@ export default function AccountSettingsPanel() {
                 onChange={(event) => updateDraft("fullName", normalizeFullName(event.target.value).slice(0, 40))}
                 autoComplete="name"
                 maxLength={40}
-                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                className="ui-input"
                 placeholder="홍길동"
               />
             </Field>
@@ -754,7 +596,7 @@ export default function AccountSettingsPanel() {
                 inputMode="numeric"
                 autoComplete="tel"
                 maxLength={15}
-                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                className="ui-input"
                 placeholder="010-1234-5678"
               />
             </Field>
@@ -766,13 +608,13 @@ export default function AccountSettingsPanel() {
                 type="date"
                 autoComplete="bday"
                 max={new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}
-                className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                className="ui-input"
               />
             </Field>
 
-            <div className="rounded-[22px] border border-border/70 bg-surface/50 px-4 py-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">현재 검증 상태</div>
-              <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+            <div className="ui-panel-muted">
+              <div className="ui-field-label">현재 검증 상태</div>
+              <ul className="mt-3 space-y-2 text-[0.95rem] text-text-secondary">
                 <li>{isValidFullName(draft.fullName) ? "이름 형식이 확인되었습니다." : "이름은 2자 이상으로 입력해 주세요."}</li>
                 <li>{isValidPhoneNumber(draft.phoneNumber) ? "전화번호 형식이 확인되었습니다." : "전화번호를 올바르게 입력해 주세요."}</li>
                 <li>{isValidBirthDate(draft.birthDate) ? "생년월일 형식이 확인되었습니다." : "생년월일을 선택해 주세요."}</li>
@@ -781,12 +623,12 @@ export default function AccountSettingsPanel() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="ui-inline-actions">
             <button
               type="button"
               onClick={handleSave}
               disabled={saving || !isDirty || !formValid}
-              className="action-chip-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="ui-button-primary"
             >
               {saving ? "저장 중..." : "프로필 저장"}
             </button>
@@ -794,15 +636,15 @@ export default function AccountSettingsPanel() {
               type="button"
               onClick={resetProfileDraft}
               disabled={saving || !isDirty}
-              className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+              className="ui-button-secondary"
             >
               프로필 입력 초기화
             </button>
           </div>
         </div>
 
-        <aside className="grid gap-5 xl:grid-cols-2 xl:items-start">
-          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+        <aside className="grid gap-5 lg:grid-cols-2 lg:items-start">
+          <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
                 <MailCheck size={18} />
@@ -823,7 +665,7 @@ export default function AccountSettingsPanel() {
                 (!profile.email && !profile.pending_email) ||
                 (profile.email_verified && !profile.pending_email)
               }
-              className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+              className="ui-button-secondary mt-4 w-full"
             >
               {profile.pending_email
                 ? (sendingVerification
@@ -843,15 +685,15 @@ export default function AccountSettingsPanel() {
               같은 인증 메일 액션은 60초 동안 잠시 쉬어 갑니다.
             </p>
             {profile.pending_email ? (
-              <div className="mt-4 rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm text-text-secondary">
+              <div className="ui-panel-muted mt-4 text-[0.95rem] text-text-secondary">
                 <div className="font-medium text-text">변경 대기 이메일</div>
-                <div className="mt-1 break-all">{profile.pending_email}</div>
+                <div className="mt-1 break-words">{profile.pending_email}</div>
                 <div className="mt-2 text-xs leading-6">보낸 시각: {emailChangeSentLabel}</div>
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+          <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
                 <MailCheck size={18} />
@@ -868,7 +710,7 @@ export default function AccountSettingsPanel() {
                 <input
                   value={profile.email ?? ""}
                   readOnly
-                  className="w-full rounded-2xl border border-border bg-surface/40 px-4 py-3 text-sm text-text-secondary"
+                  className="ui-input w-full text-text-secondary"
                 />
               </Field>
               <Field
@@ -886,7 +728,7 @@ export default function AccountSettingsPanel() {
                   autoComplete="email"
                   autoCapitalize="none"
                   spellCheck={false}
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="new@example.com"
                 />
               </Field>
@@ -898,11 +740,11 @@ export default function AccountSettingsPanel() {
                   autoComplete="email"
                   autoCapitalize="none"
                   spellCheck={false}
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="new@example.com"
                 />
               </Field>
-              <div className="rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm text-text-secondary">
+              <div className="ui-panel-muted text-[0.95rem] text-text-secondary">
                 <ul className="space-y-2">
                   <li>{isValidEmail(normalizedNextEmail) ? "새 이메일 형식이 확인되었습니다." : "새 이메일 형식을 확인해 주세요."}</li>
                   <li>{emailMatches ? "이메일 재확인이 일치합니다." : "새 이메일 재확인을 동일하게 입력해 주세요."}</li>
@@ -914,7 +756,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={handleEmailChange}
                 disabled={updatingEmail || emailChangeCooldown.active || !emailReady}
-                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-secondary w-full"
               >
                 {updatingEmail
                   ? "변경 요청 중..."
@@ -926,7 +768,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={resetEmailDraft}
                 disabled={updatingEmail || !emailDirty}
-                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-ghost w-full"
               >
                 이메일 입력 지우기
               </button>
@@ -936,7 +778,7 @@ export default function AccountSettingsPanel() {
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+          <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
                 <ShieldAlert size={18} />
@@ -948,14 +790,14 @@ export default function AccountSettingsPanel() {
                 </p>
               </div>
             </div>
-            <dl className="mt-4 space-y-3 rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4 text-sm">
-              <div className="flex items-start justify-between gap-4">
+            <dl className="ui-panel-muted mt-4 space-y-3 text-[0.95rem]">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <dt className="text-text-secondary">마지막 로그인</dt>
-                <dd className="text-right font-medium text-text">{lastSignInLabel}</dd>
+                <dd className="break-words text-left font-medium text-text sm:text-right">{lastSignInLabel}</dd>
               </div>
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <dt className="text-text-secondary">현재 세션 만료</dt>
-                <dd className="text-right font-medium text-text">{sessionExpiryLabel}</dd>
+                <dd className="break-words text-left font-medium text-text sm:text-right">{sessionExpiryLabel}</dd>
               </div>
             </dl>
             <div className="mt-4 flex flex-col gap-2">
@@ -963,7 +805,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={handleSignOut}
                 disabled={signingOut}
-                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-secondary w-full"
               >
                 {signingOut ? "로그아웃 중..." : "이 기기에서 로그아웃"}
               </button>
@@ -971,14 +813,14 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={handleGlobalSignOut}
                 disabled={signingOutEverywhere}
-                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-ghost w-full"
               >
                 {signingOutEverywhere ? "전체 로그아웃 중..." : "모든 기기에서 로그아웃"}
               </button>
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+          <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
                 <KeyRound size={18} />
@@ -998,7 +840,7 @@ export default function AccountSettingsPanel() {
                   type="password"
                   autoComplete="new-password"
                   maxLength={128}
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="새 비밀번호 입력"
                 />
               </Field>
@@ -1009,12 +851,12 @@ export default function AccountSettingsPanel() {
                   type="password"
                   autoComplete="new-password"
                   maxLength={128}
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="새 비밀번호 다시 입력"
                 />
               </Field>
               <PasswordStrengthChecklist result={passwordStrength} />
-              <div className="rounded-[20px] border border-border/70 bg-surface/60 px-4 py-4">
+              <div className="ui-panel-muted">
                 <div className="flex flex-col gap-3">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-text">보안 확인 코드</div>
@@ -1026,7 +868,7 @@ export default function AccountSettingsPanel() {
                     type="button"
                     onClick={handleSendPasswordNonce}
                     disabled={sendingPasswordNonce || passwordNonceCooldown.active}
-                    className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                    className="ui-button-secondary w-full"
                   >
                     {sendingPasswordNonce
                       ? "코드 전송 중..."
@@ -1049,7 +891,7 @@ export default function AccountSettingsPanel() {
                       autoComplete="one-time-code"
                       spellCheck={false}
                       maxLength={64}
-                      className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                      className="ui-input"
                       placeholder="메일로 받은 보안 확인 코드 입력"
                     />
                   </Field>
@@ -1059,7 +901,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={handleUpdatePassword}
                 disabled={updatingPassword || !passwordReady || !passwordNonceReady}
-                className="action-chip-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-secondary w-full"
               >
                 {updatingPassword ? "비밀번호 저장 중..." : "새 비밀번호 저장"}
               </button>
@@ -1067,14 +909,14 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={resetPasswordDraft}
                 disabled={updatingPassword || !passwordDirty}
-                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-ghost w-full"
               >
                 비밀번호 입력 지우기
               </button>
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-border/70 bg-surface/55 p-4">
+          <div className="ui-panel">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
                 <MailCheck size={18} />
@@ -1090,7 +932,7 @@ export default function AccountSettingsPanel() {
               type="button"
               onClick={handleSendPasswordReset}
               disabled={sendingReset || resetCooldown.active || !profile.email}
-              className="action-chip-secondary mt-4 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+              className="ui-button-secondary mt-4 w-full"
             >
               {sendingReset
                 ? "메일 전송 중..."
@@ -1103,7 +945,7 @@ export default function AccountSettingsPanel() {
             </p>
           </div>
 
-          <div className="rounded-[24px] border border-warning/30 bg-warning/10 p-4">
+          <div className="ui-panel-warning">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-warning/20 text-warning">
                 <Trash2 size={18} />
@@ -1126,7 +968,7 @@ export default function AccountSettingsPanel() {
                   autoCapitalize="none"
                   autoComplete="off"
                   spellCheck={false}
-                  className="w-full rounded-2xl border border-warning/40 bg-surface/75 px-4 py-3 text-sm"
+                  className="ui-input ui-input-warning"
                   placeholder={profile?.username ?? profile?.email ?? ""}
                 />
               </Field>
@@ -1134,7 +976,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={handleDeleteAccount}
                 disabled={deletingAccount || !deleteReady}
-                className="inline-flex w-full items-center justify-center rounded-2xl border border-warning/40 bg-white/80 px-4 py-3 text-sm font-semibold text-warning transition hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-warning w-full"
               >
                 {deletingAccount ? "계정 삭제 중..." : "회원 탈퇴"}
               </button>
@@ -1142,7 +984,7 @@ export default function AccountSettingsPanel() {
                 type="button"
                 onClick={resetDeleteDraft}
                 disabled={deletingAccount || !deleteDirty}
-                className="inline-flex w-full items-center justify-center rounded-2xl border border-border bg-white/80 px-4 py-3 text-sm font-semibold text-text transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                className="ui-button-ghost w-full"
               >
                 탈퇴 확인 입력 지우기
               </button>

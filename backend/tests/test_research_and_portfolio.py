@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, call, patch
 from app.models.forecast import ForecastScenario, NextDayForecast
 from app.models.market import MarketRegime, TradePlan
 from app.models.stock import BuySellGuide, TechnicalIndicators
+from app.services.portfolio.holdings import build_holding_write_payload
 from app.services import portfolio_service, research_service
 
 
@@ -24,6 +25,59 @@ def _sample_price_history(days: int = 25) -> list[dict]:
             }
         )
     return rows
+
+
+def _sample_radar_summary() -> dict:
+    return {
+        "stored_snapshots": 10,
+        "capture_days": 2,
+        "latest_reference_date": "2026-04-07",
+        "last_evaluated_at": "2026-04-08T15:30:00",
+        "direction_accuracy_1d": 0.6,
+        "direction_accuracy_5d": 0.5,
+        "direction_accuracy_20d": 0.4,
+        "band_hit_rate_20d": 0.3,
+        "avg_return_pct_5d": 1.2,
+        "avg_return_pct_20d": 2.4,
+        "pending_20d": 4,
+        "tag_breakdown": [{"label": "모멘텀", "count": 4}],
+        "recent_cohorts": [
+            {
+                "reference_date": "2026-04-07",
+                "capture_count": 10,
+                "evaluated_count": 6,
+                "pending_count": 4,
+                "direction_accuracy_1d": 0.6,
+                "direction_accuracy_5d": 0.5,
+                "direction_accuracy_20d": 0.4,
+                "band_hit_rate_20d": 0.3,
+                "avg_return_pct_20d": 2.4,
+                "top_symbols": ["005930.KS", "000660.KS"],
+            }
+        ],
+        "review_queue": [
+            {
+                "reference_date": "2026-04-07",
+                "symbol": "005930.KS",
+                "name": "Samsung Electronics",
+                "rank": 1,
+                "kind": "clean-hit",
+                "summary": "20거래일 방향과 밴드를 함께 맞췄습니다.",
+                "detail": "모멘텀과 수급이 같이 받쳐 준 사례입니다.",
+                "return_pct_20d": 3.2,
+                "direction_hit_20d": True,
+                "within_band_20d": True,
+            }
+        ],
+        "profile": {
+            "status": "active",
+            "sample_count": 28,
+            "baseline_success_score": 0.58,
+            "updated_at": "2026-04-08T15:30:00",
+            "top_positive": [{"key": "tag_momentum", "label": "모멘텀", "delta": 0.05}],
+            "top_negative": [{"key": "support_data_quality_weak", "label": "데이터 품질 약함", "delta": -0.03}],
+        },
+    }
 
 
 class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +99,23 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(kr["ticker"], "196170.KQ")
         self.assertEqual(samsung["ticker"], "005930.KS")
+
+    async def test_build_holding_write_payload_falls_back_to_ticker_when_name_lookup_fails(self):
+        payload = await build_holding_write_payload(
+            "005930",
+            70000,
+            3,
+            "2026-03-24",
+            "KR",
+            stock_info_loader=AsyncMock(side_effect=RuntimeError("lookup failed")),
+        )
+
+        self.assertEqual(payload["ticker"], "005930.KS")
+        self.assertEqual(payload["name"], "005930.KS")
+        self.assertEqual(payload["country_code"], "KR")
+        self.assertEqual(payload["buy_price"], 70000.0)
+        self.assertEqual(payload["quantity"], 3.0)
+        self.assertEqual(payload["buy_date"], "2026-03-24")
 
     async def test_portfolio_add_holding_saves_normalized_ticker(self):
         db_add = AsyncMock()
@@ -306,6 +377,82 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
+                "app.services.research_service.db.prediction_collection_breakdown",
+                new=AsyncMock(
+                    side_effect=[
+                        [
+                            {
+                                "label": "stock",
+                                "stored_predictions": 20,
+                                "pending_predictions": 3,
+                                "evaluated_predictions": 17,
+                            },
+                            {
+                                "label": "country",
+                                "stored_predictions": 6,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 4,
+                            },
+                        ],
+                        [
+                            {
+                                "label": "next_day",
+                                "stored_predictions": 12,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 10,
+                            },
+                            {
+                                "label": "distributional_5d",
+                                "stored_predictions": 8,
+                                "pending_predictions": 1,
+                                "evaluated_predictions": 7,
+                            },
+                            {
+                                "label": "distributional_20d",
+                                "stored_predictions": 6,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 4,
+                            },
+                        ],
+                        [
+                            {
+                                "label": "signal-v2.1",
+                                "stored_predictions": 18,
+                                "pending_predictions": 3,
+                                "evaluated_predictions": 15,
+                            },
+                            {
+                                "label": "dist-studentt-v3.3-lfgraph",
+                                "stored_predictions": 8,
+                                "pending_predictions": 2,
+                                "evaluated_predictions": 6,
+                            },
+                        ],
+                    ]
+                ),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_activity_summary",
+                new=AsyncMock(
+                    return_value={
+                        "last_created_at": 1712552400.0,
+                        "last_evaluated_at": 1712556000.0,
+                        "stale_pending_predictions": 2,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.research_service.prediction_capture_service.backfill_recent_archive_predictions",
+                new=AsyncMock(
+                    return_value={
+                        "checked_at": "2026-04-07T10:05:00",
+                        "checked_reports": 12,
+                        "updated_reports": 1,
+                        "captured_predictions": 2,
+                    }
+                ),
+            ),
+            patch(
                 "app.services.research_service.confidence_calibration_service.get_profile_summary",
                 return_value=[
                     {
@@ -419,6 +566,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     },
                 ],
             ),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
@@ -433,8 +584,20 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["fusion_status_summary"]["active_model_version"], "dist-studentt-v3.3-lfgraph")
         self.assertEqual(result["breakdown"]["by_country"][0]["label"], "KR")
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
+        self.assertEqual(result["recent_records"][0]["prediction_type"], "next_day")
         self.assertEqual(result["recent_records"][0]["fusion_method"], "learned_blended_graph")
+        self.assertTrue(result["action_queue"])
+        self.assertEqual(result["failure_patterns"], [])
+        self.assertEqual(result["review_queue"][0]["symbol"], "005930.KS")
+        self.assertEqual(result["review_queue"][0]["review_kind"], "clean-hit")
         self.assertTrue(result["insights"])
+        self.assertEqual(result["pipeline_health"]["stored_predictions"], 26)
+        self.assertEqual(result["pipeline_health"]["stale_pending_predictions"], 2)
+        self.assertEqual(result["pipeline_health"]["backfill_updated_reports"], 1)
+        self.assertEqual(result["coverage_breakdown"]["by_scope"][0]["label"], "stock")
+        self.assertEqual(result["coverage_breakdown"]["by_prediction_type"][1]["label"], "distributional_5d")
+        self.assertEqual(result["radar_cohorts"]["recent_cohorts"][0]["reference_date"], "2026-04-07")
+        self.assertTrue(any(item["key"] == "evaluation_delay" for item in result["pipeline_alerts"]))
 
     async def test_prediction_lab_uses_runtime_summary_when_recent_query_times_out(self):
         async def _slow_recent(*args, **kwargs):
@@ -504,6 +667,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             ),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
         ):
             result = await research_service.get_prediction_lab(limit_recent=20, refresh=True)
 
@@ -512,6 +679,132 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["recent_records"], [])
         self.assertEqual(result["horizon_accuracy"][0]["current_method"], "learned_blended_graph")
         self.assertTrue(result["graph_context_summary"]["coverage_available"])
+        self.assertTrue(result["action_queue"])
+        self.assertEqual(result["failure_patterns"], [])
+        self.assertEqual(result["review_queue"], [])
+
+    async def test_prediction_lab_auto_refreshes_due_records_on_default_load(self):
+        backfill_started = asyncio.Event()
+        refresh_started = asyncio.Event()
+        release_background = asyncio.Event()
+
+        async def delayed_backfill(refresh: bool):
+            self.assertFalse(refresh)
+            backfill_started.set()
+            await release_background.wait()
+            return (
+                {
+                    "checked_reports": 1,
+                    "updated_reports": 1,
+                    "captured_predictions": 1,
+                },
+                None,
+            )
+
+        async def delayed_refresh(refresh: bool):
+            self.assertFalse(refresh)
+            refresh_started.set()
+            await release_background.wait()
+            return None
+
+        with (
+            patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.research_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.research_service._backfill_prediction_lab_predictions",
+                new=AsyncMock(side_effect=delayed_backfill),
+            ),
+            patch(
+                "app.services.research_service._refresh_prediction_lab_accuracy",
+                new=AsyncMock(side_effect=delayed_refresh),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_stats",
+                new=AsyncMock(
+                    side_effect=[
+                        {"stored_predictions": 2, "pending_predictions": 0, "total_predictions": 1, "within_range": 1, "within_range_rate": 1.0, "direction_hits": 1, "direction_accuracy": 1.0, "avg_error_pct": 0.8, "avg_confidence": 62.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                    ]
+                ),
+            ),
+            patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_confidence_buckets", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
+            patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
+        ):
+            result = await asyncio.wait_for(
+                research_service.get_prediction_lab(limit_recent=20, refresh=False),
+                timeout=0.1,
+            )
+            await asyncio.wait_for(
+                asyncio.gather(backfill_started.wait(), refresh_started.wait()),
+                timeout=0.1,
+            )
+            release_background.set()
+            await asyncio.sleep(0)
+
+        self.assertFalse(result["partial"])
+        self.assertEqual(result["accuracy"]["total_predictions"], 1)
+
+    async def test_prediction_lab_explains_pending_samples_before_first_evaluation(self):
+        with (
+            patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.research_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.research_service.archive_service.refresh_prediction_accuracy",
+                new=AsyncMock(
+                    return_value={
+                        "checked_at": "2026-04-05T09:00:00",
+                        "due_pending_count": 0,
+                        "evaluated_count": 0,
+                        "unmatched_count": 0,
+                        "error_count": 0,
+                        "calibration_refreshed": False,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_stats",
+                new=AsyncMock(
+                    side_effect=[
+                        {"stored_predictions": 1, "pending_predictions": 1, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 30.9},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                        {"stored_predictions": 0, "pending_predictions": 0, "total_predictions": 0, "within_range": 0, "within_range_rate": 0.0, "direction_hits": 0, "direction_accuracy": 0.0, "avg_error_pct": 0.0, "avg_confidence": 0.0},
+                    ]
+                ),
+            ),
+            patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_confidence_buckets", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.confidence_calibration_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_profile_summary", return_value=[]),
+            patch("app.services.research_service.learned_fusion_profile_service.get_last_refresh_time", return_value=None),
+            patch("app.services.research_service.learned_fusion_profile_service.get_runtime_summary", return_value=[]),
+            patch(
+                "app.services.research_service.opportunity_radar_lab_service.get_lab_summary",
+                new=AsyncMock(return_value=_sample_radar_summary()),
+            ),
+        ):
+            result = await research_service.get_prediction_lab(limit_recent=20, refresh=False)
+
+        self.assertEqual(result["accuracy"]["stored_predictions"], 1)
+        self.assertEqual(result["accuracy"]["pending_predictions"], 1)
+        self.assertTrue(any("예측 로그 1건은 저장됐지만" in line for line in result["insights"]))
+        self.assertEqual(result["action_queue"][0]["title"], "실측 평가 대기 표본 확인")
 
     async def test_portfolio_empty_snapshot(self):
         with (
@@ -756,3 +1049,167 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(defensive_holding["execution_bias"], "capital_preservation")
         self.assertLessEqual(defensive_holding["target_weight_pct"], defensive_holding["current_weight_pct"])
         self.assertTrue(result["model_portfolio"]["rebalance_actions"])
+
+    async def test_portfolio_keeps_workspace_when_model_portfolio_fails(self):
+        index_forecast = NextDayForecast(
+            target_date="2026-03-30",
+            reference_date="2026-03-27",
+            reference_price=3000.0,
+            direction="flat",
+            up_probability=52.0,
+            predicted_open=3001.0,
+            predicted_close=3006.0,
+            predicted_high=3015.0,
+            predicted_low=2988.0,
+            predicted_return_pct=0.2,
+            confidence=64.0,
+            scenarios=[
+                ForecastScenario(name="Bull", price=3020.0, probability=28.0, description=""),
+                ForecastScenario(name="Base", price=3006.0, probability=46.0, description=""),
+                ForecastScenario(name="Bear", price=2980.0, probability=26.0, description=""),
+            ],
+            risk_flags=[],
+            execution_bias="lean_long",
+            execution_note="시장 전반은 중립에 가깝습니다.",
+        )
+        stock_forecast = NextDayForecast(
+            target_date="2026-03-30",
+            reference_date="2026-03-27",
+            reference_price=101.0,
+            direction="up",
+            up_probability=58.0,
+            predicted_open=101.4,
+            predicted_close=103.1,
+            predicted_high=104.0,
+            predicted_low=99.8,
+            predicted_return_pct=2.1,
+            confidence=68.0,
+            scenarios=[
+                ForecastScenario(name="Bull", price=105.0, probability=32.0, description=""),
+                ForecastScenario(name="Base", price=103.1, probability=43.0, description=""),
+                ForecastScenario(name="Bear", price=99.6, probability=25.0, description=""),
+            ],
+            risk_flags=["거래량 회복은 더 확인이 필요합니다."],
+            execution_bias="lean_long",
+            execution_note="무리한 추격보다 눌림 확인이 유리합니다.",
+        )
+        market_regime = MarketRegime(
+            label="Neutral",
+            stance="neutral",
+            trend="range",
+            volatility="normal",
+            breadth="mixed",
+            score=51.0,
+            conviction=58.0,
+            summary="Balanced tape.",
+            playbook=["Wait for cleaner confirmation."],
+            warnings=[],
+        )
+        trade_plan = TradePlan(
+            setup_label="Constructive Pullback",
+            action="wait_pullback",
+            conviction=63.0,
+            stop_loss=97.0,
+            take_profit_1=104.0,
+            take_profit_2=107.0,
+            thesis=["단기 반등 여지는 있지만 진입은 확인 후가 좋습니다."],
+            invalidation="지지 이탈 시 보수적으로 다시 계산합니다.",
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=98.0,
+            buy_zone_high=101.0,
+            fair_value=104.0,
+            sell_zone_low=108.0,
+            sell_zone_high=111.0,
+            risk_reward_ratio=1.4,
+            confidence_grade="B",
+            methodology=[],
+            summary="",
+        )
+        technical = TechnicalIndicators(
+            ma_20=[],
+            ma_60=[],
+            rsi_14=[],
+            macd=[],
+            macd_signal=[],
+            macd_hist=[],
+            dates=[],
+        )
+
+        with (
+            patch("app.services.portfolio_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.portfolio_service.cache.set", new=AsyncMock()),
+            patch(
+                "app.services.portfolio_service.supabase_client.portfolio_profile_get",
+                new=AsyncMock(
+                    return_value={
+                        "total_assets": 10000.0,
+                        "cash_balance": 2000.0,
+                        "monthly_budget": 500.0,
+                        "updated_at": 123.0,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.portfolio_service.supabase_client.portfolio_list",
+                new=AsyncMock(
+                    return_value=[
+                        {
+                            "id": 1,
+                            "ticker": "005930",
+                            "name": "Samsung Electronics",
+                            "country_code": "KR",
+                            "buy_price": 100.0,
+                            "quantity": 12.0,
+                            "buy_date": "2026-03-01",
+                        }
+                    ]
+                ),
+            ),
+            patch("app.services.portfolio_service.supabase_client.watchlist_list", new=AsyncMock(return_value=[])),
+            patch("app.services.portfolio_service.ecos_client.get_kr_economic_snapshot", new=AsyncMock(return_value={})),
+            patch("app.services.portfolio_service.kosis_client.get_kr_macro_snapshot", new=AsyncMock(return_value={})),
+            patch(
+                "app.services.portfolio_service.yfinance_client.get_price_history",
+                new=AsyncMock(side_effect=[_sample_price_history(), _sample_price_history()]),
+            ),
+            patch(
+                "app.services.portfolio_service.yfinance_client.get_stock_info",
+                new=AsyncMock(return_value={"current_price": 101.0, "name": "Test Corp", "sector": "Tech"}),
+            ),
+            patch("app.services.portfolio_service.yfinance_client.get_analyst_ratings", new=AsyncMock(return_value={})),
+            patch("app.services.portfolio_service.forecast_next_day", side_effect=[index_forecast, stock_forecast]),
+            patch("app.services.portfolio_service.build_market_regime", return_value=market_regime),
+            patch("app.services.portfolio_service.build_quick_buy_sell", return_value=buy_sell),
+            patch("app.services.portfolio_service._calc_technicals", return_value=technical),
+            patch("app.services.portfolio_service.build_trade_plan", return_value=trade_plan),
+            patch("app.services.portfolio_service._annualized_volatility", return_value=18.5),
+            patch("app.services.portfolio_service._max_drawdown", return_value=7.4),
+            patch("app.services.portfolio_service._beta", return_value=0.96),
+            patch(
+                "app.services.portfolio_service.market_service.get_market_opportunities",
+                new=AsyncMock(
+                    return_value={
+                        "country_code": "KR",
+                        "generated_at": "2026-03-29T08:00:00",
+                        "market_regime": market_regime.model_dump(),
+                        "total_scanned": 0,
+                        "actionable_count": 0,
+                        "bullish_count": 0,
+                        "opportunities": [],
+                    }
+                ),
+            ),
+            patch(
+                "app.services.portfolio_service._build_model_portfolio",
+                new=AsyncMock(side_effect=RuntimeError("optimizer unavailable")),
+            ),
+        ):
+            result = await portfolio_service.get_portfolio("user-123")
+
+        self.assertEqual(result["summary"]["holding_count"], 1)
+        self.assertTrue(result["holdings"])
+        self.assertTrue(result["partial"])
+        self.assertEqual(result["fallback_reason"], "portfolio_model_portfolio_unavailable")
+        self.assertEqual(result["model_portfolio"]["recommended_holdings"], [])
+        self.assertTrue(result["model_portfolio"]["notes"])

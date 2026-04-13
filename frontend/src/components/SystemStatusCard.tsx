@@ -30,7 +30,12 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
   const criticalSources = diagnostics.data_sources.slice(0, 4);
   const calibrationProfiles = diagnostics.confidence_calibration_profiles ?? [];
   const learnedFusionStatus = diagnostics.learned_fusion_status;
+<<<<<<< HEAD
   const routeStability = (diagnostics.route_stability ?? []).slice(0, 4);
+=======
+  const routeStabilityRows = diagnostics.route_stability_summary ?? [];
+  const firstUsableMetrics = diagnostics.first_usable_metrics;
+>>>>>>> main
   const versionsAligned = frontendVersion === diagnostics.version;
   const backendStartedAtLabel = diagnostics.started_at
     ? new Date(diagnostics.started_at).toLocaleString("ko-KR")
@@ -62,8 +67,8 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
         </div>
       </div>
 
-      <div className="flex items-center justify-end mb-4">
-        <Link href="/lab" className="text-sm text-accent hover:underline">
+      <div className="mb-4 flex items-center justify-end">
+        <Link href="/lab" className="ui-button-primary px-4">
           예측 연구실 열기
         </Link>
       </div>
@@ -300,6 +305,61 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
               ))}
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {firstUsableMetrics ? (
+        <div className="mt-4 rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary mb-2">Route 안정성</div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg bg-border/20 px-3 py-3">
+              <div className="text-xs text-text-secondary">first usable p50 / p95</div>
+              <div className="mt-1 text-sm font-semibold text-text">
+                {firstUsableMetrics.p50_elapsed_ms.toFixed(0)}ms / {firstUsableMetrics.p95_elapsed_ms.toFixed(0)}ms
+              </div>
+            </div>
+            <div className="rounded-lg bg-border/20 px-3 py-3">
+              <div className="text-xs text-text-secondary">fallback / stale</div>
+              <div className="mt-1 text-sm font-semibold text-text">
+                {(firstUsableMetrics.fallback_served_rate * 100).toFixed(1)}% / {(firstUsableMetrics.stale_served_rate * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div className="rounded-lg bg-border/20 px-3 py-3">
+              <div className="text-xs text-text-secondary">hydration failure</div>
+              <div className="mt-1 text-sm font-semibold text-text">
+                {((diagnostics.hydration_failure_summary?.failure_rate ?? 0) * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div className="rounded-lg bg-border/20 px-3 py-3">
+              <div className="text-xs text-text-secondary">session recovery failure</div>
+              <div className="mt-1 text-sm font-semibold text-text">
+                {((diagnostics.session_recovery_summary?.failure_rate ?? 0) * 100).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+
+          {routeStabilityRows.length > 0 ? (
+            <div className="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-2">
+              {routeStabilityRows.slice(0, 6).map((row) => (
+                <div key={row.route} className="rounded-lg bg-border/20 px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{row.route}</span>
+                    <span className="text-xs text-text-secondary">{row.total}건</span>
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">
+                    p50 {row.p50_elapsed_ms.toFixed(0)}ms · p95 {row.p95_elapsed_ms.toFixed(0)}ms
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary">
+                    fallback {(row.fallback_served_rate * 100).toFixed(1)}% · partial {(row.partial_rate * 100).toFixed(1)}% · stale {(row.stale_rate * 100).toFixed(1)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 text-sm text-text-secondary">
+              아직 route 안정성 표본이 충분히 쌓이지 않았습니다.
+            </div>
+          )}
         </div>
       ) : null}
     </div>

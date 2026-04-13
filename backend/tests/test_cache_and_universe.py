@@ -12,6 +12,7 @@ from app.data.universe_data import EXCHANGE_MAP, get_universe, resolve_universe
 
 class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        cache.reset_memory_cache_state()
         await cache.invalidate("unit_test:%")
         await cache.invalidate("dynamic_universe:%")
         await cache.invalidate("fmp_screen%")
@@ -81,6 +82,20 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback, {"value": 3})
         self.assertEqual(cached, {"value": 19})
 
+    async def test_get_or_fetch_can_skip_cache_write_for_invalid_payloads(self):
+        payload = {"value": 0, "valid": False}
+
+        result = await cache.get_or_fetch(
+            "unit_test:skip_invalid_cache",
+            AsyncMock(return_value=payload),
+            ttl=60,
+            should_cache=lambda item: bool(item.get("valid")),
+        )
+        cached = await cache.get("unit_test:skip_invalid_cache")
+
+        self.assertEqual(result, payload)
+        self.assertIsNone(cached)
+
     async def test_memory_cache_serves_recent_value_without_database_roundtrip(self):
         await cache.set("unit_test:memory_hot", {"value": 23}, ttl=60)
 
@@ -88,6 +103,55 @@ class CacheAndUniverseTests(unittest.IsolatedAsyncioTestCase):
             cached = await cache.get("unit_test:memory_hot")
 
         self.assertEqual(cached, {"value": 23})
+
+    async def test_memory_cache_enforces_entry_and_byte_limits(self):
+        oversized_settings = SimpleNamespace(
+            cache_ttl_price=60,
+            cache_memory_max_entries=2,
+            cache_memory_max_mb=1,
+        )
+        large_value = {"payload": "x" * 700_000}
+
+        with (
+            patch("app.data.cache.get_settings", return_value=oversized_settings),
+            patch("app.data.cache.db.cache_set", new=AsyncMock()),
+            patch("app.data.cache.db.cache_get", new=AsyncMock(return_value=None)),
+        ):
+            await cache.set("unit_test:memory_cap:1", large_value, ttl=60)
+            await cache.set("unit_test:memory_cap:2", large_value, ttl=60)
+            await cache.set("unit_test:memory_cap:3", large_value, ttl=60)
+            stats = cache.get_memory_cache_stats()
+            evicted = await cache.get("unit_test:memory_cap:1")
+            newest = await cache.get("unit_test:memory_cap:3")
+
+        self.assertLessEqual(stats["entry_count"], 2)
+        self.assertLessEqual(stats["estimated_bytes"], 1 * 1024 * 1024)
+        self.assertIsNone(evicted)
+        self.assertIsNotNone(newest)
+
+    async def test_memory_cache_skips_oversized_entry_but_keeps_database_persistence(self):
+        constrained_settings = SimpleNamespace(
+            cache_ttl_price=60,
+            cache_memory_max_entries=8,
+            cache_memory_max_mb=64,
+            cache_memory_max_entry_mb=1,
+        )
+        db_cache_set = AsyncMock()
+        oversized_value = {"payload": "x" * 1_500_000}
+
+        with (
+            patch("app.data.cache.get_settings", return_value=constrained_settings),
+            patch("app.data.cache.db.cache_set", new=db_cache_set),
+            patch("app.data.cache.db.cache_get", new=AsyncMock(return_value=None)),
+        ):
+            await cache.set("unit_test:memory_oversized", oversized_value, ttl=60)
+            hot_value = await cache.get("unit_test:memory_oversized")
+            stats = cache.get_memory_cache_stats()
+
+        db_cache_set.assert_awaited_once()
+        self.assertIsNone(hot_value)
+        self.assertEqual(stats["entry_count"], 0)
+        self.assertEqual(stats["skipped_oversized_writes"], 1)
 
     async def test_get_universe_filters_known_invalid_tickers(self):
         with patch(

@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -67,6 +68,21 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
             result = await stock_analyzer._ask_public_stock_summary_with_timeout("system", "user")
 
         self.assertEqual(result, {})
+
+    async def test_quick_stock_cache_write_timebox_returns_without_waiting_for_slow_persist(self):
+        async def _slow_cache_write():
+            await asyncio.sleep(0.2)
+
+        with patch("app.analysis.stock_analyzer.STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS", 0.01):
+            started_at = time.perf_counter()
+            result = await stock_analyzer._timebox_quick_stock_cache_write(
+                _slow_cache_write(),
+                label="stock quick cache write 005930.KS",
+            )
+            elapsed = time.perf_counter() - started_at
+
+        self.assertFalse(result)
+        self.assertLess(elapsed, 0.08)
 
     async def test_analyze_stock_prefers_latest_cached_detail_before_history_fetch(self):
         cached_snapshot = {

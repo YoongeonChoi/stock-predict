@@ -344,28 +344,47 @@ def _pct_diff(val, ref) -> float | None:
     return round((val - ref) / ref * 100, 1)
 
 
+def _extract_valid_closes(prices: list[dict], *, positive_only: bool = False) -> list[float]:
+    closes: list[float] = []
+    for row in prices:
+        raw = row.get("close")
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
+        if positive_only and value <= 0:
+            continue
+        closes.append(value)
+    return closes
+
+
 def _calc_return(prices: list[dict]) -> float | None:
-    if len(prices) < 2:
+    closes = _extract_valid_closes(prices, positive_only=True)
+    if len(closes) < 2:
         return None
-    start = prices[0]["close"]
-    end = prices[-1]["close"]
-    if start == 0:
-        return None
+    start = closes[0]
+    end = closes[-1]
     return round((end - start) / start * 100, 2)
 
 
 def _calc_volatility(prices: list[dict]) -> float | None:
-    if len(prices) < 10:
+    closes = _extract_valid_closes(prices, positive_only=True)
+    if len(closes) < 10:
         return None
-    closes = [p["close"] for p in prices]
-    returns = np.diff(np.log(closes))
+    returns = np.diff(np.log(np.asarray(closes, dtype=float)))
+    if returns.size == 0 or not np.all(np.isfinite(returns)):
+        return None
     return round(float(np.std(returns) * np.sqrt(252) * 100), 1)
 
 
 def _calc_max_drawdown(prices: list[dict]) -> float | None:
-    if len(prices) < 2:
+    closes = _extract_valid_closes(prices, positive_only=True)
+    if len(closes) < 2:
         return None
-    closes = [p["close"] for p in prices]
     peak = closes[0]
     max_dd = 0
     for c in closes:

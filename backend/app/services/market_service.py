@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from app.analysis.distributional_return_engine import build_distributional_forecast
-from app.analysis.market_regime import build_market_regime
-from app.analysis.next_day_forecast import forecast_next_day
-from app.analysis.trade_planner import build_trade_plan
-from app.analysis.valuation_blend import build_quick_buy_sell
-from app.analysis.stock_analyzer import _calc_technicals
-from app.data import cache, ecos_client, kosis_client, kr_market_quote_client, yfinance_client
+from app.config import get_settings
+from app.data import cache
 from app.data.universe_data import (
     UNIVERSE,
     UniverseSelection,
@@ -20,14 +16,57 @@ from app.data.universe_data import (
     resolve_universe,
 )
 from app.models.country import COUNTRY_REGISTRY
-from app.models.market import MarketRegime, OpportunityItem, OpportunityRadarResponse
+from app.models.market import (
+    NextDayFocusRecommendation,
+    OpportunityItem,
+    OpportunityRadarResponse,
+    ShortTermChartAnalysis,
+    TradePlan,
+)
 from app.models.stock import PricePoint, TechnicalIndicators
 from app.scoring.selection import regime_alignment_score, score_selection_candidate
-from app.scoring.stock_scorer import score_stock
-from app.services.portfolio_optimizer import build_horizon_snapshot
+from app.services import opportunity_radar_lab_service
+from app.services.market.fallbacks import (
+    build_placeholder_market_regime as _build_placeholder_market_regime,
+    regime_tailwind_label as _regime_tailwind_label,
+)
+from app.services.market.quick_scan import (
+    build_quote_only_opportunity_item as _build_quote_only_opportunity_item,
+    resolve_detail_candidate_budget as _resolve_detail_candidate_budget,
+    should_skip_detailed_scan as _should_skip_detailed_scan,
+)
+from app.services.market.shared import (
+    clip as _clip,
+    safe_float as _safe_float,
+    scenario_snapshot as _scenario_snapshot,
+)
+from app.services.market.universe import (
+    build_sector_lookup as _build_sector_lookup,
+    build_seeded_quote_screen_from_quick_payload as _build_seeded_quote_screen_from_quick_payload,
+    flatten_universe as _flatten_universe,
+    group_ranked_quotes_by_sector as _group_ranked_quotes_by_sector,
+    sample_universe_pairs as _sample_universe_pairs,
+)
 from app.utils.async_tools import gather_limited
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.memory_hygiene import get_memory_pressure_snapshot
 
-OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 4
+settings = get_settings()
+ecos_client = LazyModuleProxy("app.data.ecos_client")
+kosis_client = LazyModuleProxy("app.data.kosis_client")
+kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
+_distributional_return_engine = LazyModuleProxy("app.analysis.distributional_return_engine")
+_chart_setup = LazyModuleProxy("app.analysis.chart_setup")
+_market_regime = LazyModuleProxy("app.analysis.market_regime")
+_next_day_forecast = LazyModuleProxy("app.analysis.next_day_forecast")
+_trade_planner = LazyModuleProxy("app.analysis.trade_planner")
+_valuation_blend = LazyModuleProxy("app.analysis.valuation_blend")
+_stock_analyzer = LazyModuleProxy("app.analysis.stock_analyzer")
+_stock_scorer = LazyModuleProxy("app.scoring.stock_scorer")
+_portfolio_optimizer = LazyModuleProxy("app.services.portfolio_optimizer")
+
+OPPORTUNITY_SCAN_TIMEOUT_SECONDS = 6
 OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 4
 OPPORTUNITY_CONCURRENCY = 4
 LIGHTWEIGHT_OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS = 2
@@ -43,210 +82,230 @@ QUICK_OPPORTUNITY_CACHE_TTL_SECONDS = 300
 QUOTE_SCREEN_CACHE_WAIT_TIMEOUT_SECONDS = 1.6
 FULL_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 3.0
 QUICK_OPPORTUNITY_CACHE_WAIT_TIMEOUT_SECONDS = 2.5
+KR_RADAR_KOSPI_LIMIT = 190
+KR_RADAR_KOSDAQ_LIMIT = 10
+KR_RADAR_UNIVERSE_SOURCE = "kr_top200"
+RADAR_FOCUS_SOURCE_LIMIT = 18
+RADAR_FOCUS_CANDIDATE_LIMIT = 6
+RADAR_FOCUS_CONCURRENCY = 3
+RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS = 2.4
+RADAR_FOCUS_TOTAL_TIMEOUT_SECONDS = 5.2
+RADAR_FOCUS_SKIP_PRESSURE_RATIO = 0.82
 
 
-def _clip(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+def build_distributional_forecast(*args, **kwargs):
+    return _distributional_return_engine.build_distributional_forecast(*args, **kwargs)
 
 
-def _scenario_snapshot(forecast) -> dict:
-    scenarios = {item.name: item for item in getattr(forecast, "scenarios", [])}
-    bull = scenarios.get("Bull")
-    base = scenarios.get("Base")
-    bear = scenarios.get("Bear")
-    return {
-        "bull_case_price": bull.price if bull else None,
-        "base_case_price": base.price if base else None,
-        "bear_case_price": bear.price if bear else None,
-        "bull_probability": bull.probability if bull else None,
-        "base_probability": base.probability if base else None,
-        "bear_probability": bear.probability if bear else None,
-    }
+def build_short_horizon_chart_analysis(*args, **kwargs):
+    return _chart_setup.build_short_horizon_chart_analysis(*args, **kwargs)
 
 
-def _safe_float(value: float | None, default: float = 0.0) -> float:
+def build_market_regime(*args, **kwargs):
+    return _market_regime.build_market_regime(*args, **kwargs)
+
+
+def forecast_next_day(*args, **kwargs):
+    return _next_day_forecast.forecast_next_day(*args, **kwargs)
+
+
+def build_short_horizon_trade_plan(*args, **kwargs):
+    return _trade_planner.build_short_horizon_trade_plan(*args, **kwargs)
+
+
+def build_trade_plan(*args, **kwargs):
+    return _trade_planner.build_trade_plan(*args, **kwargs)
+
+
+def build_quick_buy_sell(*args, **kwargs):
+    return _valuation_blend.build_quick_buy_sell(*args, **kwargs)
+
+
+def _calc_technicals(*args, **kwargs):
+    return _stock_analyzer._calc_technicals(*args, **kwargs)
+
+
+def score_stock(*args, **kwargs):
+    return _stock_scorer.score_stock(*args, **kwargs)
+
+
+def build_horizon_snapshot(*args, **kwargs):
+    return _portfolio_optimizer.build_horizon_snapshot(*args, **kwargs)
+
+
+def _should_skip_next_day_focus_enrichment() -> bool:
+    if not settings.startup_memory_safe_mode:
+        return False
     try:
-        return float(value)
+        snapshot = get_memory_pressure_snapshot(settings)
+    except Exception:
+        return False
+    return float(snapshot.get("pressure_ratio") or 0.0) >= RADAR_FOCUS_SKIP_PRESSURE_RATIO
+
+
+def _optional_finite_float(value: float | None) -> float | None:
+    try:
+        parsed = float(value)
     except (TypeError, ValueError):
-        return default
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
 
 
-def _regime_tailwind_label(stance: str) -> str:
-    if stance == "risk_on":
-        return "tailwind"
-    if stance == "risk_off":
-        return "headwind"
-    return "mixed"
+def _safe_round(value: float | None, digits: int, default: float = 0.0) -> float:
+    return round(_safe_float(value, default), digits)
 
 
-def _build_placeholder_market_regime(
-    *,
-    country_code: str,
-    index_name: str,
-    note: str,
-) -> MarketRegime:
-    return MarketRegime(
-        label=f"{country_code} 빠른 스냅샷",
-        stance="neutral",
-        trend="range",
-        volatility="normal",
-        breadth="mixed",
-        score=50.0,
-        conviction=38.0,
-        summary=note,
-        playbook=[
-            f"{index_name} 정밀 국면 계산이 완료되기 전까지 1차 시세 스캔 후보를 우선 제공합니다.",
-            "이번 응답에서는 사용 가능한 후보 스냅샷을 만들지 못했습니다. 잠시 뒤 다시 열어 fresh quick 스냅샷을 다시 시도해 주세요.",
-        ],
-        warnings=["이번 응답은 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 표시합니다."],
-        signals=[],
+def _safe_optional_round(value: float | None, digits: int) -> float | None:
+    parsed = _optional_finite_float(value)
+    if parsed is None:
+        return None
+    return round(parsed, digits)
+
+
+def _sanitize_json_value(value, *, non_finite_default=None):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else non_finite_default
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_json_value(item, non_finite_default=non_finite_default)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_json_value(item, non_finite_default=non_finite_default) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_json_value(item, non_finite_default=non_finite_default) for item in value]
+    return value
+
+
+def _sanitize_chart_analysis_model(chart_analysis: ShortTermChartAnalysis) -> ShortTermChartAnalysis:
+    sanitized_factors = [
+        factor.model_copy(update={"score": _safe_float(factor.score, 0.0)})
+        for factor in list(chart_analysis.factors or [])
+    ]
+    return chart_analysis.model_copy(
+        update={
+            "score": _safe_float(chart_analysis.score, 0.0),
+            "factors": sanitized_factors,
+        }
     )
 
 
-def _flatten_universe(universe: dict[str, list[str]]) -> list[tuple[str, str]]:
-    flattened: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for sector, tickers in universe.items():
-        for ticker in tickers:
-            if ticker in seen:
-                continue
-            seen.add(ticker)
-            flattened.append((sector, ticker))
-    return flattened
+def _sanitize_trade_plan_model(trade_plan: TradePlan) -> TradePlan:
+    return trade_plan.model_copy(
+        update={
+            "conviction": _safe_float(trade_plan.conviction, 0.0),
+            "entry_low": _optional_finite_float(trade_plan.entry_low),
+            "entry_high": _optional_finite_float(trade_plan.entry_high),
+            "stop_loss": _optional_finite_float(trade_plan.stop_loss),
+            "take_profit_1": _optional_finite_float(trade_plan.take_profit_1),
+            "take_profit_2": _optional_finite_float(trade_plan.take_profit_2),
+            "risk_reward_estimate": _safe_float(trade_plan.risk_reward_estimate, 0.0),
+        }
+    )
 
 
-def _sample_universe_pairs(universe: dict[str, list[str]], limit: int) -> list[tuple[str, str]]:
-    if limit <= 0:
-        return []
-    sector_names = list(universe.keys())
-    offsets = {sector: 0 for sector in sector_names}
-    sampled: list[tuple[str, str]] = []
-    seen: set[str] = set()
+def _sanitize_next_day_forecast_model(forecast):
+    sanitized_flow_signal = None
+    if forecast.flow_signal is not None:
+        sanitized_flow_signal = forecast.flow_signal.model_copy(
+            update={
+                "foreign_net_buy": _optional_finite_float(forecast.flow_signal.foreign_net_buy),
+                "institutional_net_buy": _optional_finite_float(forecast.flow_signal.institutional_net_buy),
+                "retail_net_buy": _optional_finite_float(forecast.flow_signal.retail_net_buy),
+            }
+        )
+    sanitized_scenarios = [
+        scenario.model_copy(
+            update={
+                "price": _safe_float(scenario.price, 0.0),
+                "probability": _safe_float(scenario.probability, 0.0),
+            }
+        )
+        for scenario in list(forecast.scenarios or [])
+    ]
+    sanitized_drivers = [
+        driver.model_copy(
+            update={
+                "value": _safe_float(driver.value, 0.0),
+                "weight": _safe_float(driver.weight, 0.0),
+                "contribution": _safe_float(driver.contribution, 0.0),
+            }
+        )
+        for driver in list(forecast.drivers or [])
+    ]
+    return forecast.model_copy(
+        update={
+            "reference_price": _safe_float(forecast.reference_price, 0.0),
+            "up_probability": _safe_float(forecast.up_probability, 0.0),
+            "predicted_open": _optional_finite_float(forecast.predicted_open),
+            "predicted_close": _safe_float(forecast.predicted_close, 0.0),
+            "predicted_high": _safe_float(forecast.predicted_high, 0.0),
+            "predicted_low": _safe_float(forecast.predicted_low, 0.0),
+            "predicted_return_pct": _safe_float(forecast.predicted_return_pct, 0.0),
+            "confidence": _safe_float(forecast.confidence, 0.0),
+            "raw_confidence": _optional_finite_float(forecast.raw_confidence),
+            "calibrated_probability": _optional_finite_float(forecast.calibrated_probability),
+            "probability_edge": _optional_finite_float(forecast.probability_edge),
+            "analog_support": _optional_finite_float(forecast.analog_support),
+            "regime_support": _optional_finite_float(forecast.regime_support),
+            "agreement_support": _optional_finite_float(forecast.agreement_support),
+            "data_quality_support": _optional_finite_float(forecast.data_quality_support),
+            "volatility_ratio": _optional_finite_float(forecast.volatility_ratio),
+            "calibration_snapshot": _sanitize_json_value(
+                forecast.calibration_snapshot,
+                non_finite_default=None,
+            )
+            if forecast.calibration_snapshot is not None
+            else None,
+            "fusion_blend_weight": _optional_finite_float(forecast.fusion_blend_weight),
+            "graph_context_score": _optional_finite_float(forecast.graph_context_score),
+            "graph_coverage": _optional_finite_float(forecast.graph_coverage),
+            "news_sentiment": _safe_float(forecast.news_sentiment, 0.0),
+            "raw_signal": _safe_float(forecast.raw_signal, 0.0),
+            "flow_signal": sanitized_flow_signal,
+            "scenarios": sanitized_scenarios,
+            "drivers": sanitized_drivers,
+        }
+    )
 
-    while len(sampled) < limit:
-        advanced = False
-        for sector in sector_names:
-            tickers = universe.get(sector) or []
-            index = offsets[sector]
-            while index < len(tickers) and tickers[index] in seen:
-                index += 1
-            offsets[sector] = index
-            if index >= len(tickers):
-                continue
-            ticker = tickers[index]
-            offsets[sector] = index + 1
-            seen.add(ticker)
-            sampled.append((sector, ticker))
-            advanced = True
-            if len(sampled) >= limit:
-                break
-        if not advanced:
-            break
 
-    return sampled
-
-
-def _build_sector_lookup(universe: dict[str, list[str]]) -> dict[str, str]:
-    lookup: dict[str, str] = {}
-    for sector, tickers in universe.items():
-        for ticker in tickers:
-            normalized = str(ticker or "").upper()
-            if normalized and normalized not in lookup:
-                lookup[normalized] = sector
-    return lookup
-
-
-def _resolve_detail_candidate_budget(*, limit: int, available: int, max_candidates: int | None) -> int:
-    if available <= 0:
-        return 0
-    if max_candidates is not None:
-        return max(1, min(available, max_candidates))
-    preferred = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
-    if available >= 120:
-        preferred = min(preferred, LARGE_UNIVERSE_DETAILED_SCAN_CAP)
-    return max(1, min(available, min(preferred, MAX_DETAILED_OPPORTUNITY_CANDIDATES)))
-
-
-def _should_skip_detailed_scan(
+def _has_full_quote_screen_coverage(
+    payload: dict | None,
     *,
-    country_code: str,
-    universe_source: str,
-    ranked_count: int,
-    limit: int,
+    expected_universe_size: int | None = None,
 ) -> bool:
-    return (
-        country_code == "KR"
-        and universe_source in {"fallback", "krx_listing"}
-        and ranked_count >= max(limit, LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD)
+    if not payload:
+        return False
+    total_scanned = int(payload.get("total_scanned") or 0)
+    quote_available_count = int(payload.get("quote_available_count") or 0)
+    universe_size = int(expected_universe_size or payload.get("universe_size") or 0)
+    if total_scanned <= 0 or quote_available_count <= 0 or universe_size <= 0:
+        return False
+    return total_scanned >= universe_size
+
+
+def _can_reuse_quick_seed_payload(quick_seed_payload: dict | None, universe_selection) -> bool:
+    if not quick_seed_payload:
+        return False
+    expected_source = str(getattr(universe_selection, "source", "") or "").strip()
+    cached_source = str(quick_seed_payload.get("universe_source") or "").strip()
+    if not expected_source or cached_source != expected_source:
+        return False
+    expected_size = len(_flatten_universe(getattr(universe_selection, "sectors", {}) or {}))
+    cached_size = int(quick_seed_payload.get("universe_size") or 0)
+    if expected_size <= 0 or cached_size <= 0:
+        return False
+    if expected_size != cached_size:
+        return False
+    return _has_full_quote_screen_coverage(
+        quick_seed_payload,
+        expected_universe_size=expected_size,
     )
 
 
-def _build_quote_only_opportunity_item(
-    *,
-    rank: int,
-    sector: str,
-    ticker: str,
-    current_price: float,
-    change_pct: float,
-    country_code: str,
-    market_regime,
-) -> OpportunityItem:
-    regime_bias = 4.0 if market_regime.stance == "risk_on" else -4.0 if market_regime.stance == "risk_off" else 0.0
-    opportunity_score = _clip(55.0 + change_pct * 3.4 + regime_bias, 15.0, 90.0)
-    up_probability = _clip(50.0 + change_pct * 1.9 + regime_bias * 0.7, 34.0, 77.0)
-    predicted_return_pct = round(_clip(change_pct * 0.55, -5.0, 6.5), 2)
-    target_date = (datetime.now() + timedelta(days=20)).date().isoformat()
-    bull_case_price = round(current_price * 1.04, 2)
-    base_case_price = round(current_price * (1.0 + predicted_return_pct / 100.0), 2)
-    bear_case_price = round(current_price * 0.97, 2)
-    action = "accumulate" if predicted_return_pct >= 1.4 else "breakout_watch" if predicted_return_pct >= 0.2 else "wait_pullback"
-    return OpportunityItem(
-        rank=rank,
-        ticker=ticker,
-        name=ticker.split(".")[0],
-        sector=sector,
-        country_code=country_code,
-        current_price=round(current_price, 2),
-        change_pct=round(change_pct, 2),
-        opportunity_score=round(opportunity_score, 1),
-        quant_score=round(_clip(50.0 + change_pct * 1.8, 22.0, 78.0), 1),
-        up_probability=round(up_probability, 1),
-        confidence=41.0,
-        predicted_return_pct=predicted_return_pct,
-        target_horizon_days=20,
-        target_date_20d=target_date,
-        expected_return_pct_20d=predicted_return_pct,
-        expected_excess_return_pct_20d=round(predicted_return_pct * 0.72, 2),
-        median_return_pct_20d=predicted_return_pct,
-        forecast_volatility_pct_20d=round(max(abs(change_pct) * 1.4, 2.4), 2),
-        up_probability_20d=round(up_probability, 1),
-        flat_probability_20d=round(max(100.0 - up_probability - 20.0, 6.0), 1),
-        down_probability_20d=round(max(100.0 - up_probability - max(100.0 - up_probability - 20.0, 6.0), 6.0), 1),
-        distribution_confidence_20d=41.0,
-        price_q25_20d=bear_case_price,
-        price_q50_20d=base_case_price,
-        price_q75_20d=bull_case_price,
-        bull_case_price=bull_case_price,
-        base_case_price=base_case_price,
-        bear_case_price=bear_case_price,
-        bull_probability=round(up_probability, 1),
-        base_probability=20.0,
-        bear_probability=round(max(100.0 - up_probability - 20.0, 6.0), 1),
-        setup_label="전수 1차 스캔",
-        action=action,
-        execution_bias="stay_selective",
-        execution_note="현재 KR 레이더 유니버스를 1차 스캔했고, 상세 분포 계산이 지연된 종목은 시세 스냅샷 기준으로 먼저 정리했습니다.",
-        regime_tailwind=_regime_tailwind_label(market_regime.stance),
-        entry_low=round(current_price * 0.99, 2),
-        entry_high=round(current_price * 1.01, 2),
-        stop_loss=round(current_price * 0.96, 2),
-        take_profit_1=round(current_price * 1.03, 2),
-        take_profit_2=round(current_price * 1.06, 2),
-        risk_reward_estimate=1.15,
-        thesis=["현재 KR 레이더 유니버스를 1차로 훑은 뒤 상위 종목을 먼저 정렬한 결과입니다."],
-        risk_flags=["상세 분포 계산이 지연돼 시세 스냅샷 기반 후보로 표시합니다."],
-        forecast_date=target_date,
-    )
+
 
 
 def _build_lightweight_opportunity_item(
@@ -369,16 +428,26 @@ def _build_quote_only_opportunities(
     items = [
         _build_quote_only_opportunity_item(
             rank=idx,
+            total_ranked=len(ranked_quotes),
             sector=item["sector"],
             ticker=item["ticker"],
-            current_price=float(item["current_price"]),
-            change_pct=float(item["change_pct"]),
+            name=item.get("name"),
+            current_price=_safe_float(item.get("current_price"), 0.0),
+            change_pct=_safe_float(item.get("change_pct"), 0.0),
             country_code=country_code,
             market_regime=market_regime,
         )
         for idx, item in enumerate(ranked_quotes[:limit], start=1)
     ]
-    items.sort(key=lambda item: item.opportunity_score, reverse=True)
+    items.sort(
+        key=lambda item: (
+            item.opportunity_score,
+            item.up_probability,
+            item.change_pct,
+            item.current_price,
+        ),
+        reverse=True,
+    )
     return [item.model_copy(update={"rank": idx}) for idx, item in enumerate(items[:limit], start=1)]
 
 
@@ -407,6 +476,7 @@ async def _build_kr_representative_quote_only_opportunities(
             {
                 "sector": sector_lookup.get(ticker, "대표 후보"),
                 "ticker": ticker,
+                "name": str(quote.get("name") or "").strip() or ticker.split(".")[0],
                 "current_price": round(current_price, 2),
                 "change_pct": round(change_pct, 2),
                 "quick_score": round(change_pct * 2.2 + regime_bias, 4),
@@ -428,8 +498,78 @@ async def _build_kr_representative_quote_only_opportunities(
     )
 
 
+def _build_kr_radar_universe_note(*, total: int) -> str:
+    return (
+        f"코스피 시가총액 상위 {KR_RADAR_KOSPI_LIMIT}개와 코스닥 상위 {KR_RADAR_KOSDAQ_LIMIT}개, "
+        f"총 {total}개 대표 종목을 1차 스캔합니다. 상위 후보만 정밀 분석합니다."
+    )
+
+
+def _build_kr_radar_selection_from_ranked_quotes(ranked_quotes: list[dict]) -> SimpleNamespace | None:
+    if not ranked_quotes:
+        return None
+    grouped = _group_ranked_quotes_by_sector(ranked_quotes)
+    total = sum(len(tickers) for tickers in grouped.values())
+    return SimpleNamespace(
+        sectors=grouped,
+        source=KR_RADAR_UNIVERSE_SOURCE,
+        note=_build_kr_radar_universe_note(total=total),
+    )
+
+
+async def _build_kr_radar_quote_screen(market_regime) -> tuple[SimpleNamespace, dict] | None:
+    quotes = await kr_market_quote_client.get_kr_radar_quotes(
+        kospi_limit=KR_RADAR_KOSPI_LIMIT,
+        kosdaq_limit=KR_RADAR_KOSDAQ_LIMIT,
+    )
+    if not quotes:
+        return None
+
+    curated_sector_lookup = _build_sector_lookup(UNIVERSE.get("KR", {}))
+    regime_bias = 0.75 if market_regime.stance == "risk_on" else -0.55 if market_regime.stance == "risk_off" else 0.0
+    ranked_quotes: list[dict] = []
+    for quote in quotes.values():
+        ticker = str(quote.get("ticker") or "").upper()
+        current_price = _safe_float(quote.get("current_price"), 0.0)
+        if current_price <= 0:
+            continue
+        change_pct = _safe_float(quote.get("change_pct"))
+        market_label = str(quote.get("market") or "").upper()
+        sector = curated_sector_lookup.get(ticker)
+        if not sector:
+            sector = "코스닥 대표" if market_label == "KOSDAQ" else "코스피 대표"
+        quick_score = (
+            change_pct * 1.7
+            + min(_safe_float(quote.get("market_cap")) / 1_000_000_000_000, 8.0)
+            + regime_bias
+        )
+        ranked_quotes.append(
+            {
+                "sector": sector,
+                "ticker": ticker,
+                "name": str(quote.get("name") or "").strip() or ticker.split(".")[0],
+                "current_price": round(current_price, 2),
+                "change_pct": round(change_pct, 2),
+                "quick_score": round(quick_score, 4),
+            }
+        )
+
+    ranked_quotes.sort(key=lambda item: (item["quick_score"], item["change_pct"]), reverse=True)
+    selection = _build_kr_radar_selection_from_ranked_quotes(ranked_quotes)
+    if selection is None:
+        return None
+
+    total = len(ranked_quotes)
+    return selection, {
+        "universe_size": total,
+        "scanned_count": total,
+        "quote_available_count": total,
+        "ranked": ranked_quotes,
+    }
+
+
 def _quick_opportunity_cache_key(country_code: str, limit: int) -> str:
-    return f"opportunity_radar_quick:v2:{country_code.upper()}:{int(limit)}"
+    return f"opportunity_radar_quick:v6:{country_code.upper()}:{int(limit)}"
 
 
 def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> dict:
@@ -441,9 +581,310 @@ def _normalize_cached_quick_payload(payload: dict, *, requested_limit: int) -> d
     normalized["bullish_count"] = sum(
         1
         for item in clipped
-        if float(item.get("up_probability_20d") or item.get("up_probability") or 0.0) >= 55.0
+        if _safe_float(item.get("up_probability_20d") or item.get("up_probability"), 0.0) >= 55.0
     )
     return normalized
+
+
+def _focus_expected_edge_pct(*, predicted_return_pct: float, up_probability: float) -> float:
+    return max(predicted_return_pct, 0.0) * max(up_probability, 0.0) / 100.0
+
+
+def _focus_recent_gain_penalty(change_pct: float) -> float:
+    normalized = _safe_float(change_pct, 0.0)
+    surge_penalty = max(normalized - 3.2, 0.0) * 0.045
+    surge_penalty += max(normalized - 6.5, 0.0) * 0.085
+    fade_penalty = max(-normalized - 4.0, 0.0) * 0.02
+    return round(max(surge_penalty + fade_penalty, 0.0), 4)
+
+
+def _focus_source_seed_score(item: OpportunityItem) -> float:
+    probability = _safe_float(item.up_probability_20d or item.up_probability, 0.0)
+    horizon_return = _safe_float(item.expected_return_pct_20d or item.predicted_return_pct, 0.0)
+    risk_reward = _safe_float(item.risk_reward_estimate, 0.0)
+    score = _safe_float(item.opportunity_score, 0.0) * 0.045
+    score += max(horizon_return, 0.0) * 0.16
+    score += max(probability - 50.0, 0.0) * 0.03
+    score += min(max(risk_reward, 0.0), 3.0) * 0.22
+    if item.action == "accumulate":
+        score += 0.25
+    elif item.action == "reduce_risk":
+        score -= 0.35
+    elif item.action == "avoid":
+        score -= 0.6
+    if 0.3 <= _safe_float(item.change_pct, 0.0) <= 4.5:
+        score += 0.18
+    return round(score - _focus_recent_gain_penalty(item.change_pct), 4)
+
+
+def _select_focus_source_items(items: list[OpportunityItem], *, limit: int) -> list[OpportunityItem]:
+    ranked_by_ticker: dict[str, tuple[float, OpportunityItem]] = {}
+    for item in items:
+        seed_score = _focus_source_seed_score(item)
+        current = ranked_by_ticker.get(item.ticker)
+        if current is None or seed_score > current[0]:
+            ranked_by_ticker[item.ticker] = (seed_score, item)
+    ranked = sorted(
+        ranked_by_ticker.values(),
+        key=lambda entry: (
+            entry[0],
+            _safe_float(entry[1].opportunity_score, 0.0),
+            -abs(_safe_float(entry[1].change_pct, 0.0) - 2.0),
+            _safe_float(entry[1].up_probability_20d or entry[1].up_probability, 0.0),
+        ),
+        reverse=True,
+    )
+    return [item for _, item in ranked[: max(int(limit), 1)]]
+
+
+def _focus_selection_score(
+    *,
+    expected_edge_pct: float,
+    predicted_return_pct: float,
+    confidence: float,
+    risk_reward_estimate: float,
+    regime_stance: str,
+    downside_pct: float,
+    change_pct: float,
+    chart_analysis: ShortTermChartAnalysis,
+) -> float:
+    regime_multiplier = 1.08 if regime_stance == "risk_on" else 0.92 if regime_stance == "risk_off" else 1.0
+    confidence_multiplier = 0.76 + max(confidence, 0.0) / 170.0
+    risk_reward_multiplier = 1.0 + min(max(risk_reward_estimate, 0.0), 3.2) * 0.18
+    recent_gain_penalty = _focus_recent_gain_penalty(change_pct)
+    chart_score = _safe_float(chart_analysis.score, 0.0)
+    chart_multiplier = 0.78 + chart_score / 140.0
+    chart_edge_bonus = (chart_score - 50.0) / 12.0
+    chart_signal_bonus = 0.18 if chart_analysis.signal == "bullish" else -0.22 if chart_analysis.signal == "bearish" else 0.0
+    chart_caution_penalty = max(0, len(chart_analysis.caution_flags) - 1) * 0.08
+    return round(
+        (
+            expected_edge_pct * regime_multiplier * confidence_multiplier * risk_reward_multiplier * chart_multiplier
+            + max(predicted_return_pct, 0.0) * 0.18
+            + chart_edge_bonus
+            + chart_signal_bonus
+            - max(downside_pct, 0.0) * 0.12
+            - recent_gain_penalty
+            - chart_caution_penalty
+        ),
+        4,
+    )
+
+
+def _focus_selection_summary(*, forecast, trade_plan: TradePlan, expected_edge_pct: float) -> str:
+    return (
+        f"상승 확률 {forecast.up_probability:.1f}%, 예상 수익률 {forecast.predicted_return_pct:+.2f}%, "
+        f"손익비 {trade_plan.risk_reward_estimate:.2f}를 함께 본 1일 실행 점수 기준 추천입니다. "
+        f"동일 금액 기준 기대 수익 기여는 {expected_edge_pct:+.2f}%로 계산했습니다."
+    )
+
+
+def _focus_selection_summary_v2(
+    *,
+    forecast,
+    trade_plan: TradePlan,
+    expected_edge_pct: float,
+    change_pct: float,
+    chart_analysis: ShortTermChartAnalysis,
+) -> str:
+    freshness_note = (
+        f"최근 {change_pct:+.1f}% 급등은 추격 매수를 피하도록 감점했습니다."
+        if change_pct >= 6.0
+        else "보드 상단 순위보다 최근 급등 추격 위험을 함께 반영했습니다."
+    )
+    return (
+        f"상승 확률 {forecast.up_probability:.1f}%, 예상 수익률 {forecast.predicted_return_pct:+.2f}%, "
+        f"손익비 {trade_plan.risk_reward_estimate:.2f}를 함께 보고 1일 실행 기준으로 추천합니다. "
+        f"동일 금액 기준 기대 수익 기여는 {expected_edge_pct:+.2f}%로 계산했고, 차트 점수는 {chart_analysis.score:.1f}/100입니다. "
+        f"{freshness_note}"
+    )
+
+
+def _dedupe_items(items: list[str], *, limit: int) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+async def _build_next_day_focus_recommendation(
+    *,
+    source_items: list[OpportunityItem],
+    country_code: str,
+    market_regime,
+    benchmark_history: list[dict] | None = None,
+    macro_snapshot: dict | None = None,
+    kosis_snapshot: dict | None = None,
+) -> NextDayFocusRecommendation | None:
+    candidates = _select_focus_source_items(source_items, limit=RADAR_FOCUS_CANDIDATE_LIMIT)
+    if not candidates:
+        return None
+
+    async def _evaluate(item: OpportunityItem) -> NextDayFocusRecommendation | None:
+        snapshot = await asyncio.wait_for(
+            yfinance_client.get_market_snapshot(item.ticker, period="6mo"),
+            timeout=RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS,
+        )
+        if not snapshot.get("valid"):
+            return None
+
+        info, prices, analyst_raw = await asyncio.gather(
+            asyncio.wait_for(
+                yfinance_client.get_stock_info(item.ticker),
+                timeout=RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS,
+            ),
+            asyncio.wait_for(
+                yfinance_client.get_price_history(item.ticker, period="6mo"),
+                timeout=RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS,
+            ),
+            asyncio.wait_for(
+                yfinance_client.get_analyst_ratings(item.ticker),
+                timeout=RADAR_FOCUS_CANDIDATE_TIMEOUT_SECONDS,
+            ),
+        )
+        current_price = _safe_float(
+            info.get("current_price"),
+            _safe_float(snapshot.get("current_price"), _safe_float(item.current_price, 0.0)),
+        )
+        if current_price <= 0 or len(prices) < 40:
+            return None
+
+        forecast = forecast_next_day(
+            ticker=item.ticker,
+            name=info.get("name", item.name),
+            country_code=country_code,
+            price_history=prices,
+            analyst_context={
+                **analyst_raw,
+                "target_mean": info.get("target_mean"),
+                "target_median": info.get("target_median"),
+                "target_high": info.get("target_high"),
+                "target_low": info.get("target_low"),
+            },
+            asset_type="stock",
+            benchmark_history=benchmark_history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
+            fundamental_context=info,
+        )
+        buy_sell = build_quick_buy_sell(info)
+        technical: TechnicalIndicators = _calc_technicals(prices)
+        price_points = [PricePoint(**point) for point in prices]
+        chart_analysis = build_short_horizon_chart_analysis(
+            price_history=price_points,
+            technical=technical,
+            current_price=current_price,
+        )
+        short_plan = build_short_horizon_trade_plan(
+            ticker=item.ticker,
+            current_price=current_price,
+            price_history=price_points,
+            technical=technical,
+            buy_sell_guide=buy_sell,
+            next_day_forecast=forecast,
+            market_regime=market_regime,
+        )
+        forecast = _sanitize_next_day_forecast_model(forecast)
+        short_plan = _sanitize_trade_plan_model(short_plan)
+        chart_analysis = _sanitize_chart_analysis_model(chart_analysis)
+
+        if short_plan.entry_low is not None and short_plan.entry_high is not None:
+            entry_reference = (short_plan.entry_low + short_plan.entry_high) / 2.0
+        else:
+            entry_reference = current_price
+        downside_pct = 0.0
+        if short_plan.stop_loss is not None and entry_reference > 0:
+            downside_pct = max((entry_reference - short_plan.stop_loss) / entry_reference * 100.0, 0.0)
+        predicted_return_pct = _safe_float(forecast.predicted_return_pct, 0.0)
+        profit_probability = _safe_float(forecast.up_probability, 0.0)
+        forecast_confidence = _safe_float(forecast.confidence, 0.0)
+        risk_reward_estimate = _safe_float(short_plan.risk_reward_estimate, 0.0)
+        change_pct = _safe_float(item.change_pct, 0.0)
+        expected_edge_pct = _focus_expected_edge_pct(
+            predicted_return_pct=predicted_return_pct,
+            up_probability=profit_probability,
+        )
+        selection_score = _focus_selection_score(
+            expected_edge_pct=expected_edge_pct,
+            predicted_return_pct=predicted_return_pct,
+            confidence=forecast_confidence,
+            risk_reward_estimate=risk_reward_estimate,
+            regime_stance=getattr(market_regime, "stance", "neutral"),
+            downside_pct=downside_pct,
+            change_pct=change_pct,
+            chart_analysis=chart_analysis,
+        )
+
+        thesis = _dedupe_items(
+            [
+                chart_analysis.summary,
+                *list(short_plan.thesis or []),
+                *list(item.thesis or []),
+                str(forecast.execution_note or ""),
+            ],
+            limit=4,
+        )
+        risk_flags = _dedupe_items(
+            [
+                *list(getattr(forecast, "risk_flags", []) or []),
+                *list(item.risk_flags or []),
+                *list(chart_analysis.caution_flags or []),
+            ],
+            limit=3,
+        )
+
+        return NextDayFocusRecommendation(
+            ticker=item.ticker,
+            name=info.get("name") or item.name,
+            sector=item.sector,
+            country_code=country_code,
+            radar_rank=item.rank,
+            current_price=_safe_round(current_price, 2),
+            profit_probability=_safe_round(profit_probability, 1),
+            expected_return_pct=_safe_round(predicted_return_pct, 2),
+            expected_edge_pct=_safe_round(expected_edge_pct, 2),
+            selection_score=_safe_float(selection_score, 0.0),
+            selection_summary=_focus_selection_summary_v2(
+                forecast=forecast,
+                trade_plan=short_plan,
+                expected_edge_pct=expected_edge_pct,
+                change_pct=change_pct,
+                chart_analysis=chart_analysis,
+            ),
+            thesis=thesis,
+            risk_flags=risk_flags,
+            chart_analysis=chart_analysis,
+            next_day_forecast=forecast,
+            trade_plan=short_plan,
+        )
+
+    try:
+        evaluated = await asyncio.wait_for(
+            gather_limited(candidates, _evaluate, limit=RADAR_FOCUS_CONCURRENCY),
+            timeout=RADAR_FOCUS_TOTAL_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return None
+
+    valid = [item for item in evaluated if not isinstance(item, Exception) and item is not None]
+    if not valid:
+        return None
+    valid.sort(
+        key=lambda item: (
+            item.selection_score,
+            item.expected_edge_pct,
+            item.profit_probability,
+        ),
+        reverse=True,
+    )
+    return valid[0]
 
 
 def _cached_quick_limit_candidates(limit: int) -> list[int]:
@@ -485,7 +926,7 @@ def _full_opportunity_cache_key(
     *,
     max_candidates: int | None = None,
 ) -> str:
-    return f"opportunity_radar:v16:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
+    return f"opportunity_radar:v20:{country_code.upper()}:{int(limit)}:{max_candidates or 'auto'}"
 
 
 async def _build_quote_screen(
@@ -503,7 +944,7 @@ async def _build_quote_screen(
         universe_pairs = full_universe_pairs
         scope_token = "full"
     cache_key = (
-        f"opportunity_quote_screen:v3:{country_code}:{universe_selection.source}:"
+        f"opportunity_quote_screen:v4:{country_code}:{universe_selection.source}:"
         f"{len(full_universe_pairs)}:{scope_token}"
     )
 
@@ -598,19 +1039,15 @@ async def _build_quote_screen(
 async def _resolve_quick_opportunity_universe(country_code: str):
     country_code = country_code.upper()
     if country_code == "KR":
-        cached = await cache.get("krx_listing_universe:KR")
-        if cached and isinstance(cached, dict):
-            sectors = {
-                sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
-                for sector, tickers in (cached.get("sectors") or {}).items()
-            }
-            total = int(cached.get("total") or sum(len(tickers) for tickers in sectors.values()))
-            if total > 0:
-                return SimpleNamespace(
-                    sectors=sectors,
-                    source="krx_listing",
-                    note=f"KRX 상장사 목록 기준 전종목 {total}개를 1차 스캔합니다. 상세 분포 계산은 백그라운드에서 이어집니다.",
-                )
+        market_regime = _build_placeholder_market_regime(
+            country_code=country_code,
+            index_name=COUNTRY_REGISTRY[country_code].indices[0].name,
+            note="KR 대표 종목군을 우선 정리해 1차 스캔 후보를 빠르게 준비합니다.",
+        )
+        radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+        if radar_quote_screen is not None:
+            return radar_quote_screen[0]
+
         fallback_sectors = {
             sector: list(dict.fromkeys(str(ticker or "").upper() for ticker in tickers if ticker))
             for sector, tickers in UNIVERSE.get(country_code, {}).items()
@@ -621,8 +1058,8 @@ async def _resolve_quick_opportunity_universe(country_code: str):
                 sectors=fallback_sectors,
                 source="fallback",
                 note=(
-                    f"KRX 상장사 목록 캐시가 아직 준비되지 않아 운영용 기본 종목군 {fallback_total}개를 먼저 1차 스캔합니다. "
-                    "정식 전종목 스캔은 캐시가 준비되는 즉시 이어집니다."
+                    f"대표 200종목 시세가 아직 비어 운영용 기본 종목군 {fallback_total}개를 먼저 1차 스캔합니다. "
+                    "대표 종목 시세가 복구되면 190/10 레이더로 다시 전환합니다."
                 ),
             )
     return await resolve_universe(country_code)
@@ -787,6 +1224,7 @@ async def get_market_opportunities(
             "bullish_count": 0,
             "universe_source": "fallback",
             "universe_note": "",
+            "next_day_focus": None,
             "opportunities": [],
         }
 
@@ -812,17 +1250,60 @@ async def get_market_opportunities(
             next_day_forecast=regime_forecast,
         )
 
-        universe_selection = await resolve_opportunity_universe(country_code)
-        universe_selection, quote_screen = await _resolve_resilient_quote_screen(
-            country_code=country_code,
-            universe_selection=universe_selection,
-            market_regime=market_regime,
-        )
+        quick_seed_limit = max(limit * 2, MIN_DETAILED_OPPORTUNITY_CANDIDATES)
+        if country_code == "KR":
+            universe_selection = await _resolve_quick_opportunity_universe(country_code)
+            quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
+            seeded_quick = None
+            if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
+                seeded_quick = _build_seeded_quote_screen_from_quick_payload(
+                    quick_seed_payload,
+                    candidate_limit=quick_seed_limit,
+                )
+            if seeded_quick is not None:
+                universe_selection, quote_screen = seeded_quick
+            elif universe_selection.source == KR_RADAR_UNIVERSE_SOURCE:
+                live_radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+                if live_radar_quote_screen is not None:
+                    universe_selection, quote_screen = live_radar_quote_screen
+                else:
+                    universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                        country_code=country_code,
+                        universe_selection=universe_selection,
+                        market_regime=market_regime,
+                    )
+            else:
+                universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                    country_code=country_code,
+                    universe_selection=universe_selection,
+                    market_regime=market_regime,
+                )
+        else:
+            universe_selection = await resolve_opportunity_universe(country_code)
+            quick_seed_payload = await get_cached_market_opportunities_quick(country_code, quick_seed_limit)
+            seeded_quick = None
+            if _can_reuse_quick_seed_payload(quick_seed_payload, universe_selection):
+                seeded_quick = _build_seeded_quote_screen_from_quick_payload(
+                    quick_seed_payload,
+                    candidate_limit=quick_seed_limit,
+                )
+            if seeded_quick is not None:
+                universe_selection, quote_screen = seeded_quick
+            else:
+                universe_selection, quote_screen = await _resolve_resilient_quote_screen(
+                    country_code=country_code,
+                    universe_selection=universe_selection,
+                    market_regime=market_regime,
+                )
         ranked_quotes = list(quote_screen.get("ranked") or [])
         detail_budget = _resolve_detail_candidate_budget(
             limit=limit,
             available=len(ranked_quotes),
+            universe_source=getattr(universe_selection, "source", None),
             max_candidates=max_candidates,
+            min_candidates=MIN_DETAILED_OPPORTUNITY_CANDIDATES,
+            large_universe_cap=LARGE_UNIVERSE_DETAILED_SCAN_CAP,
+            max_detailed_candidates=MAX_DETAILED_OPPORTUNITY_CANDIDATES,
         )
         candidates: list[tuple[str, str]] = [
             (item["sector"], item["ticker"])
@@ -847,7 +1328,10 @@ async def get_market_opportunities(
                 asyncio.wait_for(yfinance_client.get_price_history(ticker, period="6mo"), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
                 asyncio.wait_for(yfinance_client.get_analyst_ratings(ticker), timeout=OPPORTUNITY_CANDIDATE_TIMEOUT_SECONDS),
             )
-            current_price = float(info.get("current_price") or snapshot.get("current_price") or 0)
+            current_price = _safe_float(
+                info.get("current_price"),
+                _safe_float(snapshot.get("current_price"), 0.0),
+            )
             if current_price <= 0 or len(prices) < 40:
                 return None
 
@@ -899,7 +1383,7 @@ async def get_market_opportunities(
                 market_regime=market_regime,
             )
 
-            prev_close = float(info.get("prev_close") or current_price)
+            prev_close = _safe_float(info.get("prev_close"), current_price)
             change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
             valuation_gap = ((buy_sell.fair_value / current_price) - 1.0) * 100.0 if current_price else 0.0
             scenario_snapshot = _scenario_snapshot(forecast)
@@ -908,14 +1392,17 @@ async def get_market_opportunities(
                 horizon_days=20,
                 country_code=country_code,
             )
-            expected_return_pct_20d = float(horizon_20.get("expected_return_pct") or forecast.predicted_return_pct)
-            expected_excess_return_pct_20d = float(horizon_20.get("expected_excess_return_pct") or 0.0)
-            median_return_pct_20d = float(horizon_20.get("median_return_pct") or expected_return_pct_20d)
-            forecast_volatility_pct_20d = float(horizon_20.get("forecast_volatility_pct") or 0.0)
-            up_probability_20d = float(horizon_20.get("up_probability") or forecast.up_probability)
-            flat_probability_20d = float(horizon_20.get("flat_probability") or 0.0)
-            down_probability_20d = float(horizon_20.get("down_probability") or max(100.0 - up_probability_20d, 0.0))
-            distribution_confidence_20d = float(horizon_20.get("confidence") or forecast.confidence)
+            expected_return_pct_20d = _safe_float(
+                horizon_20.get("expected_return_pct"),
+                _safe_float(forecast.predicted_return_pct, 0.0),
+            )
+            expected_excess_return_pct_20d = _safe_float(horizon_20.get("expected_excess_return_pct"), 0.0)
+            median_return_pct_20d = _safe_float(horizon_20.get("median_return_pct"), expected_return_pct_20d)
+            forecast_volatility_pct_20d = _safe_float(horizon_20.get("forecast_volatility_pct"), 0.0)
+            up_probability_20d = _safe_float(horizon_20.get("up_probability"), _safe_float(forecast.up_probability, 0.0))
+            flat_probability_20d = _safe_float(horizon_20.get("flat_probability"), 0.0)
+            down_probability_20d = _safe_float(horizon_20.get("down_probability"), max(100.0 - up_probability_20d, 0.0))
+            distribution_confidence_20d = _safe_float(horizon_20.get("confidence"), _safe_float(forecast.confidence, 0.0))
             raw_confidence_20d = horizon_20.get("raw_confidence")
             calibrated_probability_20d = horizon_20.get("calibrated_probability")
             probability_edge_20d = horizon_20.get("probability_edge")
@@ -957,12 +1444,41 @@ async def get_market_opportunities(
                 action=trade_plan.action,
                 execution_bias=forecast.execution_bias,
                 legacy_score=(
-                    float(quant_score.total)
+                    _safe_float(quant_score.total, 0.0)
                     + min(max(trade_plan.risk_reward_estimate, 0.0), 4.0) * 6.0
                     + max(_clip(valuation_gap, -20.0, 20.0), 0.0) * 0.12
                 ),
             )
-            opportunity_score = selection.score
+            base_opportunity_score = _safe_float(selection.score, 0.0)
+            support_snapshot = {
+                "confidence_20d": distribution_confidence_20d,
+                "probability_edge_20d": signal_profile["probability_edge"],
+                "regime_support_20d": regime_support_20d,
+                "analog_support_20d": analog_support_20d,
+                "data_quality_support_20d": data_quality_support_20d,
+                "risk_reward_estimate": trade_plan.risk_reward_estimate,
+                "action": trade_plan.action,
+                "execution_bias": forecast.execution_bias,
+            }
+            score_adjustment = opportunity_radar_lab_service.adjust_opportunity_score(
+                base_score=base_opportunity_score,
+                thesis=trade_plan.thesis,
+                sector=sector,
+                support_snapshot=support_snapshot,
+            )
+            opportunity_score = _safe_float(score_adjustment.get("adjusted_score"), base_opportunity_score)
+            price_q25_value = _safe_optional_round(price_q25_20d, 2)
+            price_q50_value = _safe_optional_round(price_q50_20d, 2)
+            price_q75_value = _safe_optional_round(price_q75_20d, 2)
+            bull_case_price = price_q75_value
+            if bull_case_price is None:
+                bull_case_price = _safe_optional_round(scenario_snapshot["bull_case_price"], 2)
+            base_case_price = price_q50_value
+            if base_case_price is None:
+                base_case_price = _safe_optional_round(scenario_snapshot["base_case_price"], 2)
+            bear_case_price = price_q25_value
+            if bear_case_price is None:
+                bear_case_price = _safe_optional_round(scenario_snapshot["bear_case_price"], 2)
 
             return OpportunityItem(
                 rank=0,
@@ -970,38 +1486,41 @@ async def get_market_opportunities(
                 name=info.get("name") or snapshot.get("name") or ticker,
                 sector=sector,
                 country_code=country_code,
-                current_price=round(current_price, 2),
-                change_pct=round(change_pct, 2),
+                current_price=_safe_round(current_price, 2),
+                change_pct=_safe_round(change_pct, 2),
                 opportunity_score=opportunity_score,
-                quant_score=round(quant_score.total, 1),
-                up_probability=round(up_probability_20d, 1),
-                confidence=round(distribution_confidence_20d, 1),
-                predicted_return_pct=round(expected_return_pct_20d, 2),
+                base_opportunity_score=_safe_round(base_opportunity_score, 1),
+                empirical_adjustment_points=_safe_optional_round(score_adjustment.get("adjustment_points"), 2),
+                empirical_adjustment_reason=score_adjustment.get("reason"),
+                quant_score=_safe_round(quant_score.total, 1),
+                up_probability=_safe_round(up_probability_20d, 1),
+                confidence=_safe_round(distribution_confidence_20d, 1),
+                predicted_return_pct=_safe_round(expected_return_pct_20d, 2),
                 target_horizon_days=20,
                 target_date_20d=horizon_20.get("target_date"),
-                expected_return_pct_20d=round(expected_return_pct_20d, 2),
-                expected_excess_return_pct_20d=round(expected_excess_return_pct_20d, 2),
-                median_return_pct_20d=round(median_return_pct_20d, 2),
-                forecast_volatility_pct_20d=round(forecast_volatility_pct_20d, 2),
-                up_probability_20d=round(up_probability_20d, 1),
-                flat_probability_20d=round(flat_probability_20d, 1),
-                down_probability_20d=round(down_probability_20d, 1),
-                distribution_confidence_20d=round(distribution_confidence_20d, 1),
-                raw_confidence_20d=round(float(raw_confidence_20d), 1) if raw_confidence_20d is not None else None,
-                calibrated_probability_20d=round(float(calibrated_probability_20d), 4) if calibrated_probability_20d is not None else None,
-                probability_edge_20d=round(float(probability_edge_20d), 4) if probability_edge_20d is not None else None,
-                analog_support_20d=round(float(analog_support_20d), 4) if analog_support_20d is not None else None,
-                regime_support_20d=round(float(regime_support_20d), 4) if regime_support_20d is not None else None,
-                agreement_support_20d=round(float(agreement_support_20d), 4) if agreement_support_20d is not None else None,
-                data_quality_support_20d=round(float(data_quality_support_20d), 4) if data_quality_support_20d is not None else None,
-                volatility_ratio_20d=round(float(volatility_ratio_20d), 4) if volatility_ratio_20d is not None else None,
+                expected_return_pct_20d=_safe_round(expected_return_pct_20d, 2),
+                expected_excess_return_pct_20d=_safe_round(expected_excess_return_pct_20d, 2),
+                median_return_pct_20d=_safe_round(median_return_pct_20d, 2),
+                forecast_volatility_pct_20d=_safe_round(forecast_volatility_pct_20d, 2),
+                up_probability_20d=_safe_round(up_probability_20d, 1),
+                flat_probability_20d=_safe_round(flat_probability_20d, 1),
+                down_probability_20d=_safe_round(down_probability_20d, 1),
+                distribution_confidence_20d=_safe_round(distribution_confidence_20d, 1),
+                raw_confidence_20d=_safe_optional_round(raw_confidence_20d, 1),
+                calibrated_probability_20d=_safe_optional_round(calibrated_probability_20d, 4),
+                probability_edge_20d=_safe_optional_round(probability_edge_20d, 4),
+                analog_support_20d=_safe_optional_round(analog_support_20d, 4),
+                regime_support_20d=_safe_optional_round(regime_support_20d, 4),
+                agreement_support_20d=_safe_optional_round(agreement_support_20d, 4),
+                data_quality_support_20d=_safe_optional_round(data_quality_support_20d, 4),
+                volatility_ratio_20d=_safe_optional_round(volatility_ratio_20d, 4),
                 confidence_calibrator_20d=confidence_calibrator_20d,
-                price_q25_20d=round(float(price_q25_20d), 2) if price_q25_20d is not None else None,
-                price_q50_20d=round(float(price_q50_20d), 2) if price_q50_20d is not None else None,
-                price_q75_20d=round(float(price_q75_20d), 2) if price_q75_20d is not None else None,
-                bull_case_price=round(float(price_q75_20d), 2) if price_q75_20d is not None else scenario_snapshot["bull_case_price"],
-                base_case_price=round(float(price_q50_20d), 2) if price_q50_20d is not None else scenario_snapshot["base_case_price"],
-                bear_case_price=round(float(price_q25_20d), 2) if price_q25_20d is not None else scenario_snapshot["bear_case_price"],
+                price_q25_20d=price_q25_value,
+                price_q50_20d=price_q50_value,
+                price_q75_20d=price_q75_value,
+                bull_case_price=bull_case_price,
+                base_case_price=base_case_price,
+                bear_case_price=bear_case_price,
                 bull_probability=round(up_probability_20d, 1),
                 base_probability=round(flat_probability_20d, 1),
                 bear_probability=round(down_probability_20d, 1),
@@ -1050,6 +1569,7 @@ async def get_market_opportunities(
             universe_source=universe_selection.source,
             ranked_count=len(ranked_quotes),
             limit=limit,
+            quote_only_threshold=LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD,
         ):
             try:
                 scanned = await asyncio.wait_for(
@@ -1069,6 +1589,18 @@ async def get_market_opportunities(
                 market_regime=market_regime,
                 limit=limit,
             )
+        focus_source_items = _select_focus_source_items(
+            [*detailed_ranked, *quote_only_ranked],
+            limit=RADAR_FOCUS_SOURCE_LIMIT,
+        )
+        next_day_focus = await _build_next_day_focus_recommendation(
+            source_items=focus_source_items or ranked,
+            country_code=country_code,
+            market_regime=market_regime,
+            benchmark_history=index_history,
+            macro_snapshot=macro_snapshot,
+            kosis_snapshot=kosis_snapshot,
+        )
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         scanned_count = int(quote_screen.get("scanned_count") or resolved_universe_size)
@@ -1082,6 +1614,7 @@ async def get_market_opportunities(
             universe_source=universe_selection.source,
             ranked_count=len(ranked_quotes),
             limit=limit,
+            quote_only_threshold=LARGE_UNIVERSE_QUOTE_ONLY_THRESHOLD,
         ):
             skip_hint = "운영 환경에서는 응답 안정성을 위해 1차 스캔 상위 후보를 우선 반환합니다."
             if skip_hint not in resolved_universe_note:
@@ -1106,6 +1639,7 @@ async def get_market_opportunities(
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),
             universe_source=universe_selection.source,
             universe_note=resolved_universe_note,
+            next_day_focus=next_day_focus,
             opportunities=ranked,
         ).model_dump()
 
@@ -1145,6 +1679,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             "bullish_count": 0,
             "universe_source": "fallback",
             "universe_note": "",
+            "next_day_focus": None,
             "opportunities": [],
         }
 
@@ -1162,14 +1697,23 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             "ranked": [],
         }
         ranked: list[OpportunityItem] = []
+        focus_quote_only_ranked: list[OpportunityItem] = []
         representative_scanned_count = 0
-        if country_code == "KR":
-            ranked, representative_scanned_count = await _build_kr_representative_quote_only_opportunities(
-                country_code=country_code,
-                market_regime=market_regime,
-                universe_selection=universe_selection,
-                limit=limit,
-            )
+        if country_code == "KR" and universe_selection.source == KR_RADAR_UNIVERSE_SOURCE:
+            live_radar_quote_screen = await _build_kr_radar_quote_screen(market_regime)
+            if live_radar_quote_screen is not None:
+                universe_selection, quote_screen = live_radar_quote_screen
+                focus_quote_only_ranked = _build_quote_only_opportunities(
+                    ranked_quotes=list(quote_screen.get("ranked") or []),
+                    country_code=country_code,
+                    market_regime=market_regime,
+                    limit=max(limit, RADAR_FOCUS_SOURCE_LIMIT),
+                )
+                ranked = [
+                    item.model_copy(update={"rank": idx})
+                    for idx, item in enumerate(focus_quote_only_ranked[:limit], start=1)
+                ]
+                representative_scanned_count = int(quote_screen.get("quote_available_count") or 0)
         if not ranked:
             universe_selection, quote_screen = await _resolve_resilient_quote_screen(
                 country_code=country_code,
@@ -1178,12 +1722,16 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
                 max_pairs=QUICK_OPPORTUNITY_QUOTE_SCREEN_CAP,
             )
             ranked_quotes = list(quote_screen.get("ranked") or [])
-            ranked = _build_quote_only_opportunities(
+            focus_quote_only_ranked = _build_quote_only_opportunities(
                 ranked_quotes=ranked_quotes,
                 country_code=country_code,
                 market_regime=market_regime,
-                limit=limit,
+                limit=max(limit, RADAR_FOCUS_SOURCE_LIMIT),
             )
+            ranked = [
+                item.model_copy(update={"rank": idx})
+                for idx, item in enumerate(focus_quote_only_ranked[:limit], start=1)
+            ]
         scanned_count = int(quote_screen.get("scanned_count") or 0)
         if representative_scanned_count > 0:
             scanned_count = representative_scanned_count
@@ -1197,6 +1745,19 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
                 market_regime=market_regime,
                 limit=limit,
             )
+            focus_quote_only_ranked = ranked
+        focus_source_items = _select_focus_source_items(
+            [*focus_quote_only_ranked, *ranked],
+            limit=RADAR_FOCUS_SOURCE_LIMIT,
+        )
+        skip_next_day_focus = _should_skip_next_day_focus_enrichment()
+        next_day_focus = None
+        if not skip_next_day_focus:
+            next_day_focus = await _build_next_day_focus_recommendation(
+                source_items=focus_source_items or ranked,
+                country_code=country_code,
+                market_regime=market_regime,
+            )
 
         resolved_universe_size = int(quote_screen.get("universe_size") or len(_flatten_universe(universe_selection.sectors)))
         note_parts = [universe_selection.note.strip()]
@@ -1206,9 +1767,11 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             )
         if representative_scanned_count > 0:
             note_parts.append(
-                f"yfinance quick 시세가 비어 KOSPI/KOSDAQ 대표 시총 페이지 기준 {representative_scanned_count}개 1차 후보로 즉시 전환했습니다."
+                f"코스피 상위 {KR_RADAR_KOSPI_LIMIT}개와 코스닥 상위 {KR_RADAR_KOSDAQ_LIMIT}개 대표 종목 중 실제 시세를 확보한 {representative_scanned_count}개를 먼저 정렬했습니다."
             )
         note_parts.append("상세 분포 계산이 길어져 1차 시세 스캔 후보를 먼저 반환합니다.")
+        if skip_next_day_focus:
+            note_parts.append("서버 메모리 보호 구간에서는 1일 포커스 정밀 계산을 잠시 생략하고 후보 목록을 먼저 표시합니다.")
         note_parts.append("같은 화면을 다시 열면 fresh quick 스냅샷과 정밀 후보 계산을 새로 시도합니다.")
         resolved_universe_note = " ".join(part for part in note_parts if part).strip()
         resolved_quote_available_count = int(quote_screen.get("quote_available_count") or 0)
@@ -1234,6 +1797,7 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
             bullish_count=sum(1 for item in ranked if (item.up_probability_20d or item.up_probability) >= 55),
             universe_source=universe_selection.source,
             universe_note=resolved_universe_note,
+            next_day_focus=next_day_focus,
             opportunities=ranked,
         ).model_dump()
 
@@ -1311,9 +1875,33 @@ async def get_cached_market_opportunities_with_source(
         return None, "miss"
     opportunities = list(cached.get("opportunities") or [])
     quote_available_count = int(cached.get("quote_available_count") or 0)
+    detailed_scanned_count = int(cached.get("detailed_scanned_count") or 0)
     if quote_available_count <= 0 or not opportunities:
+<<<<<<< HEAD
         return None, "miss"
     return cached, cache_source
+=======
+        return None
+    if detailed_scanned_count > 0:
+        return cached
+    if not _has_full_quote_screen_coverage(cached):
+        return None
+
+    normalized = dict(cached)
+    normalized.setdefault("partial", True)
+    normalized.setdefault("fallback_reason", "opportunity_quote_only_full")
+    full_scan_note = (
+        "대표 200종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+        if str(normalized.get("universe_source") or "") == KR_RADAR_UNIVERSE_SOURCE
+        else "전종목 1차 스캔 결과를 먼저 표시하고, 정밀 분포 계산은 백그라운드에서 이어집니다."
+    )
+    existing_note = str(normalized.get("universe_note") or "").strip()
+    if full_scan_note not in existing_note:
+        normalized["universe_note"] = " ".join(
+            part for part in [existing_note, full_scan_note] if part
+        ).strip()
+    return normalized
+>>>>>>> main
 
 
 def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:

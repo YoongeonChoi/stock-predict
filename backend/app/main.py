@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import db
+from app.services import calendar_service
 from app.errors import SP_6009, SP_6010, SP_6011, SP_6012, SP_9999
 from app.exceptions import ApiAppException
 from app.routers import (
@@ -31,12 +32,8 @@ from app.routers import (
     watchlist,
 )
 from app.runtime import get_runtime_state, reset_runtime_state, upsert_startup_task
-from app.services import (
-    archive_service,
-    learned_fusion_profile_service,
-    market_service,
-    research_archive_service,
-)
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.memory_hygiene import maybe_trim_process_memory
 from app.version import APP_VERSION
 
 logging.basicConfig(
@@ -46,6 +43,13 @@ logging.basicConfig(
 )
 
 startup_log = logging.getLogger("stock_predict.startup")
+memory_log = logging.getLogger("stock_predict.memory")
+archive_service = LazyModuleProxy("app.services.archive_service")
+learned_fusion_profile_service = LazyModuleProxy("app.services.learned_fusion_profile_service")
+market_service = LazyModuleProxy("app.services.market_service")
+research_archive_service = LazyModuleProxy("app.services.research_archive_service")
+PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS = 0.15
+_public_api_pre_request_trim_task: asyncio.Task | None = None
 
 
 @dataclass(frozen=True)
@@ -60,8 +64,8 @@ class StartupTaskDefinition:
 
 def _startup_skip_detail(*, name: str, configured_detail: str) -> str:
     if settings.startup_memory_safe_mode and name in {
-        "learned_fusion_profile_refresh",
         "prediction_accuracy_refresh",
+        "learned_fusion_profile_refresh",
         "research_archive_sync",
         "market_opportunity_prewarm",
     }:
@@ -157,6 +161,14 @@ async def _run_startup_tasks(
         raise
 
 
+async def _prewarm_public_dashboard_payloads() -> None:
+    await country.prewarm_market_indicators_cache()
+    await briefing.prewarm_daily_briefing_cache()
+    await country.prewarm_primary_country_report_cache()
+    await screener.prewarm_public_screener_cache_seed()
+    await calendar_service.prewarm_public_calendar_cache_seed()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     background_tasks: list[asyncio.Task] = []
@@ -195,8 +207,10 @@ async def lifespan(app: FastAPI):
                 running_detail="Refreshing stored next-day prediction accuracy in background.",
                 success_detail="Prediction accuracy refresh completed.",
                 failure_prefix="Prediction accuracy refresh failed during startup",
-                timeout_seconds=settings.startup_prediction_accuracy_refresh_timeout,
-                job=lambda: archive_service.refresh_prediction_accuracy(limit=100),
+                timeout_seconds=settings.effective_startup_prediction_accuracy_refresh_timeout,
+                job=lambda: archive_service.refresh_prediction_accuracy(
+                    limit=settings.effective_startup_prediction_accuracy_refresh_limit
+                ),
             )
         )
     else:
@@ -251,6 +265,24 @@ async def lifespan(app: FastAPI):
             ),
         )
 
+    if settings.effective_startup_public_dashboard_prewarm:
+        startup_tasks.append(
+            StartupTaskDefinition(
+                name="public_dashboard_prewarm",
+                running_detail="Prewarming public dashboard caches for first deployed hits.",
+                success_detail="Public dashboard prewarm completed.",
+                failure_prefix="Public dashboard prewarm failed during startup",
+                timeout_seconds=90,
+                job=_prewarm_public_dashboard_payloads,
+            )
+        )
+    else:
+        upsert_startup_task(
+            "public_dashboard_prewarm",
+            "ok",
+            "Public dashboard prewarm skipped by configuration or because Render memory-safe startup mode is not active.",
+        )
+
     if startup_tasks:
         startup_concurrency = settings.effective_startup_background_task_concurrency
         for index, task_definition in enumerate(startup_tasks):
@@ -301,6 +333,74 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+
+def _memory_hygiene_request_reason(request: Request) -> str:
+    normalized = request.url.path.removeprefix("/api/").strip("/") or "health"
+    return normalized.replace("/", ":")[:96]
+
+
+async def _run_public_api_pre_request_trim(reason: str) -> dict[str, object]:
+    return await asyncio.to_thread(maybe_trim_process_memory, reason)
+
+
+def _finalize_public_api_pre_request_trim(task: asyncio.Task) -> None:
+    global _public_api_pre_request_trim_task
+    if _public_api_pre_request_trim_task is task:
+        _public_api_pre_request_trim_task = None
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        memory_log.debug("pre-request memory trim task was cancelled")
+    except Exception as exc:  # pragma: no cover - best effort guard
+        memory_log.debug("pre-request memory trim task failed: %s", exc, exc_info=True)
+
+
+async def _maybe_schedule_public_api_pre_request_trim(reason: str) -> None:
+    global _public_api_pre_request_trim_task
+
+    task = _public_api_pre_request_trim_task
+    if task is not None and not task.done():
+        return
+
+    task = asyncio.create_task(
+        _run_public_api_pre_request_trim(reason),
+        name="public-api-pre-request-trim",
+    )
+    _public_api_pre_request_trim_task = task
+    task.add_done_callback(_finalize_public_api_pre_request_trim)
+    try:
+        await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        memory_log.debug(
+            "pre-request memory trim for %s exceeded %.2fs; continuing while trim finishes in background.",
+            reason,
+            PUBLIC_API_PRE_REQUEST_TRIM_TIMEOUT_SECONDS,
+        )
+
+
+@app.middleware("http")
+async def public_api_memory_hygiene_middleware(request: Request, call_next):
+    if (
+        settings.startup_memory_safe_mode
+        and request.method in {"GET", "HEAD"}
+        and request.url.path.startswith("/api/")
+        and request.url.path != "/api/health"
+    ):
+        try:
+            await _maybe_schedule_public_api_pre_request_trim(
+                f"pre:{_memory_hygiene_request_reason(request)}"
+            )
+        except Exception as exc:  # pragma: no cover - best effort guard
+            memory_log.debug(
+                "pre-request memory trim skipped for %s: %s",
+                request.url.path,
+                exc,
+            )
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)

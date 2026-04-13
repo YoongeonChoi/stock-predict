@@ -6,7 +6,8 @@ import { Treemap, ResponsiveContainer } from "recharts";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import type { HeatmapData } from "@/lib/api";
 
-function changeToColor(change: number): string {
+function changeToColor(change: number, neutralPalette = false): string {
+  if (neutralPalette) return "#cbd5e1";
   if (change >= 3) return "#15803d";
   if (change >= 2) return "#16a34a";
   if (change >= 1) return "#22c55e";
@@ -29,16 +30,17 @@ interface CustomContentProps {
   ticker?: string;
   depth?: number;
   index?: number;
+  neutralPalette?: boolean;
 }
 
 function CustomContent(props: CustomContentProps) {
-  const { x = 0, y = 0, width = 0, height = 0, name, change = 0, ticker, depth } = props;
+  const { x = 0, y = 0, width = 0, height = 0, name, change = 0, ticker, depth, neutralPalette = false } = props;
 
   if (depth !== 1 || width < 4 || height < 4) return null;
 
-  const bg = changeToColor(change);
+  const bg = changeToColor(change, neutralPalette);
   const showTicker = width > 40 && height > 24;
-  const showChange = width > 50 && height > 36;
+  const showChange = !neutralPalette && width > 50 && height > 36;
   const fontSize = Math.max(8, Math.min(12, width / 7));
 
   return (
@@ -103,6 +105,10 @@ export default function StockHeatmap({ data, loading }: Props) {
       sector: sector.name,
     }))
   );
+  const neutralFallback =
+    Boolean(data.partial || data.fallback_reason)
+    && flat.length > 0
+    && flat.every((stock) => Math.abs(stock.change ?? 0) < 0.0001);
 
   const handleClick = (node: any) => {
     if (node?.ticker) {
@@ -111,16 +117,23 @@ export default function StockHeatmap({ data, loading }: Props) {
   };
 
   return (
-    <div className="w-full h-[420px] cursor-pointer">
-      <ResponsiveContainer width="100%" height="100%">
-        <Treemap
-          data={flat}
-          dataKey="size"
-          aspectRatio={4 / 3}
-          content={<CustomContent />}
-          onClick={handleClick}
-        />
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      {neutralFallback ? (
+        <div className="rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 text-sm text-text-secondary">
+          실시간 등락률 분포가 아직 도착하지 않아 중립 섹터 배치를 먼저 보여주고 있습니다.
+        </div>
+      ) : null}
+      <div className="h-[420px] w-full cursor-pointer">
+        <ResponsiveContainer width="100%" height="100%">
+          <Treemap
+            data={flat}
+            dataKey="size"
+            aspectRatio={4 / 3}
+            content={<CustomContent neutralPalette={neutralFallback} />}
+            onClick={handleClick}
+          />
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

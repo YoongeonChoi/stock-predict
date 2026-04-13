@@ -10,6 +10,7 @@ import ForecastDeltaCard from "@/components/ForecastDeltaCard";
 import HistoricalPatternCard from "@/components/HistoricalPatternCard";
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import MetricValueCard from "@/components/MetricValueCard";
+import PageHeader from "@/components/PageHeader";
 import PivotLevelsCard from "@/components/PivotLevelsCard";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
@@ -25,11 +26,14 @@ import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
 import ScoreRadial from "@/components/charts/ScoreRadial";
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
+import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api } from "@/lib/api";
-import type { CompositeScore, ForecastDeltaResponse, PivotPoints, TechSummary } from "@/lib/api";
 import { buildPublicAuditSummary } from "@/lib/public-audit";
-import type { PricePoint, StockDetail } from "@/lib/types";
+import type { StockDetail, WatchlistItem } from "@/lib/types";
 import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
+import { useStockDetailFlow } from "@/components/pages/useStockDetailFlow";
+
+const WATCHLIST_STATUS_TIMEOUT_MS = 6_000;
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -56,19 +60,28 @@ interface StockPageClientProps {
 
 export default function StockPageClient({ initialTicker, initialData = null }: StockPageClientProps) {
   const router = useRouter();
-  const normalizedTicker = useMemo(() => decodeURIComponent(initialTicker), [initialTicker]);
-  const [stock, setStock] = useState<StockDetail | null>(initialData);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<Error | null>(null);
-  const [techSummary, setTechSummary] = useState<TechSummary | null>(null);
-  const [pivotPoints, setPivotPoints] = useState<PivotPoints | null>(null);
-  const [forecastDelta, setForecastDelta] = useState<ForecastDeltaResponse | null>(null);
-  const [chartPeriod, setChartPeriod] = useState("3mo");
   const [chartType, setChartType] = useState<"line" | "candle">("line");
-  const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const [watchlistEntry, setWatchlistEntry] = useState<WatchlistItem | null>(null);
+  const [watchlistSyncing, setWatchlistSyncing] = useState(false);
   const { toast } = useToast();
   const { session } = useAuth();
+  const {
+    stock,
+    loading,
+    error,
+    techSummary,
+    pivotPoints,
+    forecastDelta,
+    chartPeriod,
+    chartData,
+    changeChartPeriod,
+    composite,
+  } = useStockDetailFlow({
+    initialTicker,
+    initialData,
+  });
 
+<<<<<<< HEAD
   useEffect(() => {
     if (!normalizedTicker) return;
     let cancelled = false;
@@ -121,39 +134,36 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       if (initialData.partial) {
         void upgradeToFull();
       }
+=======
+  const refreshWatchlistEntry = async (tickerValue: string) => {
+    if (!session) {
+      setWatchlistEntry(null);
+      return;
+>>>>>>> main
     }
 
-    api.getTechSummary(normalizedTicker)
-      .then((next) => {
-        if (!cancelled) setTechSummary(next);
-      })
-      .catch(console.error);
-    api.getPivotPoints(normalizedTicker)
-      .then((next) => {
-        if (!cancelled) setPivotPoints(next);
-      })
-      .catch(console.error);
-    api.getStockForecastDelta(normalizedTicker)
-      .then((next) => {
-        if (!cancelled) setForecastDelta(next);
-      })
-      .catch(console.error);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialData, normalizedTicker]);
-
-  const changeChartPeriod = async (period: string) => {
-    if (!normalizedTicker) return;
-    setChartPeriod(period);
+    setWatchlistSyncing(true);
     try {
-      const response = await api.getStockChart(normalizedTicker, period);
-      setChartData(response.data);
-    } catch {
-      setChartData([]);
+      const entries = await api.getWatchlist({ timeoutMs: WATCHLIST_STATUS_TIMEOUT_MS });
+      setWatchlistEntry(
+        entries.find((item) => item.ticker.toUpperCase() === tickerValue.toUpperCase()) ?? null,
+      );
+    } catch (error) {
+      console.error(error);
+      setWatchlistEntry(null);
+    } finally {
+      setWatchlistSyncing(false);
     }
   };
+
+  useEffect(() => {
+    if (!stock?.ticker || !session) {
+      setWatchlistEntry(null);
+      setWatchlistSyncing(false);
+      return;
+    }
+    void refreshWatchlistEntry(stock.ticker);
+  }, [session, stock?.ticker]);
 
   const addToWatchlist = async () => {
     if (!stock) {
@@ -166,6 +176,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     }
     try {
       await api.addWatchlist(stock.ticker, stock.country_code);
+      await refreshWatchlistEntry(stock.ticker);
       toast(`${stock.ticker} 종목을 워치리스트에 추가했습니다.`, "success");
     } catch (error) {
       console.error(error);
@@ -173,7 +184,39 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     }
   };
 
-  const composite = (stock as (StockDetail & { composite_score?: CompositeScore }) | null)?.composite_score ?? null;
+  const handleTrackingAction = async () => {
+    if (!stock) {
+      return;
+    }
+
+    if (!session) {
+      toast("관심종목과 심화 추적은 로그인 후 사용할 수 있습니다.", "info");
+      router.push(`/auth?next=${encodeURIComponent(`/stock/${stock.ticker}`)}`);
+      return;
+    }
+
+    if (!watchlistEntry) {
+      await addToWatchlist();
+      return;
+    }
+
+    if (watchlistEntry.tracking_enabled) {
+      router.push(`/watchlist/${encodeURIComponent(stock.ticker)}`);
+      return;
+    }
+
+    try {
+      setWatchlistSyncing(true);
+      await api.enableWatchlistTracking(stock.ticker, stock.country_code);
+      toast(`${stock.ticker} 심화 추적을 시작했습니다.`, "success");
+      await refreshWatchlistEntry(stock.ticker);
+      router.push(`/watchlist/${encodeURIComponent(stock.ticker)}`);
+    } catch (error) {
+      console.error(error);
+      toast("심화 추적 시작에 실패했습니다.", "error");
+      setWatchlistSyncing(false);
+    }
+  };
 
   const week52Progress = useMemo(() => {
     if (!stock?.week52_low || !stock?.week52_high || stock.week52_high <= stock.week52_low) return null;
@@ -182,12 +225,31 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (loading) {
     return (
+<<<<<<< HEAD
       <div className="max-w-5xl mx-auto space-y-4">
         <WorkspaceLoadingCard
           eyebrow="종목 상세 준비"
           title="빠른 종목 스냅샷을 먼저 불러오고 있습니다"
           message="티커 유효성, 최근 가격 흐름, 기본 판단 요약부터 먼저 준비한 뒤 차트와 보조 지표를 이어서 붙입니다."
           lines={4}
+=======
+      <div className="page-shell space-y-4">
+        <PageHeader
+          variant="compact"
+          eyebrow="종목 상세"
+          title={initialTicker.toUpperCase()}
+          description="가격 흐름, 기술 신호, 공개 판단 요약을 먼저 정리하고 세부 분석을 이어서 불러옵니다."
+        />
+        <WorkspaceLoadingCard
+          title="종목 핵심 수치를 불러오고 있습니다"
+          message="현재가와 공개 판단 요약, 관심종목 상태를 먼저 확인할 수 있도록 준비하고 있습니다."
+          className="min-h-[180px]"
+        />
+        <WorkspaceLoadingCard
+          title="차트와 세부 분석을 이어서 준비하고 있습니다"
+          message="기술 요약, 예측 차트, 매수·매도 가이드가 순서대로 이어집니다."
+          className="min-h-[260px]"
+>>>>>>> main
         />
       </div>
     );
@@ -195,6 +257,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (!stock && error) {
     return (
+<<<<<<< HEAD
       <div className="max-w-5xl mx-auto space-y-4">
         <Link href="/" className="text-text-secondary hover:text-text">&larr; 홈으로</Link>
         <WorkspaceStateCard
@@ -202,6 +265,25 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           title="빠른 종목 스냅샷을 아직 붙이지 못했습니다"
           message={`${error.message} 잠시 후 다시 시도하면 quick 스냅샷부터 다시 연결합니다.`}
           tone="warning"
+=======
+      <div className="page-shell space-y-4">
+        <PageHeader
+          variant="compact"
+          eyebrow="종목 상세"
+          title={initialTicker.toUpperCase()}
+          description="종목 상세 응답이 아직 도착하지 않아, 다시 불러오기로 최신 스냅샷을 재요청합니다."
+          actions={
+            <Link href="/" className="ui-button-secondary px-4">
+              홈으로
+            </Link>
+          }
+        />
+        <WorkspaceStateCard
+          kind="blocking"
+          eyebrow="응답 지연"
+          title="종목 상세를 아직 불러오지 못했습니다"
+          message={error.message}
+>>>>>>> main
           actionLabel="다시 시도"
           onAction={() => window.location.reload()}
         />
@@ -211,12 +293,25 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (!stock) {
     return (
+<<<<<<< HEAD
       <WorkspaceStateCard
         eyebrow="종목 없음"
         title="종목 정보를 찾지 못했습니다"
         message="티커를 다시 확인하거나 검색창에서 종목명을 다시 찾아 주세요."
         tone="warning"
       />
+=======
+      <div className="page-shell">
+        <WorkspaceStateCard
+          kind="blocking"
+          eyebrow="종목 없음"
+          title="종목 정보를 찾을 수 없습니다"
+          message="티커를 다시 확인한 뒤 검색 또는 홈 화면에서 다른 종목으로 이동해 주세요."
+          actionLabel="홈으로"
+          onAction={() => router.push("/")}
+        />
+      </div>
+>>>>>>> main
     );
   }
 
@@ -270,26 +365,44 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
   const stockAuditSummary = buildPublicAuditSummary(stock, {
     defaultSummary: "종목 상세는 최신 스냅샷과 공개 판단 요약을 기준으로 먼저 정리합니다.",
   });
+  const watchlistActionLabel = watchlistSyncing
+    ? "관심종목 확인 중"
+    : watchlistEntry?.tracking_enabled
+      ? "심화 추적 보기"
+      : watchlistEntry
+        ? "심화 추적 시작"
+        : "관심종목 추가";
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-text-secondary hover:text-text">&larr;</Link>
-          <div>
-            <h1 className="text-2xl font-bold">{stock.name}</h1>
-            <span className="text-text-secondary text-sm">{stock.ticker} · {stock.sector} · {stock.industry}</span>
+    <div className="page-shell">
+      <PageHeader
+        variant="compact"
+        eyebrow="종목 상세"
+        title={stock.name}
+        description={
+          <div className="space-y-1">
+            <div className="font-mono text-[0.92rem] text-text-secondary">{stock.ticker}</div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.95rem] text-text-secondary">
+              {stock.sector ? <span className="break-words">{stock.sector}</span> : null}
+              {stock.industry ? <span className="break-words">{stock.industry}</span> : null}
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={addToWatchlist} className="text-sm px-4 py-2 rounded-lg border border-border hover:border-accent transition-colors">워치리스트 추가</button>
-          <div className="text-right">
-            <div className="text-2xl font-bold font-mono">{formatPrice(stock.current_price, priceKey)}</div>
-            <div className={`text-lg ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</div>
+        }
+        meta={
+          <>
+            <span className="info-chip">{formatPrice(stock.current_price, priceKey)}</span>
+            <span className={`info-chip ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</span>
+            <span className="info-chip">시가총액 {formatMarketCap(stock.market_cap, priceKey)}</span>
+          </>
+        }
+        actions={
+          <div className="ui-inline-actions">
+            <Link href="/" className="ui-button-secondary px-4">
+              홈으로
+            </Link>
           </div>
-        </div>
-      </div>
-
+        }
+      />
       {(stock.generated_at || stock.partial || stock.fallback_reason || (stock.errors && stock.errors.length > 0)) ? (
         <div className="card !p-4 space-y-3">
           <PublicAuditStrip meta={stock} />
@@ -300,25 +413,52 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="card !p-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="font-semibold">관심종목 · 심화 추적</h2>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              종목을 먼저 관심종목에 저장하고, 필요한 경우 심화 추적으로 올려 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.
+            </p>
+          </div>
+          <button
+            onClick={handleTrackingAction}
+            disabled={watchlistSyncing}
+            className="ui-button-primary w-full justify-center px-4 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+          >
+            {watchlistActionLabel}
+          </button>
+        </div>
+        <div className="text-sm text-text-secondary">
+          {!session
+            ? "로그인 후 관심종목과 심화 추적을 계정별로 저장할 수 있습니다."
+            : watchlistEntry?.tracking_enabled
+              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 이어서 확인할 수 있습니다."
+              : watchlistEntry
+                ? "이미 관심종목에 들어 있습니다. 심화 추적을 시작하면 최근 예측 변화와 적중 기록이 추가됩니다."
+                : "아직 관심종목에 없는 종목입니다. 먼저 저장한 뒤 심화 추적으로 이어갈 수 있습니다."}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {overviewMetrics.map((item) => (
-          <div key={item.label} className="card !p-4">
+          <div key={item.label} className="metric-card">
             <div className="text-xs text-text-secondary">{item.label}</div>
-            <div className="font-bold mt-2">{item.value}</div>
+            <div className="mt-2 font-bold">{item.value}</div>
           </div>
         ))}
       </div>
 
       {stock.public_summary ? (
         <div className="card space-y-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-1">
               <h2 className="font-semibold">판단 요약</h2>
               <p className="text-sm text-text-secondary">
                 공개 요약은 상승 근거보다 반대 조건과 실패 시그널을 먼저 읽도록 정리했습니다.
               </p>
             </div>
-            <div className="min-w-[260px] max-w-[360px] rounded-xl border border-border bg-accent/5 px-4 py-3">
+            <div className="section-slab-subtle w-full !px-4 !py-3 sm:max-w-[360px] xl:min-w-[260px]">
               <div className="text-xs text-text-secondary">신뢰 메모</div>
               <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.confidence_note}</p>
             </div>
@@ -329,7 +469,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           {publicSummaryCards.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {publicSummaryCards.map((section) => (
-                <div key={section.title} className="rounded-xl border border-border px-4 py-4">
+                <div key={section.title} className="section-slab-subtle !px-4 !py-4">
                   <h3 className="text-sm font-semibold mb-3">{section.title}</h3>
                   <SummaryBulletList items={section.items} />
                 </div>
@@ -337,7 +477,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-border bg-border/20 px-4 py-4">
+          <div className="section-slab-muted !px-4 !py-4">
             <div className="text-xs text-text-secondary">데이터 품질</div>
             <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.data_quality}</p>
           </div>
@@ -352,17 +492,17 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       ) : null}
 
       <div className="card">
-        <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <h2 className="font-semibold">가격 차트</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex gap-1">
+          <div className="flex flex-col gap-2 sm:items-end">
+            <div className="flex flex-wrap gap-1">
               {[{ label: "1M", value: "1mo" }, { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" }, { label: "1Y", value: "1y" }].map((period) => (
-                <button key={period.value} onClick={() => changeChartPeriod(period.value)} className={`px-2 py-0.5 text-xs rounded ${chartPeriod === period.value ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>{period.label}</button>
+                <button key={period.value} onClick={() => changeChartPeriod(period.value)} className={`text-xs ${chartPeriod === period.value ? "action-chip-primary" : "action-chip-secondary"}`}>{period.label}</button>
               ))}
             </div>
-            <div className="flex gap-1 ml-2 border-l border-border pl-2">
-              <button onClick={() => setChartType("line")} className={`px-2 py-0.5 text-xs rounded ${chartType === "line" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>라인</button>
-              <button onClick={() => setChartType("candle")} className={`px-2 py-0.5 text-xs rounded ${chartType === "candle" ? "bg-accent text-white" : "bg-border text-text-secondary hover:text-text"}`}>캔들</button>
+            <div className="flex flex-wrap gap-1 sm:border-l sm:border-border sm:pl-2">
+              <button onClick={() => setChartType("line")} className={`text-xs ${chartType === "line" ? "action-chip-primary" : "action-chip-secondary"}`}>라인</button>
+              <button onClick={() => setChartType("candle")} className={`text-xs ${chartType === "candle" ? "action-chip-primary" : "action-chip-secondary"}`}>캔들</button>
             </div>
           </div>
         </div>
@@ -418,15 +558,19 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       ) : null}
 
       <div className="card">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-semibold">매수 / 매도 가이드</h2>
             <p className="text-sm text-text-secondary mt-1">{bsg.summary}</p>
           </div>
-          <span className={`text-sm px-3 py-1 rounded-full font-medium ${bsg.confidence_grade === "A" ? "bg-emerald-500/20 text-emerald-500" : bsg.confidence_grade === "B" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"}`}>신뢰 등급 {bsg.confidence_grade}</span>
+          <span
+            className={`self-start text-sm px-3 py-1 rounded-full font-medium ${bsg.confidence_grade === "A" ? "bg-emerald-500/20 text-emerald-500" : bsg.confidence_grade === "B" ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"}`}
+          >
+            신뢰 등급 {bsg.confidence_grade}
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
           {guideLevels.map((item) => (
             <MetricValueCard
               key={item.label}
@@ -440,7 +584,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
         <div className="text-sm text-text-secondary">손익비: <strong>{bsg.risk_reward_ratio.toFixed(2)}</strong></div>
         {bsg.methodology.length > 0 ? (
-          <div className="mt-3 text-xs text-text-secondary space-y-1">
+          <div className="mt-3 space-y-1 break-words text-xs leading-5 text-text-secondary">
             {bsg.methodology.map((method, index) => (
               <div key={index}>• {method.name}: {formatPrice(method.value, priceKey)} (가중치 {(method.weight * 100).toFixed(0)}%) - {method.details}</div>
             ))}
@@ -523,7 +667,20 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
       {stock.financials.length > 0 ? (
         <div className="card">
           <h2 className="font-semibold mb-3">최근 재무 스냅샷</h2>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {stock.financials.slice(0, 4).map((row) => (
+              <div key={row.period} className="ui-panel-muted space-y-3">
+                <div className="text-sm font-semibold text-text">{row.period}</div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <MetricValueCard label="매출" value={row.revenue?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="영업이익" value={row.operating_income?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="순이익" value={row.net_income?.toLocaleString() ?? "없음"} />
+                  <MetricValueCard label="FCF" value={row.free_cash_flow?.toLocaleString() ?? "없음"} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="text-left text-text-secondary border-b border-border">
@@ -586,7 +743,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
       {composite ? (
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <h2 className="font-semibold">복합 점수</h2>
             <div className="flex items-center gap-3">
               <div className={`text-3xl font-bold ${composite.total >= 70 ? "text-positive" : composite.total >= 50 ? "text-warning" : "text-negative"}`}>{composite.total.toFixed(1)}</div>
@@ -623,9 +780,9 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
       <div className="card">
         <h2 className="font-semibold mb-4">세부 점수</h2>
-        <div className="flex items-center gap-6 mb-5 flex-wrap">
+        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
           <ScoreRadial score={stock.score.total || 0} label="종합" />
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-wrap gap-3">
             {scoreCategories.map((category) => (
               <ScoreRadial key={category.label} score={category.data.total} max={category.data.max_score} size={84} label={category.label} />
             ))}

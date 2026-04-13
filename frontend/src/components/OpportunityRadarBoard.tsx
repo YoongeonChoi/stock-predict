@@ -12,6 +12,22 @@ interface Props {
   embedded?: boolean;
 }
 
+const OPERATIONAL_FALLBACK_PATTERNS = [
+  "1차 시세 스캔 후보",
+  "시세 스냅샷",
+  "fresh quick",
+  "사용 가능한 후보",
+  "정밀 시장 국면 계산",
+  "정밀 국면 계산",
+  "대표 후보",
+  "다시 열어",
+];
+
+function isOperationalFallbackCopy(text?: string | null) {
+  if (!text) return false;
+  return OPERATIONAL_FALLBACK_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
 function actionTone(action: string) {
   if (action === "accumulate" || action === "breakout_watch") return "text-positive bg-positive/10";
   if (action === "reduce_risk" || action === "avoid") return "text-negative bg-negative/10";
@@ -43,6 +59,13 @@ function executionBiasTone(bias?: string) {
   return "text-text-secondary bg-border/40";
 }
 
+function opportunityScoreLabel(data: OpportunityRadarResponse, setupLabel: string) {
+  if (data.detailed_scanned_count <= 0 || setupLabel === "전수 1차 스캔") {
+    return "1차 스캔 점수";
+  }
+  return "레이더 점수";
+}
+
 function priceRange(low?: number | null, high?: number | null, key = "KR") {
   if (low == null && high == null) return "미정";
   if (low != null && high != null) return `${formatPrice(low, key)} - ${formatPrice(high, key)}`;
@@ -53,9 +76,18 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
   const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
   const usingFallbackUniverse = data.universe_source === "fallback";
   const usingKrxListingUniverse = data.universe_source === "krx_listing";
+  const usingTop200Universe = data.universe_source === "kr_top200";
   const quoteAvailableCount = data.quote_available_count ?? data.total_scanned;
   const visibleCandidateCount = Math.max(data.opportunities.length, data.actionable_count);
   const hasItems = items.length > 0;
+  const universeLabel = usingTop200Universe ? "대표 유니버스" : "전체 유니버스";
+  const radarUniverseSummary = usingTop200Universe
+    ? `코스피 상위 190개와 코스닥 상위 10개, 총 ${data.universe_size}개 대표 종목`
+    : `KR 유니버스 ${data.universe_size}개`;
+  const liveUniverseBadge = usingTop200Universe ? "대표 200종목 유니버스 기반 추천" : "실시간 유니버스 기반 추천";
+  const listingUniverseNote = usingTop200Universe
+    ? data.universe_note || "코스피 190개와 코스닥 10개 대표 종목 기준 1차 스캔 결과입니다."
+    : data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다.";
   const quoteCoverageNote =
     quoteAvailableCount < data.total_scanned
       ? `실제 시세를 확보한 종목은 ${quoteAvailableCount}개입니다. 일부 종목은 데이터 원본 제한이나 거래 상태에 따라 1차 점수 계산에서 제외될 수 있습니다.`
@@ -66,8 +98,17 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
       : "실시간 시세 확보가 지연돼 대표 후보를 아직 만들지 못했습니다. 잠시 뒤 다시 열어 주세요.";
   const radarSummary =
     data.detailed_scanned_count > 0
-      ? `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
-      : `KR 유니버스 ${data.universe_size}개를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+      ? `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
+      : `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+  const operationalFallbackNote =
+    data.partial && hasItems
+      ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
+      : null;
+  const universeBadgeLabel = usingFallbackUniverse
+    ? "기본 유니버스 응답"
+    : usingKrxListingUniverse || usingTop200Universe
+      ? (usingTop200Universe ? "대표 200종목 기준" : "KRX 전종목 기준")
+      : "실시간 유니버스 기준";
 
   if (compact) {
     return (
@@ -81,26 +122,21 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            {usingFallbackUniverse ? (
-              <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
-                {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
-              </div>
-            ) : usingKrxListingUniverse ? (
-              <div className="inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-                {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
-              </div>
-            ) : (
-              <div className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-                실시간 유니버스 기반 추천
-              </div>
-            )}
-            <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
+            <div className="info-chip">{universeBadgeLabel}</div>
+            <Link href="/lab" className="ui-button-secondary px-4">
               유사 셋업 검증 보기
             </Link>
           </div>
+          <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
+            {usingFallbackUniverse
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              : usingKrxListingUniverse || usingTop200Universe
+                ? listingUniverseNote
+                : liveUniverseBadge}
+          </div>
           <div className="workspace-metric-grid">
             <div className="rounded-2xl border border-border/70 bg-surface/70 px-3 py-3">
-              <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+              <div className="text-[11px] text-text-secondary">{universeLabel}</div>
               <div className="mt-2 text-xl font-semibold text-text">{data.universe_size}</div>
               <div className="mt-1 text-[11px] text-text-secondary">오늘 레이더 기준 종목군</div>
             </div>
@@ -121,6 +157,11 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             </div>
           </div>
           <PublicAuditStrip meta={data} />
+          {operationalFallbackNote ? (
+            <div className="rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
+              {operationalFallbackNote}
+            </div>
+          ) : null}
           {quoteCoverageNote ? (
             <p className="text-xs text-text-secondary">{quoteCoverageNote}</p>
           ) : null}
@@ -145,7 +186,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="text-lg font-bold">{item.opportunity_score.toFixed(1)}</div>
-                    <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                    <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(data, item.setup_label)}</div>
                   </div>
                 </div>
 
@@ -166,12 +207,12 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                     <div className={`text-[11px] ${changeColor(item.change_pct)}`}>{formatPct(item.change_pct)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-                    <div className="text-[11px] text-text-secondary">상승 확률</div>
+                    <div className="text-[11px] text-text-secondary">20거래일 상승 확률</div>
                     <div className="mt-1 font-semibold">{item.up_probability.toFixed(1)}%</div>
                     <div className="text-[11px] text-text-secondary">신뢰도 {item.confidence.toFixed(0)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
-                    <div className="text-[11px] text-text-secondary">예상 수익률</div>
+                    <div className="text-[11px] text-text-secondary">20거래일 예상 수익률</div>
                     <div className={`mt-1 font-semibold ${changeColor(item.predicted_return_pct)}`}>
                       {formatPct(item.predicted_return_pct)}
                     </div>
@@ -210,9 +251,9 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   {item.thesis[0] || "핵심 메모가 아직 없습니다."}
                 </div>
 
-                {item.risk_flags.length > 0 ? (
+                {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag)) ? (
                   <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
-                    {item.risk_flags[0]}
+                    {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag))}
                   </div>
                 ) : null}
               </Link>
@@ -237,28 +278,23 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           {quoteCoverageNote ? (
             <p className="mt-2 text-xs text-text-secondary">{quoteCoverageNote}</p>
           ) : null}
-          {usingFallbackUniverse ? (
-            <div className="mt-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-700">
-              {data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 추천 중입니다."}
-            </div>
-          ) : usingKrxListingUniverse ? (
-            <div className="mt-2 inline-flex rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs text-accent">
-              {data.universe_note || "KRX 상장사 목록 기준 전종목 1차 스캔 결과입니다."}
-            </div>
-          ) : (
-            <div className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-              실시간 유니버스 기반 추천
-            </div>
-          )}
-          <div className="mt-2">
-            <Link href="/lab" className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="info-chip">{universeBadgeLabel}</div>
+            <Link href="/lab" className="ui-button-secondary px-4">
               유사 셋업 검증 보기
             </Link>
+          </div>
+          <div className="ui-panel-muted mt-3 text-sm leading-6 text-text-secondary">
+            {usingFallbackUniverse
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              : usingKrxListingUniverse || usingTop200Universe
+                ? listingUniverseNote
+                : liveUniverseBadge}
           </div>
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <div className="rounded-lg bg-border/40 px-3 py-2">
-            <div className="text-[11px] text-text-secondary">전체 유니버스</div>
+            <div className="text-[11px] text-text-secondary">{universeLabel}</div>
             <div className="font-bold">{data.universe_size}</div>
           </div>
           <div className="rounded-lg bg-border/40 px-3 py-2">
@@ -276,6 +312,11 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
         </div>
       </div>
       <PublicAuditStrip meta={data} className="mb-4" />
+      {operationalFallbackNote ? (
+        <div className="mb-4 rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
+          {operationalFallbackNote}
+        </div>
+      ) : null}
 
       {hasItems ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -296,7 +337,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold">{item.opportunity_score.toFixed(1)}</div>
-                  <div className="text-[11px] text-text-secondary">레이더 점수</div>
+                  <div className="text-[11px] text-text-secondary">{opportunityScoreLabel(data, item.setup_label)}</div>
                 </div>
               </div>
 
@@ -318,7 +359,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <div className={`text-[11px] ${changeColor(item.change_pct)}`}>{formatPct(item.change_pct)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-secondary">상승 확률</div>
+                  <div className="text-[11px] text-text-secondary">20거래일 상승 확률</div>
                   <div className="font-semibold">{item.up_probability.toFixed(1)}%</div>
                   <div className="text-[11px] text-text-secondary">신뢰도 {item.confidence.toFixed(0)}</div>
                 </div>
@@ -327,7 +368,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <div className="font-semibold">{priceRange(item.entry_low, item.entry_high, item.country_code)}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-secondary">손익비</div>
+                  <div className="text-[11px] text-text-secondary">20거래일 손익비</div>
                   <div className="font-semibold">{item.risk_reward_estimate.toFixed(2)}</div>
                   <div className={`text-[11px] ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
                 </div>
@@ -389,10 +430,12 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   </div>
                 ))}
               </div>
-              {item.execution_note ? <div className="mt-3 text-xs text-text-secondary">{item.execution_note}</div> : null}
-              {item.risk_flags.length > 0 ? (
+              {item.execution_note && !isOperationalFallbackCopy(item.execution_note) ? (
+                <div className="mt-3 text-xs text-text-secondary">{item.execution_note}</div>
+              ) : null}
+              {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag)) ? (
                 <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-600">
-                  {item.risk_flags[0]}
+                  {item.risk_flags.find((flag) => !isOperationalFallbackCopy(flag))}
                 </div>
               ) : null}
             </Link>

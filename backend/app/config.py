@@ -54,12 +54,14 @@ class Settings(BaseSettings):
 
     startup_prediction_accuracy_refresh: bool = True
     startup_prediction_accuracy_refresh_timeout: int = 20
+    startup_prediction_accuracy_refresh_on_render: bool = True
     startup_research_archive_sync: bool = True
     startup_research_archive_sync_timeout: int = 35
     startup_learned_fusion_refresh: bool = True
     startup_learned_fusion_refresh_timeout: int = 25
     startup_market_opportunity_prewarm: bool = True
     startup_market_opportunity_prewarm_timeout: int = 180
+    startup_public_dashboard_prewarm: bool = True
     startup_background_task_concurrency: int = 3
     startup_allow_heavy_render_jobs: bool = False
     stock_detail_background_refresh: bool = True
@@ -74,6 +76,11 @@ class Settings(BaseSettings):
     cache_ttl_report: int = 21600
     cache_ttl_forecast: int = 21600
     cache_ttl_fear_greed: int = 3600
+    cache_memory_max_entries: int = 256
+    cache_memory_max_mb: int = 64
+    cache_memory_max_entry_mb: int = 8
+    diagnostics_probe_timeout_seconds: int = 3
+    runtime_memory_budget_mb: int = 500
 
     model_config = {
         "env_file": ".env",
@@ -114,6 +121,18 @@ class Settings(BaseSettings):
         return self.startup_prediction_accuracy_refresh
 
     @property
+    def effective_startup_prediction_accuracy_refresh_timeout(self) -> int:
+        if self.startup_memory_safe_mode:
+            return min(self.startup_prediction_accuracy_refresh_timeout, 8)
+        return self.startup_prediction_accuracy_refresh_timeout
+
+    @property
+    def effective_startup_prediction_accuracy_refresh_limit(self) -> int:
+        if self.startup_memory_safe_mode:
+            return 25
+        return 100
+
+    @property
     def effective_startup_learned_fusion_refresh(self) -> bool:
         if self.startup_memory_safe_mode:
             return False
@@ -138,10 +157,42 @@ class Settings(BaseSettings):
         return self.startup_market_opportunity_prewarm_timeout
 
     @property
+    def effective_startup_public_dashboard_prewarm(self) -> bool:
+        return self.startup_public_dashboard_prewarm and self.startup_memory_safe_mode
+
+    @property
     def effective_startup_background_task_concurrency(self) -> int:
         if self.startup_memory_safe_mode:
             return 1
         return max(1, int(self.startup_background_task_concurrency))
+
+    @property
+    def effective_cache_memory_max_entries(self) -> int:
+        configured = max(1, int(self.cache_memory_max_entries))
+        if self.startup_memory_safe_mode:
+            return min(configured, 96)
+        return configured
+
+    @property
+    def effective_cache_memory_max_mb(self) -> int:
+        configured = max(1, int(self.cache_memory_max_mb))
+        if self.startup_memory_safe_mode:
+            return min(configured, 24)
+        return configured
+
+    @property
+    def effective_cache_memory_max_entry_mb(self) -> int:
+        configured = max(1, int(self.cache_memory_max_entry_mb))
+        if self.startup_memory_safe_mode:
+            return min(configured, 2)
+        return configured
+
+    @property
+    def effective_diagnostics_probe_timeout_seconds(self) -> int:
+        configured = max(1, int(self.diagnostics_probe_timeout_seconds))
+        if self.startup_memory_safe_mode:
+            return min(configured, 2)
+        return configured
 
     @property
     def effective_stock_detail_background_refresh(self) -> bool:

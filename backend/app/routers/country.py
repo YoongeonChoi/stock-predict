@@ -1,9 +1,20 @@
 import asyncio
 import logging
+<<<<<<< HEAD
 import time
 from datetime import datetime
+=======
+import math
+import sys
+import time
+from collections.abc import Awaitable
+from typing import Any
+from datetime import datetime, timezone
+>>>>>>> main
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
+<<<<<<< HEAD
 from app.models.country import COUNTRY_REGISTRY
 from app.data import kr_market_quote_client, yfinance_client
 from app.analysis.country_analyzer import analyze_country
@@ -12,29 +23,142 @@ from app.scoring.country_scorer import build_country_score
 from app.scoring.fear_greed import calculate_fear_greed
 from app.runtime import get_or_create_background_job, record_route_observation
 from app.services import archive_service, export_service, market_service
+=======
+from app.config import get_settings
+>>>>>>> main
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
+from app.models.country import COUNTRY_REGISTRY
+from app.runtime import get_or_create_background_job, get_runtime_state
+from app.scoring.country_scorer import build_country_score
 from app.utils.async_tools import gather_limited
+from app.utils.lazy_module import LazyModuleProxy
+from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
+from app.utils.route_trace import build_route_trace
 
 router = APIRouter(prefix="/api", tags=["country"])
-PUBLIC_ENDPOINT_TIMEOUT_SECONDS = 18
-OPPORTUNITY_TIMEOUT_SECONDS = 12
-OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 12
+settings = get_settings()
+archive_service = LazyModuleProxy("app.services.archive_service")
+export_service = LazyModuleProxy("app.services.export_service")
+kr_market_quote_client = LazyModuleProxy("app.data.kr_market_quote_client")
+market_service = LazyModuleProxy("app.services.market_service")
+prediction_capture_service = LazyModuleProxy("app.services.prediction_capture_service")
+route_stability_service = LazyModuleProxy("app.services.route_stability_service")
+yfinance_client = LazyModuleProxy("app.data.yfinance_client")
+_market_calendar = LazyModuleProxy("app.utils.market_calendar")
+COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS = 5
+COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS = 1.25
+COUNTRY_REPORT_STARTUP_PREWARM_TIMEOUT_SECONDS = 2.0
+COUNTRY_REPORT_STARTUP_SEED_TTL_SECONDS = 180
+COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS = 18
+COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS = 0.6
+COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS = 0.2
+COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
+COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS = 0.35
+OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
+OPPORTUNITY_STARTUP_WARMUP_LIMIT_FLOOR = 12
+OPPORTUNITY_TIMEOUT_SECONDS = 8
+OPPORTUNITY_QUICK_TIMEOUT_SECONDS = 4
 HEATMAP_TIMEOUT_SECONDS = 10
 COUNTRIES_TIMEOUT_SECONDS = 6
 COUNTRIES_WAIT_TIMEOUT_SECONDS = 2.5
 COUNTRIES_CACHE_TTL_SECONDS = 300
+COUNTRIES_LAST_SUCCESS_TTL_SECONDS = 1800
+COUNTRIES_SAFE_MODE_SEED_TTL_SECONDS = 90
+COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS = 1.5
 COUNTRIES_CONCURRENCY = 4
 MARKET_MOVERS_TIMEOUT_SECONDS = 6
 MARKET_MOVERS_WAIT_TIMEOUT_SECONDS = 2.5
 MARKET_MOVERS_CACHE_TTL_SECONDS = 300
-MARKET_INDICATORS_TIMEOUT_SECONDS = 5
-MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 2.0
+MARKET_INDICATORS_TIMEOUT_SECONDS = 3
+MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS = 1.0
+MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS = 1.5
 MARKET_INDICATORS_CACHE_TTL_SECONDS = 300
+HEATMAP_LAST_SUCCESS_TTL_SECONDS = 3600
+MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS = 1800
+MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS = 1800
 HEATMAP_TICKERS_PER_SECTOR = 2
 HEATMAP_CHILDREN_PER_SECTOR = 2
 HEATMAP_CONCURRENCY = 2
 HEATMAP_WAIT_TIMEOUT_SECONDS = 2.5
+HEATMAP_SAFE_MODE_WAIT_TIMEOUT_SECONDS = 1.0
+HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS = 2.5
+HEATMAP_SAFE_MODE_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS = 0.35
 MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT = 60
+COUNTRIES_CACHE_KEY = "countries:v2"
+COUNTRIES_LAST_SUCCESS_KEY = "countries:last_success:v2"
+PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
+PUBLIC_FAST_FALLBACK_PRESSURE_RATIO = 0.8
+PUBLIC_STARTUP_GUARD_SECONDS = 300
+PUBLIC_STARTUP_GUARD_MIN_SECONDS = 45
+PUBLIC_STARTUP_GUARD_STABLE_RELEASE_SECONDS = 75
+PUBLIC_STARTUP_GUARD_STABLE_RELEASE_PRESSURE_RATIO = 0.48
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS = 180
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO = 0.5
+PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO = 0.02
+PUBLIC_STARTUP_GUARD_SETTLED_TASK_STATUSES = frozenset({"ok", "warning"})
+
+
+def market_session_cache_token(*args, **kwargs):
+    return _market_calendar.market_session_cache_token(*args, **kwargs)
+
+
+def calculate_fear_greed(*args, **kwargs):
+    from app.scoring.fear_greed import calculate_fear_greed as _calculate_fear_greed
+
+    return _calculate_fear_greed(*args, **kwargs)
+
+
+async def analyze_country(code: str) -> dict:
+    from app.analysis.country_analyzer import analyze_country as _analyze_country
+
+    return await _analyze_country(code)
+
+
+async def forecast_index(*args, **kwargs):
+    from app.analysis.forecast_engine import forecast_index as _forecast_index
+
+    return await _forecast_index(*args, **kwargs)
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): _sanitize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, set):
+        return [_sanitize_json_value(item) for item in value]
+    return value
+
+
+def _build_country_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
+    encoded = jsonable_encoder(payload)
+    response = JSONResponse(status_code=200, content=_sanitize_json_value(encoded))
+    _schedule_public_route_memory_trim(trim_reason)
+    return response
+
+
+def _countries_payload_has_live_quotes(payload: Any) -> bool:
+    if not isinstance(payload, list):
+        return False
+    for country in payload:
+        if not isinstance(country, dict):
+            continue
+        for quote in country.get("indices") or []:
+            if not isinstance(quote, dict):
+                continue
+            try:
+                price = float(quote.get("price") or 0.0)
+                change_pct = float(quote.get("change_pct") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if abs(price) > 0 or abs(change_pct) > 0:
+                return True
+    return False
 
 
 async def _load_market_snapshot(ticker: str, *, period: str = "6mo") -> dict | None:
@@ -78,10 +202,105 @@ async def _build_heatmap_payload(code: str) -> dict:
     return {"children": sectors}
 
 
+def _heatmap_has_tiles(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(isinstance(sector, dict) and sector.get("children") for sector in payload.get("children") or [])
+
+
+def _market_movers_has_items(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return bool(payload.get("gainers") or payload.get("losers"))
+
+
+def _market_indicators_have_values(payload: list[dict] | None) -> bool:
+    if not isinstance(payload, list):
+        return False
+    return any(abs(float(item.get("price") or 0.0)) > 0.0001 for item in payload if isinstance(item, dict))
+
+
+async def _load_cached_kr_representative_quotes(
+    *,
+    limit: int = MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT,
+    pages_per_market: int = 1,
+) -> dict[str, dict]:
+    from app.data import cache as data_cache
+
+    session_token = market_session_cache_token(country_code="KR")
+    cache_key = f"kr_market_quotes:representative:{max(1, int(pages_per_market))}:{session_token}"
+    cached = await data_cache.get(cache_key)
+    if not isinstance(cached, dict):
+        return {}
+
+    limited: dict[str, dict] = {}
+    for ticker, quote in cached.items():
+        if not isinstance(quote, dict):
+            continue
+        limited[ticker] = quote
+        if len(limited) >= max(1, int(limit)):
+            break
+    return limited
+
+
+def _build_heatmap_children_from_quotes(universe: dict[str, list[str]], quotes: dict[str, dict]) -> list[dict]:
+    sectors: list[dict] = []
+    for sector_name, tickers in universe.items():
+        children: list[dict] = []
+        for ticker in tickers:
+            quote = quotes.get(ticker)
+            if not isinstance(quote, dict):
+                continue
+            size = float(quote.get("market_cap") or quote.get("current_price") or 0.0)
+            if size <= 0:
+                continue
+            children.append(
+                {
+                    "name": str(quote.get("ticker") or ticker).split(".")[0],
+                    "ticker": quote.get("ticker") or ticker,
+                    "fullName": quote.get("name") or ticker,
+                    "size": round(size, 2),
+                    "change": round(float(quote.get("change_pct") or 0.0), 2),
+                }
+            )
+            if len(children) >= HEATMAP_CHILDREN_PER_SECTOR:
+                break
+        if children:
+            children.sort(key=lambda item: float(item.get("size") or 0.0), reverse=True)
+            sectors.append({"name": sector_name, "children": children})
+    return sectors
+
+
 async def _build_heatmap_fallback(code: str) -> dict:
     from app.data.universe_data import get_universe
 
-    universe = await get_universe(code)
+    universe = await get_universe(code, prefer_fallback=True)
+    if code == "KR":
+        representative_quotes = await _load_cached_kr_representative_quotes()
+        if not representative_quotes:
+            if _should_avoid_cold_heatmap_quote_import():
+                representative_quotes = {}
+            else:
+                try:
+                    representative_quotes = await asyncio.wait_for(
+                        kr_market_quote_client.get_kr_representative_quotes(
+                            limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+                        ),
+                        timeout=_resolve_heatmap_representative_quote_timeout_seconds(),
+                    )
+                except Exception as exc:
+                    logging.warning("heatmap representative fallback failed for %s: %s", code, exc)
+                    representative_quotes = {}
+
+        sectors_from_quotes = _build_heatmap_children_from_quotes(universe, representative_quotes)
+        if sectors_from_quotes:
+            return {
+                "children": sectors_from_quotes,
+                "partial": True,
+                "fallback_reason": "live_snapshot_timeout",
+                "generated_at": datetime.now().isoformat(),
+            }
+
     max_sector_size = max((len(tickers) for tickers in universe.values()), default=1)
     sectors = []
     for sector_name, tickers in universe.items():
@@ -104,6 +323,39 @@ async def _build_heatmap_fallback(code: str) -> dict:
         "children": sectors,
         "partial": True,
         "fallback_reason": "live_snapshot_timeout",
+    }
+
+
+def _build_heatmap_guard_shell(code: str) -> dict:
+    country = COUNTRY_REGISTRY[code]
+    sector_aliases = {
+        "Consumer Discretionary": "Cons. Disc.",
+        "Consumer Staples": "Cons. Staples",
+        "Health Care": "Health Care",
+        "Information Technology": "IT",
+        "Communication Services": "Comm. Svcs.",
+        "Real Estate": "Real Estate",
+    }
+    sector_count = max(len(country.sectors_gics), 1)
+    sectors = []
+    for index, sector_name in enumerate(country.sectors_gics, start=1):
+        sectors.append(
+            {
+                "name": sector_name,
+                "children": [
+                    {
+                        "name": sector_aliases.get(sector_name, sector_name),
+                        "ticker": "",
+                        "fullName": f"{sector_name} 보호 스냅샷",
+                        "size": round(((sector_count - index + 1) / sector_count) * 1_000_000_000, 2),
+                        "change": 0.0,
+                    }
+                ],
+            }
+        )
+    return {
+        "children": sectors,
+        "partial": True,
     }
 
 
@@ -142,6 +394,7 @@ def _with_opportunity_partial(
     return response
 
 
+<<<<<<< HEAD
 def _build_opportunity_request_trace(
     *,
     started_at: float,
@@ -193,10 +446,62 @@ def _annotate_opportunity_response(
         fallback_reason=effective_fallback_reason,
         served_state=served_state,
         upstream_source=upstream_source,
+=======
+def _record_market_opportunities_trace(
+    started_at: float,
+    *,
+    request_phase: str,
+    cache_state: str,
+    payload: dict,
+    served_state: str | None = None,
+) -> None:
+    timeout_budget_seconds = (
+        OPPORTUNITY_TIMEOUT_SECONDS if request_phase == "full" else OPPORTUNITY_QUICK_TIMEOUT_SECONDS
+    )
+    route_stability_service.record_route_trace(
+        "market_opportunities",
+        build_route_trace(
+            route_key="market_opportunities",
+            request_phase=request_phase,
+            cache_state=cache_state,
+            elapsed_ms=(time.perf_counter() - started_at) * 1000.0,
+            timeout_budget_ms=timeout_budget_seconds * 1000.0,
+            upstream_source="market_service",
+            payload=payload,
+            served_state=served_state,
+        ),
+    )
+
+
+def _build_traced_opportunity_partial(
+    started_at: float,
+    *,
+    payload: dict,
+    request_phase: str,
+    cache_state: str,
+    fallback_reason: str,
+    note: str | None = None,
+    fallback_tier: str | None = None,
+    served_state: str | None = None,
+) -> dict:
+    response = _with_opportunity_partial(
+        payload,
+        fallback_reason=fallback_reason,
+        note=note,
+        fallback_tier=fallback_tier,
+    )
+    _record_market_opportunities_trace(
+        started_at,
+        request_phase=request_phase,
+        cache_state=cache_state,
+        payload=response,
+        served_state=served_state,
+>>>>>>> main
     )
     return response
 
 
+<<<<<<< HEAD
 def _record_opportunity_response(payload: dict, *, success: bool = True) -> dict:
     record_route_observation("market_opportunities", payload.get("request_trace"), success=success)
     return payload
@@ -222,6 +527,377 @@ async def _get_cached_quick_opportunities(code: str, limit: int) -> tuple[dict |
     if cached:
         return cached, "sqlite_hit"
     return None, "miss"
+=======
+def _allow_public_background_refresh() -> bool:
+    return not settings.startup_memory_safe_mode
+
+
+def _country_report_refresh_retry_detail(code: str, *, background_enabled: bool) -> str:
+    if background_enabled:
+        return (
+            f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
+            "백그라운드 계산은 계속 진행되니 잠시 뒤 다시 열면 정밀 리포트가 바로 보일 수 있습니다."
+        )
+    return (
+        f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
+        "현재 응답에서는 무거운 후속 계산을 이어가지 않고, 다음 재조회에서 정밀 리포트를 다시 시도합니다."
+    )
+
+
+def _country_report_stale_detail(code: str) -> str:
+    if _allow_public_background_refresh():
+        return (
+            f"{code} 국가 리포트 최신 계산은 백그라운드에서 계속 갱신하고 있으며, "
+            "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다."
+        )
+    return (
+        f"{code} 국가 리포트 최신 계산은 이번 응답에서 안전한 경로로 보류하고, "
+        "이번 응답에서는 최근 정상 리포트를 먼저 제공합니다. 다음 재조회에서 정밀 리포트를 다시 시도합니다."
+    )
+
+
+def _country_report_memory_guard_detail(code: str) -> str:
+    return (
+        f"{code} 국가 리포트는 현재 서버 메모리 보호 구간이라 1차 보고서를 먼저 제공합니다. "
+        "이번 응답에서는 무거운 정밀 계산을 요청 안에서 이어가지 않고, 캐시와 대표 스냅샷 중심으로 안전하게 응답합니다."
+    )
+
+
+def _opportunity_refresh_followup_sentence() -> str:
+    if _allow_public_background_refresh():
+        return "정밀 후보 계산은 백그라운드에서 다시 시도합니다."
+    return "정밀 후보 계산은 다음 재조회에서 다시 시도합니다."
+
+
+def _maybe_trim_public_route_memory(reason: str) -> None:
+    try:
+        maybe_trim_process_memory(reason)
+    except Exception as exc:
+        logging.debug("memory trim skipped for %s: %s", reason, exc)
+
+
+async def _run_deferred_public_route_memory_trim(reason: str) -> None:
+    await asyncio.to_thread(_maybe_trim_public_route_memory, reason)
+
+
+def _schedule_public_route_memory_trim(reason: str | None) -> None:
+    if not reason:
+        return
+    try:
+        asyncio.create_task(_run_deferred_public_route_memory_trim(reason))
+    except RuntimeError:
+        _maybe_trim_public_route_memory(reason)
+
+
+def _should_skip_public_side_effects() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception as exc:
+        logging.debug("country side effect memory snapshot failed: %s", exc)
+        return False
+    return float(snapshot.get("pressure_ratio") or 0.0) >= PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO
+
+
+def _public_memory_pressure_ratio() -> float:
+    try:
+        snapshot = get_memory_pressure_snapshot()
+    except Exception as exc:
+        logging.debug("country public pressure snapshot failed: %s", exc)
+        return 0.0
+    return float(snapshot.get("pressure_ratio") or 0.0)
+
+
+def _should_use_ultra_fast_public_fallback() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return _public_memory_pressure_ratio() >= PUBLIC_FAST_FALLBACK_PRESSURE_RATIO
+
+
+def _is_yfinance_module_warm() -> bool:
+    return "app.data.yfinance_client" in sys.modules
+
+
+def _is_kr_market_quote_module_warm() -> bool:
+    return "app.data.kr_market_quote_client" in sys.modules
+
+
+def _is_country_analysis_module_warm() -> bool:
+    return "app.analysis.country_analyzer" in sys.modules
+
+
+def _should_avoid_cold_heatmap_live_build() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_yfinance_module_warm()
+
+
+def _should_avoid_cold_heatmap_quote_import() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    return not _is_kr_market_quote_module_warm()
+
+
+def _resolve_heatmap_wait_timeout_seconds() -> float:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(HEATMAP_WAIT_TIMEOUT_SECONDS, HEATMAP_SAFE_MODE_WAIT_TIMEOUT_SECONDS)
+    return HEATMAP_WAIT_TIMEOUT_SECONDS
+
+
+def _resolve_heatmap_representative_quote_timeout_seconds() -> float:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(
+            HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS,
+            HEATMAP_SAFE_MODE_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS,
+        )
+    return HEATMAP_REPRESENTATIVE_QUOTE_TIMEOUT_SECONDS
+
+
+def _should_use_startup_public_route_guard() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    try:
+        runtime_state = get_runtime_state()
+        started_at_raw = str(runtime_state.get("started_at") or "").strip()
+        if not started_at_raw:
+            return False
+        started_at = datetime.fromisoformat(started_at_raw)
+        now = datetime.now(started_at.tzinfo or timezone.utc)
+        elapsed_seconds = (now - started_at).total_seconds()
+        if elapsed_seconds > PUBLIC_STARTUP_GUARD_SECONDS:
+            return False
+        if elapsed_seconds < PUBLIC_STARTUP_GUARD_MIN_SECONDS:
+            return True
+
+        pressure_ratio = _public_memory_pressure_ratio()
+        if (
+            elapsed_seconds >= PUBLIC_STARTUP_GUARD_STABLE_RELEASE_SECONDS
+            and pressure_ratio <= PUBLIC_STARTUP_GUARD_STABLE_RELEASE_PRESSURE_RATIO
+        ):
+            return False
+        if elapsed_seconds < PUBLIC_STARTUP_GUARD_EARLY_RELEASE_SECONDS:
+            return True
+
+        startup_tasks = runtime_state.get("startup_tasks") or []
+        public_dashboard_prewarm_ready = any(
+            str(task.get("name") or "") == "public_dashboard_prewarm"
+            and str(task.get("status") or "") in PUBLIC_STARTUP_GUARD_SETTLED_TASK_STATUSES
+            for task in startup_tasks
+            if isinstance(task, dict)
+        )
+        if (
+            public_dashboard_prewarm_ready
+            and pressure_ratio
+            <= (
+                PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_RATIO
+                + PUBLIC_STARTUP_GUARD_EARLY_RELEASE_PRESSURE_JITTER_RATIO
+            )
+        ):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+async def _run_country_public_side_effect(
+    job: Awaitable[Any],
+    *,
+    label: str,
+    trim_reason: str,
+) -> None:
+    try:
+        await job
+    except asyncio.CancelledError:
+        logging.warning("%s was cancelled before completion.", label)
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
+    finally:
+        _maybe_trim_public_route_memory(trim_reason)
+
+
+def _spawn_country_public_side_effect(job: Awaitable[Any], *, label: str, trim_reason: str) -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory(f"{trim_reason}:skip")
+        return False
+    asyncio.create_task(_run_country_public_side_effect(job, label=label, trim_reason=trim_reason))
+    return True
+
+
+def _spawn_market_indicators_warmup(fetcher, *, cache_key: str, label: str = "Market indicators warmup") -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping %s because Render memory pressure is high.", label)
+        _maybe_trim_public_route_memory("market_indicators_warmup:skip")
+        return False
+
+    async def _warm() -> None:
+        from app.data import cache as data_cache
+
+        try:
+            payload = await fetcher()
+            if _market_indicators_have_values(payload):
+                await data_cache.set(cache_key, payload, MARKET_INDICATORS_CACHE_TTL_SECONDS)
+        finally:
+            _maybe_trim_public_route_memory("market_indicators_warmup")
+
+    task, created = get_or_create_background_job("market_indicators:warmup", _warm)
+    if not created:
+        logging.info("%s already running; reusing the existing warmup task.", label)
+        return False
+    task.add_done_callback(
+        lambda task_, warm_label=label: _log_background_completion(task_, label=warm_label)
+    )
+    return True
+
+
+async def _fetch_market_indicators_payload() -> list[dict[str, object]]:
+    from app.data import cache as data_cache
+
+    last_success_key = "market_indicators:last_success"
+    try:
+        payload = await asyncio.wait_for(
+            _build_market_indicators_payload(),
+            timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
+        )
+        if _market_indicators_have_values(payload):
+            await data_cache.set(last_success_key, payload, MARKET_INDICATORS_LAST_SUCCESS_TTL_SECONDS)
+        return payload
+    except asyncio.TimeoutError:
+        logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
+    except Exception as exc:
+        logging.warning("market indicators failed: %s", exc, exc_info=True)
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
+
+
+async def prewarm_market_indicators_cache() -> None:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping startup market indicators prewarm because Render memory pressure is high.")
+        _maybe_trim_public_route_memory("market_indicators_startup_prewarm:skip")
+        return
+
+    from app.data import cache as data_cache
+
+    cache_key = "market_indicators:v3"
+    try:
+        payload = await _fetch_market_indicators_payload()
+        if _market_indicators_have_values(payload):
+            await data_cache.set(cache_key, payload, MARKET_INDICATORS_CACHE_TTL_SECONDS)
+    finally:
+        _maybe_trim_public_route_memory("market_indicators_startup_prewarm")
+
+
+async def prewarm_primary_country_report_cache() -> None:
+    code = "KR"
+    if _should_skip_public_side_effects():
+        logging.info("Skipping startup primary country report prewarm because Render memory pressure is high.")
+        _maybe_trim_public_route_memory("country_report_startup_prewarm:skip")
+        return
+
+    cached_success = await _timed_country_lookup(
+        _load_latest_cached_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"startup primary country report cached lookup {code}",
+    )
+    if cached_success:
+        _maybe_trim_public_route_memory("country_report_startup_prewarm:cached")
+        return
+
+    report_label = f"Startup primary country report prewarm for {code}"
+    report_task, created = get_or_create_background_job(
+        f"country_report:{code}",
+        lambda: analyze_country(code),
+    )
+    if created:
+        report_task.add_done_callback(
+            lambda task_, warm_label=report_label: _log_background_completion(task_, label=warm_label)
+        )
+
+    try:
+        await asyncio.wait_for(
+            asyncio.shield(report_task),
+            timeout=COUNTRY_REPORT_STARTUP_PREWARM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        cached_success = await _timed_country_lookup(
+            _load_latest_cached_country_report(code),
+            timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+            label=f"startup primary country report post-timeout lookup {code}",
+        )
+        if cached_success:
+            return
+
+        from app.data import cache as data_cache
+
+        seed_payload = await _build_country_report_fallback(
+            code,
+            reason="country_report_startup_seed",
+            error_code=None,
+            detail=(
+                "정밀 국가 리포트를 준비하는 동안 첫 화면에서 바로 읽을 수 있는 시장 스냅샷을 먼저 고정했습니다."
+            ),
+            include_archived_report=True,
+            include_quick_candidates=True,
+        )
+        await data_cache.set(
+            f"country_report:last_success:{code}",
+            seed_payload,
+            COUNTRY_REPORT_STARTUP_SEED_TTL_SECONDS,
+        )
+    finally:
+        _maybe_trim_public_route_memory("country_report_startup_prewarm")
+
+
+def _allow_safe_mode_country_report_warmup() -> bool:
+    if not bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return False
+    if _should_use_startup_public_route_guard():
+        return False
+    if _should_use_ultra_fast_public_fallback():
+        return False
+    if _should_skip_public_side_effects():
+        return False
+    return _is_country_analysis_module_warm()
+
+
+def _allow_country_report_background_refresh() -> bool:
+    return _allow_public_background_refresh() or _allow_safe_mode_country_report_warmup()
+
+
+def _resolve_country_report_public_timeout_seconds() -> float:
+    if bool(getattr(settings, "startup_memory_safe_mode", False)):
+        return min(
+            COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS,
+            COUNTRY_REPORT_SAFE_MODE_PUBLIC_TIMEOUT_SECONDS,
+        )
+    return COUNTRY_REPORT_PUBLIC_TIMEOUT_SECONDS
+
+
+def _schedule_country_report_persist(report: dict, code: str) -> bool:
+    return _spawn_country_public_side_effect(
+        archive_service.save_report("country", report, country_code=code),
+        label=f"country report persist {code}",
+        trim_reason="country_report_post",
+    )
+
+
+async def _timed_country_lookup(job: Awaitable[Any], *, timeout_seconds: float, label: str) -> Any | None:
+    try:
+        return await asyncio.wait_for(job, timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logging.warning("%s timed out after %.2fs; continuing without cached state.", label, timeout_seconds)
+        return None
+    except Exception as exc:
+        logging.warning("%s failed: %s", label, exc, exc_info=True)
+        return None
+>>>>>>> main
 
 
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
@@ -237,6 +913,84 @@ def _empty_institutional_analysis() -> dict:
         "policy_sellside_aligned": False,
         "consensus_count": 0,
         "consensus_summary": "정밀 기관 해석이 아직 준비되지 않아 1차 시장 스냅샷을 먼저 제공합니다.",
+    }
+
+
+def _is_lightweight_country_report_memory_guard(
+    *,
+    reason: str,
+    include_archived_report: bool,
+    include_quick_candidates: bool,
+) -> bool:
+    return (
+        reason == "country_report_memory_guard"
+        and not include_archived_report
+        and not include_quick_candidates
+    )
+
+
+def _build_static_country_market_data(country) -> dict[str, dict[str, float]]:
+    return {
+        idx.name: {"price": 0.0, "change_pct": 0.0}
+        for idx in country.indices
+    }
+
+
+def _build_static_country_score_payload() -> dict[str, object]:
+    fallback_note = "정밀 국가 점수 계산이 지연돼 기본 중립 점수를 먼저 제공합니다."
+    return {
+        "total": 50.0,
+        "monetary_policy": {
+            "name": "Monetary Policy",
+            "score": 10.0,
+            "max_score": 20.0,
+            "description": fallback_note,
+        },
+        "economic_growth": {
+            "name": "Economic Growth",
+            "score": 10.0,
+            "max_score": 20.0,
+            "description": fallback_note,
+        },
+        "market_valuation": {
+            "name": "Market Valuation",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "earnings_momentum": {
+            "name": "Earnings Momentum",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "institutional_consensus": {
+            "name": "Institutional Consensus",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+        "risk_assessment": {
+            "name": "Risk Assessment",
+            "score": 7.5,
+            "max_score": 15.0,
+            "description": fallback_note,
+        },
+    }
+
+
+def _build_static_fear_greed_payload(code: str) -> dict[str, object]:
+    return {
+        "score": 50.0,
+        "label": "Neutral",
+        "components": [
+            {"name": "Market Momentum", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Price Strength", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Volatility", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "Safe Haven Demand", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+            {"name": "News Sentiment", "value": 50.0, "signal": "Neutral", "weight": 0.2},
+        ],
+        "country_code": code,
     }
 
 
@@ -258,6 +1012,8 @@ def _build_top_stock_refs(opportunities: list[dict]) -> list[dict]:
 
 
 def _spawn_opportunity_refresh(code: str, limit: int) -> None:
+    if not _allow_public_background_refresh():
+        return
     code = code.upper()
     label = f"Opportunity radar background refresh for {code}"
     task, created = get_or_create_background_job(
@@ -272,6 +1028,41 @@ def _spawn_opportunity_refresh(code: str, limit: int) -> None:
     )
 
 
+def _spawn_opportunity_quick_warmup(code: str, limit: int) -> bool:
+    if _should_skip_public_side_effects():
+        logging.info("Skipping opportunity quick startup warmup for %s because Render memory pressure is high.", code)
+        _maybe_trim_public_route_memory("market_opportunities_quick_warmup:skip")
+        return False
+    code = code.upper()
+    warmup_limit = max(int(limit), OPPORTUNITY_STARTUP_WARMUP_LIMIT_FLOOR)
+    label = f"Opportunity quick startup warmup for {code}"
+
+    async def _warm() -> None:
+        try:
+            await market_service.get_market_opportunities_quick(code, limit=warmup_limit)
+        finally:
+            _maybe_trim_public_route_memory("market_opportunities_quick_warmup")
+
+    task, created = get_or_create_background_job(
+        f"opportunity_quick_startup:{code}:{warmup_limit}",
+        _warm,
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing warmup task.", label)
+        return False
+    task.add_done_callback(
+        lambda task_, warm_label=label: _log_background_completion(task_, label=warm_label)
+    )
+    return True
+
+
+async def _capture_opportunity_payload(code: str, payload: dict) -> None:
+    try:
+        await prediction_capture_service.capture_market_opportunity_predictions(code, payload)
+    except Exception as exc:
+        logging.warning("opportunity prediction capture failed for %s: %s", code, exc, exc_info=True)
+
+
 async def _build_countries_payload() -> list[dict]:
     index_requests: list[tuple[str, object, object]] = []
     for code, info in COUNTRY_REGISTRY.items():
@@ -281,7 +1072,17 @@ async def _build_countries_payload() -> list[dict]:
     async def _load_index_quote(entry: tuple[str, object, object]) -> dict:
         _code, _info, idx = entry
         try:
-            quote = await yfinance_client.get_index_quote(idx.ticker)
+            quote = await asyncio.wait_for(
+                yfinance_client.get_index_quote(idx.ticker),
+                timeout=COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logging.warning(
+                "countries index quote timed out for %s after %.1fs",
+                idx.ticker,
+                COUNTRIES_INDEX_QUOTE_TIMEOUT_SECONDS,
+            )
+            quote = {"price": 0, "change_pct": 0}
         except Exception:
             SP_2005(idx.ticker).log()
             quote = {"price": 0, "change_pct": 0}
@@ -340,6 +1141,53 @@ def _build_countries_fallback() -> list[dict]:
     ]
 
 
+async def _fetch_countries_payload_for_cache() -> list[dict]:
+    from app.data import cache as data_cache
+
+    try:
+        payload = await asyncio.wait_for(
+            _build_countries_payload(),
+            timeout=COUNTRIES_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logging.warning("countries payload timed out after %ss", COUNTRIES_TIMEOUT_SECONDS)
+        payload = _build_countries_fallback()
+    except Exception as exc:
+        logging.warning("countries payload failed: %s", exc, exc_info=True)
+        payload = _build_countries_fallback()
+
+    if _countries_payload_has_live_quotes(payload):
+        await data_cache.set(COUNTRIES_LAST_SUCCESS_KEY, payload, COUNTRIES_LAST_SUCCESS_TTL_SECONDS)
+    return payload
+
+
+async def _refresh_countries_cache_in_background() -> list[dict]:
+    from app.data import cache as data_cache
+
+    payload = await _fetch_countries_payload_for_cache()
+    await data_cache.set(COUNTRIES_CACHE_KEY, payload, COUNTRIES_CACHE_TTL_SECONDS)
+    _maybe_trim_public_route_memory("countries_refresh")
+    return payload
+
+
+def _spawn_countries_refresh() -> None:
+    if not _allow_public_background_refresh():
+        logging.info("Skipping Countries refresh because public background refresh is disabled.")
+        _maybe_trim_public_route_memory("countries_refresh:disabled")
+        return
+    label = "Countries refresh"
+    task, created = get_or_create_background_job(
+        "countries_refresh:v2",
+        _refresh_countries_cache_in_background,
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing refresh task.", label)
+        return
+    task.add_done_callback(
+        lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
+    )
+
+
 async def _build_market_movers_payload(code: str) -> dict:
     if code == "KR":
         representative_quotes = await kr_market_quote_client.get_kr_representative_quotes(
@@ -394,7 +1242,45 @@ async def _build_market_movers_payload(code: str) -> dict:
     }
 
 
-def _build_market_movers_fallback(*, reason: str) -> dict:
+def _build_market_movers_from_quotes(quotes: dict[str, dict]) -> dict:
+    stocks = [
+        {
+            "ticker": quote.get("ticker") or ticker,
+            "name": quote.get("name") or ticker,
+            "price": round(float(quote.get("current_price") or quote.get("price") or 0.0), 2),
+            "change_pct": round(float(quote.get("change_pct") or 0.0), 2),
+        }
+        for ticker, quote in quotes.items()
+        if isinstance(quote, dict)
+    ]
+    stocks.sort(key=lambda item: item["change_pct"], reverse=True)
+    return {
+        "gainers": stocks[:5],
+        "losers": list(reversed(stocks[-5:])) if len(stocks) >= 5 else list(reversed(stocks)),
+    }
+
+
+async def _build_market_movers_fallback(code: str, *, reason: str) -> dict:
+    if code == "KR":
+        representative_quotes = await _load_cached_kr_representative_quotes()
+        if not representative_quotes:
+            try:
+                representative_quotes = await asyncio.wait_for(
+                    kr_market_quote_client.get_kr_representative_quotes(
+                        limit=MARKET_MOVERS_KR_REPRESENTATIVE_LIMIT
+                    ),
+                    timeout=2.5,
+                )
+            except Exception as exc:
+                logging.warning("market movers representative fallback failed for %s: %s", code, exc)
+                representative_quotes = {}
+        if representative_quotes:
+            payload = _build_market_movers_from_quotes(representative_quotes)
+            payload["partial"] = True
+            payload["fallback_reason"] = reason
+            payload["generated_at"] = datetime.now().isoformat()
+            return payload
+
     return {
         "gainers": [],
         "losers": [],
@@ -414,8 +1300,27 @@ async def _build_market_indicators_payload() -> list[dict]:
 
     async def _load_indicator(item: tuple[str, str]) -> dict:
         name, ticker = item
+        indicator_label = f"market indicator {ticker}"
+        quote_task = asyncio.create_task(
+            yfinance_client.get_index_quote(ticker),
+            name=f"market-indicator:{ticker}",
+        )
         try:
-            quote = await yfinance_client.get_index_quote(ticker)
+            quote = await asyncio.wait_for(
+                asyncio.shield(quote_task),
+                timeout=MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            quote_task.add_done_callback(
+                lambda task, *, label=indicator_label: _log_background_completion(task, label=label)
+            )
+            _cancel_background_task(quote_task, label=indicator_label)
+            logging.warning(
+                "market indicator %s timed out after %ss; using zero-value fallback.",
+                ticker,
+                MARKET_INDICATOR_ITEM_TIMEOUT_SECONDS,
+            )
+            quote = {"price": 0, "change_pct": 0}
         except Exception:
             quote = {"price": 0, "change_pct": 0}
         return {
@@ -440,39 +1345,113 @@ def _build_market_indicators_fallback() -> list[dict]:
     ]
 
 
+async def _load_latest_archived_country_report(code: str) -> dict | None:
+    try:
+        archived_reports = await archive_service.list_reports("country", code, limit=1)
+        if not archived_reports:
+            return None
+        latest = archived_reports[0]
+        report_id = int(latest.get("id") or 0)
+        if report_id <= 0:
+            return None
+        archived = await archive_service.get_report(report_id)
+        payload = archived.get("report_json") if isinstance(archived, dict) else None
+        return payload if isinstance(payload, dict) else None
+    except Exception as exc:
+        logging.warning("latest archived country report load failed for %s: %s", code, exc, exc_info=True)
+        return None
+
+
+async def _load_latest_cached_country_report(code: str) -> dict | None:
+    from app.data import cache as data_cache
+
+    payload = await data_cache.get(f"country_report:last_success:{code}")
+    return payload if isinstance(payload, dict) else None
+
+
+def _spawn_country_report_refresh(code: str) -> None:
+    if not _allow_country_report_background_refresh():
+        return
+    label = f"Country report refresh for {code}"
+    task, created = get_or_create_background_job(
+        f"country_report:{code}",
+        lambda: analyze_country(code),
+    )
+    if not created:
+        logging.info("%s already running; reusing the existing refresh task.", label)
+        return
+    task.add_done_callback(
+        lambda task_, refresh_label=label: _log_background_completion(task_, label=refresh_label)
+    )
+
+
+def _build_stale_archived_country_report(code: str, archived_report: dict) -> dict:
+    country = COUNTRY_REGISTRY[code]
+    response = dict(archived_report)
+    existing_summary = str(response.get("market_summary") or "").strip()
+    fallback_lead = f"{country.name_local} 실시간 리포트 계산이 길어져 최근 정상 리포트를 먼저 보여주고 있습니다."
+    detail = _country_report_stale_detail(code).strip()
+    response["market_summary"] = " ".join(
+        part for part in [fallback_lead, detail, existing_summary] if part
+    ).strip()
+    response["errors"] = list(response.get("errors") or [])
+    response["llm_available"] = False
+    response["partial"] = True
+    response["fallback_reason"] = "country_report_stale_public"
+    response["generated_at"] = datetime.now().isoformat()
+    return response
+
+
 async def _build_country_report_fallback(
     code: str,
     *,
     reason: str,
-    error_code: str,
+    error_code: str | None,
     detail: str,
+    include_archived_report: bool = True,
+    include_quick_candidates: bool = True,
 ) -> dict:
     country = COUNTRY_REGISTRY[code]
     primary_index = country.indices[0]
-    from app.data import cache as data_cache
+    lightweight_memory_guard = _is_lightweight_country_report_memory_guard(
+        reason=reason,
+        include_archived_report=include_archived_report,
+        include_quick_candidates=include_quick_candidates,
+    )
 
-    countries_snapshot = await data_cache.get("countries:v2")
-    market_data = {}
-    if isinstance(countries_snapshot, list):
-        current = next((item for item in countries_snapshot if item.get("code") == code), None)
-        if current:
-            for idx, quote in zip(country.indices, current.get("indices", [])):
-                market_data[idx.name] = {
-                    "price": float(quote.get("price") or quote.get("current_price") or 0.0),
-                    "change_pct": float(quote.get("change_pct") or 0.0),
-                }
-    if not market_data:
-        market_data = {
-            idx.name: {"price": 0.0, "change_pct": 0.0}
-            for idx in country.indices
-        }
+    market_data = _build_static_country_market_data(country)
+    if not lightweight_memory_guard:
+        from app.data import cache as data_cache
+
+        countries_snapshot = await _timed_country_lookup(
+            data_cache.get(COUNTRIES_CACHE_KEY),
+            timeout_seconds=COUNTRY_REPORT_FALLBACK_COUNTRIES_LOOKUP_TIMEOUT_SECONDS,
+            label=f"country fallback countries snapshot {code}",
+        )
+        if isinstance(countries_snapshot, list):
+            current = next((item for item in countries_snapshot if item.get("code") == code), None)
+            if current:
+                for idx, quote in zip(country.indices, current.get("indices", [])):
+                    market_data[idx.name] = {
+                        "price": float(quote.get("price") or quote.get("current_price") or 0.0),
+                        "change_pct": float(quote.get("change_pct") or 0.0),
+                    }
 
     primary_price = float(
         market_data.get(primary_index.name, {}).get("price")
         or market_data.get(primary_index.name, {}).get("current_price")
         or 0.0
     )
-    fear_greed = calculate_fear_greed([], country_code=code)
+    fear_greed = (
+        _build_static_fear_greed_payload(code)
+        if lightweight_memory_guard
+        else calculate_fear_greed([], country_code=code).model_dump()
+    )
+    score_payload = (
+        _build_static_country_score_payload()
+        if lightweight_memory_guard
+        else build_country_score({}).model_dump()
+    )
     forecast = {
         "index_ticker": primary_index.ticker,
         "index_name": primary_index.name,
@@ -498,19 +1477,56 @@ async def _build_country_report_fallback(
         "signals": [],
     }
 
+    archived_report = None
+    if include_archived_report:
+        archived_report = await _timed_country_lookup(
+            _load_latest_archived_country_report(code),
+            timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+            label=f"country fallback archived report lookup {code}",
+        )
     quick_opportunities: list[dict] = []
-    try:
-        quick_response = await market_service.get_cached_market_opportunities(code, limit=5)
-        if not _is_usable_opportunity_payload(quick_response):
-            quick_response = await market_service.get_cached_market_opportunities_quick(code, limit=5)
-        if not _is_usable_opportunity_payload(quick_response):
-            quick_response = await asyncio.wait_for(
-                market_service.get_market_opportunities_quick(code, limit=5),
-                timeout=1.5,
+    if include_quick_candidates and (not archived_report or not archived_report.get("top_stocks")):
+        try:
+            quick_response = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities(code, limit=5),
+                timeout_seconds=COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS,
+                label=f"country fallback cached opportunities {code}",
             )
-        quick_opportunities = list(quick_response.get("opportunities") or [])
-    except Exception as exc:
-        logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
+            if not _is_usable_opportunity_payload(quick_response):
+                quick_response = await _timed_country_lookup(
+                    market_service.get_cached_market_opportunities_quick(code, limit=5),
+                    timeout_seconds=COUNTRY_REPORT_FALLBACK_CACHED_OPPORTUNITY_TIMEOUT_SECONDS,
+                    label=f"country fallback cached quick opportunities {code}",
+                )
+            if not _is_usable_opportunity_payload(quick_response) and not _should_use_ultra_fast_public_fallback():
+                quick_response = await _timed_country_lookup(
+                    market_service.get_market_opportunities_quick(code, limit=5),
+                    timeout_seconds=COUNTRY_REPORT_FALLBACK_OPPORTUNITY_TIMEOUT_SECONDS,
+                    label=f"country fallback live quick opportunities {code}",
+                )
+            quick_opportunities = list((quick_response or {}).get("opportunities") or [])
+        except Exception as exc:
+            logging.warning("country report fallback quick candidates failed for %s: %s", code, exc, exc_info=True)
+
+    if archived_report:
+        response = dict(archived_report)
+        existing_summary = str(response.get("market_summary") or "").strip()
+        fallback_lead = f"{country.name_local} 실시간 리포트 계산이 지연돼 최근 정상 리포트를 먼저 보여주고 있습니다."
+        response["market_summary"] = " ".join(
+            part for part in [fallback_lead, detail.strip(), existing_summary] if part
+        ).strip()
+        response["market_data"] = market_data or response.get("market_data") or {}
+        if quick_opportunities and not response.get("top_stocks"):
+            response["top_stocks"] = _build_top_stock_refs(quick_opportunities)
+        errors = list(response.get("errors") or [])
+        if error_code and error_code not in errors:
+            errors.append(error_code)
+        response["errors"] = errors
+        response["llm_available"] = False
+        response["partial"] = True
+        response["fallback_reason"] = reason
+        response["generated_at"] = datetime.now().isoformat()
+        return response
 
     market_summary = (
         f"{country.name_local} 정밀 시장 리포트 생성이 길어져 1차 시장 스냅샷을 먼저 제공합니다. "
@@ -521,20 +1537,20 @@ async def _build_country_report_fallback(
 
     return {
         "country": country.model_dump(),
-        "score": build_country_score({}).model_dump(),
+        "score": score_payload,
         "market_summary": market_summary,
         "macro_claims": [],
         "key_news": [],
         "institutional_analysis": _empty_institutional_analysis(),
         "top_stocks": _build_top_stock_refs(quick_opportunities),
-        "fear_greed": fear_greed.model_dump(),
+        "fear_greed": fear_greed,
         "forecast": forecast,
         "next_day_forecast": None,
         "market_regime": market_regime,
         "primary_index_history": [],
         "market_data": market_data,
         "llm_available": False,
-        "errors": [error_code],
+        "errors": [error_code] if error_code else [],
         "partial": True,
         "fallback_reason": reason,
         "generated_at": datetime.now().isoformat(),
@@ -546,8 +1562,25 @@ async def _load_country_report_with_fallback(
     *,
     timeout_seconds: float,
     keep_background: bool,
+    fallback_context: str = "public",
 ) -> tuple[dict, bool]:
-    if keep_background:
+    use_background_refresh = keep_background and _allow_country_report_background_refresh()
+    use_lightweight_timeout_fallback = use_background_refresh and _allow_public_background_refresh()
+    if fallback_context == "export":
+        timeout_detail = "내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
+        error_detail = "내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다."
+        error_code = "SP-5004"
+        log_label = "country report export load failed"
+    else:
+        timeout_detail = _country_report_refresh_retry_detail(
+            code,
+            background_enabled=use_background_refresh,
+        )
+        error_detail = "정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷으로 우선 전환했습니다."
+        error_code = "SP-3001"
+        log_label = "country report load failed"
+
+    if use_background_refresh:
         report_label = f"Country report for {code}"
         report_task, created = get_or_create_background_job(
             f"country_report:{code}",
@@ -561,16 +1594,14 @@ async def _load_country_report_with_fallback(
             report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
             return report, False
         except asyncio.TimeoutError:
-            detail = (
-                f"{code} 국가 리포트 계산이 길어지고 있어 1차 보고서를 먼저 제공합니다. "
-                "백그라운드 계산은 계속 진행되니 잠시 뒤 다시 열면 정밀 리포트가 바로 보일 수 있습니다."
-            )
             return (
                 await _build_country_report_fallback(
                     code,
                     reason="country_report_timeout",
                     error_code="SP-5018",
-                    detail=detail,
+                    detail=timeout_detail,
+                    include_archived_report=not use_lightweight_timeout_fallback,
+                    include_quick_candidates=not use_lightweight_timeout_fallback,
                 ),
                 True,
             )
@@ -580,33 +1611,42 @@ async def _load_country_report_with_fallback(
                 await _build_country_report_fallback(
                     code,
                     reason="country_report_error",
-                    error_code="SP-3001",
-                    detail="정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷으로 우선 전환했습니다.",
+                    error_code=error_code,
+                    detail=error_detail,
+                    include_archived_report=not use_lightweight_timeout_fallback,
+                    include_quick_candidates=not use_lightweight_timeout_fallback,
                 ),
                 True,
             )
 
+    report_label = f"Country report for {code}"
+    report_task = asyncio.create_task(analyze_country(code))
+    report_task.add_done_callback(
+        lambda task, label=report_label: _log_background_completion(task, label=label)
+    )
     try:
-        report = await asyncio.wait_for(analyze_country(code), timeout=timeout_seconds)
+        report = await asyncio.wait_for(asyncio.shield(report_task), timeout=timeout_seconds)
         return report, False
     except asyncio.TimeoutError:
+        _cancel_background_task(report_task, label=report_label)
         return (
             await _build_country_report_fallback(
                 code,
                 reason="country_report_timeout",
                 error_code="SP-5018",
-                detail="내보내기용 정밀 리포트 생성이 길어져 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+                detail=timeout_detail,
             ),
             True,
         )
     except Exception as exc:
-        logging.warning("country report export load failed for %s: %s", code, exc, exc_info=True)
+        _cancel_background_task(report_task, label=report_label)
+        logging.warning("%s for %s: %s", log_label, code, exc, exc_info=True)
         return (
             await _build_country_report_fallback(
                 code,
                 reason="country_report_error",
-                error_code="SP-5004",
-                detail="내보내기용 정밀 리포트 생성 중 오류가 발생해 1차 시장 스냅샷 기반 보고서를 대신 생성했습니다.",
+                error_code=error_code,
+                detail=error_detail,
             ),
             True,
         )
@@ -671,30 +1711,38 @@ async def _build_sector_performance_payload(code: str) -> list[dict]:
 
 @router.get("/countries")
 async def list_countries():
+    if _should_use_ultra_fast_public_fallback() or _should_use_startup_public_route_guard():
+        response = _build_countries_fallback()
+        _maybe_trim_public_route_memory("countries")
+        return response
+
     from app.data import cache as data_cache
 
-    cache_key = "countries:v2"
+    cached_response = await data_cache.get(COUNTRIES_CACHE_KEY)
+    if isinstance(cached_response, list):
+        _maybe_trim_public_route_memory("countries")
+        return cached_response
 
-    async def _fetch_countries():
-        try:
-            return await asyncio.wait_for(
-                _build_countries_payload(),
-                timeout=COUNTRIES_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logging.warning("countries payload timed out after %ss", COUNTRIES_TIMEOUT_SECONDS)
-            return _build_countries_fallback()
-        except Exception as exc:
-            logging.warning("countries payload failed: %s", exc, exc_info=True)
-            return _build_countries_fallback()
+    if settings.startup_memory_safe_mode:
+        last_success = await data_cache.get(COUNTRIES_LAST_SUCCESS_KEY)
+        _spawn_countries_refresh()
+        if isinstance(last_success, list) and last_success:
+            _maybe_trim_public_route_memory("countries")
+            return last_success
+        response = _build_countries_fallback()
+        await data_cache.set(COUNTRIES_CACHE_KEY, response, COUNTRIES_SAFE_MODE_SEED_TTL_SECONDS)
+        _maybe_trim_public_route_memory("countries")
+        return response
 
-    return await data_cache.get_or_fetch(
-        cache_key,
-        _fetch_countries,
+    response = await data_cache.get_or_fetch(
+        COUNTRIES_CACHE_KEY,
+        _fetch_countries_payload_for_cache,
         ttl=COUNTRIES_CACHE_TTL_SECONDS,
         wait_timeout=COUNTRIES_WAIT_TIMEOUT_SECONDS,
         timeout_fallback=_build_countries_fallback,
     )
+    _maybe_trim_public_route_memory("countries")
+    return response
 
 
 @router.get("/country/{code}/report")
@@ -705,11 +1753,71 @@ async def get_country_report(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        if startup_guard and not pressure_guard:
+            cached_success = await _timed_country_lookup(
+                _load_latest_cached_country_report(code),
+                timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"country startup cached report lookup {code}",
+            )
+            if cached_success:
+                return _build_country_success_response(cached_success, trim_reason="country_report")
+
+            archived_report = await _timed_country_lookup(
+                _load_latest_archived_country_report(code),
+                timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"country startup archived report lookup {code}",
+            )
+            if archived_report:
+                report = _build_stale_archived_country_report(code, archived_report)
+                return _build_country_success_response(report, trim_reason="country_report")
+
+        guard_reason = "country_report_memory_guard" if pressure_guard else "country_report_startup_guard"
+        guard_detail = (
+            _country_report_memory_guard_detail(code)
+            if pressure_guard
+            else (
+                f"{code} 리포트 서비스가 막 깨어난 직후라 정밀 계산보다 대표 시장 스냅샷을 먼저 보여주고 있습니다. "
+                "잠시 뒤 다시 조회하면 정밀 리포트가 회복될 수 있습니다."
+            )
+        )
+        report = await _build_country_report_fallback(
+            code,
+            reason=guard_reason,
+            error_code=None,
+            detail=guard_detail,
+            include_archived_report=False,
+            include_quick_candidates=False,
+        )
+        return _build_country_success_response(report, trim_reason="country_report")
+
+    cached_success = await _timed_country_lookup(
+        _load_latest_cached_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_CACHE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country cached report lookup {code}",
+    )
+    if cached_success:
+        _spawn_country_report_refresh(code)
+        return _build_country_success_response(cached_success, trim_reason="country_report")
+
+    archived_report = await _timed_country_lookup(
+        _load_latest_archived_country_report(code),
+        timeout_seconds=COUNTRY_REPORT_ARCHIVE_LOOKUP_TIMEOUT_SECONDS,
+        label=f"country archived report lookup {code}",
+    )
+    if archived_report:
+        _spawn_country_report_refresh(code)
+        report = _build_stale_archived_country_report(code, archived_report)
+        return _build_country_success_response(report, trim_reason="country_report")
+
     try:
         report, partial = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=_resolve_country_report_public_timeout_seconds(),
             keep_background=True,
+            fallback_context="public",
         )
     except Exception as e:
         err = SP_3001(code)
@@ -718,12 +1826,9 @@ async def get_country_report(code: str):
         return JSONResponse(status_code=500, content=err.to_dict())
 
     if not partial:
-        try:
-            await archive_service.save_report("country", report, country_code=code)
-        except Exception as e:
-            SP_5002(str(e)[:100]).log()
+        _schedule_country_report_persist(report, code)
 
-    return report
+    return _build_country_success_response(report, trim_reason="country_report")
 
 
 @router.get("/country/{code}/heatmap")
@@ -735,24 +1840,81 @@ async def get_heatmap(code: str):
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        response = dict(_build_heatmap_guard_shell(code))
+        response["partial"] = True
+        response["fallback_reason"] = (
+            "heatmap_memory_guard" if pressure_guard else "heatmap_startup_guard"
+        )
+        response["generated_at"] = datetime.now().isoformat()
+        _maybe_trim_public_route_memory("country_heatmap")
+        return response
+
     from app.data import cache as data_cache
     cache_key = f"heatmap:v3:{code}"
+    last_success_key = f"heatmap:last_success:{code}"
+
+    if _should_avoid_cold_heatmap_live_build():
+        cached_response = await data_cache.get(cache_key)
+        if _heatmap_has_tiles(cached_response):
+            _maybe_trim_public_route_memory("country_heatmap")
+            return cached_response
+
+        cached_success = await data_cache.get(last_success_key)
+        if _heatmap_has_tiles(cached_success):
+            response = dict(cached_success)
+            response["partial"] = True
+            response["fallback_reason"] = "heatmap_last_success"
+            response["generated_at"] = datetime.now().isoformat()
+            _maybe_trim_public_route_memory("country_heatmap")
+            return response
+
+        response = dict(_build_heatmap_guard_shell(code))
+        response["partial"] = True
+        response["fallback_reason"] = "heatmap_cold_import_guard"
+        response["generated_at"] = datetime.now().isoformat()
+        _maybe_trim_public_route_memory("country_heatmap")
+        return response
 
     async def _fetch_heatmap():
         try:
-            return await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+            payload = await asyncio.wait_for(_build_heatmap_payload(code), timeout=HEATMAP_TIMEOUT_SECONDS)
+            if _heatmap_has_tiles(payload):
+                await data_cache.set(last_success_key, payload, HEATMAP_LAST_SUCCESS_TTL_SECONDS)
+            return payload
         except asyncio.TimeoutError:
             err = SP_5018(f"Heatmap for {code} exceeded {HEATMAP_TIMEOUT_SECONDS} seconds.")
             err.log("warning")
+            cached_success = await data_cache.get(last_success_key)
+            if _heatmap_has_tiles(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "heatmap_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_heatmap_fallback(code)
+        except Exception as exc:
+            logging.warning("heatmap failed for %s: %s", code, exc, exc_info=True)
+            cached_success = await data_cache.get(last_success_key)
+            if _heatmap_has_tiles(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "heatmap_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
             return await _build_heatmap_fallback(code)
 
-    return await data_cache.get_or_fetch(
+    response = await data_cache.get_or_fetch(
         cache_key,
         _fetch_heatmap,
         ttl=900,
-        wait_timeout=HEATMAP_WAIT_TIMEOUT_SECONDS,
+        wait_timeout=_resolve_heatmap_wait_timeout_seconds(),
         timeout_fallback=lambda: _build_heatmap_fallback(code),
     )
+    _maybe_trim_public_route_memory("country_heatmap")
+    return response
 
 
 @router.get("/country/{code}/report/pdf")
@@ -766,8 +1928,9 @@ async def download_country_report_pdf(code: str):
     try:
         report, _ = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
+            fallback_context="export",
         )
         country_name = COUNTRY_REGISTRY[code].name_local or COUNTRY_REGISTRY[code].name
         pdf_bytes = export_service.export_pdf(report, title=f"{country_name} Market Report")
@@ -793,8 +1956,9 @@ async def download_country_report_csv(code: str):
     try:
         report, _ = await _load_country_report_with_fallback(
             code,
-            timeout_seconds=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+            timeout_seconds=COUNTRY_REPORT_EXPORT_TIMEOUT_SECONDS,
             keep_background=False,
+            fallback_context="export",
         )
         csv_content = export_service.export_csv(report)
         return Response(
@@ -831,27 +1995,32 @@ async def get_country_forecast(code: str):
 async def get_market_indicators():
     """Korean market indicators for the dashboard."""
     from app.data import cache as data_cache
-    cache_key = "market_indicators:v2"
+    cache_key = "market_indicators:v3"
+    last_success_key = "market_indicators:last_success"
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
 
-    async def _fetch_indicators():
-        try:
-            return await asyncio.wait_for(
-                _build_market_indicators_payload(),
-                timeout=MARKET_INDICATORS_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logging.warning("market indicators timed out after %ss", MARKET_INDICATORS_TIMEOUT_SECONDS)
-            return _build_market_indicators_fallback()
-        except Exception as exc:
-            logging.warning("market indicators failed: %s", exc, exc_info=True)
-            return _build_market_indicators_fallback()
+    if pressure_guard or startup_guard:
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        if startup_guard and not pressure_guard:
+            _spawn_market_indicators_warmup(_fetch_market_indicators_payload, cache_key=cache_key)
+        return _build_market_indicators_fallback()
+
+    async def _timeout_indicator_fallback():
+        cached_success = await data_cache.get(last_success_key)
+        if _market_indicators_have_values(cached_success):
+            return cached_success
+        return _build_market_indicators_fallback()
 
     return await data_cache.get_or_fetch(
         cache_key,
-        _fetch_indicators,
+        _fetch_market_indicators_payload,
         ttl=MARKET_INDICATORS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_INDICATORS_WAIT_TIMEOUT_SECONDS,
-        timeout_fallback=_build_market_indicators_fallback,
+        timeout_fallback=_timeout_indicator_fallback,
+        should_cache=_market_indicators_have_values,
     )
 
 
@@ -912,6 +2081,7 @@ async def get_market_movers(code: str):
     from app.data import cache as data_cache
 
     cache_key = f"movers:v2:{code}"
+    last_success_key = f"movers:last_success:{code}"
 
     async def _fetch_movers():
         try:
@@ -920,20 +2090,36 @@ async def get_market_movers(code: str):
                 timeout=MARKET_MOVERS_TIMEOUT_SECONDS,
             )
             payload["generated_at"] = datetime.now().isoformat()
+            if _market_movers_has_items(payload):
+                await data_cache.set(last_success_key, payload, MARKET_MOVERS_LAST_SUCCESS_TTL_SECONDS)
             return payload
         except asyncio.TimeoutError:
             logging.warning("market movers timed out for %s after %ss", code, MARKET_MOVERS_TIMEOUT_SECONDS)
-            return _build_market_movers_fallback(reason="market_movers_timeout")
+            cached_success = await data_cache.get(last_success_key)
+            if _market_movers_has_items(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "market_movers_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_market_movers_fallback(code, reason="market_movers_timeout")
         except Exception as exc:
             logging.warning("market movers failed for %s: %s", code, exc, exc_info=True)
-            return _build_market_movers_fallback(reason="market_movers_error")
+            cached_success = await data_cache.get(last_success_key)
+            if _market_movers_has_items(cached_success):
+                response = dict(cached_success)
+                response["partial"] = True
+                response["fallback_reason"] = "market_movers_last_success"
+                response["generated_at"] = datetime.now().isoformat()
+                return response
+            return await _build_market_movers_fallback(code, reason="market_movers_error")
 
     return await data_cache.get_or_fetch(
         cache_key,
         _fetch_movers,
         ttl=MARKET_MOVERS_CACHE_TTL_SECONDS,
         wait_timeout=MARKET_MOVERS_WAIT_TIMEOUT_SECONDS,
-        timeout_fallback=lambda: _build_market_movers_fallback(reason="market_movers_wait_timeout"),
+        timeout_fallback=lambda: _build_market_movers_fallback(code, reason="market_movers_wait_timeout"),
     )
 
 
@@ -946,6 +2132,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
+<<<<<<< HEAD
     cached_full, cached_full_source = await _get_cached_full_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_full):
         return _record_opportunity_response(
@@ -978,7 +2165,109 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 timeout_budget_ms=0,
                 upstream_source="market_opportunities_cached_quick",
             )
+=======
+    pressure_guard = _should_use_ultra_fast_public_fallback()
+    startup_guard = _should_use_startup_public_route_guard()
+    if pressure_guard or startup_guard:
+        if startup_guard and not pressure_guard:
+            cached_full = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities(code, limit),
+                timeout_seconds=OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"opportunity startup cached full {code}",
+            )
+            if _is_usable_opportunity_payload(cached_full):
+                _record_market_opportunities_trace(
+                    started_at,
+                    request_phase="full",
+                    cache_state="sqlite_hit",
+                    payload=cached_full,
+                )
+                _maybe_trim_public_route_memory("market_opportunities")
+                return cached_full
+
+            cached_quick = await _timed_country_lookup(
+                market_service.get_cached_market_opportunities_quick(code, limit),
+                timeout_seconds=OPPORTUNITY_STARTUP_CACHE_LOOKUP_TIMEOUT_SECONDS,
+                label=f"opportunity startup cached quick {code}",
+            )
+            if _is_usable_opportunity_payload(cached_quick):
+                payload = _build_traced_opportunity_partial(
+                    started_at,
+                    payload=cached_quick,
+                    request_phase="quick",
+                    cache_state="sqlite_hit",
+                    fallback_reason="opportunity_cached_quick_response",
+                    note=(
+                        "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                        f"{_opportunity_refresh_followup_sentence()}"
+                    ),
+                    fallback_tier="cached_quick",
+                )
+                _maybe_trim_public_route_memory("market_opportunities")
+                return payload
+
+            _spawn_opportunity_quick_warmup(code, limit)
+
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=market_service.build_market_opportunities_placeholder(
+                code,
+                note=(
+                    (
+                        f"{code} 기회 레이더는 현재 서버 메모리 보호 구간이라 "
+                        "이번 요청에서 캐시 조회와 무거운 quick 계산을 건너뛰고 안전한 placeholder를 먼저 제공합니다. "
+                        "다음 재조회에서 캐시와 quick 후보를 다시 확인합니다."
+                    )
+                    if pressure_guard
+                    else (
+                        f"{code} 기회 레이더 서비스가 막 깨어난 직후라 "
+                        "이번 요청에서는 캐시 조회를 건너뛰고 대표 후보 기준 placeholder를 먼저 제공합니다. "
+                        "잠시 뒤 다시 조회하면 quick 후보와 정밀 결과가 회복될 수 있습니다."
+                    )
+                ),
+            ),
+            request_phase="shell",
+            cache_state="miss",
+            fallback_reason=(
+                "opportunity_memory_guard" if pressure_guard else "opportunity_startup_guard"
+            ),
+            served_state="degraded",
+            fallback_tier="placeholder",
         )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return payload
+
+    cached_full = await market_service.get_cached_market_opportunities(code, limit)
+    if _is_usable_opportunity_payload(cached_full):
+        await _capture_opportunity_payload(code, cached_full)
+        _record_market_opportunities_trace(
+            started_at,
+            request_phase="full",
+            cache_state="sqlite_hit",
+            payload=cached_full,
+        )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return cached_full
+
+    cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
+    if _is_usable_opportunity_payload(cached_quick):
+        _spawn_opportunity_refresh(code, limit)
+        await _capture_opportunity_payload(code, cached_quick)
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=cached_quick,
+            request_phase="quick",
+            cache_state="sqlite_hit",
+            fallback_reason="opportunity_cached_quick_response",
+            note=(
+                "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                f"{_opportunity_refresh_followup_sentence()}"
+            ),
+            fallback_tier="cached_quick",
+>>>>>>> main
+        )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return payload
 
     quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
     try:
@@ -988,6 +2277,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         )
         if _is_usable_opportunity_payload(quick_response):
             _spawn_opportunity_refresh(code, limit)
+<<<<<<< HEAD
             return _record_opportunity_response(
                 _annotate_opportunity_response(
                     _with_opportunity_partial(
@@ -1002,7 +2292,22 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                     timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
                     upstream_source="market_opportunities_quick_build",
                 )
+=======
+            await _capture_opportunity_payload(code, quick_response)
+            payload = _build_traced_opportunity_partial(
+                started_at,
+                payload=quick_response,
+                request_phase="quick",
+                cache_state="miss",
+                fallback_reason="opportunity_quick_response",
+                note=(
+                    "이번 응답에서는 1차 usable 후보를 먼저 표시하고, "
+                    f"{_opportunity_refresh_followup_sentence()}"
+                ),
+>>>>>>> main
             )
+            _maybe_trim_public_route_memory("market_opportunities")
+            return payload
     except asyncio.TimeoutError:
         logging.warning("opportunity quick fetch timed out for %s", code)
     except Exception as quick_exc:
@@ -1011,6 +2316,7 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     cached_quick, cached_quick_source = await _get_cached_quick_opportunities(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
+<<<<<<< HEAD
         return _record_opportunity_response(
             _annotate_opportunity_response(
                 _with_opportunity_partial(
@@ -1026,9 +2332,26 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
                 upstream_source="market_opportunities_cached_quick_recheck",
             )
+=======
+        await _capture_opportunity_payload(code, cached_quick)
+        payload = _build_traced_opportunity_partial(
+            started_at,
+            payload=cached_quick,
+            request_phase="quick",
+            cache_state="sqlite_hit",
+            fallback_reason="opportunity_cached_quick_response",
+            note=(
+                "이번 응답에서는 최근 usable 후보를 먼저 표시하고, "
+                f"{_opportunity_refresh_followup_sentence()}"
+            ),
+            fallback_tier="cached_quick",
+>>>>>>> main
         )
+        _maybe_trim_public_route_memory("market_opportunities")
+        return payload
 
     _spawn_opportunity_refresh(code, limit)
+<<<<<<< HEAD
     return _record_opportunity_response(
         _annotate_opportunity_response(
             _with_opportunity_partial(
@@ -1040,6 +2363,16 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                     ),
                 ),
                 fallback_reason="opportunity_placeholder_response",
+=======
+    payload = _build_traced_opportunity_partial(
+        started_at,
+        payload=market_service.build_market_opportunities_placeholder(
+            code,
+            note=(
+                f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
+                f"{_opportunity_refresh_followup_sentence()} "
+                "다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
+>>>>>>> main
             ),
             started_at=started_at,
             request_phase="quick",
@@ -1048,4 +2381,13 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
             timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
             upstream_source="market_opportunities_placeholder",
         ),
+<<<<<<< HEAD
+=======
+        request_phase="shell",
+        cache_state="miss",
+        fallback_reason="opportunity_placeholder_response",
+        served_state="degraded",
+>>>>>>> main
     )
+    _maybe_trim_public_route_memory("market_opportunities")
+    return payload

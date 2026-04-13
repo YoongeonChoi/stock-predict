@@ -4,12 +4,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
+import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import StockHeatmap from "@/components/charts/StockHeatmap";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
-import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
+import {
+  buildPublicAuditSummary,
+  formatAuditDate,
+  formatAuditTime,
+  type PublicAuditFields,
+} from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type {
   DailyBriefingEvent,
   DailyBriefingFocusCard,
@@ -19,6 +31,7 @@ import type {
 } from "@/lib/api";
 import type { CountryListItem, CountryReport, MacroClaim, OpportunityRadarResponse } from "@/lib/types";
 import { changeColor, formatPct } from "@/lib/utils";
+import { type HomeDashboardInitialData, useHomeDashboardViewModel } from "@/components/pages/useHomeDashboardViewModel";
 
 const COUNTRY_FLAGS: Record<string, string> = { KR: "🇰🇷" };
 const BRIEFING_TIMEOUT_MS = 16_000;
@@ -34,6 +47,18 @@ interface MarketIndicator {
   name: string;
   price: number;
   change_pct: number;
+}
+
+function hasUsableNumericValue(value: number | null | undefined) {
+  return Number.isFinite(value) && Math.abs(value ?? 0) > 0.0001;
+}
+
+function hasUsableIndicator(indicator: MarketIndicator) {
+  return hasUsableNumericValue(indicator.price);
+}
+
+function hasUsableIndexValue(index: { price?: number | null; current_price?: number | null }) {
+  return hasUsableNumericValue(index.price ?? index.current_price ?? null);
 }
 
 function statusTone(stance?: string) {
@@ -72,12 +97,7 @@ function formatMacroClaimValue(claim: MacroClaim) {
 }
 
 function formatMacroClaimDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleDateString("ko-KR");
+  return formatAuditDate(value) || value || "";
 }
 
 function describeLoadError(error: unknown, fallback: string) {
@@ -91,14 +111,7 @@ function describeLoadError(error: unknown, fallback: string) {
 }
 
 function toInitialClock(value?: string | null) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleTimeString("ko-KR");
+  return formatAuditTime(value) || "";
 }
 
 interface HomeDashboardClientProps {
@@ -119,6 +132,7 @@ export default function HomeDashboardClient({
   initialMovers = null,
   initialRadar = null,
   initialCountryReport = null,
+<<<<<<< HEAD
 }: HomeDashboardClientProps) {
   const initializedRef = useRef(false);
   const workspaceRequestIdRef = useRef(0);
@@ -298,14 +312,41 @@ export default function HomeDashboardClient({
 
     bootstrap();
   }, [
+=======
+}: HomeDashboardInitialData) {
+  const {
+    countries,
+    indicators,
+    briefing,
+    selectedCountry,
+    heatmapData,
+    movers,
+    radarData,
+    countryReport,
+    loading,
+    briefingLoading,
+    heatmapLoading,
+    moversLoading,
+    radarLoading,
+    reportLoading,
+    briefingError,
+    heatmapError,
+    moversError,
+    radarError,
+    reportError,
+    lastUpdated,
+    loadBriefing,
+    loadCountryWorkspace,
+  } = useHomeDashboardViewModel({
+    initialCountries,
+    initialIndicators,
+>>>>>>> main
     initialBriefing,
-    initialCountries.length,
-    initialCountryReport,
     initialHeatmap,
-    initialIndicators.length,
     initialMovers,
     initialRadar,
-  ]);
+    initialCountryReport,
+  });
 
   const selectedCountryItem = useMemo(
     () => countries.find((country) => country.code === selectedCountry) ?? null,
@@ -409,6 +450,7 @@ export default function HomeDashboardClient({
   const topNews = countryReport?.key_news.slice(0, 4) ?? [];
   const topStocks = countryReport?.top_stocks.slice(0, 5) ?? [];
   const radarHasItems = (radarData?.opportunities.length ?? 0) > 0;
+  const moversHasItems = (movers?.gainers.length ?? 0) > 0 || (movers?.losers.length ?? 0) > 0;
   const retryCurrentWorkspace = () => {
     void loadCountryWorkspace(selectedCountry);
   };
@@ -428,6 +470,16 @@ export default function HomeDashboardClient({
       ? "선택한 시장의 상태를 불러오는 중입니다."
       : reportError || (briefingLoading ? "브리핑을 불러오는 중입니다." : briefingError || "선택한 시장 요약이 아직 없습니다."));
   const macroClaims = countryReport?.macro_claims?.slice(0, 4) ?? [];
+  const usableIndices = useMemo(
+    () => selectedCountryItem?.indices.filter((index) => hasUsableIndexValue(index)) ?? [],
+    [selectedCountryItem],
+  );
+  const hasDelayedIndices = (selectedCountryItem?.indices.length ?? 0) > 0 && usableIndices.length === 0;
+  const visibleIndicators = useMemo(
+    () => indicators.filter((indicator) => hasUsableIndicator(indicator)).slice(0, 4),
+    [indicators],
+  );
+  const hasDelayedIndicators = indicators.length > 0 && visibleIndicators.length === 0;
   const dashboardAuditMeta = useMemo<PublicAuditFields | null>(() => ({
     snapshot_id: radarData?.snapshot_id || null,
     generated_at: countryReport?.generated_at || radarData?.generated_at || briefing?.generated_at || null,
@@ -453,32 +505,35 @@ export default function HomeDashboardClient({
 
   return (
     <div className="page-shell">
-      <section className="card !p-5 space-y-5">
-        <div className="section-heading gap-4">
-          <div>
-            <h1 className="section-title text-2xl">대시보드</h1>
-            <p className="section-copy">
-              {countryReport && radarData
-                ? `선택 시장 현황 / 핵심 수치 / 오늘의 포커스 ${focusSlots.length}개 / 마지막 갱신 ${lastUpdated || "방금"}`
-                : "선택한 시장의 지수, 뉴스, 히트맵, 강한 셋업을 한 흐름으로 봅니다."}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+      <PageHeader
+        variant="compact"
+        eyebrow="시장 탐색"
+        title="대시보드"
+        description={countryReport && radarData
+          ? "선택 시장 현황과 핵심 수치, 오늘 먼저 볼 신호를 한 흐름으로 정리합니다."
+          : "시장 현황과 브리핑, 히트맵, 레이더 요약을 한 화면에서 먼저 확인합니다."}
+        meta={
+          <>
             {lastUpdated ? <span className="info-chip">최근 갱신 {lastUpdated}</span> : null}
-            {countryReport?.generated_at ? <span className="info-chip">리포트 {new Date(countryReport.generated_at).toLocaleString("ko-KR")}</span> : null}
-          </div>
-        </div>
+            {countryReport?.generated_at ? (
+              <span className="info-chip">리포트 {toInitialClock(countryReport.generated_at)}</span>
+            ) : null}
+            {focusSlots.length > 0 ? <span className="info-chip">오늘 포커스 {focusSlots.length}개</span> : null}
+          </>
+        }
+      />
+      <section className="card !p-4 sm:!p-5 space-y-4">
         <PublicAuditStrip meta={dashboardAuditMeta} />
-        <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
+        <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
           {dashboardSummary}
         </div>
 
         {workspaceDelays.length > 0 ? (
           <WorkspaceStateCard
+            kind="partial"
             eyebrow="부분 업데이트"
             title="일부 계산이 더 필요합니다"
             message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
-            tone="warning"
             actionLabel="현재 시장 다시 불러오기"
             onAction={retryCurrentWorkspace}
           />
@@ -490,10 +545,10 @@ export default function HomeDashboardClient({
                 <button
                   key={country.code}
                   onClick={() => void loadCountryWorkspace(country.code)}
-                  className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`text-sm font-medium transition-colors ${
                     selectedCountry === country.code
-                      ? "bg-accent text-white"
-                      : "border border-border bg-surface/70 text-text-secondary hover:border-accent/35 hover:text-text"
+                      ? "action-chip-primary"
+                      : "action-chip-secondary"
                   }`}
                 >
                   {COUNTRY_FLAGS[country.code]} {country.name_local}
@@ -502,8 +557,8 @@ export default function HomeDashboardClient({
           </div>
         ) : null}
 
-        <div className="workspace-grid">
-          <div className="workspace-panel h-full">
+        <div className="workspace-grid-balanced">
+          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">
@@ -514,16 +569,16 @@ export default function HomeDashboardClient({
                 </div>
               </div>
               {marketView ? (
-                <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusTone(marketView.stance)}`}>
+                <span className={`status-token ${statusTone(marketView.stance)}`}>
                   {marketView.label}
                 </span>
               ) : null}
             </div>
 
             {macroClaims.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
                 {macroClaims.map((claim) => (
-                  <div key={`${claim.source}-${claim.metric}`} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+                  <div key={`${claim.source}-${claim.metric}`} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{claim.metric}</div>
                     <div className={`mt-2 text-base font-semibold ${macroClaimTone(claim.direction)}`}>
                       {formatMacroClaimValue(claim)}
@@ -539,7 +594,7 @@ export default function HomeDashboardClient({
             ) : null}
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-              {selectedCountryItem?.indices.map((index) => (
+              {usableIndices.map((index) => (
                 <div key={index.ticker} className="metric-card">
                   <div className="text-xs text-text-secondary">{index.name}</div>
                   <div className="mt-2 text-lg font-semibold text-text">{(index.price ?? index.current_price ?? 0).toLocaleString()}</div>
@@ -558,11 +613,16 @@ export default function HomeDashboardClient({
                 </div>
               ) : null}
             </div>
+            {hasDelayedIndices ? (
+              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
+                대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
+              </div>
+            ) : null}
 
-            {indicators.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                {indicators.slice(0, 4).map((indicator) => (
-                  <div key={indicator.name} className="rounded-2xl border border-border/60 bg-surface/45 px-3 py-3">
+            {visibleIndicators.length > 0 ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
+                {visibleIndicators.map((indicator) => (
+                  <div key={indicator.name} className="metric-strip">
                     <div className="text-[11px] text-text-secondary">{indicator.name}</div>
                     <div className="mt-2 text-sm font-semibold text-text">{indicatorLabel(indicator)}</div>
                     <div className={`mt-1 text-[11px] ${changeColor(indicator.change_pct ?? 0)}`}>
@@ -572,9 +632,14 @@ export default function HomeDashboardClient({
                 ))}
               </div>
             ) : null}
+            {hasDelayedIndicators ? (
+              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
+                환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
+              </div>
+            ) : null}
           </div>
 
-          <div className="workspace-panel h-full">
+          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text">오늘의 포커스</div>
@@ -595,7 +660,7 @@ export default function HomeDashboardClient({
                     if (slot.kind === "focus") {
                       const item = slot.item;
                       return (
-                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="font-medium text-text">{item.name}</div>
@@ -613,10 +678,10 @@ export default function HomeDashboardClient({
                     if (slot.kind === "event") {
                       const event = slot.item;
                       return (
-                        <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                        <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="font-medium text-text">{event.title}</div>
-                            <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${impactTone(event.impact)}`}>{event.date}</span>
+                            <span className={`status-token ${impactTone(event.impact)}`}>{event.date}</span>
                           </div>
                           <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
                         </div>
@@ -624,7 +689,7 @@ export default function HomeDashboardClient({
                     }
 
                     return (
-                      <div key={slot.key} className="rounded-2xl border border-border/70 bg-surface/45 px-4 py-3">
+                      <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
                         <div className="font-medium text-text">{slot.title}</div>
                         <div className="mt-1 text-xs leading-6 text-text-secondary">{slot.summary}</div>
                       </div>
@@ -645,7 +710,7 @@ export default function HomeDashboardClient({
         </div>
       </section>
 
-      <section className="workspace-grid">
+      <section className="workspace-grid-balanced">
         <div className="card !p-4 h-full">
           <div className="section-heading gap-4">
             <div>
@@ -684,7 +749,7 @@ export default function HomeDashboardClient({
                 className="min-h-[240px]"
               />
             </div>
-          ) : movers ? (
+          ) : movers && moversHasItems ? (
             <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <h3 className="text-sm font-semibold text-positive">상승 상위</h3>
@@ -767,18 +832,18 @@ export default function HomeDashboardClient({
             </div>
             <div className="mt-4 space-y-3">
               {topNews.map((item) => (
-                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                   <div className="font-medium text-text">{item.title}</div>
                   <div className="mt-2 text-xs text-text-secondary">{item.source} · {item.published}</div>
                 </a>
               ))}
               {!reportLoading && topNews.length === 0 ? (
                 <WorkspaceStateCard
-                  eyebrow={reportError ? "뉴스 지연" : "기사 연결 대기"}
-                  title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "연결된 기사 목록이 아직 비어 있습니다"}
+                  eyebrow={reportError ? "뉴스 지연" : "핵심 기사 보강 중"}
+                  title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "오늘 핵심 기사 목록을 준비하고 있습니다"}
                   message={
                     reportError ||
-                    "시장 요약은 준비됐지만 연결된 핵심 기사 목록은 아직 비어 있습니다. 잠시 뒤 다시 열면 기사 연결이 채워질 수 있습니다."
+                    "시장 요약은 먼저 준비됐고, 핵심 기사 연결은 이어서 보강됩니다. 잠시 뒤 다시 열면 기사 목록이 채워질 수 있습니다."
                   }
                   onAction={reportError ? retryCurrentWorkspace : undefined}
                   tone={reportError ? "warning" : "neutral"}
@@ -794,7 +859,7 @@ export default function HomeDashboardClient({
             </div>
             <div className="mt-4 space-y-2">
               {topStocks.map((stock) => (
-                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/35">
+                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium text-text">{stock.name}</div>

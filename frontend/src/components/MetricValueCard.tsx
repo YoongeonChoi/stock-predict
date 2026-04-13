@@ -16,9 +16,9 @@ export default function MetricValueCard({
   className = "",
 }: Props) {
   return (
-    <div className={`rounded-lg ${toneClass} p-3 ${className}`.trim()}>
-      <div className="text-xs text-text-secondary">{label}</div>
-      <div className={`${valueClassName} mt-1`}>{value}</div>
+    <div className={`min-w-0 rounded-lg ${toneClass} p-3 ${className}`.trim()}>
+      <div className="text-xs leading-5 text-text-secondary break-words">{label}</div>
+      <div className={`${valueClassName} mt-1 leading-tight break-words`}>{value}</div>
     </div>
   );
 }

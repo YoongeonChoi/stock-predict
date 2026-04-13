@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from app.services import compare_service
 from app.errors import SP_6004
+from app.utils.lazy_module import LazyModuleProxy
 
 router = APIRouter(prefix="/api", tags=["compare"])
+compare_service = LazyModuleProxy("app.services.compare_service")
 
 
 @router.get("/compare")

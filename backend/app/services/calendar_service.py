@@ -13,6 +13,8 @@ from app.data import cache, fmp_client
 CALENDAR_FETCH_TIMEOUT_SECONDS = 8
 CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 CALENDAR_SOURCE_WAIT_TIMEOUT_SECONDS = 1.75
+CALENDAR_STARTUP_SEED_TTL_SECONDS = 180
+CALENDAR_STARTUP_FALLBACK_REASON = "calendar_startup_warming"
 
 KR_MAJOR_EVENTS = (
     {
@@ -631,6 +633,32 @@ def build_calendar_fallback(
         fallback_reason=fallback_reason,
         note=note or "공식 일정은 먼저 보여주고, 외부 캘린더 세부 항목은 다시 동기화되면 바로 반영합니다.",
     )
+
+
+async def prewarm_public_calendar_cache_seed() -> None:
+    settings = get_settings()
+    if not getattr(settings, "startup_memory_safe_mode", False):
+        return
+
+    now = datetime.now()
+    target_year = now.year
+    target_month = now.month
+    cache_key = calendar_cache_key(target_year, target_month)
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        return
+
+    seed_ttl = min(
+        CALENDAR_STARTUP_SEED_TTL_SECONDS,
+        max(1, int(getattr(settings, "cache_ttl_news", CALENDAR_STARTUP_SEED_TTL_SECONDS))),
+    )
+    payload = build_calendar_fallback(
+        target_year,
+        target_month,
+        fallback_reason=CALENDAR_STARTUP_FALLBACK_REASON,
+        note="배포 직후 첫 요청 지연을 줄이기 위해 이번 달 핵심 일정을 먼저 시드합니다. 외부 세부 일정은 캐시가 채워지면 바로 반영합니다.",
+    )
+    await cache.set(cache_key, payload, ttl=seed_ttl)
 
 
 async def get_calendar(country_code: str, year: int | None = None, month: int | None = None) -> dict:

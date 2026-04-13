@@ -23,6 +23,7 @@ import {
 } from "@/lib/account";
 import { api, getApiRetryAfterSeconds, isApiErrorCode } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { cn } from "@/lib/utils";
 
 type AuthMode = "signin" | "signup" | "recovery";
 
@@ -75,9 +76,9 @@ function FormField({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">{label}</label>
+      <label className="ui-field-label">{label}</label>
       {children}
-      {helper ? <div className="mt-2 text-xs text-text-secondary">{helper}</div> : null}
+      {helper ? <div className="ui-helper-text">{helper}</div> : null}
     </div>
   );
 }
@@ -427,6 +428,7 @@ function AuthPageContent() {
   return (
     <div className="page-shell space-y-5">
       <PageHeader
+        variant="compact"
         eyebrow="계정"
         title={mode === "recovery" ? "비밀번호 재설정" : "로그인 및 회원가입"}
         description={
@@ -437,33 +439,39 @@ function AuthPageContent() {
         meta={<span className="info-chip">로그인 후 이동: {nextPath}</span>}
       />
 
-      <section className="mx-auto grid max-w-[1180px] gap-5 xl:grid-cols-[minmax(0,1.12fr)_360px]">
-        <div className="card !p-5 space-y-5">
+      <section className="mx-auto grid max-w-[1180px] gap-4 xl:grid-cols-[minmax(0,1.12fr)_360px]">
+        <div className="card space-y-5">
           {mode !== "recovery" ? (
-            <div className="flex gap-2 rounded-2xl border border-border/70 bg-surface/50 p-1">
+            <div className="ui-segmented-control">
               <button
                 onClick={() => setModeInUrl("signin")}
-                className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signin" ? "bg-accent text-white" : "text-text-secondary"}`}
+                className={cn(
+                  "ui-segmented-option",
+                  mode === "signin" && "ui-segmented-option-active",
+                )}
               >
                 로그인
               </button>
               <button
                 onClick={() => setModeInUrl("signup")}
-                className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "signup" ? "bg-accent text-white" : "text-text-secondary"}`}
+                className={cn(
+                  "ui-segmented-option",
+                  mode === "signup" && "ui-segmented-option-active",
+                )}
               >
                 회원가입
               </button>
             </div>
           ) : (
-            <div className="rounded-2xl border border-border/70 bg-surface/50 p-4">
-              <div className="flex items-center justify-between gap-3">
+            <div className="ui-panel-muted">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-sm font-semibold text-text">비밀번호 재설정 모드</div>
                   <p className="mt-1 text-xs leading-6 text-text-secondary">
                     복구 링크의 세션이 살아 있으면 여기서 새 비밀번호를 설정할 수 있습니다.
                   </p>
                 </div>
-                <button onClick={() => setModeInUrl("signin")} className="action-chip-secondary shrink-0">
+                <button onClick={() => setModeInUrl("signin")} className="ui-button-secondary w-full shrink-0 sm:w-auto">
                   로그인으로 돌아가기
                 </button>
               </div>
@@ -478,7 +486,7 @@ function AuthPageContent() {
                   onChange={(event) => setSigninEmail(event.target.value)}
                   type="email"
                   autoComplete="email"
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="you@example.com"
                 />
               </FormField>
@@ -488,18 +496,18 @@ function AuthPageContent() {
                   onChange={(event) => setSigninPassword(event.target.value)}
                   type="password"
                   autoComplete="current-password"
-                  className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                  className="ui-input"
                   placeholder="비밀번호 입력"
                 />
               </FormField>
-              <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">로그인 지원</div>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <div className="ui-panel-muted">
+                <div className="ui-field-label">로그인 지원</div>
+                <div className="ui-inline-actions mt-3">
                   <button
                     type="button"
                     onClick={handleResendVerification}
                     disabled={supportAction !== null || verificationCooldown.active}
-                    className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                    className="ui-button-secondary"
                   >
                     {supportAction === "verification"
                       ? "전송 중..."
@@ -511,7 +519,7 @@ function AuthPageContent() {
                     type="button"
                     onClick={handlePasswordResetRequest}
                     disabled={supportAction !== null || resetCooldown.active}
-                    className="action-chip-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                    className="ui-button-secondary"
                   >
                     {supportAction === "reset"
                       ? "전송 중..."
@@ -520,7 +528,7 @@ function AuthPageContent() {
                         : "비밀번호 재설정 메일"}
                   </button>
                 </div>
-                <p className="mt-3 text-xs leading-6 text-text-secondary">
+                <p className="ui-helper-text mt-3">
                   로그인에 문제가 있으면 이메일을 먼저 입력한 뒤 인증 메일 재전송 또는 비밀번호 재설정 메일을 요청해 주세요. 같은 메일 액션은 60초 동안 잠시 쉬어 갑니다.
                 </p>
               </div>
@@ -534,7 +542,7 @@ function AuthPageContent() {
                   label="아이디"
                   helper="영문 소문자로 시작하고 영문 소문자, 숫자, 밑줄만 사용할 수 있습니다. 입력 중 자동으로 소문자로 정리됩니다."
                 >
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input
                       value={signup.username}
                       onChange={(event) =>
@@ -547,14 +555,14 @@ function AuthPageContent() {
                       autoCapitalize="none"
                       spellCheck={false}
                       maxLength={20}
-                      className="min-w-0 flex-1 rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                      className="ui-input min-w-0 flex-1"
                       placeholder="alpha_user"
                     />
                     <button
                       type="button"
                       onClick={handleUsernameCheck}
                       disabled={usernameState.checking || usernameCooldown.active}
-                      className="action-chip-secondary shrink-0"
+                      className="ui-button-secondary shrink-0 sm:w-auto"
                     >
                       {usernameState.checking
                         ? "확인 중..."
@@ -572,7 +580,7 @@ function AuthPageContent() {
                     autoComplete="email"
                     autoCapitalize="none"
                     spellCheck={false}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                     placeholder="you@example.com"
                   />
                 </FormField>
@@ -582,7 +590,7 @@ function AuthPageContent() {
                     onChange={(event) => updateSignupField("fullName", normalizeFullName(event.target.value).slice(0, 40))}
                     autoComplete="name"
                     maxLength={40}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                     placeholder="홍길동"
                   />
                 </FormField>
@@ -593,7 +601,7 @@ function AuthPageContent() {
                     inputMode="numeric"
                     autoComplete="tel"
                     maxLength={15}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                     placeholder="010-1234-5678"
                   />
                 </FormField>
@@ -604,12 +612,12 @@ function AuthPageContent() {
                     type="date"
                     autoComplete="bday"
                     max={new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                   />
                 </FormField>
-                <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">가입 체크</div>
-                  <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+                <div className="ui-panel-muted">
+                  <div className="ui-field-label">가입 체크</div>
+                  <ul className="mt-3 space-y-2 text-[0.95rem] text-text-secondary">
                     <li>{isValidFullName(signup.fullName) ? "이름 형식이 확인되었습니다." : "이름은 2자 이상으로 입력해 주세요."}</li>
                     <li>{isValidPhoneNumber(signup.phoneNumber) ? "전화번호 형식이 확인되었습니다." : "전화번호를 올바르게 입력해 주세요."}</li>
                     <li>{isValidBirthDate(signup.birthDate) ? "생년월일 형식이 확인되었습니다." : "생년월일을 선택해 주세요."}</li>
@@ -626,7 +634,7 @@ function AuthPageContent() {
                     type="password"
                     autoComplete="new-password"
                     maxLength={128}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                     placeholder="강한 비밀번호 입력"
                   />
                 </FormField>
@@ -637,7 +645,7 @@ function AuthPageContent() {
                     type="password"
                     autoComplete="new-password"
                     maxLength={128}
-                    className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                    className="ui-input"
                     placeholder="비밀번호 다시 입력"
                   />
                 </FormField>
@@ -645,7 +653,7 @@ function AuthPageContent() {
 
               <PasswordStrengthChecklist result={passwordStrength} />
               {signupCooldown.active ? (
-                <div className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-text-secondary">
+                <div className="ui-panel-warning text-[0.95rem] text-text-secondary">
                   회원가입 검증 요청이 잠시 많았습니다. {signupCooldown.seconds}초 후 다시 시도해 주세요.
                 </div>
               ) : null}
@@ -656,7 +664,7 @@ function AuthPageContent() {
             <div className="space-y-5">
               {session ? (
                 <>
-                  <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm text-text-secondary">
+                  <div className="ui-panel-muted text-[0.95rem] text-text-secondary">
                     현재 복구 세션으로 연결된 계정은 <span className="font-medium text-text">{session.user.email ?? "이메일 정보 없음"}</span> 입니다.
                     새 비밀번호를 저장하면 다음 접속부터 새 비밀번호가 적용됩니다.
                   </div>
@@ -668,7 +676,7 @@ function AuthPageContent() {
                         type="password"
                         autoComplete="new-password"
                         maxLength={128}
-                        className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                        className="ui-input"
                         placeholder="새 비밀번호 입력"
                       />
                     </FormField>
@@ -679,7 +687,7 @@ function AuthPageContent() {
                         type="password"
                         autoComplete="new-password"
                         maxLength={128}
-                        className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm"
+                        className="ui-input"
                         placeholder="새 비밀번호 다시 입력"
                       />
                     </FormField>
@@ -687,7 +695,7 @@ function AuthPageContent() {
                   <PasswordStrengthChecklist result={recoveryStrength} />
                 </>
               ) : (
-                <div className="rounded-[22px] border border-warning/30 bg-warning/10 px-4 py-4 text-sm leading-6 text-text-secondary">
+                <div className="ui-panel-warning text-[0.95rem] leading-6 text-text-secondary">
                   복구 세션이 아직 확인되지 않았습니다. 메일의 링크가 만료되었을 수 있으니 로그인 화면으로 돌아가 재설정 메일을 다시 요청해 주세요.
                 </div>
               )}
@@ -704,7 +712,7 @@ function AuthPageContent() {
               (mode === "signup" && !signUpReady) ||
               (mode === "recovery" && !recoveryReady)
             }
-            className="action-chip-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+            className="ui-button-primary w-full"
           >
             {submitting
               ? "처리 중..."
@@ -718,7 +726,7 @@ function AuthPageContent() {
           </button>
 
           {!configured ? (
-            <div className="rounded-2xl border border-negative/20 bg-negative/5 px-4 py-3 text-sm text-negative">
+            <div className="ui-panel-warning !px-4 !py-3 text-[0.95rem]">
               Supabase 브라우저 설정이 비어 있습니다. `NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 확인해 주세요.
             </div>
           ) : null}

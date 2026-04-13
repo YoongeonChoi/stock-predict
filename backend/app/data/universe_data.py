@@ -14,7 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.config import get_settings
-from app.utils.async_tools import gather_limited
+from app.utils.async_tools import gather_limited, is_async_failure_result
 
 log = logging.getLogger("stock_predict.universe")
 
@@ -104,7 +104,7 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
         available_exchanges = [
             exchange
             for exchange, allowed in zip(exchanges, probe_results)
-            if not isinstance(allowed, Exception) and allowed
+            if not is_async_failure_result(allowed) and allowed
         ]
         if not available_exchanges:
             return None
@@ -124,7 +124,7 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
                 for exchange in available_exchanges
             ]
             for fetched in await asyncio.gather(*tasks, return_exceptions=True):
-                if isinstance(fetched, Exception):
+                if is_async_failure_result(fetched):
                     continue
                 for ticker in fetched:
                     if suffix and not ticker.endswith(suffix):
@@ -137,7 +137,7 @@ async def fetch_dynamic_universe(country_code: str) -> dict[str, list[str]] | No
             return sector, []
 
         for item in await gather_limited(GICS_SECTORS, _fetch_sector, limit=4):
-            if isinstance(item, Exception):
+            if is_async_failure_result(item):
                 continue
             sector, tickers = item
             if tickers:

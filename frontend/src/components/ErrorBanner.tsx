@@ -2,14 +2,15 @@
 
 import { ApiError } from "@/lib/api";
 import { getConnectionErrorMessage, isConnectionError } from "@/lib/request-state";
+import { cn } from "@/lib/utils";
 
 const ERROR_GUIDE: Record<string, string> = {
-  "SP-1001": "backend/.env 파일에 OPENAI_API_KEY를 설정해 주세요.",
-  "SP-1002": "OpenAI API 인증에 실패했습니다. 플랫폼에서 키 상태를 확인해 주세요.",
-  "SP-1003": "추가 공공데이터 API를 쓸 경우 해당 키를 backend/.env에 설정해 주세요.",
-  "SP-1004": "backend/.env 파일에 ECOS_API_KEY를 설정해 주세요.",
-  "SP-1005": "backend/.env 파일에 FMP_API_KEY를 설정해 주세요.",
-  "SP-1006": "배포 환경에 Supabase 서버 키를 설정해 주세요.",
+  "SP-1001": "AI 보조 분석 설정이 아직 준비되지 않아 일부 요약만 먼저 제공하고 있습니다.",
+  "SP-1002": "AI 보조 분석 인증 상태를 확인해야 합니다.",
+  "SP-1003": "추가 공공데이터 연동 설정이 없어 기본 데이터만 먼저 제공하고 있습니다.",
+  "SP-1004": "외부 경제지표 연동 설정이 비어 있어 일부 지표를 가져오지 못했습니다.",
+  "SP-1005": "보조 시세 연동 설정이 비어 있어 일부 재무 보강이 제한됩니다.",
+  "SP-1006": "계정 저장 기능의 서버 설정을 확인해 주세요.",
   "SP-2001": "추가 공공데이터 API 호출에 실패했습니다. 네트워크 또는 키 상태를 확인해 주세요.",
   "SP-2002": "한국은행 ECOS API 호출에 실패했습니다.",
   "SP-2003": "보조 통계 API 호출에 실패했습니다.",
@@ -86,23 +87,39 @@ export default function ErrorBanner({ error, onRetry }: ErrorBannerProps) {
   const title = networkError ? "연결이 지연되고 있습니다" : "오류가 발생했습니다";
 
   return (
-    <div className={`rounded-[22px] border px-4 py-4 ${networkError ? "border-amber-500/20 bg-amber-500/6" : "border-negative/30 bg-negative/5"}`}>
-      <div className="flex items-start gap-3">
-        <div className={`text-lg shrink-0 mt-0.5 ${networkError ? "text-warning" : "text-negative"}`}>!</div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className={`font-semibold text-sm ${networkError ? "text-warning" : "text-negative"}`}>{title}</h3>
-            {code ? <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${networkError ? "bg-warning/10 text-warning" : "bg-negative/10 text-negative"}`}>{code}</span> : null}
+    <div
+      className={cn(
+        "state-card state-card-blocking",
+        networkError ? "state-card-tone-warning" : "state-card-tone-danger",
+      )}
+    >
+      <div className="state-card-shell">
+        <div className="min-w-0">
+          <div className="state-card-eyebrow">{networkError ? "연결 상태" : "오류 안내"}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="state-card-title !mt-0">{title}</h3>
+            {code ? (
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  networkError ? "bg-warning/10 text-warning" : "bg-negative/10 text-negative",
+                )}
+              >
+                {code}
+              </span>
+            ) : null}
           </div>
-          <p className="text-sm text-text">{primaryMessage}</p>
-          {secondaryMessage ? <p className="text-xs text-text-secondary mt-1">원본 메시지: {secondaryMessage}</p> : null}
-          {detail ? <p className="text-xs text-text-secondary mt-1">세부 정보: {detail}</p> : null}
+          <p className="state-card-message !text-text">{primaryMessage}</p>
+          {secondaryMessage ? <p className="state-card-details">원본 메시지: {secondaryMessage}</p> : null}
+          {detail ? <p className="state-card-details">세부 정보: {detail}</p> : null}
         </div>
-        {onRetry ? (
-          <button onClick={onRetry} className="px-3 py-1.5 bg-accent text-white rounded-lg text-xs shrink-0 hover:bg-accent/80 transition-colors">
-            다시 시도
-          </button>
-        ) : null}
+        <div className="state-card-actions">
+          {onRetry ? (
+            <button onClick={onRetry} className="state-card-action">
+              다시 시도
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -116,15 +133,15 @@ export function WarningBanner({ codes }: WarningBannerProps) {
   if (!codes || codes.length === 0) return null;
 
   return (
-    <div className="card border-warning/30 bg-warning/5">
-      <div className="flex items-start gap-3">
-        <div className="text-warning text-lg shrink-0">!</div>
-        <div className="flex-1">
-          <p className="text-sm text-warning font-medium mb-1">일부 데이터가 제한적으로 제공됩니다</p>
+    <div className="state-card state-card-partial state-card-tone-warning">
+      <div className="state-card-shell">
+        <div className="min-w-0">
+          <div className="state-card-eyebrow">부분 업데이트</div>
+          <p className="state-card-title !mt-0">일부 데이터가 제한적으로 제공됩니다</p>
           <div className="space-y-1">
             {codes.map((code) => (
-              <div key={code} className="flex items-center gap-2 text-xs text-text-secondary">
-                <span className="font-mono px-1 py-0.5 rounded bg-warning/10 text-warning">{code}</span>
+              <div key={code} className="flex items-start gap-2 text-xs text-text-secondary">
+                <span className="font-mono px-1 py-0.5 rounded bg-warning/10 text-warning shrink-0">{code}</span>
                 <span>{getGuide(code)}</span>
               </div>
             ))}

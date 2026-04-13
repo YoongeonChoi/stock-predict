@@ -12,9 +12,11 @@ from app.services import calendar_service, market_service, market_session_servic
 log = logging.getLogger("stock_predict.briefing")
 BRIEFING_RADAR_TIMEOUT_SECONDS = 8
 BRIEFING_CACHE_TTL_SECONDS = 300
+BRIEFING_LAST_SUCCESS_TTL_SECONDS = 1800
 BRIEFING_CALENDAR_WAIT_TIMEOUT_SECONDS = 2.5
 
 
+<<<<<<< HEAD
 def _build_briefing_request_trace(
     *,
     started_at: float,
@@ -64,6 +66,22 @@ def _annotate_briefing_response(
         upstream_source=upstream_source,
     )
     return response
+=======
+def _briefing_radar_request_timeout_seconds() -> float:
+    return max(4.0, BRIEFING_RADAR_TIMEOUT_SECONDS / 2)
+
+
+def _observe_background_task(task: asyncio.Task, label: str) -> None:
+    def _consume_result(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.warning("Daily briefing %s finished with a late failure: %s", label, exc, exc_info=True)
+
+    task.add_done_callback(_consume_result)
+>>>>>>> main
 
 
 def _event_score(event: dict) -> tuple:
@@ -77,6 +95,32 @@ def _event_summary(event: dict) -> str:
     if subtitle:
         return f"{base} · {subtitle}"
     return base
+
+
+def daily_briefing_cache_key(day: str | None = None) -> str:
+    target_day = day or datetime.now().date().isoformat()
+    return f"daily_briefing:v1:{target_day}"
+
+
+def daily_briefing_last_success_cache_key(day: str | None = None) -> str:
+    target_day = day or datetime.now().date().isoformat()
+    return f"daily_briefing:last_success:v1:{target_day}"
+
+
+async def _persist_daily_briefing_last_success(day: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    if not (
+        list(payload.get("sessions") or [])
+        or list(payload.get("market_view") or [])
+        or list(payload.get("focus_cards") or [])
+    ):
+        return
+    await cache.set(
+        daily_briefing_last_success_cache_key(day),
+        payload,
+        BRIEFING_LAST_SUCCESS_TTL_SECONDS,
+    )
 
 
 async def _upcoming_events() -> list[dict]:
@@ -181,15 +225,18 @@ async def _load_briefing_radar(country_code: str) -> dict:
     if cached_quick and cached_quick.get("opportunities"):
         return cached_quick
 
+    request_timeout = _briefing_radar_request_timeout_seconds()
+    task = asyncio.create_task(market_service.get_market_opportunities_quick(country_code, 4))
     try:
-        return await asyncio.wait_for(
-            market_service.get_market_opportunities_quick(country_code, 4),
-            timeout=max(4.0, BRIEFING_RADAR_TIMEOUT_SECONDS / 2),
-        )
+        return await asyncio.wait_for(asyncio.shield(task), timeout=request_timeout)
     except asyncio.TimeoutError:
         note = "공개 추천 계산이 길어져 브리핑에는 요약만 표시합니다."
-        log.warning("Daily briefing radar timed out for %s after %ss", country_code, BRIEFING_RADAR_TIMEOUT_SECONDS)
+        _observe_background_task(task, f"radar:{country_code}")
+        log.warning("Daily briefing radar timed out for %s after %.2fs", country_code, request_timeout)
         return _radar_fallback(country_code, note)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
     except Exception as exc:
         note = "공개 추천 계산에 실패해 브리핑에는 요약만 표시합니다."
         log.warning("Daily briefing radar failed for %s: %s", country_code, exc, exc_info=True)
@@ -199,8 +246,13 @@ async def _load_briefing_radar(country_code: str) -> dict:
 async def get_daily_briefing() -> dict:
     started_at = time.perf_counter()
     today = datetime.now().date().isoformat()
+<<<<<<< HEAD
     cache_key = f"daily_briefing:v1:{today}"
     cached, cache_source = await cache.get_with_source(cache_key)
+=======
+    cache_key = daily_briefing_cache_key(today)
+    cached = await cache.get(cache_key)
+>>>>>>> main
     if cached:
         return _annotate_briefing_response(
             cached,
@@ -277,6 +329,7 @@ async def get_daily_briefing() -> dict:
         "priorities": _build_priority_lines(sessions_data["sessions"], radar_map, archive_status),
     }
     await cache.set(cache_key, response, BRIEFING_CACHE_TTL_SECONDS)
+<<<<<<< HEAD
     return _annotate_briefing_response(
         response,
         started_at=started_at,
@@ -286,6 +339,10 @@ async def get_daily_briefing() -> dict:
         timeout_budget_ms=BRIEFING_RADAR_TIMEOUT_SECONDS * 1000,
         upstream_source="daily_briefing_build",
     )
+=======
+    await _persist_daily_briefing_last_success(today, response)
+    return response
+>>>>>>> main
 
 
 async def get_daily_briefing_fallback(note: str) -> dict:

@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import MarketRegimeCard from "@/components/MarketRegimeCard";
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
+import RadarNextDayFocusCard from "@/components/RadarNextDayFocusCard";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import { api } from "@/lib/api";
 import { buildPublicAuditSummary, type PublicAuditFields } from "@/lib/public-audit";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
+import {
+  reportErrorOnlyScreen,
+  reportHydrationRefetchSuccess,
+  reportInitialSsrSuccess,
+  reportPanelDegraded,
+} from "@/lib/route-observability";
 import type { OpportunityRadarResponse } from "@/lib/types";
 
 function toError(error: unknown): Error {
@@ -40,6 +47,11 @@ interface RadarPageClientProps {
 }
 
 export default function RadarPageClient({ initialData = null }: RadarPageClientProps) {
+  const routeKey = "/radar";
+  const reportedInitialRef = useRef(false);
+  const reportedErrorOnlyRef = useRef(false);
+  const reportedHydrationRef = useRef(false);
+  const reportedDegradedRef = useRef(false);
   const [market, setMarket] = useState<typeof MARKETS[number]>("KR");
   const [data, setData] = useState<RadarSnapshot | null>(initialData);
   const [lastUsableSnapshot, setLastUsableSnapshot] = useState<RadarSnapshot | null>(
@@ -54,6 +66,16 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
       setLastUsableSnapshot(data);
     }
   }, [data]);
+
+  useEffect(() => {
+    if (reportedInitialRef.current) {
+      return;
+    }
+    if (initialData || data) {
+      reportedInitialRef.current = true;
+      reportInitialSsrSuccess(routeKey, "radar_shell");
+    }
+  }, [data, initialData, routeKey]);
 
   useEffect(() => {
     if (reloadToken === 0 && market === "KR" && isUsableRadarSnapshot(initialData)) {
@@ -72,6 +94,27 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
       .finally(() => setLoading(false));
   }, [initialData, market, reloadToken]);
 
+  useEffect(() => {
+    if (!reportedHydrationRef.current && !loading && data) {
+      reportedHydrationRef.current = true;
+      reportHydrationRefetchSuccess(routeKey, isUsableRadarSnapshot(data) ? "radar_quick" : "radar_placeholder");
+    }
+    if (!reportedDegradedRef.current && !loading && error) {
+      reportedDegradedRef.current = true;
+      reportPanelDegraded(routeKey, "radar_board", error.message);
+    }
+  }, [data, error, loading, routeKey]);
+
+  useEffect(() => {
+    if (reportedErrorOnlyRef.current) {
+      return;
+    }
+    if (!loading && !data && !lastUsableSnapshot && !isPlaceholderRadarSnapshot(data) && error) {
+      reportedErrorOnlyRef.current = true;
+      reportErrorOnlyScreen(routeKey, "radar");
+    }
+  }, [data, error, lastUsableSnapshot, loading, routeKey]);
+
   const retryLoad = () => setReloadToken((value) => value + 1);
   const visibleData = isUsableRadarSnapshot(data) ? data : lastUsableSnapshot;
   const placeholderData = isPlaceholderRadarSnapshot(data) ? data : null;
@@ -79,41 +122,56 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   const auditSummary = buildPublicAuditSummary(activeAuditMeta, {
     defaultSummary: "시장 국면, 스캔 수, 표시 후보 수를 먼저 보여주고 상세 보드는 뒤이어 갱신합니다.",
   });
+  const nextDayFocus = visibleData?.next_day_focus ?? null;
   const placeholderUniverseSize = placeholderData?.universe_size ?? 0;
+  const radarHeaderDescription = visibleData
+    ? "대표 유니버스 기준으로 오늘 먼저 볼 후보와 다음 거래일 포커스를 같은 흐름에서 정리합니다."
+    : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다.";
 
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Opportunity Radar"
+        variant="compact"
+        eyebrow="시장 탐색"
         title="기회 레이더"
-        description={
-          visibleData
-            ? `금일 KRX ${visibleData.universe_size.toLocaleString("ko-KR")}종목 기반 / 1차 스캔 ${visibleData.total_scanned.toLocaleString("ko-KR")}종목 / 실시세 확보 ${Number(visibleData.quote_available_count ?? 0).toLocaleString("ko-KR")}종목 / 표시 후보 ${visibleData.opportunities.length.toLocaleString("ko-KR")}개`
-            : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다."
-        }
+        description={radarHeaderDescription}
         meta={
           <>
             <span className="info-chip">실행 후보 우선</span>
-            <span className="info-chip">시장 국면 반영</span>
+            {visibleData ? <span className="info-chip">대표 {visibleData.universe_size.toLocaleString("ko-KR")}개</span> : null}
             {visibleData ? <span className="info-chip">1차 스캔 {visibleData.total_scanned}개</span> : null}
+            {nextDayFocus ? (
+              <span className="info-chip">1일 포커스 {nextDayFocus.name}</span>
+            ) : null}
           </>
         }
-        actions={
+        actions={MARKETS.length > 1 ? (
           <div className="flex flex-wrap gap-2">
             {MARKETS.map((code) => (
               <button
                 key={code}
                 onClick={() => setMarket(code)}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  market === code ? "bg-accent text-white" : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
-                }`}
+                className={market === code ? "action-chip-primary" : "action-chip-secondary"}
               >
                 {code}
               </button>
             ))}
           </div>
-        }
+        ) : undefined}
       />
+
+      {visibleData && nextDayFocus ? (
+        <RadarNextDayFocusCard focus={nextDayFocus} />
+      ) : visibleData ? (
+        <WorkspaceStateCard
+          kind="partial"
+          eyebrow="다음 거래일 포커스 준비 중"
+          title="단기 추천은 상위 후보를 다시 계산한 뒤 이어집니다"
+          message="레이더 보드는 먼저 확인할 수 있고, 다음 거래일 전용 매수·목표·손절 기준은 정밀 후보 재평가가 끝나는 순서대로 채워집니다."
+          actionLabel="레이더 다시 불러오기"
+          onAction={retryLoad}
+        />
+      ) : null}
 
       {visibleData ? (
         <section className="card !p-5 space-y-4">
@@ -124,7 +182,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             </div>
             <PublicAuditStrip meta={activeAuditMeta} />
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="workspace-metric-grid">
             <div className="metric-card">
               <div className="text-xs text-text-secondary">시장 국면</div>
               <div className="mt-2 text-2xl font-semibold text-text">{visibleData.market_regime.label}</div>
@@ -159,10 +217,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             <PublicAuditStrip meta={placeholderData} />
           </div>
           <div className="workspace-grid-balanced">
-            <div className="rounded-[22px] border border-amber-500/20 bg-amber-500/5 px-4 py-4 text-sm leading-6 text-amber-700">
+            <div className="ui-panel-warning !px-4 !py-4 text-sm leading-6">
               최신 레이더는 이번 요청에서 바로 쓸 수 있는 후보 스냅샷을 만들지 못했습니다. 자동 장기 스캔이 계속 도는 상태를 기다리는 것이 아니라, 다시 불러오기 때 fresh quick 스냅샷과 캐시 재사용을 새로 시도하는 구조입니다.
             </div>
-            <div className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
+            <div className="section-slab-subtle !px-4 !py-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">현재 상태</div>
               <div className="mt-3 space-y-3 text-sm text-text-secondary">
                 <div>
@@ -171,7 +229,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
                     {placeholderUniverseSize > 0 ? `${placeholderUniverseSize.toLocaleString("ko-KR")}개 후보군` : "기본 후보군 준비 중"}
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-surface/70 px-3 py-3">
+                <div className="section-slab-muted !px-3 !py-3">
                   <div className="text-xs text-text-secondary">다음 동작</div>
                   <div className="mt-2 leading-6">
                     다시 불러오기를 누르거나 새로 열면 quick 후보 스냅샷을 새로 만들고, usable 후보가 생기면 그 즉시 후보 보드로 바뀝니다. 계속 같은 화면을 띄워 두는 것만으로 완료되지는 않습니다.
@@ -185,10 +243,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
 
       {placeholderData && visibleData ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="레이더 partial"
           title="최신 레이더가 아직 완전히 올라오지 않아 마지막 사용 가능 스냅샷을 유지합니다"
           message="대표 스냅샷과 audit 정보는 최신 상태로 갱신하고, 실제 후보 보드는 마지막으로 확인된 사용 가능 스냅샷으로 먼저 유지합니다."
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -196,10 +254,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
 
       {error && visibleData ? (
         <WorkspaceStateCard
+          kind="partial"
           eyebrow="다시 확인 필요"
           title="최신 레이더 계산이 잠시 지연되고 있습니다"
           message={getUserFacingErrorMessage(error, "이전 계산 결과를 먼저 보여주고 있습니다. 잠시 후 다시 시도해 주세요.")}
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -225,10 +283,10 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         </>
       ) : (
         <WorkspaceStateCard
+          kind="blocking"
           eyebrow="레이더 지연"
           title="기회 레이더를 아직 불러오지 못했습니다"
           message={getUserFacingErrorMessage(error, "레이더 계산이 길어지면 먼저 시장 국면만 보일 수 있습니다. 잠시 후 다시 시도해 주세요.")}
-          tone="warning"
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />

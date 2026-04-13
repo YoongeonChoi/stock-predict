@@ -1,11 +1,11 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from app.models.country import COUNTRY_REGISTRY
-from app.analysis.sector_analyzer import analyze_sector
-from app.services import archive_service
 from app.errors import SP_6001, SP_6002, SP_3002, SP_5002
+from app.utils.lazy_module import LazyModuleProxy
 
 router = APIRouter(prefix="/api", tags=["sector"])
+archive_service = LazyModuleProxy("app.services.archive_service")
 
 SECTOR_MAP = {
     "energy": "Energy",
@@ -20,6 +20,12 @@ SECTOR_MAP = {
     "utilities": "Utilities",
     "real_estate": "Real Estate",
 }
+
+
+async def analyze_sector(*args, **kwargs):
+    from app.analysis.sector_analyzer import analyze_sector as _analyze_sector
+
+    return await _analyze_sector(*args, **kwargs)
 
 
 @router.get("/country/{code}/sector/{sector_id}/report")

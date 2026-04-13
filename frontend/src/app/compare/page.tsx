@@ -3,10 +3,17 @@
 import { useState } from "react";
 
 import ErrorBanner from "@/components/ErrorBanner";
+import PageHeader from "@/components/PageHeader";
 import { api } from "@/lib/api";
-import { changeColor, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
+import { changeColor, cn, formatMarketCap, formatPct, formatPrice } from "@/lib/utils";
 
-const METRICS: { key: string; label: string; fmt?: "pct" | "ratio_pct" | "num" | "money" | "cap" }[] = [
+type CompareMetric = {
+  key: string;
+  label: string;
+  fmt?: "pct" | "ratio_pct" | "num" | "money" | "cap";
+};
+
+const METRICS: CompareMetric[] = [
   { key: "current_price", label: "현재가", fmt: "money" },
   { key: "change_pct", label: "등락률", fmt: "pct" },
   { key: "market_cap", label: "시가총액", fmt: "cap" },
@@ -24,7 +31,7 @@ function toError(error: unknown): Error {
   return new Error(typeof error === "string" ? error : "알 수 없는 오류가 발생했습니다.");
 }
 
-function fmtVal(value: unknown, fmt?: string, ticker?: string): string {
+function formatValue(value: unknown, fmt?: CompareMetric["fmt"], ticker?: string): string {
   if (value == null) return "없음";
   const number = Number(value);
   if (Number.isNaN(number)) return String(value);
@@ -35,8 +42,10 @@ function fmtVal(value: unknown, fmt?: string, ticker?: string): string {
   return number.toFixed(2);
 }
 
-function bestVal(results: any[], key: string): number | null {
-  const values = results.map((result) => result[key]).filter((value) => value != null && typeof value === "number");
+function bestValue(results: Array<Record<string, unknown>>, key: string): number | null {
+  const values = results
+    .map((result) => result[key])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (values.length === 0) return null;
   if (["pe_ratio", "beta", "pb_ratio"].includes(key)) return Math.min(...values);
   return Math.max(...values);
@@ -44,20 +53,22 @@ function bestVal(results: any[], key: string): number | null {
 
 export default function ComparePage() {
   const [input, setInput] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<Array<Record<string, any>>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   const handleCompare = async () => {
-    const tickers = input.split(",").map((ticker) => ticker.trim().toUpperCase()).filter(Boolean);
+    const tickers = input
+      .split(",")
+      .map((ticker) => ticker.trim().toUpperCase())
+      .filter(Boolean);
     if (tickers.length < 2) return;
     setLoading(true);
     setError(null);
     try {
       const data = await api.compare(tickers);
-      setResults(Array.isArray(data) ? data : []);
+      setResults(Array.isArray(data) ? (data as Array<Record<string, any>>) : []);
     } catch (caught) {
-      console.error(caught);
       setError(toError(caught));
     } finally {
       setLoading(false);
@@ -65,85 +76,162 @@ export default function ComparePage() {
   };
 
   const validResults = results.filter((result) => !result.error);
+  const failedResults = results.filter((result) => result.error);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">종목 비교</h1>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="시장 탐색"
+        title="종목 비교"
+        description="종목 2~4개 나란히 비교하면서 가격, 밸류에이션, 성장 지표, 종합 점수를 같은 축에서 한 번에 봅니다."
+        meta={
+          <>
+            <span className="status-token">2-4개 종목</span>
+            <span className="status-token">공통 지표 정렬</span>
+          </>
+        }
+      />
 
-      <div className="flex gap-3">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCompare()}
-          placeholder="비교할 티커를 쉼표로 입력하세요. 예: 005930, 000660, 035420"
-          className="flex-1 px-4 py-2 rounded-lg bg-surface border border-border text-sm focus:outline-none focus:border-accent"
-        />
-        <button onClick={handleCompare} disabled={loading} className="px-6 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:opacity-90 disabled:opacity-50">
-          {loading ? "불러오는 중..." : "비교"}
-        </button>
-      </div>
+      <section className="card !p-5 space-y-4">
+        <div className="section-heading">
+          <div>
+            <h2 className="section-title">비교할 종목 입력</h2>
+            <p className="section-copy">
+              쉼표로 구분해 입력하면 같은 축에서 바로 비교합니다. 예시: `005930, 000660, 035420`
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 md:flex-row">
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && handleCompare()}
+            placeholder="비교할 종목을 쉼표로 입력해 주세요"
+            className="ui-input flex-1"
+            aria-label="비교할 종목 입력"
+          />
+          <button onClick={handleCompare} disabled={loading} className="ui-button-primary px-6">
+            {loading ? "불러오는 중..." : "비교 시작"}
+          </button>
+        </div>
+      </section>
 
       {error ? <ErrorBanner error={error} onRetry={handleCompare} /> : null}
 
-      {results.length > 0 && results.some((result) => result.error) ? (
-        <div className="text-sm text-warning space-y-1">
-          {results.filter((result) => result.error).map((result) => (
-            <div key={result.ticker}>제외됨 {result.ticker}: {result.error}</div>
+      {failedResults.length > 0 ? (
+        <section className="ui-panel-warning !p-4 space-y-2 text-sm">
+          {failedResults.map((result) => (
+            <div key={result.ticker}>
+              제외됨 {result.ticker}: {result.error}
+            </div>
           ))}
-        </div>
+        </section>
       ) : null}
 
       {validResults.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-text-secondary border-b border-border">
-                <th className="pb-2 pr-4">항목</th>
-                {validResults.map((result) => (
-                  <th key={result.ticker} className="pb-2 text-right pr-4">
-                    <div className="font-bold text-text">{result.ticker}</div>
-                    <div className="text-xs font-normal">{result.name}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {METRICS.map((metric) => {
-                const best = bestVal(validResults, metric.key);
-                return (
-                  <tr key={metric.key} className="border-b border-border/30">
-                    <td className="py-2.5 pr-4 text-text-secondary">{metric.label}</td>
-                    {validResults.map((result) => {
-                      const value = result[metric.key];
-                      const isBest = value != null && value === best;
-                      return (
-                        <td key={result.ticker} className={`py-2.5 text-right pr-4 font-mono ${metric.key === "change_pct" ? changeColor(value ?? 0) : ""} ${isBest ? "font-bold text-accent" : ""}`}>
-                          {fmtVal(value, metric.fmt, result.ticker)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-              <tr className="border-t-2 border-border font-bold">
-                <td className="py-3 pr-4">종합 점수</td>
-                {validResults.map((result) => (
-                  <td key={result.ticker} className="py-3 text-right pr-4 text-lg">
-                    {result.score?.total?.toFixed(1) ?? "없음"}
-                    <span className="text-xs font-normal text-text-secondary"> / 100</span>
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <section className="card !p-5 space-y-4">
+          <div className="section-heading">
+            <div>
+              <h2 className="section-title">비교 결과</h2>
+              <p className="section-copy">
+                종목 2~4개 나란히 비교하면서 같은 지표를 오른쪽 정렬과 mono 숫자로 읽기 쉽게 정리했습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3 md:hidden">
+            {validResults.map((result) => (
+              <article key={result.ticker} className="ui-panel space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-text">{result.name}</div>
+                    <div className="mt-1 font-mono text-[0.8rem] text-text-secondary">{result.ticker}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">종합 점수</div>
+                    <div className="mt-1 font-mono text-lg font-semibold text-text">
+                      {result.score?.total?.toFixed(1) ?? "없음"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[0.9rem]">
+                  {METRICS.slice(0, 6).map((metric) => (
+                    <div key={`${result.ticker}-${metric.key}`}>
+                      <div className="text-[0.74rem] uppercase tracking-[0.14em] text-text-secondary">{metric.label}</div>
+                      <div
+                        className={cn(
+                          "mt-1 font-mono font-medium",
+                          metric.key === "change_pct" ? changeColor(Number(result[metric.key] ?? 0)) : "text-text",
+                        )}
+                      >
+                        {formatValue(result[metric.key], metric.fmt, result.ticker)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden md:block ui-table-shell">
+            <table>
+              <thead>
+                <tr className="border-b border-border/10 text-left text-text-secondary">
+                  <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em]">항목</th>
+                  {validResults.map((result) => (
+                    <th key={result.ticker} className="px-4 py-3 text-right">
+                      <div className="font-mono text-[0.9rem] font-semibold text-text">{result.ticker}</div>
+                      <div className="mt-1 text-xs font-normal text-text-secondary">{result.name}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {METRICS.map((metric) => {
+                  const best = bestValue(validResults, metric.key);
+                  return (
+                    <tr key={metric.key} className="border-b border-border/10 last:border-b-0">
+                      <td className="px-4 py-3 text-text-secondary">{metric.label}</td>
+                      {validResults.map((result) => {
+                        const value = result[metric.key];
+                        const isBest = value != null && value === best;
+                        return (
+                          <td
+                            key={result.ticker}
+                            className={cn(
+                              "px-4 py-3 text-right font-mono",
+                              metric.key === "change_pct" ? changeColor(Number(value ?? 0)) : "text-text",
+                              isBest ? "font-semibold text-accent" : "",
+                            )}
+                          >
+                            {formatValue(value, metric.fmt, result.ticker)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                <tr className="border-t border-text/15">
+                  <td className="px-4 py-4 font-semibold text-text">종합 점수</td>
+                  {validResults.map((result) => (
+                    <td key={result.ticker} className="px-4 py-4 text-right font-mono text-lg font-semibold text-text">
+                      {result.score?.total?.toFixed(1) ?? "없음"}
+                      <span className="ml-1 text-xs font-normal text-text-secondary">/ 100</span>
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       ) : null}
 
       {!loading && results.length === 0 && !error ? (
-        <div className="card text-center text-text-secondary py-12">
-          <p className="text-lg mb-2">2개에서 4개 종목까지 한 번에 비교할 수 있습니다</p>
-          <p className="text-sm">예시: 005930, 000660, 035420, 051910</p>
-        </div>
+        <section className="card !p-8 text-center">
+          <div className="font-semibold text-text">종목 2~4개 나란히 비교해 같은 기준으로 읽을 수 있습니다</div>
+          <div className="mt-2 text-sm text-text-secondary">예시: 005930, 000660, 035420, 051910</div>
+        </section>
       ) : null}
     </div>
   );

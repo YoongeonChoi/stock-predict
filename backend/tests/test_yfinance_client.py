@@ -46,7 +46,7 @@ class _FakeTicker:
         return pd.DataFrame()
 
 
-async def _passthrough_cache(_key, fetch, _ttl):
+async def _passthrough_cache(_key, fetch, _ttl, **kwargs):
     return await fetch()
 
 
@@ -158,6 +158,34 @@ class YFinanceClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info["prev_close"], 100.0)
         self.assertEqual(info["52w_high"], 123.4)
         self.assertEqual(info["52w_low"], 87.6)
+
+    async def test_get_index_quote_uses_versioned_cache_key_and_skips_zero_payload_caching(self):
+        history = pd.DataFrame(
+            {
+                "Open": [98.0, 100.0],
+                "High": [102.0, 104.0],
+                "Low": [97.0, 99.0],
+                "Close": [100.0, 101.5],
+                "Volume": [1_200_000, 1_400_000],
+            },
+            index=pd.to_datetime(["2026-03-20", "2026-03-23"]),
+        )
+        cache_get_or_fetch = AsyncMock(side_effect=_passthrough_cache)
+
+        with (
+            patch("app.data.yfinance_client.cache.get_or_fetch", new=cache_get_or_fetch),
+            patch("app.data.yfinance_client.yf.Ticker", side_effect=lambda ticker: _FakeTicker(ticker)),
+            patch("app.data.yfinance_client._history_sync", return_value=history),
+        ):
+            quote = await yfinance_client.get_index_quote("USDKRW=X")
+
+        key, _, _ = cache_get_or_fetch.await_args.args
+        should_cache = cache_get_or_fetch.await_args.kwargs["should_cache"]
+
+        self.assertTrue(key.startswith("index:v2:USDKRW=X:"))
+        self.assertGreater(quote["price"], 0.0)
+        self.assertFalse(should_cache({"price": 0.0, "prev_close": 0.0, "change_pct": 0.0}))
+        self.assertTrue(should_cache({"price": 1380.2, "prev_close": 1375.1, "change_pct": 0.37}))
 
     def test_completed_history_df_drops_unfinished_daily_bar(self):
         history = pd.DataFrame(

@@ -61,14 +61,14 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
 
   return (
     <div className="card">
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-semibold">다음 거래일 예측</h2>
           <p className="text-xs text-text-secondary mt-1">
             {forecast.reference_date} 종가 기준, {forecast.target_date} 예상 시나리오입니다.
           </p>
         </div>
-        <div className="text-right">
+        <div className="self-start text-left sm:text-right">
           <div className={`text-sm font-semibold tracking-wide ${directionTone}`}>
             {directionLabel(forecast.direction)}
           </div>
@@ -93,7 +93,7 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
         </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
         <div className="p-3 rounded-lg bg-border/40">
           <div className="text-[11px] text-text-secondary">기준가</div>
           <div className="font-bold">{formatPrice(forecast.reference_price, priceKey)}</div>
@@ -130,12 +130,12 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
 
             return (
               <div key={scenario.name} className="rounded-lg border border-border px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className="text-xs text-text-secondary">{scenarioLabel(scenario.name)} 시나리오</div>
                     <div className="font-bold mt-1">{formatPrice(scenario.price, priceKey)}</div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <div className="text-sm font-semibold">{scenario.probability.toFixed(1)}%</div>
                     <div className={`text-[11px] mt-1 ${changeColor(scenarioReturnPct)}`}>
                       {formatPct(scenarioReturnPct)}
@@ -180,9 +180,9 @@ export default function NextDayForecastCard({ forecast, assetLabel, priceKey }: 
 
         <div className="space-y-3">
           <div className="rounded-lg border border-border px-3 py-3">
-            <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs font-medium text-text-secondary">{assetLabel} 실행 해석</div>
-              <span className={`px-2 py-1 rounded-full text-[11px] font-medium ${execution.tone}`}>
+              <span className={`self-start px-2 py-1 rounded-full text-[11px] font-medium ${execution.tone}`}>
                 {execution.label}
               </span>
             </div>

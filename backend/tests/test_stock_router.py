@@ -1,8 +1,11 @@
 import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.analysis.stock_cache_keys import stock_detail_latest_cache_key, stock_detail_quick_cache_key
+from app.routers import stock as stock_router
 from tests.client_helpers import patched_client
 
 
@@ -59,6 +62,45 @@ def _cached_snapshot(*, partial: bool = False, fallback_reason: str | None = Non
 
 
 class StockRouterTests(unittest.TestCase):
+    def test_build_stock_success_response_defers_memory_trim_until_background_task(self):
+        payload = _cached_snapshot()
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.routers.stock._maybe_trim_public_route_memory") as trim,
+            patch("app.routers.stock.asyncio.create_task", side_effect=_capture_task) as create_task,
+        ):
+            response = stock_router._build_stock_success_response(payload, trim_reason="stock_detail")
+
+            trim.assert_not_called()
+            create_task.assert_called_once()
+            self.assertIsNone(response.background)
+
+        trim.assert_not_called()
+
+    def test_get_cached_stock_detail_without_refresh_uses_lightweight_cache(self):
+        cached = _cached_snapshot()
+
+        with patch("app.routers.stock.cache.get", new=AsyncMock(return_value=cached)) as cache_get:
+            result = asyncio.run(stock_router.get_cached_stock_detail("005930.KS"))
+
+        cache_get.assert_awaited_once_with(stock_detail_latest_cache_key("005930.KS"))
+        self.assertEqual(result["ticker"], "005930.KS")
+        self.assertIsNot(result, cached)
+
+    def test_get_cached_quick_stock_detail_uses_lightweight_cache(self):
+        cached = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with patch("app.routers.stock.cache.get", new=AsyncMock(return_value=cached)) as cache_get:
+            result = asyncio.run(stock_router.get_cached_quick_stock_detail("005930.KS"))
+
+        cache_get.assert_awaited_once_with(stock_detail_quick_cache_key("005930.KS"))
+        self.assertEqual(result["fallback_reason"], "stock_quick_detail")
+        self.assertIsNot(result, cached)
+
     def test_stock_detail_returns_cached_full_immediately_when_available(self):
         cached_full = _cached_snapshot()
 
@@ -127,7 +169,143 @@ class StockRouterTests(unittest.TestCase):
         self.assertIn("SP-5018", payload["errors"])
         self.assertEqual(payload["request_trace"]["served_state"], "degraded")
 
-    def test_stock_detail_prefer_full_uses_cached_quick_as_fallback_without_background_refresh(self):
+    def test_stock_detail_prefer_full_returns_cached_quick_partial_when_upgrade_grace_times_out(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_full(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return _cached_snapshot(partial=False, fallback_reason=None)
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
+            patch("app.routers.stock.STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)) as analyze_stock,
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(return_value=True)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertIn("SP-5018", payload["errors"])
+        analyze_stock.assert_awaited()
+        schedule_refresh.assert_not_called()
+
+    def test_stock_detail_prefer_full_skips_inline_full_analysis_when_pressure_is_elevated(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.6}),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(return_value=True)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        schedule_refresh.assert_not_called()
+
+    def test_stock_detail_cached_full_skips_inline_prediction_capture(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=_cached_snapshot())),
+            patch("app.routers.stock.prediction_capture_service.capture_report_predictions", new=AsyncMock(side_effect=AssertionError("cached full response should not capture inline"))),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["partial"])
+
+    def test_stock_detail_quick_path_skips_inline_prediction_capture(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service.capture_report_predictions", new=AsyncMock(side_effect=AssertionError("quick response should not capture inline"))),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+
+    def test_stock_detail_skips_slow_cache_lookups_and_uses_quick_path(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_cached(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return _cached_snapshot()
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(side_effect=_slow_cached)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+
+    def test_stock_detail_cache_lookup_timeout_does_not_wait_for_cancellation_cleanup(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_cached(*args, **kwargs):
+            try:
+                await asyncio.sleep(0.2)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+            return _cached_snapshot()
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(side_effect=_slow_cached)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+            patch("app.routers.stock._try_schedule_distributional_capture", new=AsyncMock(return_value=False)),
+        ):
+            with patched_client() as client:
+                started = time.perf_counter()
+                response = client.get("/api/stock/005930/detail")
+                elapsed = time.perf_counter() - started
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.05)
+
+    def test_stock_detail_prefer_full_records_full_trace_when_cached_quick_upgrades_successfully(self):
         quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
         full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)
         full_snapshot["generated_at"] = "2026-03-30T08:15:00+00:00"
@@ -137,6 +315,116 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
             patch("app.routers.stock.get_cached_stock_detail_with_source", new=AsyncMock(return_value=(None, "miss"))),
             patch("app.routers.stock.get_cached_quick_stock_detail_with_source", new=AsyncMock(return_value=(quick_snapshot, "memory_hit"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(return_value=full_snapshot)),
+            patch("app.routers.stock._record_stock_detail_trace") as record_trace,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["partial"])
+        self.assertIsNone(payload["fallback_reason"])
+        record_trace.assert_called_once()
+        self.assertEqual(record_trace.call_args.kwargs["request_phase"], "full")
+        self.assertEqual(record_trace.call_args.kwargs["cache_state"], "sqlite_hit")
+
+    def test_stock_detail_prefer_full_returns_fresh_quick_partial_without_waiting_for_full(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_full(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return _cached_snapshot(partial=False, fallback_reason=None)
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
+            patch("app.routers.stock.STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)) as analyze_stock,
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertIn("SP-5018", payload["errors"])
+        analyze_stock.assert_awaited()
+        schedule_refresh.assert_not_called()
+
+    def test_stock_detail_quick_path_timeboxes_distributional_capture_scheduling(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_schedule(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return True
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(side_effect=_slow_schedule)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            started_at = time.perf_counter()
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+            elapsed = time.perf_counter() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.08)
+
+    def test_stock_detail_prefer_full_timeout_does_not_wait_for_cancellation_cleanup(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        async def _slow_full(*args, **kwargs):
+            try:
+                await asyncio.sleep(0.2)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+                raise
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=False)),
+            patch("app.routers.stock.STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)),
+            patch("app.routers.stock.prediction_capture_service.schedule_stock_distributional_capture", new=AsyncMock(return_value=True)),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()),
+        ):
+            started_at = time.perf_counter()
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+            elapsed = time.perf_counter() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertLess(elapsed, 0.08)
+
+    def test_stock_detail_prefer_full_returns_full_when_quick_snapshot_is_unavailable(self):
+        full_snapshot = _cached_snapshot(partial=False, fallback_reason=None)
+        full_snapshot["generated_at"] = "2026-03-30T08:15:00+00:00"
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(return_value=full_snapshot)),
             patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
         ):
@@ -151,21 +439,26 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(payload["fallback_tier"], "full")
         self.assertEqual(payload["request_trace"]["request_phase"], "full")
 
-    def test_stock_detail_prefer_full_returns_quick_partial_when_full_times_out(self):
-        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
-
-        async def _slow_full(*args, **kwargs):
-            await asyncio.sleep(0.05)
-            return _cached_snapshot(partial=False, fallback_reason=None)
-
+    def test_stock_detail_returns_memory_guard_shell_without_invoking_heavy_builders(self):
         with (
             patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+<<<<<<< HEAD
             patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False)),
             patch("app.routers.stock.STOCK_DETAIL_INLINE_UPGRADE_TIMEOUT_SECONDS", 0.01),
             patch("app.routers.stock.get_cached_stock_detail_with_source", new=AsyncMock(return_value=(None, "miss"))),
             patch("app.routers.stock.get_cached_quick_stock_detail_with_source", new=AsyncMock(return_value=(quick_snapshot, "memory_hit"))),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)),
             patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock()) as schedule_refresh,
+=======
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+>>>>>>> main
         ):
             with patched_client() as client:
                 response = client.get("/api/stock/005930/detail?prefer_full=true")
@@ -173,13 +466,189 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["partial"])
+<<<<<<< HEAD
         self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
         self.assertIn("SP-5018", payload["errors"])
         schedule_refresh.assert_not_called()
         self.assertEqual(payload["fallback_tier"], "cached_quick")
         self.assertEqual(payload["request_trace"]["request_phase"], "quick")
+=======
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        self.assertEqual(payload["name"], "005930.KS")
+        self.assertEqual(payload["current_price"], 0.0)
+        self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
+>>>>>>> main
 
-    def test_stock_detail_returns_500_when_quick_and_full_fail_without_cache(self):
+    def test_stock_detail_cold_import_guard_returns_memory_shell_even_at_low_pressure(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+
+    def test_stock_detail_cold_import_guard_skips_cache_lookups_for_non_prefer_full(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(side_effect=AssertionError("full cache lookup should be skipped"))),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick cache lookup should be skipped"))),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.ticker_resolver_service.resolve_ticker", side_effect=AssertionError("resolver should be skipped")),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        self.assertEqual(payload["ticker"], "005930.KS")
+
+    def test_stock_detail_safe_mode_cache_miss_serves_memory_guard_and_schedules_quick_warm(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=True),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should not block the response path"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock._schedule_stock_detail_quick_warm", new=MagicMock(return_value=True)) as schedule_quick_warm,
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        schedule_quick_warm.assert_called_once_with("005930.KS")
+
+    def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.6}),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
+
+    def test_stock_detail_background_refresh_skips_when_stock_analysis_module_is_cold(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
+
+    def test_stock_detail_background_refresh_skips_in_safe_mode_even_when_pressure_is_low(self):
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=True),
+            patch("app.routers.stock.asyncio.create_task", side_effect=AssertionError("background refresh should be skipped")),
+        ):
+            result = stock_router._schedule_stock_detail_refresh("005930.KS")
+
+        self.assertFalse(result)
+
+    def test_stock_detail_safe_mode_does_not_upgrade_quick_snapshot_to_full_even_when_pressure_is_low(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=True),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+
+    def test_stock_detail_safe_mode_skips_distributional_capture_even_for_quick_partial(self):
+        quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=quick_snapshot)),
+            patch("app.routers.stock.prediction_capture_service", new=SimpleNamespace(schedule_stock_distributional_capture=AsyncMock(side_effect=AssertionError("distributional capture should be skipped in safe mode")))),
+            patch("app.routers.stock._schedule_stock_detail_refresh", new=MagicMock(return_value=False)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_quick_detail")
+        self.assertEqual(payload["errors"], [])
+
+    def test_stock_detail_memory_guard_shell_does_not_wait_for_slow_cache_write(self):
+        async def _slow_cache_set(*args, **kwargs):
+            await asyncio.sleep(0.2)
+
+        cache_set = AsyncMock(side_effect=_slow_cache_set)
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=False, startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.86}),
+            patch("app.routers.stock.STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=cache_set),
+        ):
+            started_at = time.perf_counter()
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail?prefer_full=true")
+            elapsed = time.perf_counter() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        self.assertLess(elapsed, 0.08)
+        self.assertFalse(cache_set.await_args.kwargs["persist"])
+
+    def test_stock_detail_returns_minimal_shell_when_quick_and_full_fail_without_cache(self):
         with (
             patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
             patch("app.routers.stock.get_cached_stock_detail_with_source", new=AsyncMock(return_value=(None, "miss"))),
@@ -187,14 +656,43 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=RuntimeError("boom"))),
         ):
             with patched_client() as client:
                 response = client.get("/api/stock/005930/detail")
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["error_code"], "SP-3003")
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
+        self.assertIn("SP-3003", payload["errors"])
+        self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
+
+    def test_stock_detail_returns_minimal_shell_when_timeout_and_no_cache_available(self):
+        async def _slow_full(_ticker):
+            await asyncio.sleep(0.05)
+            return _cached_snapshot()
+
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", return_value="005930.KS"),
+            patch("app.routers.stock.STOCK_DETAIL_TIMEOUT_SECONDS", 0.01),
+            patch("app.routers.stock.get_cached_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
+            patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
+            patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=_slow_full)),
+        ):
+            with patched_client() as client:
+                response = client.get("/api/stock/005930/detail")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
+        self.assertIn("SP-5018", payload["errors"])
 
     def test_stock_detail_prefer_full_returns_fresh_quick_snapshot_before_full_when_no_cache(self):
         quick_snapshot = _cached_snapshot(partial=True, fallback_reason="stock_quick_detail")

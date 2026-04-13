@@ -11,12 +11,12 @@ interface Props {
 export default function HistoricalPatternCard({ forecast, priceKey }: Props) {
   return (
     <div className="card">
-      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="font-semibold">과거 유사 국면 예측</h2>
           <p className="text-sm text-text-secondary mt-1 leading-relaxed">{forecast.summary}</p>
         </div>
-        <div className="text-right">
+        <div className="self-start text-left sm:text-right">
           <div className="text-xs text-text-secondary">모델</div>
           <div className="font-mono text-sm">{forecast.model_version}</div>
           <div className="text-xs text-text-secondary mt-1">유사 국면 {forecast.analog_count}건</div>
@@ -71,12 +71,12 @@ export default function HistoricalPatternCard({ forecast, priceKey }: Props) {
       </div>
 
       <div className="rounded-xl border border-border p-4">
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="font-medium">가장 비슷했던 과거 장면</div>
             <div className="text-xs text-text-secondary mt-1">현재와 유사한 국면의 이후 수익률을 빠르게 비교할 수 있습니다.</div>
           </div>
-          <div className="text-xs text-text-secondary">현재 셋업: {forecast.feature_regime}</div>
+          <div className="self-start text-xs text-text-secondary">현재 셋업: {forecast.feature_regime}</div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
           {forecast.analog_cases.map((item) => (
