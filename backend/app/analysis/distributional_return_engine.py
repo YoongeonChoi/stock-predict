@@ -239,6 +239,12 @@ async def build_structured_event_context(
     filings: list[dict],
     reference_date: str,
 ) -> EventFeatures:
+    """LLM 구조화를 시도하고 실패 시 heuristic fallback으로 이벤트 특징을 생성한다.
+
+    Returns:
+        EventFeatures -- sentiment, surprise, uncertainty 등을 포함하는 이벤트 벡터.
+        LLM 호출 실패 시에도 heuristic 결과를 반환하므로 None이 아니다.
+    """
     heuristic = build_heuristic_event_context(
         news_items=news_items,
         filings=filings,
@@ -374,6 +380,14 @@ def build_distributional_forecast(
     horizons: tuple[int, ...] = DEFAULT_HORIZONS,
     asset_type: str = "stock",
 ) -> DistributionalForecast | None:
+    """가격 시계열에서 horizon별 조건부 수익률 분포를 생성한다.
+
+    regime gate, Student-t mixture 샘플링, learned fusion, graph context를 거쳐
+    각 horizon의 분위수(q10~q90), 방향 확률(p_up/p_flat/p_down), 기대수익률을 산출한다.
+
+    Returns:
+        DistributionalForecast | None -- 가격 이력이 30일 미만이면 None.
+    """
     prices = _to_frame(price_history)
     if prices.empty or len(prices) < 30:
         return None

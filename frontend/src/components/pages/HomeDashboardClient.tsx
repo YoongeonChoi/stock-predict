@@ -7,8 +7,10 @@ import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
 import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
-import StockHeatmap from "@/components/charts/StockHeatmap";
+import dynamic from "next/dynamic";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
+
+const StockHeatmap = dynamic(() => import("@/components/charts/StockHeatmap"), { ssr: false });
 import {
   buildPublicAuditSummary,
   formatAuditDate,
@@ -132,187 +134,6 @@ export default function HomeDashboardClient({
   initialMovers = null,
   initialRadar = null,
   initialCountryReport = null,
-<<<<<<< HEAD
-}: HomeDashboardClientProps) {
-  const initializedRef = useRef(false);
-  const workspaceRequestIdRef = useRef(0);
-  const [countries, setCountries] = useState<CountryListItem[]>(initialCountries);
-  const [indicators, setIndicators] = useState<MarketIndicator[]>(initialIndicators);
-  const [briefing, setBriefing] = useState<DailyBriefingResponse | null>(initialBriefing);
-  const [selectedCountry, setSelectedCountry] = useState("KR");
-  const [heatmapData, setHeatmapData] = useState<(HeatmapData & PublicAuditFields) | null>(initialHeatmap);
-  const [movers, setMovers] = useState<(MarketMovers & PublicAuditFields) | null>(initialMovers);
-  const [radarData, setRadarData] = useState<(OpportunityRadarResponse & PublicAuditFields) | null>(initialRadar);
-  const [countryReport, setCountryReport] = useState<(CountryReport & PublicAuditFields) | null>(initialCountryReport);
-  const [loading, setLoading] = useState(initialCountries.length === 0 && initialIndicators.length === 0);
-  const [briefingLoading, setBriefingLoading] = useState(!initialBriefing);
-  const [heatmapLoading, setHeatmapLoading] = useState(!initialHeatmap);
-  const [moversLoading, setMoversLoading] = useState(!initialMovers);
-  const [radarLoading, setRadarLoading] = useState(!initialRadar);
-  const [reportLoading, setReportLoading] = useState(!initialCountryReport);
-  const [briefingError, setBriefingError] = useState<string | null>(null);
-  const [heatmapError, setHeatmapError] = useState<string | null>(null);
-  const [moversError, setMoversError] = useState<string | null>(null);
-  const [radarError, setRadarError] = useState<string | null>(null);
-  const [reportError, setReportError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState(
-    toInitialClock(initialCountryReport?.generated_at || initialRadar?.generated_at || initialBriefing?.generated_at),
-  );
-
-  const loadBriefing = async () => {
-    setBriefingLoading(true);
-    setBriefingError(null);
-    try {
-      const result = await api.getDailyBriefing({ timeoutMs: BRIEFING_TIMEOUT_MS });
-      setBriefing(result);
-    } catch (error) {
-      console.error(error);
-      setBriefingError(
-        describeLoadError(error, "브리핑 계산이 길어져 오늘의 포커스를 아직 표시하지 못했습니다."),
-      );
-    } finally {
-      setBriefingLoading(false);
-    }
-  };
-
-  const loadCountryWorkspace = async (code: string) => {
-    const requestId = workspaceRequestIdRef.current + 1;
-    workspaceRequestIdRef.current = requestId;
-
-    const syncIfCurrent = (callback: () => void) => {
-      if (workspaceRequestIdRef.current === requestId) {
-        callback();
-      }
-    };
-
-    setSelectedCountry(code);
-    setHeatmapLoading(true);
-    setMoversLoading(true);
-    setRadarLoading(true);
-    setReportLoading(true);
-    setHeatmapError(null);
-    setMoversError(null);
-    setRadarError(null);
-    setReportError(null);
-
-    const heatmapTask = (async () => {
-      try {
-        const result = await api.getHeatmap(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
-        syncIfCurrent(() => {
-          setHeatmapData(result);
-          setHeatmapError(null);
-        });
-      } catch (error) {
-        console.error(error);
-        syncIfCurrent(() => {
-          setHeatmapError(
-            describeLoadError(error, "히트맵 계산이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."),
-          );
-        });
-      } finally {
-        syncIfCurrent(() => setHeatmapLoading(false));
-      }
-    })();
-
-    const moversTask = (async () => {
-      try {
-        const result = await api.getMarketMovers(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
-        syncIfCurrent(() => {
-          setMovers(result);
-          setMoversError(null);
-        });
-      } catch (error) {
-        console.error(error);
-        syncIfCurrent(() => {
-          setMoversError(
-            describeLoadError(error, "상승·하락 상위 집계가 지연되고 있습니다. 잠시 후 다시 시도해 주세요."),
-          );
-        });
-      } finally {
-        syncIfCurrent(() => setMoversLoading(false));
-      }
-    })();
-
-    const radarTask = (async () => {
-      try {
-        const result = await api.getMarketOpportunities(code, HOME_RADAR_LIMIT, { timeoutMs: WORKSPACE_TIMEOUT_MS });
-        syncIfCurrent(() => {
-          setRadarData(result);
-          setRadarError(null);
-        });
-      } catch (error) {
-        console.error(error);
-        syncIfCurrent(() => {
-          setRadarError(
-            describeLoadError(error, "강한 셋업 계산이 길어져 이번에는 목록을 비워 두었습니다."),
-          );
-        });
-      } finally {
-        syncIfCurrent(() => setRadarLoading(false));
-      }
-    })();
-
-    const reportTask = (async () => {
-      try {
-        const result = await api.getCountryReport(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
-        syncIfCurrent(() => {
-          setCountryReport(result);
-          setReportError(null);
-        });
-      } catch (error) {
-        console.error(error);
-        syncIfCurrent(() => {
-          setReportError(
-            describeLoadError(error, "시장 요약 리포트 계산이 길어져 이번에는 요약만 표시합니다."),
-          );
-        });
-      } finally {
-        syncIfCurrent(() => setReportLoading(false));
-      }
-    })();
-
-    await Promise.allSettled([heatmapTask, moversTask, radarTask, reportTask]);
-    syncIfCurrent(() => setLastUpdated(new Date().toLocaleTimeString("ko-KR")));
-  };
-
-  useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    const bootstrap = async () => {
-      setLoading(true);
-      if (initialCountries.length === 0 || initialIndicators.length === 0) {
-        const [countryResult, indicatorResult] = await Promise.allSettled([
-          api.getCountries(),
-          api.getMarketIndicators(),
-        ]);
-
-        if (countryResult.status === "fulfilled") setCountries(countryResult.value);
-        else console.error(countryResult.reason);
-
-        if (indicatorResult.status === "fulfilled") setIndicators(indicatorResult.value);
-        else console.error(indicatorResult.reason);
-      }
-
-      if (!initialBriefing) {
-        void loadBriefing();
-      } else {
-        setBriefingLoading(false);
-      }
-      if (!initialHeatmap || !initialMovers || !initialRadar || !initialCountryReport) {
-        void loadCountryWorkspace("KR");
-      } else {
-        setHeatmapLoading(false);
-        setMoversLoading(false);
-        setRadarLoading(false);
-        setReportLoading(false);
-      }
-      setLoading(false);
-    };
-
-    bootstrap();
-  }, [
-=======
 }: HomeDashboardInitialData) {
   const {
     countries,
@@ -340,7 +161,6 @@ export default function HomeDashboardClient({
   } = useHomeDashboardViewModel({
     initialCountries,
     initialIndicators,
->>>>>>> main
     initialBriefing,
     initialHeatmap,
     initialMovers,

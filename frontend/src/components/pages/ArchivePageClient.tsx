@@ -246,25 +246,6 @@ export default function ArchivePageClient({
               한국은행, KDI, Federal Reserve, ECB, BOJ와 추가 해외 정책·연구 리포트를 함께 모읍니다. 전체 보기로 표본을 넓히고, 필요하면 지역별로 다시 좁힐 수 있습니다.
             </p>
           </div>
-<<<<<<< HEAD
-<<<<<<< HEAD
-          <div className="flex flex-wrap gap-2">
-            {RESEARCH_REGIONS.map((region) => (
-              <button
-                key={region}
-                onClick={() => setResearchRegion(region)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                  researchRegion === region
-                    ? "bg-accent text-white"
-                    : "border border-border bg-surface/60 text-text-secondary hover:border-accent/40 hover:text-text"
-                }`}
-              >
-                {REGION_LABELS[region]}
-              </button>
-            ))}
-=======
-=======
->>>>>>> main
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <div className="ui-segmented-control-responsive">
               {RESEARCH_REGIONS.map((region) => (
@@ -278,25 +259,10 @@ export default function ArchivePageClient({
                     .filter(Boolean)
                     .join(" ")}
                 >
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> dev-local-20260413
                   {RESEARCH_REGION_LABELS[region]}
                 </button>
               ))}
             </div>
->>>>>>> 373595e (feat: expand archive and calendar coverage)
-=======
-                  {REGION_LABELS[region]}
-=======
-                  {RESEARCH_REGION_LABELS[region]}
->>>>>>> dev-local-20260413
-                </button>
-              ))}
-            </div>
->>>>>>> main
             <button
               onClick={handleResearchRefresh}
               disabled={refreshingResearch}

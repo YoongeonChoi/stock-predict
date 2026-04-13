@@ -175,25 +175,7 @@ async def get(key: str):
     return await db.cache_get(key)
 
 
-<<<<<<< HEAD
-async def get_with_source(key: str) -> tuple[Any, str]:
-    cached = _memory_get(key)
-    if cached is not None:
-        return cached, "memory_hit"
-
-    # Reuse the public cache getter contract so callers that patch/cache-shim
-    # `cache.get()` keep working without having to know about source tracking.
-    cached = await get(key)
-    if cached is not None:
-        return cached, "sqlite_hit"
-
-    return None, "miss"
-
-
-async def set(key: str, value, ttl: int | None = None):
-=======
 async def set(key: str, value, ttl: int | None = None, *, persist: bool = True):
->>>>>>> main
     ttl = ttl or get_settings().cache_ttl_price
     _memory_set(key, value, ttl)
     if not persist:

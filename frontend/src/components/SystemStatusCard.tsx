@@ -30,12 +30,8 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
   const criticalSources = diagnostics.data_sources.slice(0, 4);
   const calibrationProfiles = diagnostics.confidence_calibration_profiles ?? [];
   const learnedFusionStatus = diagnostics.learned_fusion_status;
-<<<<<<< HEAD
-  const routeStability = (diagnostics.route_stability ?? []).slice(0, 4);
-=======
   const routeStabilityRows = diagnostics.route_stability_summary ?? [];
   const firstUsableMetrics = diagnostics.first_usable_metrics;
->>>>>>> main
   const versionsAligned = frontendVersion === diagnostics.version;
   const backendStartedAtLabel = diagnostics.started_at
     ? new Date(diagnostics.started_at).toLocaleString("ko-KR")

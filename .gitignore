@@ -56,5 +56,6 @@ coverage/
 next-env.d.ts
 
 # Verification artifacts
-output/browser-smoke/
+output/
 .vercel
+.verify.lock

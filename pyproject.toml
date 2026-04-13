@@ -1,0 +1,44 @@
+[project]
+name = "stock-predict"
+version = "2.62.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 140
+src = ["backend"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "B008",    # do not perform function calls in argument defaults (FastAPI Depends)
+    "B905",    # zip without strict
+    "SIM108",  # ternary operator
+    "RUF012",  # mutable class variables
+    "UP007",   # Optional[X] vs X | None (keep for readability)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["B", "SIM"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/data/*_client.py", "app/utils/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 40

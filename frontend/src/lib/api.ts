@@ -1,28 +1,3 @@
-<<<<<<< HEAD
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import type { RequestTrace } from "@/lib/types";
-
-const API = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
-export const AUTH_REQUIRED_EVENT = "stockpredict:auth-required";
-
-export function apiPath(path: string): string {
-  return API ? `${API}${path}` : path;
-}
-
-export interface ApiErrorInfo {
-  error_code: string;
-  message: string;
-  detail?: string;
-}
-
-export interface RequestOptions extends RequestInit {
-  timeoutMs?: number;
-}
-
-export interface StockDetailRequestOptions extends RequestOptions {
-  preferFull?: boolean;
-}
-=======
 import { apiPath, del, get, post, put, request } from "@/lib/api/client";
 import { accountApi } from "@/lib/api/account";
 import { marketApi } from "@/lib/api/market";
@@ -40,7 +15,6 @@ export {
 } from "@/lib/api/errors";
 export type { ApiErrorInfo, AuthRequiredEventDetail } from "@/lib/api/errors";
 export type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
->>>>>>> main
 
 export interface AccountProfile {
   user_id: string;

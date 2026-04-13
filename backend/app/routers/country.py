@@ -1,31 +1,15 @@
 import asyncio
 import logging
-<<<<<<< HEAD
-import time
-from datetime import datetime
-=======
 import math
 import sys
 import time
 from collections.abc import Awaitable
 from typing import Any
 from datetime import datetime, timezone
->>>>>>> main
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
-<<<<<<< HEAD
-from app.models.country import COUNTRY_REGISTRY
-from app.data import kr_market_quote_client, yfinance_client
-from app.analysis.country_analyzer import analyze_country
-from app.analysis.forecast_engine import forecast_index
-from app.scoring.country_scorer import build_country_score
-from app.scoring.fear_greed import calculate_fear_greed
-from app.runtime import get_or_create_background_job, record_route_observation
-from app.services import archive_service, export_service, market_service
-=======
 from app.config import get_settings
->>>>>>> main
 from app.errors import SP_6001, SP_3001, SP_3004, SP_5002, SP_5004, SP_2005, SP_5018
 from app.models.country import COUNTRY_REGISTRY
 from app.runtime import get_or_create_background_job, get_runtime_state
@@ -394,59 +378,6 @@ def _with_opportunity_partial(
     return response
 
 
-<<<<<<< HEAD
-def _build_opportunity_request_trace(
-    *,
-    started_at: float,
-    request_phase: str,
-    cache_state: str,
-    timeout_budget_ms: int | None,
-    fallback_reason: str | None,
-    served_state: str,
-    upstream_source: str,
-) -> dict:
-    return {
-        "request_phase": request_phase,
-        "cache_state": cache_state,
-        "cold_start_suspected": cache_state == "miss",
-        "upstream_source": upstream_source,
-        "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-        "timeout_budget_ms": timeout_budget_ms,
-        "fallback_reason": fallback_reason,
-        "served_state": served_state,
-    }
-
-
-def _annotate_opportunity_response(
-    payload: dict,
-    *,
-    started_at: float,
-    request_phase: str,
-    cache_state: str,
-    fallback_tier: str,
-    timeout_budget_ms: int | None,
-    upstream_source: str,
-    fallback_reason: str | None = None,
-) -> dict:
-    response = dict(payload)
-    effective_fallback_reason = fallback_reason if fallback_reason is not None else response.get("fallback_reason")
-    if effective_fallback_reason:
-        response["fallback_reason"] = effective_fallback_reason
-    response["fallback_tier"] = fallback_tier
-    served_state = "fresh"
-    if fallback_tier in {"cached_quick", "cached"}:
-        served_state = "stale"
-    elif response.get("partial"):
-        served_state = "degraded" if not _is_usable_opportunity_payload(response) else "partial"
-    response["request_trace"] = _build_opportunity_request_trace(
-        started_at=started_at,
-        request_phase=request_phase,
-        cache_state=cache_state,
-        timeout_budget_ms=timeout_budget_ms,
-        fallback_reason=effective_fallback_reason,
-        served_state=served_state,
-        upstream_source=upstream_source,
-=======
 def _record_market_opportunities_trace(
     started_at: float,
     *,
@@ -496,38 +427,10 @@ def _build_traced_opportunity_partial(
         cache_state=cache_state,
         payload=response,
         served_state=served_state,
->>>>>>> main
     )
     return response
 
 
-<<<<<<< HEAD
-def _record_opportunity_response(payload: dict, *, success: bool = True) -> dict:
-    record_route_observation("market_opportunities", payload.get("request_trace"), success=success)
-    return payload
-
-
-async def _get_cached_full_opportunities(code: str, limit: int) -> tuple[dict | None, str]:
-    cached, cache_source = await market_service.get_cached_market_opportunities_with_source(code, limit)
-    if cached:
-        return cached, cache_source
-    # Keep backward-compatible behavior for wrapper-level tests and any call sites
-    # that patch the plain cached getter instead of the source-aware helper.
-    cached = await market_service.get_cached_market_opportunities(code, limit)
-    if cached:
-        return cached, "sqlite_hit"
-    return None, "miss"
-
-
-async def _get_cached_quick_opportunities(code: str, limit: int) -> tuple[dict | None, str]:
-    cached, cache_source = await market_service.get_cached_market_opportunities_quick_with_source(code, limit)
-    if cached:
-        return cached, cache_source
-    cached = await market_service.get_cached_market_opportunities_quick(code, limit)
-    if cached:
-        return cached, "sqlite_hit"
-    return None, "miss"
-=======
 def _allow_public_background_refresh() -> bool:
     return not settings.startup_memory_safe_mode
 
@@ -897,7 +800,6 @@ async def _timed_country_lookup(job: Awaitable[Any], *, timeout_seconds: float, 
     except Exception as exc:
         logging.warning("%s failed: %s", label, exc, exc_info=True)
         return None
->>>>>>> main
 
 
 def _is_usable_opportunity_payload(payload: dict | None) -> bool:
@@ -2132,40 +2034,6 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         err.log()
         return JSONResponse(status_code=404, content=err.to_dict())
 
-<<<<<<< HEAD
-    cached_full, cached_full_source = await _get_cached_full_opportunities(code, limit)
-    if _is_usable_opportunity_payload(cached_full):
-        return _record_opportunity_response(
-            _annotate_opportunity_response(
-                cached_full,
-                started_at=started_at,
-                request_phase="full",
-                cache_state=cached_full_source,
-                fallback_tier="full",
-                timeout_budget_ms=0,
-                upstream_source="market_opportunities_cache",
-            )
-        )
-
-    cached_quick, cached_quick_source = await _get_cached_quick_opportunities(code, limit)
-    if _is_usable_opportunity_payload(cached_quick):
-        _spawn_opportunity_refresh(code, limit)
-        return _record_opportunity_response(
-            _annotate_opportunity_response(
-                _with_opportunity_partial(
-                    cached_quick,
-                    fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
-                    fallback_tier="cached_quick",
-                ),
-                started_at=started_at,
-                request_phase="quick",
-                cache_state=cached_quick_source,
-                fallback_tier="cached_quick",
-                timeout_budget_ms=0,
-                upstream_source="market_opportunities_cached_quick",
-            )
-=======
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
@@ -2264,12 +2132,15 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 f"{_opportunity_refresh_followup_sentence()}"
             ),
             fallback_tier="cached_quick",
->>>>>>> main
         )
         _maybe_trim_public_route_memory("market_opportunities")
         return payload
 
+    quick_label = f"Opportunity quick fallback for {code}"
     quick_task = asyncio.create_task(market_service.get_market_opportunities_quick(code, limit))
+    quick_task.add_done_callback(
+        lambda task, label=quick_label: _log_background_completion(task, label=label)
+    )
     try:
         quick_response = await asyncio.wait_for(
             quick_task,
@@ -2277,22 +2148,6 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
         )
         if _is_usable_opportunity_payload(quick_response):
             _spawn_opportunity_refresh(code, limit)
-<<<<<<< HEAD
-            return _record_opportunity_response(
-                _annotate_opportunity_response(
-                    _with_opportunity_partial(
-                        quick_response,
-                        fallback_reason="opportunity_quick_response",
-                        note="이번 응답에서는 1차 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
-                    ),
-                    started_at=started_at,
-                    request_phase="quick",
-                    cache_state="miss",
-                    fallback_tier="quick",
-                    timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
-                    upstream_source="market_opportunities_quick_build",
-                )
-=======
             await _capture_opportunity_payload(code, quick_response)
             payload = _build_traced_opportunity_partial(
                 started_at,
@@ -2304,7 +2159,6 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                     "이번 응답에서는 1차 usable 후보를 먼저 표시하고, "
                     f"{_opportunity_refresh_followup_sentence()}"
                 ),
->>>>>>> main
             )
             _maybe_trim_public_route_memory("market_opportunities")
             return payload
@@ -2313,26 +2167,9 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
     except Exception as quick_exc:
         logging.warning("opportunity quick fetch failed for %s: %s", code, quick_exc, exc_info=True)
 
-    cached_quick, cached_quick_source = await _get_cached_quick_opportunities(code, limit)
+    cached_quick = await market_service.get_cached_market_opportunities_quick(code, limit)
     if _is_usable_opportunity_payload(cached_quick):
         _spawn_opportunity_refresh(code, limit)
-<<<<<<< HEAD
-        return _record_opportunity_response(
-            _annotate_opportunity_response(
-                _with_opportunity_partial(
-                    cached_quick,
-                    fallback_reason="opportunity_cached_quick_response",
-                    note="이번 응답에서는 최근 usable 후보를 먼저 표시하고, 정밀 후보 계산은 백그라운드에서 다시 시도합니다.",
-                    fallback_tier="cached_quick",
-                ),
-                started_at=started_at,
-                request_phase="quick",
-                cache_state=cached_quick_source,
-                fallback_tier="cached_quick",
-                timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
-                upstream_source="market_opportunities_cached_quick_recheck",
-            )
-=======
         await _capture_opportunity_payload(code, cached_quick)
         payload = _build_traced_opportunity_partial(
             started_at,
@@ -2345,25 +2182,11 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 f"{_opportunity_refresh_followup_sentence()}"
             ),
             fallback_tier="cached_quick",
->>>>>>> main
         )
         _maybe_trim_public_route_memory("market_opportunities")
         return payload
 
     _spawn_opportunity_refresh(code, limit)
-<<<<<<< HEAD
-    return _record_opportunity_response(
-        _annotate_opportunity_response(
-            _with_opportunity_partial(
-                market_service.build_market_opportunities_placeholder(
-                    code,
-                    note=(
-                        f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
-                        "정밀 후보 계산은 백그라운드에서 계속 시도하고, 다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
-                    ),
-                ),
-                fallback_reason="opportunity_placeholder_response",
-=======
     payload = _build_traced_opportunity_partial(
         started_at,
         payload=market_service.build_market_opportunities_placeholder(
@@ -2372,22 +2195,12 @@ async def get_market_opportunities(code: str, limit: int = Query(12, ge=3, le=20
                 f"{code} 기회 레이더가 이번 요청에서 usable 후보를 만들지 못했습니다. "
                 f"{_opportunity_refresh_followup_sentence()} "
                 "다음 재조회에서는 quick 스냅샷과 캐시 재사용을 다시 확인합니다."
->>>>>>> main
             ),
-            started_at=started_at,
-            request_phase="quick",
-            cache_state="miss",
-            fallback_tier="placeholder",
-            timeout_budget_ms=OPPORTUNITY_QUICK_TIMEOUT_SECONDS * 1000,
-            upstream_source="market_opportunities_placeholder",
         ),
-<<<<<<< HEAD
-=======
         request_phase="shell",
         cache_state="miss",
         fallback_reason="opportunity_placeholder_response",
         served_state="degraded",
->>>>>>> main
     )
     _maybe_trim_public_route_memory("market_opportunities")
     return payload

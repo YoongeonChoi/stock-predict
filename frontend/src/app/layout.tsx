@@ -36,6 +36,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
     >
       <body className="min-h-screen bg-bg font-sans text-text">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+        >
+          본문으로 바로가기
+        </a>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <ToastProvider>
             <AuthProvider>
@@ -52,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                       </div>
                     </div>
                   </header>
-                  <main className="flex-1">
+                  <main id="main-content" className="flex-1">
                     <div className="mx-auto w-full max-w-[var(--layout-max)] px-4 pb-10 pt-2 sm:px-5 sm:pt-4 lg:px-7 lg:pt-6 xl:px-8">
                       {children}
                     </div>

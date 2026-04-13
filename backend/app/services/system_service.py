@@ -431,15 +431,11 @@ async def get_diagnostics() -> dict:
         ],
         "confidence_calibration_profiles": calibration_profiles,
         "learned_fusion_status": learned_fusion_status,
-<<<<<<< HEAD
-        "route_stability": runtime_state.get("route_stability", []),
-=======
         "route_stability_summary": route_stability_summary["routes"],
         "first_usable_metrics": route_stability_summary["first_usable_metrics"],
         "hydration_failure_summary": route_stability_summary["hydration_failure_summary"],
         "session_recovery_summary": route_stability_summary["session_recovery_summary"],
         "failure_class_summary": route_stability_summary["failure_class_summary"],
->>>>>>> main
         "prediction_accuracy": accuracy,
         "prediction_accuracy_error": accuracy_error,
         "research_archive": research_archive,

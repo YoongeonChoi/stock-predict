@@ -2,29 +2,6 @@
 
 All notable changes to this project are tracked here.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-## v2.53.0 - 2026-04-01
-
-- 전체 워크스페이스 안정성 패스를 위해 `stock detail`, `daily briefing`, `market opportunities`에 공통 `request_trace`와 `fallback_tier` 기준을 맞췄습니다. 각 응답은 이제 `shell | quick | full`, `memory_hit | sqlite_hit | miss`, `fresh | partial | stale | degraded` 축으로 원인을 더 일관되게 분류할 수 있습니다.
-- 종목 상세 `/api/stock/{ticker}/detail`은 `prefer_full=true`가 더 이상 first usable을 막는 blocking flag처럼 동작하지 않습니다. `cached full -> cached quick -> fresh quick -> bounded full upgrade` 순서로 정리해, quick snapshot을 먼저 주고 full detail은 짧은 예산 안에서만 시도합니다.
-- 홈 대시보드는 hydration 이후 `briefing`, `heatmap`, `movers`, `radar`, `country report` 재호출이 실패해도 SSR로 받은 usable 데이터를 지우지 않도록 바꿨습니다. `briefing`은 stale summary와 마지막 생성 시각을 유지한 채 독립 패널처럼 degrade되어, 홈 전체가 timeout 배너 한 장으로 무너지지 않게 맞췄습니다.
-- 로그인 후 화면도 패널 단위로 격리했습니다. `portfolio`는 holdings / recommendation / event radar가 개별적으로 degrade되고, `watchlist`는 세션 문제와 목록 패널 실패를 분리해 전체 화면 붕괴를 줄였습니다.
-- 시스템 진단 `/api/diagnostics`와 `/settings`에는 `route_stability` 집계를 추가했습니다. 이제 `first usable p50/p95`, `fallback served rate`, `stale served rate`, `cold failure rate` 기준으로 핵심 route의 체감 안정성을 한곳에서 볼 수 있습니다.
-- `verify.py`는 실제 브라우저 기준 회귀를 잡기 위해 `--browser-smoke`를 추가했고, `--deployed-site-smoke`는 `/api/briefing/daily`, `/api/country/KR/report`, 대표 stock detail과 hydration 후 금지 문구까지 함께 확인하도록 강화했습니다.
-
-## v2.52.11 - 2026-04-01
-
-- 종목 상세 `/api/stock/{ticker}/detail`의 quick/full 계약을 다시 정리했습니다. 이제 `prefer_full=true`는 full path를 끝까지 기다리게 만드는 blocking flag가 아니라, quick snapshot을 먼저 살린 뒤 bounded full upgrade를 짧게 시도하는 힌트로만 동작합니다. uncached 종목이라도 quick snapshot을 먼저 내려 first usable을 지키고, full이 늦거나 실패하면 quick partial을 그대로 유지합니다.
-- stock detail 응답에는 `request_trace`와 `fallback_tier` 메타데이터를 함께 실어, `quick/full`, `cache hit`, `elapsed_ms`, `timeout budget`, `served_state` 기준으로 실패 원인을 더 빨리 분류할 수 있게 했습니다. 브라우저 종목 상세도 initial snapshot이 partial이어도 화면을 유지한 채 background full upgrade만 시도합니다.
-- 홈 대시보드는 hydration 이후 `briefing`, `country report`, `heatmap`, `movers`, `radar` 재호출이 실패하더라도 server-first로 받은 usable 데이터를 더 이상 지우지 않습니다. `briefing`은 stale summary와 마지막 생성 시각을 유지한 채 독립 패널처럼 degrade되어, 홈 전체가 32초 timeout 배너 한 장으로 무너지지 않게 맞췄습니다.
-- `daily briefing`도 cache source와 served state를 담은 `request_trace`를 반환하고, `degraded` fallback도 같은 메타 구조를 유지합니다. 그래서 첫 요청 cold start, cache hit, radar slow-path를 구분해 추적할 수 있습니다.
-- 운영 스모크는 `/api/briefing/daily`, `/api/country/KR/report`, `/api/stock/003670/detail?prefer_full=true`를 추가로 확인하고, 프론트 `/`, `/radar`, `/stock/003670.KS` HTML에 `32초 안에 응답이 오지 않았습니다.`나 raw `Failed to fetch`가 남아 있으면 배포 검증에서 실패하도록 강화했습니다.
-=======
-=======
->>>>>>> dev-local-20260413
 =======
 >>>>>>> dev-local-20260413
 ## v2.62.0 - 2026-04-12
@@ -35,10 +12,6 @@ All notable changes to this project are tracked here.
 - `frontend/src/components/pages/CalendarPageClient.tsx`는 상단 핵심 일정 카드를 `4건`, 우측 upcoming 목록을 `12건`까지 보여 주고, 각 일정에 국가 라벨을 함께 붙입니다. 그래서 `/calendar` 첫 화면에서 한국장 기준 흐름은 유지하면서도 해외 매크로와 대표 기업 실적을 더 빨리 구분해 읽을 수 있습니다.
 - `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 추가 해외 소스 회귀, 전체 지역 조회 회귀, 글로벌 매크로/실적 포함 회귀, 국가별 recurring dedupe 회귀를 추가했습니다.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> main
 =======
 >>>>>>> dev-local-20260413
 =======
@@ -697,8 +670,6 @@ All notable changes to this project are tracked here.
 - `get_cached_market_opportunities()`는 이제 `detailed_scanned_count > 0`인 실제 정밀 snapshot만 `cached full`로 승격합니다. 그래서 quote-only 결과가 full cache처럼 보이며 `/radar`에서 정밀 계산이 끝난 것처럼 읽히는 혼선을 줄였습니다.
 - background full refresh는 최근 usable quick 후보를 seed로 재사용해 상위 종목 정밀 스캔을 다시 시도합니다. 응답은 계속 quick로 먼저 살리되, 뒤에서는 이미 확보된 후보를 바로 분석하게 바꿔 full snapshot이 올라올 가능성을 높였습니다.
 - 레이더/포트폴리오/관심종목 UI에서도 `전수 1차 스캔` 후보는 `레이더 점수` 대신 `1차 스캔 점수`로 표시하도록 정리했습니다. 그래서 quick quote-only 후보를 정밀 레이더 점수처럼 오해하기 어렵게 맞췄습니다.
-<<<<<<< HEAD
->>>>>>> 373595e (feat: expand archive and calendar coverage)
 =======
 >>>>>>> main
 

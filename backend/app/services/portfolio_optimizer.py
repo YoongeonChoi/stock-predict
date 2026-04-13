@@ -23,6 +23,12 @@ def build_horizon_snapshot(
     country_code: str | None = None,
     reference_date: str | None = None,
 ) -> dict[str, float | str | None]:
+    """DistributionalForecast에서 특정 horizon의 요약 dict를 추출한다.
+
+    Returns:
+        dict -- mean_return, excess_return, vol, p_up/p_flat/p_down, confidence 등.
+        forecast가 None이거나 해당 horizon이 없으면 빈 dict.
+    """
     if not forecast:
         return {}
 
@@ -77,6 +83,13 @@ async def attach_candidate_return_series(
     period: str = "6mo",
     limit: int = 4,
 ) -> list[dict]:
+    """후보 종목에 일별 수익률 시계열을 비동기로 로드해 공분산 계산에 필요한 입력을 붙인다.
+
+    Args:
+        candidates: ticker, country_code를 포함하는 후보 dict 리스트.
+        period: yfinance history 조회 기간 (기본 6개월).
+        limit: 동시 요청 수 상한 (Render 500MB 메모리 보호).
+    """
     if not candidates:
         return candidates
 
@@ -323,6 +336,11 @@ def _fill_weights(
 
 
 def optimize_portfolio_weights(candidates: list[dict], budget: dict) -> PortfolioOptimizationResult:
+    """기대수익 최대화 - 리스크 패널티 - 회전율 패널티 목적함수로 포트폴리오 비중을 최적화한다.
+
+    EWMA+shrinkage 공분산, single/country/sector cap, 투영 반복 GD로 해를 구한다.
+    candidates가 비어 있으면 빈 결과를 반환한다.
+    """
     if not candidates:
         return PortfolioOptimizationResult(
             target_weights={},

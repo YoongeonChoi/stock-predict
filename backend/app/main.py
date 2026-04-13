@@ -335,6 +335,17 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
 def _memory_hygiene_request_reason(request: Request) -> str:
     normalized = request.url.path.removeprefix("/api/").strip("/") or "health"
     return normalized.replace("/", ":")[:96]

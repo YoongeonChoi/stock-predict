@@ -1820,13 +1820,8 @@ async def get_market_opportunities_quick(country_code: str, limit: int = 12) -> 
 
 
 async def get_cached_market_opportunities_quick(country_code: str, limit: int = 12) -> dict | None:
-    cached, _ = await get_cached_market_opportunities_quick_with_source(country_code, limit)
-    return cached
-
-
-async def get_cached_market_opportunities_quick_with_source(country_code: str, limit: int = 12) -> tuple[dict | None, str]:
     for candidate_limit in _cached_quick_limit_candidates(limit):
-        cached, cache_source = await cache.get_with_source(_quick_opportunity_cache_key(country_code, candidate_limit))
+        cached = await cache.get(_quick_opportunity_cache_key(country_code, candidate_limit))
         if not cached:
             continue
         opportunities = list(cached.get("opportunities") or [])
@@ -1840,8 +1835,8 @@ async def get_cached_market_opportunities_quick_with_source(country_code: str, l
             normalized["universe_note"] = " ".join(
                 part for part in [existing_note, reused_note] if part
             ).strip()
-        return normalized, cache_source
-    return None, "miss"
+        return normalized
+    return None
 
 
 async def get_cached_market_opportunities(
@@ -1850,21 +1845,7 @@ async def get_cached_market_opportunities(
     *,
     max_candidates: int | None = None,
 ) -> dict | None:
-    cached, _ = await get_cached_market_opportunities_with_source(
-        country_code,
-        limit,
-        max_candidates=max_candidates,
-    )
-    return cached
-
-
-async def get_cached_market_opportunities_with_source(
-    country_code: str,
-    limit: int = 12,
-    *,
-    max_candidates: int | None = None,
-) -> tuple[dict | None, str]:
-    cached, cache_source = await cache.get_with_source(
+    cached = await cache.get(
         _full_opportunity_cache_key(
             country_code,
             limit,
@@ -1872,15 +1853,11 @@ async def get_cached_market_opportunities_with_source(
         )
     )
     if not cached:
-        return None, "miss"
+        return None
     opportunities = list(cached.get("opportunities") or [])
     quote_available_count = int(cached.get("quote_available_count") or 0)
     detailed_scanned_count = int(cached.get("detailed_scanned_count") or 0)
     if quote_available_count <= 0 or not opportunities:
-<<<<<<< HEAD
-        return None, "miss"
-    return cached, cache_source
-=======
         return None
     if detailed_scanned_count > 0:
         return cached
@@ -1901,7 +1878,6 @@ async def get_cached_market_opportunities_with_source(
             part for part in [existing_note, full_scan_note] if part
         ).strip()
     return normalized
->>>>>>> main
 
 
 def build_market_opportunities_placeholder(country_code: str, *, note: str) -> dict:

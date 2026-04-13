@@ -15,9 +15,6 @@ const COUNTRIES = [
 ];
 
 const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 const KOREA_TIME_ZONE = "Asia/Seoul";
 const EVENT_COUNTRY_LABELS: Record<string, string> = {
   KR: "한국",
@@ -25,16 +22,6 @@ const EVENT_COUNTRY_LABELS: Record<string, string> = {
   EU: "유로존",
   JP: "일본",
 };
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 373595e (feat: expand archive and calendar coverage)
-=======
-const KOREA_TIME_ZONE = "Asia/Seoul";
->>>>>>> main
-=======
->>>>>>> dev-local-20260413
-=======
->>>>>>> dev-local-20260413
 
 const EVENT_STYLES: Record<string, { dot: string; chip: string; label: string; badge: string }> = {
   rose: {
@@ -255,23 +242,8 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
     { label: "정책 일정", value: data.summary.policy_count, note: "중앙은행·금리 이벤트" },
     { label: "실적 일정", value: data.summary.earnings_count, note: "주요 기업 발표" },
   ] : [];
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> dev-local-20260413
   const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
   const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
->>>>>>> 373595e (feat: expand archive and calendar coverage)
-=======
-  const featuredUpcomingEvents = data?.upcoming_events.slice(0, 2) ?? [];
-=======
-  const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
->>>>>>> dev-local-20260413
-  const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
->>>>>>> main
   const auditSummary = buildPublicAuditSummary(data, {
     defaultSummary: "한국 일정과 주요 해외 매크로·대표 기업 실적을 함께 보여주고, 실제 이벤트가 늦으면 추정 반복 일정으로 먼저 채웁니다.",
   });
@@ -281,24 +253,8 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       <PageHeader
         eyebrow="시장 일정"
         title="시장 일정 캘린더"
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        description="한국장의 월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
-=======
-=======
->>>>>>> dev-local-20260413
         description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 같은 흐름으로 보고, 확인된 실제 일정이 들어오면 바로 반영합니다."
         variant="compact"
->>>>>>> 373595e (feat: expand archive and calendar coverage)
-=======
-        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 외부 일정이 늦으면 월간 핵심 일정부터 먼저 보여주고, 확인된 실제 일정이 들어오면 바로 반영합니다."
-=======
-        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 같은 흐름으로 보고, 확인된 실제 일정이 들어오면 바로 반영합니다."
->>>>>>> dev-local-20260413
-        variant="compact"
->>>>>>> main
         meta={
           <>
             <span className="info-chip">{activeCountry.flag} {activeCountry.label} 기준</span>
@@ -471,26 +427,9 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">정책</span>
                 <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-sky-700 dark:text-sky-300">물가 / 핵심 지표</span>
                 <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-amber-700 dark:text-amber-300">실적</span>
-<<<<<<< HEAD
-<<<<<<< HEAD
-                <span className="rounded-full border border-border bg-border/20 px-3 py-1.5 text-text-secondary">같은 월간 지표는 한 달에 1회만 표시</span>
-=======
               </div>
               <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
                 반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
-<<<<<<< HEAD
->>>>>>> 373595e (feat: expand archive and calendar coverage)
-=======
-              </div>
-              <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
-<<<<<<< HEAD
-                반복되는 월간 지표는 한 달에 1회만 대표 일정으로 표시합니다.
->>>>>>> main
-=======
-                반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
->>>>>>> dev-local-20260413
-=======
->>>>>>> dev-local-20260413
               </div>
 
               <div className="grid grid-cols-7 gap-2 px-1 text-xs text-text-secondary">

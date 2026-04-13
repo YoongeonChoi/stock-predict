@@ -1,12 +1,6 @@
 from __future__ import annotations
 
 import argparse
-<<<<<<< HEAD
-import os
-import subprocess
-import sys
-from urllib.parse import urlsplit
-=======
 import json
 import os
 import re
@@ -19,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
->>>>>>> main
 from dev_runtime import (
     ROOT,
     display_command,
@@ -66,23 +59,7 @@ def run_step(label: str, command: list[str], cwd) -> None:
         raise SystemExit(f"{label} failed with exit code {completed.returncode}")
 
 
-def is_local_browser_target(url: str) -> bool:
-    target = (url or "").strip()
-    if not target:
-        return True
-    parsed = urlsplit(target)
-    return parsed.hostname in {"127.0.0.1", "localhost"}
-
-
 def parse_args(argv: list[str]) -> argparse.Namespace:
-<<<<<<< HEAD
-    parser = argparse.ArgumentParser(description="Stock Predict 검증 런처")
-    parser.add_argument("--skip-frontend", action="store_true", help="프론트 검증을 건너뜁니다.")
-    parser.add_argument("--live-api-smoke", action="store_true", help="주요 API를 실호출 기준으로 점검합니다.")
-    parser.add_argument("--deployed-site-smoke", action="store_true", help="운영 Vercel/Render URL을 직접 호출해 배포 상태를 점검합니다.")
-    parser.add_argument("--browser-smoke", action="store_true", help="실브라우저 기준으로 hydration 후 주요 화면을 점검합니다.")
-    parser.add_argument("--browser-smoke-url", default="", help="browser smoke 대상 URL. 지정하지 않으면 운영 URL 또는 로컬 127.0.0.1:3000을 사용합니다.")
-=======
     parser = argparse.ArgumentParser(description="Stock Predict verification runner")
     parser.add_argument("--full-sweep", action="store_true", help="Run the full ordered regression sweep")
     parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend build and typecheck")
@@ -92,7 +69,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--browser-smoke-url", default="", help="Override the browser smoke base URL")
     parser.add_argument("--auth-write-smoke", action="store_true", help="Run reversible authenticated write smoke checks")
     parser.add_argument("--allow-parallel", action="store_true", help="Skip the workspace verify lock and allow concurrent runs")
->>>>>>> main
     return parser.parse_args(argv)
 
 
@@ -337,28 +313,8 @@ def main(argv: list[str] | None = None) -> int:
             run_step("Launch local dev server", [*python_command, str(ROOT / "start.py")], ROOT)
             run_step("Warm browser routes", build_warm_browser_routes_command(python_command, browser_smoke_url), ROOT)
 
-<<<<<<< HEAD
-    if args.deployed_site_smoke:
-        run_step("Deployed site smoke", [python_path, str(ROOT / "scripts" / "deployed_site_smoke.py")], ROOT)
-        deployed_browser_url = args.browser_smoke_url or os.getenv("STOCK_PREDICT_FRONTEND_URL", "https://www.yoongeon.xyz")
-        run_step(
-            "Deployed browser smoke",
-            [python_path, str(ROOT / "scripts" / "browser_smoke.py"), "--base-url", deployed_browser_url],
-            ROOT,
-        )
-    elif args.browser_smoke:
-        browser_url = args.browser_smoke_url or os.getenv("STOCK_PREDICT_BROWSER_SMOKE_URL", "http://127.0.0.1:3000")
-        if is_local_browser_target(browser_url):
-            run_step("Launch local dev server", [python_path, str(ROOT / "start.py")], ROOT)
-        run_step(
-            "Browser smoke",
-            [python_path, str(ROOT / "scripts" / "browser_smoke.py"), "--base-url", browser_url],
-            ROOT,
-        )
-=======
         if stages.run_browser_smoke:
             run_step("Browser smoke", build_browser_smoke_command(python_command, browser_smoke_url), ROOT)
->>>>>>> main
 
         if stages.run_live_api_smoke:
             run_step("Backend live API smoke", [*python_command, "scripts/live_api_smoke.py"], ROOT / "backend")

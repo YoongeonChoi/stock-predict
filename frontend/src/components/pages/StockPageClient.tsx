@@ -19,11 +19,13 @@ import TradePlanCard from "@/components/TradePlanCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
 import CandlestickChart from "@/components/charts/CandlestickChart";
 import FreeKrForecastCard from "@/components/charts/FreeKrForecastCard";
-import EarningsSurprise from "@/components/charts/EarningsSurprise";
+import dynamic from "next/dynamic";
 import NextDayForecastCard from "@/components/charts/NextDayForecastCard";
-import PriceChart from "@/components/charts/PriceChart";
 import ScoreBreakdown from "@/components/charts/ScoreBreakdown";
-import ScoreRadial from "@/components/charts/ScoreRadial";
+
+const PriceChart = dynamic(() => import("@/components/charts/PriceChart"), { ssr: false });
+const ScoreRadial = dynamic(() => import("@/components/charts/ScoreRadial"), { ssr: false });
+const EarningsSurprise = dynamic(() => import("@/components/charts/EarningsSurprise"), { ssr: false });
 import TechnicalSummary from "@/components/charts/TechnicalSummary";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
@@ -81,65 +83,10 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     initialData,
   });
 
-<<<<<<< HEAD
-  useEffect(() => {
-    if (!normalizedTicker) return;
-    let cancelled = false;
-    setStock(initialData);
-    setError(null);
-    setTechSummary(null);
-    setPivotPoints(null);
-    setForecastDelta(null);
-    setChartData([]);
-    setLoading(!initialData);
-
-    const upgradeToFull = async () => {
-      try {
-        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 24000, preferFull: true });
-        if (cancelled) return;
-        setStock(next);
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        if (!initialData) {
-          setError(toError(err));
-        }
-      }
-    };
-
-    const loadQuickSnapshot = async () => {
-      try {
-        const next = await api.getStockDetail(normalizedTicker, { timeoutMs: 18000, preferFull: false });
-        if (cancelled) return;
-        setStock(next);
-        setError(null);
-        if (next.partial) {
-          void upgradeToFull();
-        }
-      } catch (err) {
-        if (cancelled) return;
-        console.error(err);
-        setError(toError(err));
-      } finally {
-        if (cancelled) return;
-        setLoading(false);
-      }
-    };
-
-    if (!initialData) {
-      void loadQuickSnapshot();
-    } else {
-      setLoading(false);
-      if (initialData.partial) {
-        void upgradeToFull();
-      }
-=======
   const refreshWatchlistEntry = async (tickerValue: string) => {
     if (!session) {
       setWatchlistEntry(null);
       return;
->>>>>>> main
     }
 
     setWatchlistSyncing(true);
@@ -225,14 +172,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (loading) {
     return (
-<<<<<<< HEAD
-      <div className="max-w-5xl mx-auto space-y-4">
-        <WorkspaceLoadingCard
-          eyebrow="종목 상세 준비"
-          title="빠른 종목 스냅샷을 먼저 불러오고 있습니다"
-          message="티커 유효성, 최근 가격 흐름, 기본 판단 요약부터 먼저 준비한 뒤 차트와 보조 지표를 이어서 붙입니다."
-          lines={4}
-=======
       <div className="page-shell space-y-4">
         <PageHeader
           variant="compact"
@@ -249,7 +188,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           title="차트와 세부 분석을 이어서 준비하고 있습니다"
           message="기술 요약, 예측 차트, 매수·매도 가이드가 순서대로 이어집니다."
           className="min-h-[260px]"
->>>>>>> main
         />
       </div>
     );
@@ -257,15 +195,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (!stock && error) {
     return (
-<<<<<<< HEAD
-      <div className="max-w-5xl mx-auto space-y-4">
-        <Link href="/" className="text-text-secondary hover:text-text">&larr; 홈으로</Link>
-        <WorkspaceStateCard
-          eyebrow="종목 상세 지연"
-          title="빠른 종목 스냅샷을 아직 붙이지 못했습니다"
-          message={`${error.message} 잠시 후 다시 시도하면 quick 스냅샷부터 다시 연결합니다.`}
-          tone="warning"
-=======
       <div className="page-shell space-y-4">
         <PageHeader
           variant="compact"
@@ -283,7 +212,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           eyebrow="응답 지연"
           title="종목 상세를 아직 불러오지 못했습니다"
           message={error.message}
->>>>>>> main
           actionLabel="다시 시도"
           onAction={() => window.location.reload()}
         />
@@ -293,14 +221,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
   if (!stock) {
     return (
-<<<<<<< HEAD
-      <WorkspaceStateCard
-        eyebrow="종목 없음"
-        title="종목 정보를 찾지 못했습니다"
-        message="티커를 다시 확인하거나 검색창에서 종목명을 다시 찾아 주세요."
-        tone="warning"
-      />
-=======
       <div className="page-shell">
         <WorkspaceStateCard
           kind="blocking"
@@ -311,7 +231,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           onAction={() => router.push("/")}
         />
       </div>
->>>>>>> main
     );
   }
 
