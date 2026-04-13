@@ -2,6 +2,8 @@
   "name": "stock-predict-frontend",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
   "version": "2.53.0",
 =======
   "version": "2.62.0",
@@ -9,6 +11,12 @@
 =======
   "version": "2.61.40",
 >>>>>>> main
+=======
+  "version": "2.62.0",
+>>>>>>> dev-local-20260413
+=======
+  "version": "2.62.0",
+>>>>>>> dev-local-20260413
   "private": true,
   "scripts": {
     "dev": "next dev",

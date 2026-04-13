@@ -279,6 +279,10 @@ export default function ArchivePageClient({
                     .join(" ")}
                 >
 <<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> dev-local-20260413
                   {RESEARCH_REGION_LABELS[region]}
                 </button>
               ))}
@@ -286,6 +290,9 @@ export default function ArchivePageClient({
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
 =======
                   {REGION_LABELS[region]}
+=======
+                  {RESEARCH_REGION_LABELS[region]}
+>>>>>>> dev-local-20260413
                 </button>
               ))}
             </div>
