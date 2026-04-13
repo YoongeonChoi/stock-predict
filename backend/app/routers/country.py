@@ -105,18 +105,7 @@ async def forecast_index(*args, **kwargs):
     return await _forecast_index(*args, **kwargs)
 
 
-def _sanitize_json_value(value: Any) -> Any:
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {str(key): _sanitize_json_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_json_value(item) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize_json_value(item) for item in value]
-    if isinstance(value, set):
-        return [_sanitize_json_value(item) for item in value]
-    return value
+from app.routers._stock_shells import sanitize_json_value as _sanitize_json_value
 
 
 def _build_country_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:

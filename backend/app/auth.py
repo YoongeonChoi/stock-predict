@@ -21,6 +21,13 @@ class SupabaseUserDict(TypedDict, total=False):
     raw_user_meta_data: dict
 
 
+class ProfileFields(TypedDict):
+    username: str | None
+    full_name: str | None
+    phone_number: str | None
+    birth_date: str | None
+
+
 @dataclass(frozen=True)
 class AuthenticatedUser:
     id: str
@@ -35,7 +42,7 @@ class AuthenticatedUser:
     birth_date: str | None = None
 
 
-def _extract_profile_fields(user: SupabaseUserDict) -> dict[str, str | None]:
+def _extract_profile_fields(user: SupabaseUserDict) -> ProfileFields:
     metadata = user.get("user_metadata")
     if not isinstance(metadata, dict):
         metadata = user.get("raw_user_meta_data")

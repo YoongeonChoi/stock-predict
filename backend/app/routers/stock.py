@@ -283,49 +283,13 @@ def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallbac
     return partial
 
 
-def _blank_score_detail(max_score: float = 20.0) -> dict:
-    return {
-        "total": 0.0,
-        "max_score": max_score,
-        "items": [],
-    }
-
-
-def _blank_stock_score() -> dict:
-    return {
-        "total": 0.0,
-        "fundamental": _blank_score_detail(),
-        "valuation": _blank_score_detail(),
-        "growth_momentum": _blank_score_detail(),
-        "analyst": _blank_score_detail(),
-        "risk": _blank_score_detail(),
-    }
-
-
-def _blank_composite_score() -> dict:
-    return {
-        "total": 0.0,
-        "total_raw": 0.0,
-        "max_raw": 100.0,
-        "fundamental": _blank_score_detail(),
-        "valuation": _blank_score_detail(),
-        "growth_momentum": _blank_score_detail(),
-        "analyst": _blank_score_detail(),
-        "risk": _blank_score_detail(),
-        "technical": _blank_score_detail(),
-    }
-
-
-def _blank_technical_indicators() -> dict:
-    return {
-        "ma_20": [],
-        "ma_60": [],
-        "rsi_14": [],
-        "macd": [],
-        "macd_signal": [],
-        "macd_hist": [],
-        "dates": [],
-    }
+from app.routers._stock_shells import (
+    blank_score_detail as _blank_score_detail,
+    blank_stock_score as _blank_stock_score,
+    blank_composite_score as _blank_composite_score,
+    blank_technical_indicators as _blank_technical_indicators,
+    sanitize_json_value as _sanitize_json_value,
+)
 
 
 async def _build_stock_memory_guard_shell(ticker: str) -> dict:
@@ -474,20 +438,6 @@ async def _build_stock_minimal_shell(
         errors.append(error_code)
     payload["errors"] = errors
     return payload
-
-
-def _sanitize_json_value(value: Any) -> Any:
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {str(key): _sanitize_json_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_json_value(item) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize_json_value(item) for item in value]
-    if isinstance(value, set):
-        return [_sanitize_json_value(item) for item in value]
-    return value
 
 
 def _build_stock_success_response(payload: dict, *, trim_reason: str | None = None) -> JSONResponse:
