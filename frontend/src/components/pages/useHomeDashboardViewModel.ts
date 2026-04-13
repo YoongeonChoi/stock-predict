@@ -30,6 +30,7 @@ export interface HomeDashboardInitialData {
   initialMovers?: (MarketMovers & PublicAuditFields) | null;
   initialRadar?: (OpportunityRadarResponse & PublicAuditFields) | null;
   initialCountryReport?: (CountryReport & PublicAuditFields) | null;
+  initialSectorPerformance?: { sector: string; ticker: string; price: number; change_pct: number; breadth: number; leader_name: string }[] | null;
 }
 
 function describeLoadError(error: unknown, fallback: string) {

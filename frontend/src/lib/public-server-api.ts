@@ -60,6 +60,19 @@ export function getPublicMarketIndicators() {
   return getPublicJson<Array<{ name: string; price: number; change_pct: number }>>("/api/market/indicators", 60);
 }
 
+export interface SectorPerformanceItem {
+  sector: string;
+  ticker: string;
+  price: number;
+  change_pct: number;
+  breadth: number;
+  leader_name: string;
+}
+
+export function getPublicSectorPerformance(code = "KR") {
+  return getPublicJson<SectorPerformanceItem[]>(`/api/country/${code}/sector-performance`, 120);
+}
+
 export function getPublicDailyBriefing() {
   return getPublicJson<DailyBriefingResponse>("/api/briefing/daily", 60, 16000);
 }

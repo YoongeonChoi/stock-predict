@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 
 const StockHeatmap = dynamic(() => import("@/components/charts/StockHeatmap"), { ssr: false });
+import SectorRotationBoard from "@/components/SectorRotationBoard";
 import {
   buildPublicAuditSummary,
   formatAuditDate,
@@ -134,6 +135,7 @@ export default function HomeDashboardClient({
   initialMovers = null,
   initialRadar = null,
   initialCountryReport = null,
+  initialSectorPerformance = null,
 }: HomeDashboardInitialData) {
   const {
     countries,
@@ -555,6 +557,10 @@ export default function HomeDashboardClient({
             )}
           </div>
         </div>
+
+        {initialSectorPerformance && initialSectorPerformance.length > 0 ? (
+          <SectorRotationBoard data={initialSectorPerformance} countryCode={selectedCountry} />
+        ) : null}
 
         <div className="card !p-5 h-full">
           <div>
