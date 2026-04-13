@@ -26,10 +26,13 @@ const EVENT_COUNTRY_LABELS: Record<string, string> = {
   JP: "일본",
 };
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
 =======
 const KOREA_TIME_ZONE = "Asia/Seoul";
 >>>>>>> main
+=======
+>>>>>>> dev-local-20260413
 =======
 >>>>>>> dev-local-20260413
 
@@ -255,7 +258,10 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> dev-local-20260413
   const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
   const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
@@ -278,8 +284,11 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         description="한국장의 월간 경제지표, 정책 일정, 실적 발표를 한 달 보드와 상세 패널로 함께 읽습니다. 실제 외부 일정이 있으면 그 날짜를 우선 사용하고, 부족한 구간만 반복 스케줄 추정으로 보완합니다."
 =======
+=======
+>>>>>>> dev-local-20260413
         description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 같은 흐름으로 보고, 확인된 실제 일정이 들어오면 바로 반영합니다."
         variant="compact"
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
@@ -469,6 +478,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               </div>
               <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
                 반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
+<<<<<<< HEAD
 >>>>>>> 373595e (feat: expand archive and calendar coverage)
 =======
               </div>
@@ -478,6 +488,8 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
 >>>>>>> main
 =======
                 반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
+>>>>>>> dev-local-20260413
+=======
 >>>>>>> dev-local-20260413
               </div>
 

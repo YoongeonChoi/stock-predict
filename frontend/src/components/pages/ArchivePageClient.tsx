@@ -280,6 +280,9 @@ export default function ArchivePageClient({
                 >
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> dev-local-20260413
                   {RESEARCH_REGION_LABELS[region]}
                 </button>
               ))}
