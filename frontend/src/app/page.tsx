@@ -8,6 +8,7 @@ import {
   getPublicMarketMovers,
   getPublicOpportunities,
   getPublicSectorPerformance,
+  getPublicMarketSessions,
 } from "@/lib/public-server-api";
 import { timeboxServerPromise } from "@/lib/server-timebox";
 
@@ -23,6 +24,7 @@ export default async function HomePage() {
     radarData,
     countryReport,
     sectorPerformance,
+    marketSessions,
   ] = await Promise.all([
     timeboxServerPromise(() => getPublicCountries(), 2500, []),
     timeboxServerPromise(() => getPublicMarketIndicators(), 2800, []),
@@ -32,6 +34,7 @@ export default async function HomePage() {
     timeboxServerPromise(() => getPublicOpportunities("KR", 12), 2800, null),
     timeboxServerPromise(() => getPublicCountryReport("KR"), 2600, null),
     timeboxServerPromise(() => getPublicSectorPerformance("KR"), 2500, null),
+    timeboxServerPromise(() => getPublicMarketSessions(), 2000, null),
   ]);
 
   return (
@@ -44,6 +47,7 @@ export default async function HomePage() {
       initialRadar={radarData}
       initialCountryReport={countryReport}
       initialSectorPerformance={sectorPerformance}
+      initialMarketSessions={marketSessions}
     />
   );
 }

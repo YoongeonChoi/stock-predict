@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import ErrorBanner from "@/components/ErrorBanner";
@@ -78,6 +78,16 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const { toast } = useToast();
+
+  const autoComparedRef = useRef(false);
+  useEffect(() => {
+    if (autoComparedRef.current) return;
+    const tickersParam = searchParams.get("tickers");
+    if (tickersParam && tickersParam.includes(",")) {
+      autoComparedRef.current = true;
+      handleCompare();
+    }
+  }, []);
 
   const handleCompare = async () => {
     const tickers = input

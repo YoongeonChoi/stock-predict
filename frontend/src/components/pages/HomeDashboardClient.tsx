@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 import { ApiError, ApiTimeoutError, api } from "@/lib/api";
 
 const StockHeatmap = dynamic(() => import("@/components/charts/StockHeatmap"), { ssr: false });
+import MarketSessionBadge from "@/components/MarketSessionBadge";
 import SectorRotationBoard from "@/components/SectorRotationBoard";
 import {
   buildPublicAuditSummary,
@@ -136,6 +137,7 @@ export default function HomeDashboardClient({
   initialRadar = null,
   initialCountryReport = null,
   initialSectorPerformance = null,
+  initialMarketSessions = null,
 }: HomeDashboardInitialData) {
   const {
     countries,
@@ -344,6 +346,8 @@ export default function HomeDashboardClient({
           </>
         }
       />
+      <MarketSessionBadge sessions={initialMarketSessions} />
+
       <section className="card !p-4 sm:!p-5 space-y-4">
         <PublicAuditStrip meta={dashboardAuditMeta} />
         <div className="ui-panel-muted text-sm leading-6 text-text-secondary">

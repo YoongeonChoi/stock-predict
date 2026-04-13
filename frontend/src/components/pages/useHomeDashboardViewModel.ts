@@ -31,6 +31,7 @@ export interface HomeDashboardInitialData {
   initialRadar?: (OpportunityRadarResponse & PublicAuditFields) | null;
   initialCountryReport?: (CountryReport & PublicAuditFields) | null;
   initialSectorPerformance?: { sector: string; ticker: string; price: number; change_pct: number; breadth: number; leader_name: string }[] | null;
+  initialMarketSessions?: { country_code: string; name_local: string; phase: string; is_open: boolean; latest_closed_date: string; next_trading_day: string }[] | null;
 }
 
 function describeLoadError(error: unknown, fallback: string) {

@@ -73,6 +73,20 @@ export function getPublicSectorPerformance(code = "KR") {
   return getPublicJson<SectorPerformanceItem[]>(`/api/country/${code}/sector-performance`, 120);
 }
 
+export interface MarketSessionPublic {
+  country_code: string;
+  name_local: string;
+  phase: string;
+  is_open: boolean;
+  latest_closed_date: string;
+  next_trading_day: string;
+}
+
+export async function getPublicMarketSessions(): Promise<MarketSessionPublic[]> {
+  const data = await getPublicJson<{ sessions: MarketSessionPublic[] }>("/api/market/sessions", 60);
+  return data.sessions ?? [];
+}
+
 export function getPublicDailyBriefing() {
   return getPublicJson<DailyBriefingResponse>("/api/briefing/daily", 60, 16000);
 }
