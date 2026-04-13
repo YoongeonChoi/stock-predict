@@ -30,7 +30,16 @@ DEFAULT_RETRY_DELAY_SECONDS = 1.5
 class FrontendRouteCheck:
     contract: RouteContract
     base: str
+<<<<<<< HEAD
+    path: str
+    expected_status: int
+    expect_json: bool = False
+    expected_error_code: str | None = None
+    contains_text: str | None = None
+    forbidden_texts: tuple[str, ...] = ()
+=======
     expected_status: int = 200
+>>>>>>> main
     timeout: int = 45
 
 
@@ -274,6 +283,44 @@ def main(argv: list[str] | None = None) -> int:
     frontend_url = args.frontend_url.rstrip("/")
     api_url = args.api_url.rstrip("/")
 
+<<<<<<< HEAD
+    checks = [
+        HttpCheck("health", api_url, "/api/health", expected_status=200, expect_json=True),
+        HttpCheck("countries", api_url, "/api/countries", expected_status=200, expect_json=True),
+        HttpCheck(
+            "watchlist-auth",
+            api_url,
+            "/api/watchlist",
+            expected_status=401,
+            expect_json=True,
+            expected_error_code="SP-6014",
+        ),
+        HttpCheck("market-indicators", api_url, "/api/market/indicators", expected_status=200, expect_json=True),
+        HttpCheck("briefing", api_url, "/api/briefing/daily", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("country-report", api_url, "/api/country/KR/report", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("market-heatmap", api_url, "/api/country/KR/heatmap", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("market-opportunities", api_url, "/api/market/opportunities/KR?limit=8", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("screener", api_url, "/api/screener?country=KR&limit=20", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("calendar", api_url, "/api/calendar/KR", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("prediction-lab", api_url, "/api/research/predictions?limit_recent=20&refresh=false", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("stock-detail", api_url, "/api/stock/003670/detail", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("stock-detail-prefer-full", api_url, "/api/stock/003670/detail?prefer_full=true", expected_status=200, expect_json=True, timeout=60),
+        HttpCheck("health-post-stock", api_url, "/api/health", expected_status=200, expect_json=True, timeout=45),
+        HttpCheck("frontend-home", frontend_url, "/", expected_status=200, contains_text="<html", forbidden_texts=("32초 안에 응답이 오지 않았습니다.", "Failed to fetch")),
+        HttpCheck("frontend-radar", frontend_url, "/radar", expected_status=200, contains_text="<html", forbidden_texts=("32초 안에 응답이 오지 않았습니다.", "Failed to fetch")),
+        HttpCheck("frontend-screener", frontend_url, "/screener", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-calendar", frontend_url, "/calendar", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-archive", frontend_url, "/archive", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-lab", frontend_url, "/lab", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-stock", frontend_url, "/stock/003670.KS", expected_status=200, contains_text="<html", forbidden_texts=("32초 안에 응답이 오지 않았습니다.", "Failed to fetch")),
+        HttpCheck("frontend-portfolio", frontend_url, "/portfolio", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-watchlist", frontend_url, "/watchlist", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-auth", frontend_url, "/auth", expected_status=200, contains_text="<html"),
+        HttpCheck("frontend-settings", frontend_url, "/settings", expected_status=200, contains_text="<html"),
+    ]
+
+=======
+>>>>>>> main
     failures: list[str] = []
     health_payload: dict[str, Any] | None = None
     deadline = time.monotonic() + args.max_total_seconds if args.max_total_seconds and args.max_total_seconds > 0 else None
@@ -393,10 +440,20 @@ def main(argv: list[str] | None = None) -> int:
                 return _report_failures(failures)
             continue
 
+<<<<<<< HEAD
+        forbidden_hit = next((text for text in check.forbidden_texts if text and text in body), None)
+        if forbidden_hit:
+            failures.append(f"{check.name}: body included forbidden text {forbidden_hit!r}")
+            print(f"[FAIL] {check.name:18} {url} -> forbidden text {forbidden_hit!r}")
+            continue
+
+        print(f"[OK]   {check.name:18} {url} -> {status}")
+=======
         print(
             f"[OK]   frontend-{check.contract.key:15} {url} -> {status} {format_elapsed_summary(outcome)}",
             flush=True,
         )
+>>>>>>> main
 
     if args.expected_version and health_payload:
         current_version = str(health_payload.get("version", ""))

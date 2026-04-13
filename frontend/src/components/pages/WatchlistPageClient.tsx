@@ -13,6 +13,7 @@ import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/Workspace
 import { useWatchlistWorkspace } from "@/components/pages/useWatchlistWorkspace";
 import { api } from "@/lib/api";
 import type { TickerResolution } from "@/lib/api";
+import { getUserFacingErrorMessage } from "@/lib/request-state";
 import type { OpportunityRadarResponse, WatchlistItem } from "@/lib/types";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -55,6 +56,40 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
   const [pendingTicker, setPendingTicker] = useState<string | null>(null);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
+<<<<<<< HEAD
+
+  const load = async (showFailureToast = false) => {
+    if (!session) {
+      setItems([]);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      setItems(await api.getWatchlist());
+      setLoadError(null);
+    } catch (error) {
+      console.error(error);
+      if (!isAuthRequiredError(error)) {
+        const message = getUserFacingErrorMessage(error, "관심종목을 불러오지 못했습니다.");
+        setLoadError(message);
+        if (showFailureToast) {
+          toast(message, "error");
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    load();
+  }, [authLoading, session]);
+=======
   const { load } = useWatchlistWorkspace({
     hasSession: Boolean(session),
     authLoading,
@@ -66,6 +101,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     setLoadError,
     toast,
   });
+>>>>>>> main
 
   useEffect(() => {
     const trimmed = ticker.trim();
@@ -120,10 +156,16 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
       toast(`${saved.ticker} 종목을 관심종목에 추가했습니다.`, "success");
       setTicker("");
       setResolution(null);
+<<<<<<< HEAD
+      void load(true);
+    } catch {
+      toast("워치리스트 추가에 실패했습니다.", "error");
+=======
       await load(true);
     } catch (error) {
       console.error(error);
       toast("관심종목 추가에 실패했습니다.", "error");
+>>>>>>> main
     }
   };
 
@@ -131,6 +173,12 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     try {
       setPendingTicker(value);
       await api.removeWatchlist(value);
+<<<<<<< HEAD
+      toast(`${value} 종목을 워치리스트에서 제거했습니다.`, "success");
+      void load(true);
+    } catch {
+      toast("워치리스트 삭제에 실패했습니다.", "error");
+=======
       toast(`${value} 종목을 관심종목에서 제거했습니다.`, "success");
       await load(true);
     } catch (error) {
@@ -162,6 +210,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
       );
     } finally {
       setPendingTicker(null);
+>>>>>>> main
     }
   };
 
@@ -303,12 +352,24 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         ) : loadError && items.length === 0 ? (
           <div className="px-5 py-5">
             <WorkspaceStateCard
+<<<<<<< HEAD
+              eyebrow="관심종목 지연"
+              title="저장된 관심종목 목록을 아직 불러오지 못했습니다"
+              message={loadError}
+              tone="warning"
+              className="min-h-[220px]"
+              actionLabel="관심종목 다시 불러오기"
+              onAction={() => {
+                void load(true);
+              }}
+=======
               kind="blocking"
               eyebrow="관심종목 지연"
               title="관심종목 목록을 아직 불러오지 못했습니다"
               message={loadError}
               actionLabel="목록 다시 불러오기"
               onAction={() => void load(true)}
+>>>>>>> main
             />
           </div>
         ) : items.length === 0 ? (
@@ -333,6 +394,31 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
           <div className="space-y-2 px-5 py-5">
             {loadError ? (
               <WorkspaceStateCard
+<<<<<<< HEAD
+                eyebrow="부분 재동기화 지연"
+                title="이전 관심종목 목록을 먼저 보여주고 있습니다"
+                message={loadError}
+                tone="warning"
+                actionLabel="관심종목 다시 불러오기"
+                onAction={() => {
+                  void load(true);
+                }}
+                aside={<span className="info-chip">마지막 성공 목록 유지</span>}
+              />
+            ) : null}
+            {items.map((item) => (
+              <div key={item.ticker} className="rounded-[22px] border border-border/70 bg-surface/55 px-4 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <Link href={`/stock/${item.ticker}`} className="min-w-0 flex-1 hover:text-accent transition-colors">
+                    <div className="font-medium">{item.name || item.ticker}</div>
+                    <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.country_code}</div>
+                    {item.resolution_note ? <div className="mt-1 text-[11px] text-text-secondary">{item.resolution_note}</div> : null}
+                  </Link>
+                  <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[360px]">
+                    <div className="rounded-2xl border border-border/60 bg-surface/65 px-3 py-2 text-right">
+                      <div className="text-[11px] text-text-secondary">현재가</div>
+                      <div className="mt-1 font-mono text-text">{formatPrice(item.current_price, item.country_code)}</div>
+=======
                 kind="partial"
                 eyebrow="부분 업데이트"
                 title="관심종목 목록 일부가 늦어지고 있습니다"
@@ -378,6 +464,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                           <div className="mt-1 font-semibold text-text">{item.score_total?.toFixed(1) ?? "없음"}</div>
                         </div>
                       </div>
+>>>>>>> main
                     </div>
 
                     <div className="ui-inline-actions">

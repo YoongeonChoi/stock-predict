@@ -30,8 +30,12 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
   const criticalSources = diagnostics.data_sources.slice(0, 4);
   const calibrationProfiles = diagnostics.confidence_calibration_profiles ?? [];
   const learnedFusionStatus = diagnostics.learned_fusion_status;
+<<<<<<< HEAD
+  const routeStability = (diagnostics.route_stability ?? []).slice(0, 4);
+=======
   const routeStabilityRows = diagnostics.route_stability_summary ?? [];
   const firstUsableMetrics = diagnostics.first_usable_metrics;
+>>>>>>> main
   const versionsAligned = frontendVersion === diagnostics.version;
   const backendStartedAtLabel = diagnostics.started_at
     ? new Date(diagnostics.started_at).toLocaleString("ko-KR")
@@ -165,6 +169,54 @@ export default function SystemStatusCard({ diagnostics, frontendVersion }: Props
           </div>
         </div>
       </div>
+
+      {routeStability.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border p-3">
+          <div className="text-xs font-medium text-text-secondary mb-2">핵심 Route 안정성</div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {routeStability.map((item) => (
+              <div key={item.route} className="rounded-lg bg-border/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm">{item.route}</span>
+                  <span className="text-xs text-text-secondary">
+                    요청 {item.total_requests}건
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-3 text-xs text-text-secondary">
+                  <div>
+                    first usable p50/p95
+                    <div className="mt-1 font-semibold text-text">
+                      {item.first_usable_p50_ms != null ? `${Math.round(item.first_usable_p50_ms)}ms` : "대기"} /{" "}
+                      {item.first_usable_p95_ms != null ? `${Math.round(item.first_usable_p95_ms)}ms` : "대기"}
+                    </div>
+                  </div>
+                  <div>
+                    fallback / degraded
+                    <div className="mt-1 font-semibold text-text">
+                      {(item.fallback_served_rate * 100).toFixed(1)}% / {(item.degraded_rate * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    stale / cold fail
+                    <div className="mt-1 font-semibold text-text">
+                      {(item.stale_served_rate * 100).toFixed(1)}% / {(item.cold_failure_rate * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    마지막 상태
+                    <div className="mt-1 font-semibold text-text">
+                      {item.last_served_state || "대기"}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-text-secondary">
+                  최근 source: {item.last_upstream_source || "대기"}{item.last_fallback_reason ? ` · ${item.last_fallback_reason}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {primaryModel ? (
         <div className="mt-4 rounded-xl border border-border p-3">

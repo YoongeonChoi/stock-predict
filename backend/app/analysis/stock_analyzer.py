@@ -76,11 +76,25 @@ async def get_cached_stock_detail(ticker: str, *, refresh_quote: bool = False) -
     return await _refresh_cached_stock_detail(dict(cached), ticker)
 
 
+async def get_cached_stock_detail_with_source(ticker: str, *, refresh_quote: bool = False) -> tuple[dict | None, str]:
+    cached, cache_source = await cache.get_with_source(_stock_detail_latest_cache_key(ticker))
+    if not cached:
+        return None, "miss"
+    if not refresh_quote:
+        return dict(cached), cache_source
+    return await _refresh_cached_stock_detail(dict(cached), ticker), cache_source
+
+
 async def get_cached_quick_stock_detail(ticker: str) -> dict | None:
     cached = await cache.get(stock_detail_quick_cache_key(ticker))
     return dict(cached) if cached else None
 
 
+<<<<<<< HEAD
+async def get_cached_quick_stock_detail_with_source(ticker: str) -> tuple[dict | None, str]:
+    cached, cache_source = await cache.get_with_source(_stock_detail_quick_cache_key(ticker))
+    return (dict(cached) if cached else None), cache_source
+=======
 async def _timebox_quick_stock_cache_write(job, *, label: str) -> bool:
     try:
         await asyncio.wait_for(job, timeout=STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS)
@@ -95,6 +109,7 @@ async def _timebox_quick_stock_cache_write(job, *, label: str) -> bool:
     except Exception as exc:
         logger.warning("%s failed: %s", label, str(exc)[:180], exc_info=True)
         return False
+>>>>>>> main
 
 
 async def build_quick_stock_detail(ticker: str) -> dict | None:

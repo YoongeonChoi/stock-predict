@@ -3,7 +3,15 @@ export interface PublicAuditFields {
   generated_at?: string | null;
   partial?: boolean | null;
   fallback_reason?: string | null;
-  fallback_tier?: "full" | "quick" | "cached_quick" | "placeholder" | null;
+  fallback_tier?:
+    | "full"
+    | "quick"
+    | "cached"
+    | "cached_quick"
+    | "placeholder"
+    | "degraded"
+    | string
+    | null;
 }
 
 export interface PublicAuditChip {

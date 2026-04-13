@@ -1,7 +1,10 @@
 import asyncio
+<<<<<<< HEAD
+=======
 from datetime import datetime, timezone
 from importlib import import_module
 import logging
+>>>>>>> main
 import time
 
 from fastapi import APIRouter
@@ -10,10 +13,15 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.data import cache as data_cache
 from app.errors import SP_5011, SP_5012, SP_5018
+<<<<<<< HEAD
+from app.runtime import record_route_observation
+from app.services import briefing_service, market_session_service
+=======
 from app.runtime import get_or_create_background_job, get_runtime_state
 from app.utils.lazy_module import LazyModuleProxy
 from app.utils.memory_hygiene import get_memory_pressure_snapshot, maybe_trim_process_memory
 from app.utils.route_trace import build_route_trace
+>>>>>>> main
 
 router = APIRouter(prefix="/api", tags=["briefing"])
 settings = get_settings()
@@ -213,6 +221,15 @@ def _build_daily_briefing_shell(note: str, *, fallback_reason: str = "briefing_t
 @router.get("/briefing/daily")
 async def get_daily_briefing():
     started_at = time.perf_counter()
+<<<<<<< HEAD
+    try:
+        response = await asyncio.wait_for(
+            briefing_service.get_daily_briefing(),
+            timeout=PUBLIC_ENDPOINT_TIMEOUT_SECONDS,
+        )
+        record_route_observation("daily_briefing", response.get("request_trace"), success=True)
+        return response
+=======
     pressure_guard = _should_use_ultra_fast_public_fallback()
     startup_guard = _should_use_startup_public_route_guard()
     if pressure_guard or startup_guard:
@@ -282,11 +299,47 @@ async def get_daily_briefing():
         )
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
+>>>>>>> main
     except asyncio.TimeoutError:
         if briefing_task is not None and briefing_task_created:
             _observe_briefing_task(briefing_task, "full")
         err = SP_5018(f"Daily briefing exceeded {PUBLIC_ENDPOINT_TIMEOUT_SECONDS} seconds.")
         err.log("warning")
+<<<<<<< HEAD
+        response = await briefing_service.get_daily_briefing_fallback(
+            "브리핑 전체 계산이 길어져 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
+        )
+        response["request_trace"] = briefing_service._build_briefing_request_trace(
+            started_at=started_at,
+            request_phase="quick",
+            cache_state="miss",
+            timeout_budget_ms=PUBLIC_ENDPOINT_TIMEOUT_SECONDS * 1000,
+            fallback_reason=response.get("fallback_reason"),
+            served_state="degraded",
+            upstream_source="daily_briefing_route_timeout",
+        )
+        response["fallback_tier"] = "degraded"
+        record_route_observation("daily_briefing", response.get("request_trace"), success=False)
+        return response
+    except Exception as exc:
+        err = SP_5011(str(exc)[:200])
+        err.log()
+        response = await briefing_service.get_daily_briefing_fallback(
+            "브리핑 계산 중 오류가 발생해 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
+        )
+        response["request_trace"] = briefing_service._build_briefing_request_trace(
+            started_at=started_at,
+            request_phase="quick",
+            cache_state="miss",
+            timeout_budget_ms=PUBLIC_ENDPOINT_TIMEOUT_SECONDS * 1000,
+            fallback_reason=response.get("fallback_reason"),
+            served_state="degraded",
+            upstream_source="daily_briefing_route_error",
+        )
+        response["fallback_tier"] = "degraded"
+        record_route_observation("daily_briefing", response.get("request_trace"), success=False)
+        return response
+=======
         payload = _build_daily_briefing_shell(
             "브리핑 전체 계산이 길어져 지금은 세션 상태와 핵심 일정만 먼저 표시합니다."
         )
@@ -331,6 +384,7 @@ async def get_daily_briefing():
         )
         _schedule_public_route_memory_trim("daily_briefing")
         return payload
+>>>>>>> main
 
 
 @router.get("/market/sessions")

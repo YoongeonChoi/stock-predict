@@ -73,7 +73,7 @@ class BriefingServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_daily_briefing_falls_back_when_radar_is_slow(self):
         with (
-            patch("app.services.briefing_service.cache.get", new=AsyncMock(return_value=None)),
+            patch("app.services.briefing_service.cache.get_with_source", new=AsyncMock(return_value=(None, "miss"))),
             patch("app.services.briefing_service.cache.set", new=AsyncMock(return_value=None)),
             patch(
                 "app.services.briefing_service.market_session_service.get_market_sessions",
@@ -106,6 +106,9 @@ class BriefingServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["fallback_reason"], "briefing_partial_snapshot")
         self.assertEqual(result["focus_cards"], [])
         self.assertIn("요약만 표시합니다", result["market_view"][0]["summary"])
+        self.assertEqual(result["fallback_tier"], "quick")
+        self.assertEqual(result["request_trace"]["request_phase"], "quick")
+        self.assertEqual(result["request_trace"]["cache_state"], "miss")
 
     async def test_daily_briefing_returns_partial_without_waiting_for_late_radar_cleanup(self):
         async def _slow_radar(*args, **kwargs):

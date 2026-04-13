@@ -101,6 +101,17 @@ class StockSummary(BaseModel):
     score_total: float | None = None
 
 
+class RequestTrace(BaseModel):
+    request_phase: str | None = None
+    cache_state: str | None = None
+    cold_start_suspected: bool | None = None
+    upstream_source: str | None = None
+    elapsed_ms: int | None = None
+    timeout_budget_ms: int | None = None
+    fallback_reason: str | None = None
+    served_state: str | None = None
+
+
 class StockDetail(BaseModel):
     ticker: str
     name: str
@@ -139,3 +150,5 @@ class StockDetail(BaseModel):
     generated_at: str | None = None
     partial: bool | None = None
     fallback_reason: str | None = None
+    fallback_tier: str | None = None
+    request_trace: RequestTrace | None = None

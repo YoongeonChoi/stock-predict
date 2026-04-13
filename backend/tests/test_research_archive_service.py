@@ -6,6 +6,14 @@ from app.services import research_archive_service as service
 
 
 class ResearchArchiveHelpersTests(unittest.TestCase):
+    def test_curated_sources_include_additional_overseas_feeds(self):
+        source_ids = {source.id for source in service.SOURCES}
+        self.assertGreaterEqual(len(source_ids), 10)
+        self.assertIn("fed_feds_notes", source_ids)
+        self.assertIn("fed_feds_papers", source_ids)
+        self.assertIn("fed_ifdp_papers", source_ids)
+        self.assertIn("ecb_publications", source_ids)
+
     def test_strip_html_and_normalize_date(self):
         self.assertEqual(service._strip_html("<p>Hello&nbsp;<b>World</b></p>"), "Hello World")
         self.assertEqual(service._normalize_date("2026.03.23"), "2026-03-23")
@@ -141,6 +149,35 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["source_id"], "fed_press_monetary")
+
+    async def test_list_public_research_reports_without_region_filter_returns_cross_region_rows(self):
+        rows = [
+            {
+                "id": 1,
+                "source_id": "bok_monetary_policy",
+                "title": "한국 자료",
+                "region_code": "KR",
+                "published_at": "2026-03-28",
+                "pdf_url": None,
+            },
+            {
+                "id": 2,
+                "source_id": "fed_feds_notes",
+                "title": "미국 자료",
+                "region_code": "US",
+                "published_at": "2026-03-27",
+                "pdf_url": None,
+            },
+        ]
+
+        with (
+            patch.object(service, "sync_public_research_reports", new=AsyncMock()),
+            patch.object(service.db, "research_report_list", new=AsyncMock(return_value=rows)),
+        ):
+            result = await service.list_public_research_reports(region_code=None, limit=10, auto_refresh=True)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual({item["region_code"] for item in result}, {"KR", "US"})
 
 
 if __name__ == "__main__":
