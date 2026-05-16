@@ -11,7 +11,7 @@ import type {
   PortfolioOptimalRecommendationResponse,
   PortfolioProfile,
   PortfolioRecommendationStyle,
-} from "@/lib/api";
+} from "@/lib/api/types";
 
 export const portfolioApi = {
   getPortfolio: (options?: RequestOptions) => get<PortfolioData>("/api/portfolio", options),

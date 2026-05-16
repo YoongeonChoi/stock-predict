@@ -1012,6 +1012,69 @@ class Database:
                 return []
             raise
 
+    async def prediction_return_cohorts(self, prediction_type: str = "next_day", limit: int = 6) -> list[dict]:
+        try:
+            async with self._connect_public_read() as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    """
+                    SELECT
+                        target_date,
+                        prediction_type,
+                        COUNT(*) AS evaluated_total,
+                        SUM(direction_hit) AS direction_hits,
+                        SUM(within_range_hit) AS within_range,
+                        AVG(predicted_return_pct) AS avg_predicted_return_pct,
+                        AVG(realized_return_pct) AS avg_realized_return_pct,
+                        AVG(realized_return_pct - predicted_return_pct) AS avg_return_error_pct,
+                        AVG(abs_error_pct) AS avg_abs_error_pct,
+                        AVG(confidence) AS avg_confidence,
+                        AVG(
+                            CASE
+                                WHEN confidence IS NOT NULL THEN
+                                    ((confidence / 100.0) - direction_hit)
+                                    * ((confidence / 100.0) - direction_hit)
+                            END
+                        ) AS confidence_brier_score
+                    FROM (
+                        SELECT
+                            target_date,
+                            prediction_type,
+                            confidence,
+                            CASE
+                                WHEN direction = 'up' AND actual_close > reference_price THEN 1.0
+                                WHEN direction = 'down' AND actual_close < reference_price THEN 1.0
+                                WHEN direction = 'flat'
+                                     AND ABS(actual_close - reference_price) / reference_price <= 0.001 THEN 1.0
+                                ELSE 0.0
+                            END AS direction_hit,
+                            CASE
+                                WHEN predicted_low IS NOT NULL
+                                     AND predicted_high IS NOT NULL
+                                     AND actual_close BETWEEN predicted_low AND predicted_high THEN 1.0
+                                ELSE 0.0
+                            END AS within_range_hit,
+                            (predicted_close - reference_price) / reference_price * 100.0 AS predicted_return_pct,
+                            (actual_close - reference_price) / reference_price * 100.0 AS realized_return_pct,
+                            ABS(actual_close - predicted_close) / reference_price * 100.0 AS abs_error_pct
+                        FROM prediction_records
+                        WHERE prediction_type = ?
+                          AND actual_close IS NOT NULL
+                          AND reference_price > 0
+                    )
+                    GROUP BY target_date, prediction_type
+                    ORDER BY target_date DESC
+                    LIMIT ?
+                    """,
+                    (prediction_type, limit),
+                )
+                return [dict(r) for r in await cur.fetchall()]
+        except Exception as exc:
+            if _is_sqlite_lock_error(exc):
+                log.warning("prediction_return_cohorts lock fallback for %s", prediction_type)
+                return []
+            raise
+
     async def prediction_country_breakdown(self, prediction_type: str = "next_day", limit: int = 10) -> list[dict]:
         try:
             async with self._connect_public_read() as conn:

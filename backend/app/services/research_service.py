@@ -105,6 +105,27 @@ def _parse_calibration_json(raw_snapshot: str | dict | None) -> dict:
     return {}
 
 
+def _percent_from_probability(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 1.0:
+        numeric *= 100.0
+    return round(numeric, 1)
+
+
+def _optional_float(value: object, digits: int = 4) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_recent(rows: list[dict]) -> list[dict]:
     records = []
     for row in rows:
@@ -119,6 +140,8 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
         calibration_snapshot = _parse_calibration_json(row.get("calibration_json"))
         fusion_metadata = calibration_snapshot.get("fusion_metadata") or {}
         graph_context = calibration_snapshot.get("graph_context") or {}
+        confidence_cap_pct = _percent_from_probability(calibration_snapshot.get("confidence_cap"))
+        reliability_gap_pct = _percent_from_probability(calibration_snapshot.get("empirical_max_reliability_gap"))
 
         if actual_close is not None and reference_price:
             actual_close = float(actual_close)
@@ -161,6 +184,12 @@ def _normalize_recent(rows: list[dict]) -> list[dict]:
                 "fusion_blend_weight": round(float(fusion_metadata.get("blend_weight") or 0.0), 4),
                 "graph_context_used": bool(graph_context.get("used")),
                 "graph_coverage": round(float(graph_context.get("coverage") or 0.0), 4),
+                "confidence_cap": confidence_cap_pct,
+                "confidence_cap_reason": calibration_snapshot.get("confidence_cap_reason"),
+                "empirical_profile_available": calibration_snapshot.get("empirical_profile_available"),
+                "empirical_sample_count": int(calibration_snapshot.get("empirical_sample_count") or 0),
+                "empirical_max_reliability_gap": reliability_gap_pct,
+                "empirical_brier_delta": _optional_float(calibration_snapshot.get("empirical_brier_delta")),
             }
         )
     return records
@@ -181,6 +210,30 @@ def _normalize_trend(rows: list[dict]) -> list[dict]:
             }
         )
     return trend
+
+
+def _normalize_return_cohorts(rows: list[dict]) -> list[dict]:
+    cohorts = []
+    for row in rows:
+        prediction_type = str(row.get("prediction_type") or "next_day")
+        evaluated_total = int(row.get("evaluated_total") or 0)
+        cohorts.append(
+            {
+                "prediction_type": prediction_type,
+                "label": _prediction_label(prediction_type),
+                "target_date": row.get("target_date"),
+                "evaluated_total": evaluated_total,
+                "direction_accuracy": _rate(row.get("direction_hits"), evaluated_total),
+                "within_range_rate": _rate(row.get("within_range"), evaluated_total),
+                "avg_predicted_return_pct": round(float(row.get("avg_predicted_return_pct") or 0.0), 2),
+                "avg_realized_return_pct": round(float(row.get("avg_realized_return_pct") or 0.0), 2),
+                "avg_return_error_pct": round(float(row.get("avg_return_error_pct") or 0.0), 2),
+                "avg_error_pct": round(float(row.get("avg_abs_error_pct") or 0.0), 2),
+                "avg_confidence": round(float(row.get("avg_confidence") or 0.0), 2),
+                "confidence_brier_score": round(float(row.get("confidence_brier_score") or 0.0), 4),
+            }
+        )
+    return cohorts
 
 
 def _normalize_empirical_calibration(rows: list[dict]) -> list[dict]:
@@ -331,6 +384,7 @@ def _build_insights(
     empirical_calibration: list[dict],
     fusion_profiles: list[dict],
     graph_context_summary: dict,
+    return_cohorts: list[dict],
     fusion_status_summary: dict,
 ) -> list[str]:
     insights: list[str] = []
@@ -355,6 +409,20 @@ def _build_insights(
     insights.append(
         f"예측 밴드는 실현 종가를 {within_range_rate:.1f}% 비율로 포함하고 있어, 점예측보다 분포 해석이 더 중요하다는 점을 보여 줍니다."
     )
+
+    return_bias_candidates = [
+        cohort
+        for cohort in return_cohorts
+        if int(cohort.get("evaluated_total") or 0) >= 3
+        and abs(float(cohort.get("avg_return_error_pct") or 0.0)) >= 2.0
+    ]
+    if return_bias_candidates:
+        worst_bias = max(return_bias_candidates, key=lambda item: abs(float(item.get("avg_return_error_pct") or 0.0)))
+        bias_pct = float(worst_bias.get("avg_return_error_pct") or 0.0)
+        direction = "과소 추정" if bias_pct > 0 else "과대 추정"
+        insights.append(
+            f"{worst_bias.get('label') or _prediction_label(str(worst_bias.get('prediction_type') or 'next_day'))} {worst_bias.get('target_date')} cohort는 실제 평균 수익률이 예상 대비 {bias_pct:+.2f}%p 차이 나 {direction} 복기가 필요합니다."
+        )
 
     if by_country:
         best_country = min(by_country, key=lambda item: (-item["direction_accuracy"], item["avg_error_pct"]))
@@ -412,6 +480,7 @@ def _build_action_queue(
     empirical_calibration: list[dict],
     fusion_profiles: list[dict],
     graph_context_summary: dict,
+    return_cohorts: list[dict],
     recent_records: list[dict],
 ) -> list[dict]:
     actions: list[dict] = []
@@ -517,6 +586,39 @@ def _build_action_queue(
                     "metric_value": f"{avg_coverage:.1f}%",
                 }
             )
+
+    return_bias_by_type: dict[str, dict] = {}
+    for cohort in return_cohorts:
+        evaluated_total = int(cohort.get("evaluated_total") or 0)
+        if evaluated_total < 3:
+            continue
+        avg_return_error_pct = float(cohort.get("avg_return_error_pct") or 0.0)
+        if abs(avg_return_error_pct) < 2.0:
+            continue
+        prediction_type = str(cohort.get("prediction_type") or "next_day")
+        existing = return_bias_by_type.get(prediction_type)
+        if existing is not None and abs(float(existing.get("avg_return_error_pct") or 0.0)) >= abs(avg_return_error_pct):
+            continue
+        return_bias_by_type[prediction_type] = cohort
+
+    for cohort in return_bias_by_type.values():
+        prediction_type = str(cohort.get("prediction_type") or "next_day")
+        avg_return_error_pct = float(cohort.get("avg_return_error_pct") or 0.0)
+        label = cohort.get("label") or _prediction_label(str(cohort.get("prediction_type") or "next_day"))
+        direction = "과소 추정" if avg_return_error_pct > 0 else "과대 추정"
+        actions.append(
+            {
+                "key": f"{prediction_type}:return-bias:{cohort.get('target_date')}",
+                "severity": "high" if abs(avg_return_error_pct) >= 3.0 else "medium",
+                "title": f"{label} 수익률 {direction} 점검",
+                "detail": (
+                    f"{cohort.get('target_date')} cohort에서 실제 평균 수익률이 예상 대비 "
+                    f"{avg_return_error_pct:+.2f}%p 차이났습니다. 같은 편향이 반복되는지 다음 cohort와 함께 봐야 합니다."
+                ),
+                "metric_label": "실현-예상",
+                "metric_value": f"{avg_return_error_pct:+.2f}%p",
+            }
+        )
 
     high_confidence_misses = [
         record
@@ -661,6 +763,12 @@ def _build_review_queue(recent_records: list[dict]) -> list[dict]:
                 "fusion_method": row.get("fusion_method") or "prior_only",
                 "graph_context_used": bool(row.get("graph_context_used")),
                 "graph_coverage": row.get("graph_coverage"),
+                "confidence_cap": row.get("confidence_cap"),
+                "confidence_cap_reason": row.get("confidence_cap_reason"),
+                "empirical_profile_available": row.get("empirical_profile_available"),
+                "empirical_sample_count": row.get("empirical_sample_count"),
+                "empirical_max_reliability_gap": row.get("empirical_max_reliability_gap"),
+                "empirical_brier_delta": row.get("empirical_brier_delta"),
                 "review_kind": review_kind,
                 "review_summary": summary,
                 "stock_path": f"/stock/{symbol}" if row.get("scope") == "stock" and symbol else None,
@@ -1028,6 +1136,7 @@ async def _build_prediction_lab_fallback(
             "by_model": [],
         },
         "calibration": [],
+        "return_cohorts": [],
         "recent_trend": [],
         "recent_records": [],
         "action_queue": _build_action_queue(
@@ -1036,6 +1145,7 @@ async def _build_prediction_lab_fallback(
             empirical_calibration=empirical_calibration,
             fusion_profiles=fusion_profiles,
             graph_context_summary=graph_context_summary,
+            return_cohorts=[],
             recent_records=[],
         ),
         "failure_patterns": [],
@@ -1049,6 +1159,7 @@ async def _build_prediction_lab_fallback(
             empirical_calibration,
             fusion_profiles,
             graph_context_summary,
+            [],
             fusion_status_summary,
         ),
     }
@@ -1081,6 +1192,9 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         stats_20d_result,
         recent_rows_result,
         trend_rows_result,
+        return_cohorts_1d_result,
+        return_cohorts_5d_result,
+        return_cohorts_20d_result,
         by_country_rows_result,
         by_scope_rows_result,
         by_model_rows_result,
@@ -1096,6 +1210,9 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
         _safe_prediction_query(lambda: db.prediction_stats("distributional_20d"), _zero_prediction_stats(), timeout=PREDICTION_LAB_STATS_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_recent("next_day", limit_recent), [], timeout=PREDICTION_LAB_RECENT_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_daily_trend("next_day", 14), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_return_cohorts("next_day", 6), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_return_cohorts("distributional_5d", 6), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
+        _safe_prediction_query(lambda: db.prediction_return_cohorts("distributional_20d", 6), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_country_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_scope_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
         _safe_prediction_query(lambda: db.prediction_model_breakdown("next_day", 10), [], timeout=PREDICTION_LAB_BREAKDOWN_TIMEOUT_SECONDS),
@@ -1119,6 +1236,9 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
     stats_20d, stats_20d_reason = stats_20d_result
     recent_rows, recent_rows_reason = recent_rows_result
     trend_rows, trend_rows_reason = trend_rows_result
+    return_cohorts_1d_rows, return_cohorts_1d_reason = return_cohorts_1d_result
+    return_cohorts_5d_rows, return_cohorts_5d_reason = return_cohorts_5d_result
+    return_cohorts_20d_rows, return_cohorts_20d_reason = return_cohorts_20d_result
     by_country_rows, by_country_rows_reason = by_country_rows_result
     by_scope_rows, by_scope_rows_reason = by_scope_rows_result
     by_model_rows, by_model_rows_reason = by_model_rows_result
@@ -1138,6 +1258,9 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             stats_20d_reason,
             recent_rows_reason,
             trend_rows_reason,
+            return_cohorts_1d_reason,
+            return_cohorts_5d_reason,
+            return_cohorts_20d_reason,
             by_country_rows_reason,
             by_scope_rows_reason,
             by_model_rows_reason,
@@ -1178,6 +1301,11 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
     recent_records = _normalize_recent(recent_rows)
     trend = _normalize_trend(trend_rows)
+    return_cohorts = (
+        _normalize_return_cohorts(return_cohorts_1d_rows)
+        + _normalize_return_cohorts(return_cohorts_5d_rows)
+        + _normalize_return_cohorts(return_cohorts_20d_rows)
+    )
     by_country = _normalize_breakdown(by_country_rows)
     by_scope = _normalize_breakdown(by_scope_rows)
     by_model = _normalize_breakdown(by_model_rows)
@@ -1235,6 +1363,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             "by_model": by_model,
         },
         "calibration": calibration,
+        "return_cohorts": return_cohorts,
         "recent_trend": trend,
         "recent_records": recent_records,
         "action_queue": _build_action_queue(
@@ -1243,6 +1372,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             empirical_calibration=empirical_calibration,
             fusion_profiles=fusion_profiles,
             graph_context_summary=graph_context_summary,
+            return_cohorts=return_cohorts,
             recent_records=recent_records,
         ),
         "failure_patterns": _build_failure_patterns(recent_records),
@@ -1256,6 +1386,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
             empirical_calibration,
             fusion_profiles,
             graph_context_summary,
+            return_cohorts,
             fusion_status_summary,
         ),
     }
@@ -1263,7 +1394,7 @@ async def _build_prediction_lab_payload(limit_recent: int, refresh: bool) -> dic
 
 
 async def get_prediction_lab(limit_recent: int = 40, refresh: bool = True) -> dict:
-    cache_key = f"prediction_lab:v8:{limit_recent}:{int(refresh)}"
+    cache_key = f"prediction_lab:v10:{limit_recent}:{int(refresh)}"
 
     async def _fetch_prediction_lab():
         try:

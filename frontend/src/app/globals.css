@@ -108,7 +108,7 @@ html {
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   background:
     linear-gradient(180deg, rgb(var(--accent-rgb) / 0.05), transparent 18rem),

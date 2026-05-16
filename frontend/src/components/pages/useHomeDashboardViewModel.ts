@@ -22,6 +22,21 @@ const BRIEFING_TIMEOUT_MS = 9_000;
 const WORKSPACE_TIMEOUT_MS = 22_000;
 const HOME_RADAR_LIMIT = 12;
 
+const fetchWithRetry = async <T>(fn: () => Promise<T>, retries = 1, delayMs = 1500): Promise<T> => {
+  let lastError: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < retries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError;
+};
+
 export interface HomeDashboardInitialData {
   initialCountries?: CountryListItem[];
   initialIndicators?: { name: string; price: number; change_pct: number }[];
@@ -124,7 +139,7 @@ export function useHomeDashboardViewModel({
 
     const heatmapTask = (async () => {
       try {
-        const result = await api.getHeatmap(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
+        const result = await fetchWithRetry(() => api.getHeatmap(code, { timeoutMs: WORKSPACE_TIMEOUT_MS }), 1, 1000);
         syncIfCurrent(() => {
           setHeatmapData(result);
           setHeatmapError(null);
@@ -142,7 +157,7 @@ export function useHomeDashboardViewModel({
 
     const moversTask = (async () => {
       try {
-        const result = await api.getMarketMovers(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
+        const result = await fetchWithRetry(() => api.getMarketMovers(code, { timeoutMs: WORKSPACE_TIMEOUT_MS }), 1, 1000);
         syncIfCurrent(() => {
           setMovers(result);
           setMoversError(null);
@@ -160,7 +175,7 @@ export function useHomeDashboardViewModel({
 
     const radarTask = (async () => {
       try {
-        const result = await api.getMarketOpportunities(code, HOME_RADAR_LIMIT, { timeoutMs: WORKSPACE_TIMEOUT_MS });
+        const result = await fetchWithRetry(() => api.getMarketOpportunities(code, HOME_RADAR_LIMIT, { timeoutMs: WORKSPACE_TIMEOUT_MS }), 1, 1000);
         syncIfCurrent(() => {
           setRadarData(result);
           setRadarError(null);
@@ -178,7 +193,7 @@ export function useHomeDashboardViewModel({
 
     const reportTask = (async () => {
       try {
-        const result = await api.getCountryReport(code, { timeoutMs: WORKSPACE_TIMEOUT_MS });
+        const result = await fetchWithRetry(() => api.getCountryReport(code, { timeoutMs: WORKSPACE_TIMEOUT_MS }), 1, 1000);
         syncIfCurrent(() => {
           setCountryReport(result);
           setReportError(null);

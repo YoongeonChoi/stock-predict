@@ -7,7 +7,7 @@ import type {
   SignUpValidationRequest,
   SignUpValidationResponse,
   UsernameAvailabilityResponse,
-} from "@/lib/api";
+} from "@/lib/api/types";
 
 export const accountApi = {
   getMyAccountProfile: () => get<AccountProfile>("/api/account/me"),

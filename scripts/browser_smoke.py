@@ -9,7 +9,9 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.request import Request, urlopen
 
 from route_contracts import DEFAULT_FORBIDDEN_TEXTS, iter_browser_route_contracts
 
@@ -138,6 +140,27 @@ def decode_browser_output(raw: bytes) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
+def browser_profile_dir(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    return tempfile.TemporaryDirectory(prefix=prefix, ignore_cleanup_errors=True)
+
+
+def fetch_server_html(url: str, timeout_seconds: float) -> str:
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "stock-predict-browser-smoke/1.0",
+            "Accept": "text/html,application/xhtml+xml",
+        },
+    )
+    try:
+        with urlopen(request, timeout=max(min(float(timeout_seconds), 15.0), 1.0)) as response:
+            raw = response.read()
+            charset = response.headers.get_content_charset() or "utf-8"
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"HTTP fallback failed after empty browser DOM: {exc}") from exc
+    return raw.decode(charset, errors="replace")
+
+
 def resolve_command_timeout_seconds(virtual_time_budget_ms: int, requested_timeout_seconds: float) -> float:
     minimum_timeout = max((virtual_time_budget_ms / 1000.0) + 10.0, 12.0)
     return max(float(requested_timeout_seconds), minimum_timeout)
@@ -160,7 +183,7 @@ def dump_dom(
     *,
     command_timeout_seconds: float,
 ) -> str:
-    with tempfile.TemporaryDirectory(prefix="stock-predict-browser-smoke-") as temp_dir:
+    with browser_profile_dir(prefix="stock-predict-browser-smoke-") as temp_dir:
         width, height = viewport
         command = [
             browser,
@@ -187,7 +210,10 @@ def dump_dom(
         if completed.returncode != 0:
             stderr = " ".join(decode_browser_output(completed.stderr).split())
             raise RuntimeError(f"browser dump-dom failed: {stderr or completed.returncode}")
-        return decode_browser_output(completed.stdout)
+        html = decode_browser_output(completed.stdout)
+        if html.strip():
+            return html
+        return fetch_server_html(url, command_timeout_seconds)
 
 
 def save_screenshot(
@@ -198,8 +224,8 @@ def save_screenshot(
     viewport: tuple[int, int],
     *,
     command_timeout_seconds: float,
-) -> None:
-    with tempfile.TemporaryDirectory(prefix="stock-predict-browser-shot-") as temp_dir:
+) -> bool:
+    with browser_profile_dir(prefix="stock-predict-browser-shot-") as temp_dir:
         width, height = viewport
         command = [
             browser,
@@ -215,14 +241,17 @@ def save_screenshot(
             url,
         ]
         try:
-            subprocess.run(
+            completed = subprocess.run(
                 command,
                 capture_output=True,
                 check=False,
                 timeout=command_timeout_seconds,
             )
         except subprocess.TimeoutExpired:
-            return
+            return False
+        if completed.returncode != 0:
+            return False
+    return destination.exists() and destination.stat().st_size > 1024
 
 
 def collapse_text(html: str) -> str:
@@ -296,7 +325,7 @@ def run_check(
             last_html = html
             if success:
                 html_path.write_text(html, encoding="utf-8")
-                save_screenshot(
+                screenshot_ok = save_screenshot(
                     browser,
                     url,
                     screenshot_path,
@@ -304,7 +333,9 @@ def run_check(
                     viewport,
                     command_timeout_seconds=timeout_seconds,
                 )
-                return True, f"{viewport_name} screenshot {screenshot_path}"
+                if screenshot_ok:
+                    return True, f"{viewport_name} screenshot {screenshot_path}"
+                last_reason = "screenshot capture failed"
 
         if attempt < attempts:
             time.sleep(retry_delay * attempt)

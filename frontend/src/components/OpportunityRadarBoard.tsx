@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import ModelOutputNotice from "@/components/ModelOutputNotice";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import { useToast } from "@/components/Toast";
 import type { OpportunityRadarResponse } from "@/lib/types";
@@ -159,6 +160,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             </div>
           </div>
           <PublicAuditStrip meta={data} />
+          <ModelOutputNotice compact />
           {operationalFallbackNote ? (
             <div className="rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
               {operationalFallbackNote}
@@ -288,7 +290,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             {items.length > 0 ? (
               <button
                 onClick={() => {
-                  const lines = items.map((o) => `${o.name} (${o.ticker}) · 기대수익 ${formatPct(o.expected_return_pct)} · 상승확률 ${(o.up_probability * 100).toFixed(0)}%`);
+                  const lines = items.map((o) => `${o.name} (${o.ticker}) · 기대수익 ${formatPct(o.expected_return_pct_20d ?? o.predicted_return_pct)} · 상승확률 ${(o.up_probability * 100).toFixed(0)}%`);
                   navigator.clipboard.writeText(`[기회 레이더 후보]\n${lines.join("\n")}`).then(() => toast("후보 목록이 복사되었습니다.", "success")).catch(() => {});
                 }}
                 className="ui-button-secondary px-4"
@@ -325,6 +327,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
         </div>
       </div>
       <PublicAuditStrip meta={data} className="mb-4" />
+      <ModelOutputNotice className="mb-4" />
       {operationalFallbackNote ? (
         <div className="mb-4 rounded-2xl border border-border/70 bg-surface/55 px-4 py-3 text-sm text-text-secondary">
           {operationalFallbackNote}

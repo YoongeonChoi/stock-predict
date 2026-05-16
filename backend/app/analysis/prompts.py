@@ -104,7 +104,8 @@ def sector_report_prompt(
     system = (
         "You are a senior sector analyst.\n"
         "You MUST respond with valid JSON only.\n"
-        "Score the sector using the rubric. Rank stocks by investment merit."
+        "Score the sector using the rubric. Rank stocks by evidence quality.\n"
+        "Do not invent buy prices, sell prices, targets, or valuation price levels."
     )
 
     user = f"""Analyze the {sector_name} sector in {country_code}.
@@ -135,9 +136,7 @@ def sector_report_prompt(
       "ticker": "<ticker>",
       "name": "<name>",
       "pros": ["<pro1>", "<pro2>"],
-      "cons": ["<con1>", "<con2>"],
-      "buy_price": <number or null>,
-      "sell_price": <number or null>
+      "cons": ["<con1>", "<con2>"]
     }}
   ]
 }}"""
@@ -172,8 +171,8 @@ def stock_detail_analysis_prompt(
     system = (
         "You are a senior equity research analyst.\n"
         "You MUST respond with valid JSON only.\n"
-        "Provide fair value estimate, buy/sell zones, and detailed analysis.\n"
-        "Base your valuation on: DCF (if feasible), peer multiples, and analyst targets."
+        "Provide qualitative analysis, risks, and catalysts in Korean.\n"
+        "Do not invent fair value, buy/sell zones, price targets, or valuation price levels."
     )
 
     user = f"""Analyze {ticker} ({info.get('name', '')}).
@@ -199,18 +198,6 @@ Analyst Target Mean: {info.get('target_mean')}, Median: {info.get('target_median
 ## Required JSON Output
 {{
   "analysis_summary": "3-4 paragraph analysis in Korean",
-  "fair_value": <number>,
-  "buy_zone_low": <number>,
-  "buy_zone_high": <number>,
-  "sell_zone_low": <number>,
-  "sell_zone_high": <number>,
-  "confidence_grade": "<A/B/C>",
-  "valuation_methods": [
-    {{"name": "DCF", "value": <number>, "weight": 0.35, "details": "..."}},
-    {{"name": "Peer Multiples", "value": <number>, "weight": 0.35, "details": "..."}},
-    {{"name": "Analyst Target", "value": <number>, "weight": 0.30, "details": "..."}}
-  ],
-  "estimate_revision_score": <0-5>,
   "key_risks": ["<risk1>", "<risk2>"],
   "key_catalysts": ["<catalyst1>", "<catalyst2>"]
 }}"""
@@ -272,9 +259,8 @@ def index_forecast_prompt(
     system = (
         "You are a quantitative strategist.\n"
         "You MUST respond with valid JSON only.\n"
-        "Adjust the probability-distribution baseline using macro, breadth, and event context.\n"
-        "Do not invent prices without tying them back to the provided baseline scenarios.\n"
-        "Provide probability-weighted scenarios for 1 month ahead."
+        "Summarize macro, breadth, and event context around the provided statistical baseline.\n"
+        "Do not invent fair value, scenarios, probabilities, price targets, or valuation price levels."
     )
 
     user = f"""Forecast {index_name} for 1 month ahead.
@@ -294,12 +280,6 @@ Bear (10th pctl): {mc_scenarios.get('bear')}
 
 ## Required JSON Output
 {{
-  "fair_value": <number>,
-  "scenarios": [
-    {{"name": "Bull", "price": <number>, "probability": <0-100>, "description": "..."}},
-    {{"name": "Base", "price": <number>, "probability": <0-100>, "description": "..."}},
-    {{"name": "Bear", "price": <number>, "probability": <0-100>, "description": "..."}}
-  ],
   "confidence_note": "1-2 sentence explanation in Korean"
 }}"""
 

@@ -4,7 +4,7 @@ import type {
   MarketSessionsResponse,
   ResearchArchiveStatus,
   SystemDiagnostics,
-} from "@/lib/api";
+} from "@/lib/api/types";
 import type { RequestOptions } from "@/lib/api/shared";
 
 export const systemApi = {

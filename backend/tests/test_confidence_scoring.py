@@ -114,6 +114,31 @@ class ConfidenceScoringTests(unittest.TestCase):
         self.assertEqual(calibrated.calibration_snapshot["prediction_type"], "next_day")
         self.assertGreater(calibrated.display_confidence, 50.0)
 
+    def test_bootstrap_confidence_is_capped_without_empirical_profile(self):
+        calibrated = calibrate_direction_confidence(
+            horizon_days=20,
+            distribution_confidence=99.0,
+            regime_probs={"risk_on": 96.0, "neutral": 3.0, "risk_off": 1.0},
+            p_up=96.0,
+            p_down=2.0,
+            median_return_pct=5.8,
+            history_bars=504,
+            macro_available=True,
+            fundamental_available=True,
+            flow_available=True,
+            event_count=5,
+            event_uncertainty=0.0,
+            forecast_volatility_pct=1.0,
+            realized_volatility_reference_pct=10.0,
+            analog_support=0.99,
+            analog_expected_return_pct=4.2,
+        )
+
+        self.assertEqual(calibrated.calibrator_method, "bootstrap_conservative_sigmoid_20d")
+        self.assertLessEqual(calibrated.display_confidence, 70.0)
+        self.assertFalse(calibrated.calibration_snapshot["empirical_profile_available"])
+        self.assertEqual(calibrated.calibration_snapshot["confidence_cap_reason"], "bootstrap_profile_missing")
+
     def test_isotonic_profile_post_calibrates_sigmoid_output(self):
         set_empirical_calibration_profiles(
             {
@@ -172,6 +197,62 @@ class ConfidenceScoringTests(unittest.TestCase):
 
         self.assertEqual(calibrated.calibrator_method, "empirical_isotonic_5d")
         self.assertAlmostEqual(calibrated.calibrated_probability, 0.86, places=2)
+
+    def test_empirical_profile_with_large_reliability_gap_caps_confidence(self):
+        set_empirical_calibration_profiles(
+            {
+                "distributional_20d": EmpiricalCalibrationProfile(
+                    prediction_type="distributional_20d",
+                    horizon_bucket=20,
+                    intercept=3.5,
+                    feature_weights={
+                        "raw_support": 4.0,
+                        "distribution_support": 0.5,
+                        "analog_support": 0.3,
+                        "regime_support": 0.1,
+                        "edge_support": 0.2,
+                        "agreement_support": 0.1,
+                        "data_quality_support": 0.1,
+                        "uncertainty_support": 0.05,
+                        "volatility_support": 0.05,
+                        "analog_available": 0.0,
+                        "agreement_available": 0.0,
+                    },
+                    sample_count=180,
+                    positive_rate=0.57,
+                    brier_score=0.149,
+                    prior_brier_score=0.171,
+                    fitted_at="2026-05-14T10:00:00",
+                    method="empirical_sigmoid_20d",
+                    max_reliability_gap=0.18,
+                )
+            }
+        )
+
+        calibrated = calibrate_direction_confidence(
+            horizon_days=20,
+            distribution_confidence=95.0,
+            regime_probs={"risk_on": 80.0, "neutral": 15.0, "risk_off": 5.0},
+            p_up=88.0,
+            p_down=4.0,
+            median_return_pct=4.6,
+            history_bars=504,
+            macro_available=True,
+            fundamental_available=True,
+            flow_available=True,
+            event_count=4,
+            event_uncertainty=0.05,
+            forecast_volatility_pct=4.0,
+            realized_volatility_reference_pct=9.0,
+            analog_support=0.84,
+            analog_expected_return_pct=3.4,
+            prediction_type="distributional_20d",
+        )
+
+        self.assertLessEqual(calibrated.display_confidence, 84.0)
+        self.assertEqual(calibrated.calibration_snapshot["confidence_cap"], 0.84)
+        self.assertIn("reliability_gap_guard", calibrated.calibration_snapshot["confidence_cap_reason"])
+        self.assertEqual(calibrated.calibration_snapshot["empirical_sample_count"], 180)
 
     def test_selection_score_respects_confidence_floor(self):
         result = score_selection_candidate(

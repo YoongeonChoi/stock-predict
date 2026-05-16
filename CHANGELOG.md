@@ -2,8 +2,34 @@
 
 All notable changes to this project are tracked here.
 
-=======
->>>>>>> dev-local-20260413
+## v2.64.0 - 2026-05-14
+
+- `/api/research/predictions`에 `return_cohorts`를 추가해 1D/5D/20D 목표일별 예상 수익률, 실제 수익률, 수익률 차이, 방향 적중률, 밴드 적중률, confidence Brier를 함께 반환합니다.
+- Prediction Lab에 `실현 수익률 cohort` 표를 추가해 예측/추천 숫자가 실제 수익률 로그에서 과대 또는 과소 추정되는지 horizon별로 바로 복기할 수 있게 했습니다.
+- 실현-예상 수익률 차이가 큰 cohort는 Prediction Lab 액션 큐와 진단 메모의 `수익률 과대/과소 추정 점검` 항목으로 자동 승격됩니다.
+- `prediction_records` 기반 읽기 전용 cohort 집계를 추가하고, SQLite lock fallback, 연구실 응답 정규화, 프론트 표시 회귀 테스트를 보강했습니다.
+
+## v2.63.0 - 2026-05-14
+
+- confidence calibration이 empirical profile이 없는 horizon에서 더 낮은 horizon별 bootstrap cap을 사용하도록 조정했습니다. 1D/5D/20D fallback confidence는 각각 `78% / 74% / 70%` 상한을 넘지 않습니다.
+- empirical profile이 있더라도 표본 수가 `60건` 미만이거나 reliability gap이 `0.12` 이상이면 표시 confidence를 다시 cap으로 제한하고, `calibration_snapshot`에 cap 값과 사유, 표본 수, reliability gap, Brier delta를 기록합니다.
+- Prediction Lab 최근 로그와 리뷰 큐에 confidence cap과 cap 사유를 노출해, fallback 또는 품질 guard가 적용된 표본을 UI에서 바로 구분할 수 있게 했습니다.
+- 회귀 테스트를 추가해 bootstrap profile 부재와 reliability gap이 큰 empirical profile에서 confidence가 다시 과신으로 올라가지 않도록 고정했습니다.
+
+## v2.62.2 - 2026-05-14
+
+- `scripts/evaluation_gate.py`를 추가하고 `verify.py`에 연결해 점수 보고서의 핵심 감점 항목을 정적 게이트로 고정했습니다. conflict marker, 과장된 AI 문구, LLM 숫자 prompt, stale API 계약, 프론트 `check` script, 릴리즈 버전 drift가 다시 생기면 검증이 실패합니다.
+- 기회 레이더, 포트폴리오 추천, 이상적 포트폴리오에 공통 `ModelOutputNotice`를 추가해 조건부 분포 기반 신호가 수익 보장이나 즉시 매수 지시가 아님을 명시했습니다.
+- 평가 게이트와 추천 고지 컴포넌트 회귀 테스트를 추가하고 릴리즈 버전을 `v2.62.2`로 동기화했습니다.
+
+## v2.62.1 - 2026-05-14
+
+- 프론트 `PortfolioPageClient`, API facade 타입 import, `SystemStatusCard` route 안정성 블록, `OpportunityRadarBoard` 복사 필드, timeout 테스트 생성자를 정리해 `tsc --noEmit`와 production build 차단을 해소했습니다.
+- 종목 상세 buy/sell guide는 이제 LLM 숫자 필드를 사용하지 않고 deterministic valuation blend만 사용합니다. 관련 prompt도 가격대/valuation 숫자 생성을 요구하지 않도록 정리하고, LLM 숫자 입력을 무시하는 회귀 테스트를 추가했습니다.
+- stock metadata, PDF export 섹션명, 공용 에러 문구의 과장된 AI 표현을 `예측 분포`, `분석 요약`, `종목 해석` 중심 문구로 낮췄습니다.
+- `API_CONTRACT.md`의 watchlist/portfolio route와 공개 계정 API rate limit 설명을 실제 구현에 맞추고, `CHANGELOG.md`에 남아 있던 merge marker를 제거했습니다.
+- 포트폴리오 optimizer cap skip 최적화가 single/country/sector cap과 target fill을 깨지 않는지 확인하는 stress 회귀를 추가했습니다.
+
 ## v2.62.0 - 2026-04-12
 
 - `backend/app/services/research_archive_service.py`는 기본 기관 리포트 표본을 더 넓게 수집하고, `Federal Reserve FEDS Notes`, `Federal Reserve FEDS`, `IFDP`, `ECB Publications`를 새 공식 소스로 추가합니다. `/api/archive/research`는 이제 `region_code`를 비우면 전체 지역을 그대로 반환하고, `/archive` 초기 SSR도 전체 지역 `40건`을 먼저 보여 주도록 맞췄습니다.
@@ -12,10 +38,6 @@ All notable changes to this project are tracked here.
 - `frontend/src/components/pages/CalendarPageClient.tsx`는 상단 핵심 일정 카드를 `4건`, 우측 upcoming 목록을 `12건`까지 보여 주고, 각 일정에 국가 라벨을 함께 붙입니다. 그래서 `/calendar` 첫 화면에서 한국장 기준 흐름은 유지하면서도 해외 매크로와 대표 기업 실적을 더 빨리 구분해 읽을 수 있습니다.
 - `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 추가 해외 소스 회귀, 전체 지역 조회 회귀, 글로벌 매크로/실적 포함 회귀, 국가별 recurring dedupe 회귀를 추가했습니다.
 
-=======
->>>>>>> dev-local-20260413
-=======
->>>>>>> dev-local-20260413
 ## v2.61.40 - 2026-04-12
 
 - `backend/app/services/export_service.py`의 PDF sanitize는 이제 `📉`, `📈`, `🔻`, `🔺`, `💸`, `💰`, `⚠️` 같은 미지원 이모지를 한글 표식이나 안전한 ASCII 표기로 먼저 치환한 뒤 남은 variation selector와 기호 이모지를 제거합니다. 그래서 `country report` PDF export가 한글 폰트 missing glyph 경고를 남기거나 문장 중간에서 깨질 가능성을 더 줄였습니다.
@@ -670,8 +692,6 @@ All notable changes to this project are tracked here.
 - `get_cached_market_opportunities()`는 이제 `detailed_scanned_count > 0`인 실제 정밀 snapshot만 `cached full`로 승격합니다. 그래서 quote-only 결과가 full cache처럼 보이며 `/radar`에서 정밀 계산이 끝난 것처럼 읽히는 혼선을 줄였습니다.
 - background full refresh는 최근 usable quick 후보를 seed로 재사용해 상위 종목 정밀 스캔을 다시 시도합니다. 응답은 계속 quick로 먼저 살리되, 뒤에서는 이미 확보된 후보를 바로 분석하게 바꿔 full snapshot이 올라올 가능성을 높였습니다.
 - 레이더/포트폴리오/관심종목 UI에서도 `전수 1차 스캔` 후보는 `레이더 점수` 대신 `1차 스캔 점수`로 표시하도록 정리했습니다. 그래서 quick quote-only 후보를 정밀 레이더 점수처럼 오해하기 어렵게 맞췄습니다.
-=======
->>>>>>> main
 
 ## v2.52.10 - 2026-03-30
 

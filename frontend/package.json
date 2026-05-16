@@ -1,6 +1,6 @@
 {
   "name": "stock-predict-frontend",
-  "version": "2.62.0",
+  "version": "2.64.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "check": "npm run test && npm run build && npx tsc --noEmit",
     "test:watch": "vitest"
   },
   "dependencies": {

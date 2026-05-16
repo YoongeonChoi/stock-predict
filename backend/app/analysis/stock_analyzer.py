@@ -27,6 +27,7 @@ from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import stock_detail_analysis_prompt, stock_public_summary_prompt
 from app.analysis.trade_planner import build_trade_plan
+from app.analysis.valuation_blend import build_quick_buy_sell, preferred_entry_ceiling
 from app.config import get_settings
 from app.errors import SP_4004
 from app.data import (
@@ -52,9 +53,7 @@ from app.models.stock import (
     QuarterlyFinancial,
     StockDetail,
     TechnicalIndicators,
-    ValuationMethod,
 )
-from app.scoring import rubric
 from app.scoring.stock_scorer import score_composite, score_stock
 from app.utils.async_tools import gather_limited
 
@@ -516,7 +515,7 @@ async def analyze_stock(ticker: str) -> dict:
     if llm_failed:
         result["errors"].append(llm_result.get("error_code", "SP-4005"))
         result["analysis_summary"] = llm_result.get(
-            "message", "AI analysis unavailable. Showing quantitative data only."
+            "message", "분석 요약을 사용할 수 없어 정량 데이터만 먼저 표시합니다."
         )
         result["key_risks"] = []
         result["key_catalysts"] = []
@@ -808,8 +807,8 @@ def _build_public_counter_points(*, trade_plan, next_day_forecast, market_regime
 def _build_public_wait_points(*, info: dict, trade_plan, market_regime, buy_sell_guide) -> list[str]:
     points: list[str] = []
     current_price = float(info.get("current_price") or 0.0)
-    buy_high = float(getattr(buy_sell_guide, "buy_zone_high", 0.0) or 0.0)
-    if current_price > 0 and buy_high > 0 and current_price > buy_high:
+    entry_ceiling = preferred_entry_ceiling(buy_sell_guide)
+    if current_price > 0 and entry_ceiling > 0 and current_price > entry_ceiling:
         points.append("현재 가격이 선호 진입 구간 위에 있어 추격보다 재확인이 낫습니다.")
 
     action = getattr(trade_plan, "action", "")
@@ -907,41 +906,7 @@ def _calc_technicals(prices: list[dict]) -> TechnicalIndicators:
 
 
 def _build_buy_sell(info: dict, llm: dict, peer_avg: dict) -> BuySellGuide:
-    fair_value = float(llm.get("fair_value", 0))
-    if fair_value <= 0:
-        price = info.get("current_price", 0)
-        target = info.get("target_mean") or price
-        fair_value = (price + target) / 2 if target else price
-
-    buy_low = float(llm.get("buy_zone_low", fair_value * (1 - rubric.BUY_ZONE_DISCOUNT)))
-    buy_high = float(llm.get("buy_zone_high", fair_value * (1 - rubric.BUY_ZONE_DISCOUNT * 0.5)))
-    sell_low = float(llm.get("sell_zone_low", fair_value * (1 + rubric.SELL_ZONE_PREMIUM * 0.6)))
-    sell_high = float(llm.get("sell_zone_high", fair_value * (1 + rubric.SELL_ZONE_PREMIUM)))
-    grade = llm.get("confidence_grade", "C")
-
-    current = info.get("current_price", 0)
-    rr = ((sell_low - current) / (current - buy_high)) if current > buy_high and current != buy_high else 0
-
-    methods = []
-    for method in llm.get("valuation_methods", []):
-        methods.append(ValuationMethod(
-            name=method.get("name", ""),
-            value=round(float(method.get("value", 0)), 2),
-            weight=float(method.get("weight", 0.33)),
-            details=method.get("details", ""),
-        ))
-
-    return BuySellGuide(
-        buy_zone_low=round(buy_low, 2),
-        buy_zone_high=round(buy_high, 2),
-        fair_value=round(fair_value, 2),
-        sell_zone_low=round(sell_low, 2),
-        sell_zone_high=round(sell_high, 2),
-        risk_reward_ratio=round(rr, 2),
-        confidence_grade=grade,
-        methodology=methods,
-        summary=llm.get("analysis_summary", "")[:300],
-    )
+    return build_quick_buy_sell(info)
 
 
 async def _calc_peer_averages(peers: list[str]) -> dict:

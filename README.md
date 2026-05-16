@@ -9,11 +9,22 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.62.0`
+현재 릴리즈: `v2.64.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 점수 보고서의 감점 항목을 검증 루프에 직접 연결했습니다. `verify.py`는 이제 conflict marker, 과장된 AI 문구, LLM 숫자 prompt, stale API 계약, 프론트 `check` script, 릴리즈 버전 drift를 `scripts/evaluation_gate.py`로 먼저 확인합니다.
+- confidence calibration은 empirical profile이 없는 horizon에서 bootstrap confidence를 horizon별 상한으로 더 보수적으로 제한합니다. 실측 profile이 있더라도 표본 수가 작거나 reliability gap이 큰 경우에는 표시 confidence를 다시 capped score로 낮추고, 그 사유를 `calibration_snapshot`에 남깁니다.
+- 예측 연구실의 최근 로그와 리뷰 큐는 이제 표시 confidence cap과 cap 사유를 함께 보여줍니다. 그래서 특정 신뢰도 숫자가 bootstrap fallback인지, 표본 부족 또는 reliability gap guard로 제한됐는지 바로 확인할 수 있습니다.
+- 예측 연구실은 horizon별 목표일 cohort에서 예상 수익률, 실제 수익률, 수익률 차이, 방향 적중률, 표시 confidence Brier를 함께 보여줍니다. 추천/예측 숫자가 실제 수익률 로그에서 어떤 편향을 보이는지 더 직접적으로 검증할 수 있습니다.
+- 같은 cohort에서 실현-예상 수익률 차이가 반복적으로 커지면 Prediction Lab의 액션 큐와 진단 메모가 `수익률 과대/과소 추정 점검` 항목으로 먼저 올립니다.
+- 기회 레이더, 포트폴리오 추천, 이상적 포트폴리오에는 조건부 분포 기반 신호가 수익 보장이나 즉시 매수 지시가 아니라는 공통 고지를 추가했습니다. 추천 수치와 함께 예측 연구실 검증 표본, 리스크 플래그를 보도록 화면 문구를 더 보수적으로 맞췄습니다.
+- 프론트 production build를 막던 포트폴리오 중복 state, API facade 타입 import, route 안정성 진단 카드, 기회 레이더 복사 필드 문제를 정리했습니다. `frontend`에는 `test + build + typecheck`를 한 번에 확인하는 `npm run check`도 추가했습니다.
+- 종목 상세의 매매 가이드는 이제 LLM 숫자 필드를 사용하지 않고, 현재가·애널리스트 목표가·52주 범위 기반 deterministic valuation blend만 사용합니다. LLM은 구조화 이벤트와 서술형 요약 보조로만 남기고, 극단적인 LLM 가격 입력을 무시하는 회귀 테스트를 추가했습니다.
+- stock metadata, PDF export 섹션명, 공용 에러 문구의 과장된 AI 표현을 `예측 분포`, `분석 요약`, `종목 해석` 중심 문구로 정리했습니다.
+- 공개 계정 API는 아이디 중복 확인 `60초 60회`, 회원가입 사전 검증 `60초 20회`의 짧은 rate limit을 유지하며, 초과 시 `429 / SP-6016`과 재시도 안내를 반환합니다.
+- `API_CONTRACT.md`의 watchlist/portfolio route와 실제 FastAPI 라우터 계약을 맞추고, `CHANGELOG.md`의 merge marker를 제거했습니다.
 - `/archive` 기관 리서치 아카이브는 이제 한국 단일 기본값 대신 전체 지역 집계를 먼저 보여주고, 기본 표본도 `40건`까지 넓혀 더 많은 원문을 바로 읽을 수 있습니다. 기존 6개 소스에 더해 `Federal Reserve FEDS Notes`, `FEDS`, `IFDP`, `ECB Publications`를 추가해 해외 정책·연구 리포트 표본도 함께 보강했습니다.
 - `/calendar`는 이제 한국 일정만 따로 보는 화면이 아니라, 같은 월간 보드 안에서 미국·유로존·일본 핵심 매크로와 대표 기업 실적까지 함께 읽습니다. `upcoming_events` 기본 노출은 `12건`, 상단 핵심 카드도 `4건`으로 늘려 실제로 먼저 볼 일정 수가 더 풍부하게 보이도록 맞췄습니다.
 - `backend/tests/test_research_archive_service.py`와 `backend/tests/test_calendar_service.py`에는 전체 지역 아카이브 조회, 추가 해외 소스 등록, 글로벌 CPI/금리결정/대표 실적 포함, 국가별 recurring dedupe 유지 회귀를 함께 추가했습니다. 앞으로는 아카이브 표본이 다시 줄거나 해외 캘린더 이벤트가 한국 recurring 일정과 섞여 사라지는 회귀를 테스트에서 바로 잡을 수 있습니다.
@@ -227,7 +238,7 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 - 포트폴리오에서 실제 보유 종목과 추천을 같은 기준으로 비교합니다.
 - 예측 연구실에서 과거 예측이 실제로 얼마나 맞았는지 다시 검증합니다.
 
-이 제품은 “AI가 종목을 찍어 주는 서비스”보다, **판단 과정과 운영 흐름을 구조화하는 분석 워크스페이스**에 가깝습니다.
+이 제품은 “자동으로 종목을 찍어 주는 서비스”보다, **판단 과정과 운영 흐름을 구조화하는 분석 워크스페이스**에 가깝습니다.
 
 ## 현재 운영 기준선
 
@@ -305,6 +316,8 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 
 - 저장된 예측 로그와 실제 결과를 비교해, 방향 적중률/오차/보정 품질을 점검합니다.
 - 단순 성과 표가 아니라 `표본 수집 퍼널`, `반복 실패 패턴`, `리뷰 큐`, `현재 표본 상태`까지 함께 보여 줍니다.
+- horizon별 목표일 cohort는 예상 수익률과 실제 수익률, 수익률 차이, confidence Brier를 한 표에서 대조해 예측 편향을 더 엄격하게 확인합니다.
+- 실현-예상 수익률 차이가 큰 cohort는 액션 큐와 진단 메모에 자동으로 올라와 수익률 편향을 먼저 복기할 수 있습니다.
 - `/api/research/predictions`는 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 포함해 저장만 되고 평가가 없는 상태나 5D/20D 누락 상태를 먼저 설명합니다.
 
 ## 시스템 아키텍처
@@ -409,6 +422,7 @@ flowchart TD
 
 보호된 API는 인증이 없을 때 `401 / SP-6014`를 반환합니다.
 관심종목에 없는 종목으로 심화 추적을 요청하면 `404 / SP-6017`을 사용합니다.
+공개 계정 검증 API는 로그인 전 호출할 수 있지만, 아이디 중복 확인은 클라이언트별 60초 60회, 회원가입 사전 검증은 60초 20회로 제한합니다. 초과 시 `429 / SP-6016`과 재시도 안내를 반환합니다.
 
 이 프로젝트에서는 페이지별 ad-hoc 로그인 처리보다, **공통 인증 계약과 세션 복구 흐름**을 우선합니다.
 
@@ -593,6 +607,12 @@ p_bootstrap = sigmoid(slope_h * (raw_support - center_h))
 - `5D`: slope `7.2`, center `0.57`
 - `20D`: slope `6.4`, center `0.60`
 
+empirical profile이 없는 fallback 구간에서는 표시 confidence를 horizon별로 더 낮게 제한합니다.
+
+- `1D`: 최대 `78%`
+- `5D`: 최대 `74%`
+- `20D`: 최대 `70%`
+
 #### empirical sigmoid
 
 실측 로그가 충분하면:
@@ -608,11 +628,14 @@ p_empirical = sigmoid(score)
 p_final = isotonic(p_empirical)
 ```
 
+다만 empirical profile이 있더라도 표본 수가 `60건` 미만이거나 reliability gap이 `0.12` 이상이면 표시 confidence를 다시 cap으로 제한합니다. 이때 `calibration_json`에는 cap 값, cap 사유, 표본 수, reliability gap, Brier delta가 함께 남아 예측 연구실에서 사후 검증할 수 있습니다.
+
 즉 표시 confidence는:
 
 1. raw support 계산
 2. bootstrap 또는 empirical sigmoid
 3. 필요 시 isotonic reliability correction
+4. 표본 부족 또는 reliability gap guard에 따른 표시 confidence cap
 
 을 거친 뒤 최종적으로 사용자에게 노출됩니다.
 
