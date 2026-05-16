@@ -743,6 +743,21 @@ export interface PredictionTrendPoint {
   avg_error_pct: number;
 }
 
+export interface PredictionReturnCohort {
+  prediction_type: string;
+  label: string;
+  target_date: string;
+  evaluated_total: number;
+  direction_accuracy: number;
+  within_range_rate: number;
+  avg_predicted_return_pct: number;
+  avg_realized_return_pct: number;
+  avg_return_error_pct: number;
+  avg_error_pct: number;
+  avg_confidence: number;
+  confidence_brier_score: number;
+}
+
 export interface PredictionRecentRecord {
   id: number;
   scope: string;
@@ -763,6 +778,12 @@ export interface PredictionRecentRecord {
   abs_error_pct?: number | null;
   confidence: number;
   up_probability: number;
+  confidence_cap?: number | null;
+  confidence_cap_reason?: string | null;
+  empirical_profile_available?: boolean | null;
+  empirical_sample_count?: number | null;
+  empirical_max_reliability_gap?: number | null;
+  empirical_brier_delta?: number | null;
   model_version: string;
   created_at: number;
   evaluated_at?: number | null;
@@ -804,6 +825,12 @@ export interface PredictionLabReviewItem {
   fusion_method: string;
   graph_context_used: boolean;
   graph_coverage?: number | null;
+  confidence_cap?: number | null;
+  confidence_cap_reason?: string | null;
+  empirical_profile_available?: boolean | null;
+  empirical_sample_count?: number | null;
+  empirical_max_reliability_gap?: number | null;
+  empirical_brier_delta?: number | null;
   review_kind: string;
   review_summary: string;
   stock_path?: string | null;
@@ -1005,6 +1032,7 @@ export interface PredictionLabResponse {
   };
   radar_cohorts?: PredictionLabRadarSummary;
   calibration: PredictionCalibrationBucket[];
+  return_cohorts?: PredictionReturnCohort[];
   recent_trend: PredictionTrendPoint[];
   recent_records: (PredictionRecentRecord & {
     fusion_method?: string;
@@ -1297,6 +1325,17 @@ export interface DailyBriefingEvent {
   impact: "high" | "medium" | "low";
   type: string;
   summary: string;
+}
+
+export interface RequestTrace {
+  request_phase?: "shell" | "quick" | "full";
+  cache_state?: "memory_hit" | "sqlite_hit" | "miss";
+  cold_start_suspected?: boolean;
+  upstream_source?: string | null;
+  elapsed_ms?: number | null;
+  timeout_budget_ms?: number | null;
+  fallback_reason?: string | null;
+  served_state?: "fresh" | "partial" | "stale" | "degraded";
 }
 
 export interface DailyBriefingResponse {

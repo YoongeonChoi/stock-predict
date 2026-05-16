@@ -45,6 +45,20 @@ function methodLabel(method: string) {
   return method;
 }
 
+function confidenceCapReasonLabel(reason?: string | null) {
+  if (!reason) return "cap 없음";
+  const labels: Record<string, string> = {
+    bootstrap_profile_missing: "bootstrap 보수 cap",
+    empirical_sample_soft_floor: "표본 부족 cap",
+    reliability_gap_guard: "reliability gap cap",
+    empirical_profile: "empirical profile",
+  };
+  return reason
+    .split("+")
+    .map((item) => labels[item] ?? item)
+    .join(" + ");
+}
+
 function fusionStatusLabel(status: string) {
   if (status === "active") return "활성";
   if (status === "bootstrapping") return "표본 축적 중";
@@ -121,6 +135,7 @@ export default function PredictionLabDashboard({ data }: Props) {
   const actionQueue = data.action_queue ?? [];
   const failurePatterns = data.failure_patterns ?? [];
   const reviewQueue = data.review_queue ?? [];
+  const returnCohorts = data.return_cohorts ?? [];
   const radarSummary = data.radar_cohorts ?? EMPTY_RADAR_SUMMARY;
   const radarCohorts = radarSummary?.recent_cohorts ?? [];
   const radarReviewQueue = radarSummary?.review_queue ?? [];
@@ -136,6 +151,7 @@ export default function PredictionLabDashboard({ data }: Props) {
   const hasScopeBreakdown = data.breakdown.by_scope.some((row) => row.total > 0);
   const hasModelBreakdown = data.breakdown.by_model.some((row) => row.total > 0);
   const hasRecentRecords = data.recent_records.length > 0;
+  const hasReturnCohorts = returnCohorts.length > 0;
 
   return (
     <div className="space-y-6">
@@ -587,6 +603,62 @@ export default function PredictionLabDashboard({ data }: Props) {
         </div>
       </div>
 
+      <div className="card !p-4">
+        <div>
+          <h2 className="font-semibold text-base">실현 수익률 cohort</h2>
+          <p className="text-sm text-text-secondary mt-1">
+            목표일별로 예상 수익률, 실제 수익률, 방향 적중률, confidence Brier를 같은 표에서 대조합니다.
+          </p>
+        </div>
+        {hasReturnCohorts ? (
+          <div className="overflow-x-auto mt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-text-secondary">
+                  <th className="pb-2">Horizon</th>
+                  <th className="pb-2">목표일</th>
+                  <th className="pb-2 text-right">평가</th>
+                  <th className="pb-2 text-right">예상</th>
+                  <th className="pb-2 text-right">실현</th>
+                  <th className="pb-2 text-right">차이</th>
+                  <th className="pb-2 text-right">방향</th>
+                  <th className="pb-2 text-right">Brier</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returnCohorts.map((row) => (
+                  <tr key={`${row.prediction_type}-${row.target_date}`} className="border-b border-border/40">
+                    <td className="py-2 font-medium">{row.label}</td>
+                    <td className="py-2 font-mono text-xs text-text-secondary">{row.target_date}</td>
+                    <td className="py-2 text-right">{row.evaluated_total.toLocaleString("ko-KR")}건</td>
+                    <td className="py-2 text-right font-mono">{row.avg_predicted_return_pct.toFixed(2)}%</td>
+                    <td className="py-2 text-right font-mono">{row.avg_realized_return_pct.toFixed(2)}%</td>
+                    <td className={`py-2 text-right font-mono ${changeColor(row.avg_return_error_pct)}`}>
+                      {row.avg_return_error_pct.toFixed(2)}%
+                    </td>
+                    <td className="py-2 text-right">
+                      <div className="font-medium">{pct(row.direction_accuracy)}</div>
+                      <div className="text-[11px] text-text-secondary">밴드 {pct(row.within_range_rate)}</div>
+                    </td>
+                    <td className="py-2 text-right">
+                      <div className="font-mono">{row.confidence_brier_score.toFixed(4)}</div>
+                      <div className="text-[11px] text-text-secondary">신뢰도 {row.avg_confidence.toFixed(1)}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="workspace-empty-frame mt-4 min-h-[180px] space-y-3">
+            <div className="text-sm font-semibold text-text">수익률 cohort는 평가 완료 표본부터 채워집니다</div>
+            <div className="text-sm leading-6 text-text-secondary">
+              실제 종가가 들어온 예측 로그가 horizon별로 쌓이면 목표일 단위의 예상 대비 실현 수익률과 confidence Brier가 자동으로 표시됩니다.
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-5">
         <div className="card !p-4">
           <div>
@@ -731,6 +803,12 @@ export default function PredictionLabDashboard({ data }: Props) {
                       Graph · {item.graph_context_used ? `${(Number(item.graph_coverage ?? 0) * 100).toFixed(0)}%` : "미사용"}
                     </div>
                   </div>
+                  {item.confidence_cap != null ? (
+                    <div className="mt-2 text-xs text-text-secondary">
+                      표시 cap {item.confidence_cap.toFixed(1)}% · {confidenceCapReasonLabel(item.confidence_cap_reason)}
+                      {item.empirical_sample_count ? ` · empirical 표본 ${item.empirical_sample_count}건` : ""}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -781,6 +859,11 @@ export default function PredictionLabDashboard({ data }: Props) {
                   <div>
                     <div className="text-[11px] text-text-secondary">신뢰도</div>
                     <div className="font-semibold">{row.confidence.toFixed(1)}</div>
+                    {row.confidence_cap != null ? (
+                      <div className="text-[11px] text-text-secondary mt-1">
+                        cap {row.confidence_cap.toFixed(1)}%
+                      </div>
+                    ) : null}
                   </div>
                   <div>
                     <div className="text-[11px] text-text-secondary">밴드</div>
@@ -902,7 +985,14 @@ export default function PredictionLabDashboard({ data }: Props) {
                     <td className="py-2 text-right font-mono">{row.predicted_close.toFixed(2)}</td>
                     <td className="py-2 text-right font-mono">{row.actual_close != null ? row.actual_close.toFixed(2) : "대기"}</td>
                     <td className="py-2 text-right font-mono">{row.abs_error_pct != null ? `${row.abs_error_pct.toFixed(2)}%` : "-"}</td>
-                    <td className="py-2 text-right">{row.confidence.toFixed(1)}</td>
+                    <td className="py-2 text-right">
+                      <div>{row.confidence.toFixed(1)}</div>
+                      {row.confidence_cap != null ? (
+                        <div className="text-[11px] text-text-secondary">
+                          cap {row.confidence_cap.toFixed(1)} · {confidenceCapReasonLabel(row.confidence_cap_reason)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td
                       className={`py-2 text-right font-medium ${
                         row.direction_hit == null

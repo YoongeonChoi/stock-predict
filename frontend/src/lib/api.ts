@@ -4,6 +4,22 @@ import { marketApi } from "@/lib/api/market";
 import { portfolioApi } from "@/lib/api/portfolio";
 import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
 import { systemApi } from "@/lib/api/system";
+import type { PricePoint, StockDetail, WatchlistItem } from "@/lib/types";
+import type {
+  ArchiveEntry,
+  ForecastDeltaResponse,
+  PivotPoints,
+  PredictionAccuracyStats,
+  PredictionLabResponse,
+  ResearchArchiveEntry,
+  ResearchRegionCode,
+  SearchResult,
+  TechSummary,
+  TickerResolution,
+  WatchlistAddResponse,
+  WatchlistTrackingDetailResponse,
+  WatchlistTrackingToggleResponse,
+} from "@/lib/api/types";
 export { apiPath };
 export {
   AUTH_REQUIRED_EVENT,
@@ -31,7 +47,7 @@ export type {
   WatchlistAddResponse, MarketMovers, PredictionAccuracyStats, ArchiveEntry,
   ResearchRegionCode, ResearchArchiveSourceResult, ResearchArchiveSourceCount, ResearchArchiveRegionCount,
   ResearchArchiveStatus, ResearchArchiveEntry, PredictionBreakdownRow, PredictionCalibrationBucket,
-  PredictionTrendPoint, PredictionRecentRecord, PredictionLabActionItem, PredictionLabFailurePattern,
+  PredictionTrendPoint, PredictionReturnCohort, PredictionRecentRecord, PredictionLabActionItem, PredictionLabFailurePattern,
   PredictionLabReviewItem, PredictionLabRadarTagStat, PredictionLabRadarCohort, PredictionLabRadarReviewItem,
   PredictionLabRadarProfile, PredictionLabRadarSummary, PredictionLabResponse, StartupTaskStatus,
   DataSourceStatus, ForecastModelSummary, RouteStabilitySummaryRow, RouteStabilityFirstUsableMetrics,
@@ -51,13 +67,13 @@ export const api = {
   getStockDetail: (ticker: string, options: StockDetailRequestOptions = {}) => {
     const { preferFull = false, ...requestOptions } = options;
     const query = preferFull ? "?prefer_full=true" : "";
-    return get<import("./types").StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail${query}`, requestOptions);
+    return get<StockDetail>(`/api/stock/${encodeURIComponent(ticker)}/detail${query}`, requestOptions);
   },
   getStockChart: (ticker: string, period = "3mo") =>
-    get<{ data: import("./types").PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
+    get<{ data: PricePoint[] }>(`/api/stock/${encodeURIComponent(ticker)}/chart?period=${period}`),
   getTechSummary: (ticker: string) => get<TechSummary>(`/api/stock/${encodeURIComponent(ticker)}/technical-summary`),
   getPivotPoints: (ticker: string) => get<PivotPoints>(`/api/stock/${encodeURIComponent(ticker)}/pivot-points`),
-  getWatchlist: (options?: RequestOptions) => get<import("./types").WatchlistItem[]>("/api/watchlist", options),
+  getWatchlist: (options?: RequestOptions) => get<WatchlistItem[]>("/api/watchlist", options),
   addWatchlist: (ticker: string, country_code = "KR") => post<WatchlistAddResponse>(`/api/watchlist/${ticker}?country_code=${country_code}`),
   removeWatchlist: (ticker: string) => del(`/api/watchlist/${ticker}`),
   enableWatchlistTracking: (ticker: string, countryCode = "KR") =>

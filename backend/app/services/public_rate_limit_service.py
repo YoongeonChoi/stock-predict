@@ -42,12 +42,12 @@ _PUBLIC_LIMITER = SlidingWindowRateLimiter()
 
 _PUBLIC_ACCOUNT_LIMITS = {
     "username_availability": {
-        "max_requests": 12,
+        "max_requests": 60,
         "window_seconds": 60,
         "label": "아이디 중복 확인",
     },
     "signup_validate": {
-        "max_requests": 6,
+        "max_requests": 20,
         "window_seconds": 60,
         "label": "회원가입 검증",
     },

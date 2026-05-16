@@ -307,15 +307,32 @@ def _fill_weights(
     fill_priority: np.ndarray,
     step: float = 0.0025,
 ) -> np.ndarray:
-    ordered = list(np.argsort(fill_priority)[::-1])
+    ordered = [idx for idx in list(np.argsort(fill_priority)[::-1]) if fill_priority[idx] > 0.0]
+
+    country_map = {}
+    for indices in country_groups.values():
+        for i in indices:
+            country_map[i] = indices
+
+    sector_map = {}
+    for indices in sector_groups.values():
+        for i in indices:
+            sector_map[i] = indices
+
     for _ in range(400):
         remaining = target_equity - float(weights.sum())
         if remaining <= 0.001:
             break
         progressed = False
         for index in ordered:
-            if fill_priority[index] <= 0.0:
+            # 핵심 성능 최적화: 이미 Cap에 도달한 대상은 무거운 project 연산을 아예 스킵한다.
+            if weights[index] >= single_cap - 1e-9:
                 continue
+            if index in country_map and float(weights[country_map[index]].sum()) >= country_cap - 1e-9:
+                continue
+            if index in sector_map and float(weights[sector_map[index]].sum()) >= sector_cap - 1e-9:
+                continue
+
             trial = weights.copy()
             trial[index] += min(step, remaining)
             trial = _project_weights(
@@ -327,9 +344,13 @@ def _fill_weights(
                 sector_groups=sector_groups,
                 sector_cap=sector_cap,
             )
-            if float(trial.sum()) > float(weights.sum()) + 1e-8:
+            diff = float(trial.sum()) - float(weights.sum())
+            if diff > 1e-8:
                 weights = trial
                 progressed = True
+                remaining -= diff
+                if remaining <= 0.001:
+                    break
         if not progressed:
             break
     return weights

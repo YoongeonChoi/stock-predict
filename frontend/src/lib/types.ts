@@ -1,3 +1,5 @@
+import type { RequestTrace as ApiRequestTrace } from "@/lib/api/types";
+
 export interface IndexInfo {
   ticker: string;
   name: string;
@@ -414,16 +416,7 @@ export interface StockSummaryRef {
   reason: string;
 }
 
-export interface RequestTrace {
-  request_phase?: "shell" | "quick" | "full";
-  cache_state?: "memory_hit" | "sqlite_hit" | "miss";
-  cold_start_suspected?: boolean;
-  upstream_source?: string | null;
-  elapsed_ms?: number | null;
-  timeout_budget_ms?: number | null;
-  fallback_reason?: string | null;
-  served_state?: "fresh" | "partial" | "stale" | "degraded";
-}
+export type RequestTrace = ApiRequestTrace;
 
 export interface InstitutionView {
   name: string;

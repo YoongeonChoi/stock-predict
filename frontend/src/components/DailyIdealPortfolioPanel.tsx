@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import ModelOutputNotice from "@/components/ModelOutputNotice";
 import type { DailyIdealPortfolio, DailyIdealPortfolioPosition } from "@/lib/api";
 import { cn, changeColor, formatPct, formatPrice } from "@/lib/utils";
 
@@ -181,6 +182,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             ))}
           </div>
         </div>
+        <ModelOutputNotice compact />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="metric-card">
@@ -292,6 +294,7 @@ export default function DailyIdealPortfolioPanel({ data, compact = false, embedd
             ))}
           </div>
         </div>
+        <ModelOutputNotice />
 
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
           <div className="rounded-2xl border border-border/70 bg-surface/60 px-3 py-3">

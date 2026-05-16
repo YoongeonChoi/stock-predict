@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import ModelOutputNotice from "@/components/ModelOutputNotice";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard from "@/components/WorkspaceStateCard";
 import type {
@@ -231,6 +232,7 @@ export default function PortfolioRecommendationPanel({
 
       <div className="px-5 py-5 space-y-5">
         {controls}
+        <ModelOutputNotice />
 
         {loading ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

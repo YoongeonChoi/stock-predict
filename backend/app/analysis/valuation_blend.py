@@ -5,6 +5,10 @@ from __future__ import annotations
 from app.models.stock import BuySellGuide, ValuationMethod
 
 
+def preferred_entry_ceiling(guide: BuySellGuide) -> float:
+    return float(guide.buy_zone_high or 0.0)
+
+
 def build_quick_buy_sell(info: dict) -> BuySellGuide:
     current_price = float(info.get("current_price") or 0)
     target_mean = float(info.get("target_mean") or 0)

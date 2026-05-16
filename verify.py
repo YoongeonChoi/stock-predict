@@ -292,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         run_step("Launcher check", launcher_check_command, ROOT)
         run_step("Backend compileall", [*python_command, "-m", "compileall", "app"], ROOT / "backend")
         ensure_backend_test_dependencies(python_command)
+        run_step("Evaluation score gate", [*python_command, str(ROOT / "scripts" / "evaluation_gate.py")], ROOT)
         run_step("Backend unittest", [*python_command, "-m", "unittest", "discover", "-s", "tests", "-v"], ROOT / "backend")
 
         if stages.run_frontend_checks:

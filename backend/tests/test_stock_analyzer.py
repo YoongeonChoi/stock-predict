@@ -168,6 +168,32 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(summary.thesis_breakers), 1)
         self.assertIn("fallback", summary.data_quality.lower())
 
+    def test_buy_sell_guide_ignores_llm_numeric_fields(self):
+        guide = stock_analyzer._build_buy_sell(
+            {
+                "current_price": 100.0,
+                "target_mean": 120.0,
+                "52w_high": 140.0,
+                "52w_low": 80.0,
+            },
+            {
+                "fair_value": 10000.0,
+                "buy_zone_low": 9000.0,
+                "buy_zone_high": 9500.0,
+                "sell_zone_low": 12000.0,
+                "sell_zone_high": 13000.0,
+                "confidence_grade": "A",
+                "valuation_methods": [{"name": "LLM DCF", "value": 10000.0, "weight": 1.0}],
+            },
+            {},
+        )
+
+        self.assertEqual(guide.fair_value, 110.0)
+        self.assertEqual(guide.buy_zone_high, 106.7)
+        self.assertEqual(guide.sell_zone_low, 116.6)
+        self.assertNotEqual(guide.confidence_grade, "A")
+        self.assertTrue(all(method.name != "LLM DCF" for method in guide.methodology))
+
     def test_build_public_stock_summary_rejects_english_fallback_points(self):
         summary = stock_analyzer._build_public_stock_summary(
             llm_result={},

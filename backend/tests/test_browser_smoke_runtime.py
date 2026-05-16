@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -32,6 +33,15 @@ class BrowserSmokeRuntimeTests(unittest.TestCase):
 
         self.assertGreaterEqual(timeout_seconds, 28.0)
 
+    def test_browser_profile_dir_ignores_windows_cleanup_races(self) -> None:
+        with patch.object(browser_smoke.tempfile, "TemporaryDirectory") as temporary_directory:
+            browser_smoke.browser_profile_dir(prefix="stock-predict-browser-smoke-")
+
+        temporary_directory.assert_called_once_with(
+            prefix="stock-predict-browser-smoke-",
+            ignore_cleanup_errors=True,
+        )
+
     def test_dump_dom_timeout_raises_runtime_error(self) -> None:
         with patch.object(
             browser_smoke.subprocess,
@@ -46,6 +56,37 @@ class BrowserSmokeRuntimeTests(unittest.TestCase):
                     viewport=(390, 844),
                     command_timeout_seconds=21,
                 )
+
+    def test_dump_dom_uses_http_fallback_when_edge_stdout_is_empty(self) -> None:
+        completed = SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        with patch.object(browser_smoke.subprocess, "run", return_value=completed):
+            with patch.object(browser_smoke, "fetch_server_html", return_value="<html>fallback</html>") as fallback:
+                html = browser_smoke.dump_dom(
+                    browser="browser",
+                    url="https://example.com",
+                    virtual_time_budget_ms=18000,
+                    viewport=(390, 844),
+                    command_timeout_seconds=21,
+                )
+
+        self.assertEqual(html, "<html>fallback</html>")
+        fallback.assert_called_once_with("https://example.com", 21)
+
+    def test_save_screenshot_requires_non_empty_output_file(self) -> None:
+        completed = SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "screen.png"
+            with patch.object(browser_smoke.subprocess, "run", return_value=completed):
+                ok = browser_smoke.save_screenshot(
+                    browser="browser",
+                    url="https://example.com",
+                    destination=destination,
+                    virtual_time_budget_ms=18000,
+                    viewport=(390, 844),
+                    command_timeout_seconds=21,
+                )
+
+        self.assertFalse(ok)
 
     def test_run_check_stops_when_deadline_is_already_exceeded(self) -> None:
         check = browser_smoke.BrowserCheck(

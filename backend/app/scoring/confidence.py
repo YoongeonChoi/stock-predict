@@ -144,7 +144,16 @@ CALIBRATION_PARAMS: dict[int, dict[str, float]] = {
     20: {"slope": 6.4, "center": 0.60},
 }
 BOOTSTRAP_CONFIDENCE_MAX = 0.88
+BOOTSTRAP_CONFIDENCE_CAP_BY_BUCKET: dict[int, float] = {
+    1: 0.78,
+    5: 0.74,
+    20: 0.70,
+}
 EMPIRICAL_CONFIDENCE_MAX = 0.97
+EMPIRICAL_LOW_SAMPLE_CONFIDENCE_MAX = 0.86
+EMPIRICAL_RELIABILITY_GAP_CONFIDENCE_MAX = 0.84
+EMPIRICAL_SAMPLE_SOFT_FLOOR = 60
+EMPIRICAL_RELIABILITY_GAP_GUARD = 0.12
 CALIBRATION_FEATURE_NAMES: tuple[str, ...] = (
     "raw_support",
     "distribution_support",
@@ -360,6 +369,33 @@ def _apply_empirical_profile(
     return calibrated_probability
 
 
+def _confidence_cap_for_profile(profile: EmpiricalCalibrationProfile | None, bucket: int) -> tuple[float, str]:
+    if profile is None:
+        return (
+            BOOTSTRAP_CONFIDENCE_CAP_BY_BUCKET.get(bucket, BOOTSTRAP_CONFIDENCE_MAX),
+            "bootstrap_profile_missing",
+        )
+
+    cap = EMPIRICAL_CONFIDENCE_MAX
+    reasons: list[str] = []
+    if int(profile.sample_count) < EMPIRICAL_SAMPLE_SOFT_FLOOR:
+        cap = min(cap, EMPIRICAL_LOW_SAMPLE_CONFIDENCE_MAX)
+        reasons.append("empirical_sample_soft_floor")
+    if (
+        profile.max_reliability_gap is not None
+        and float(profile.max_reliability_gap) >= EMPIRICAL_RELIABILITY_GAP_GUARD
+    ):
+        cap = min(cap, EMPIRICAL_RELIABILITY_GAP_CONFIDENCE_MAX)
+        reasons.append("reliability_gap_guard")
+    if not reasons:
+        reasons.append("empirical_profile")
+    return cap, "+".join(reasons)
+
+
+def _brier_delta(profile: EmpiricalCalibrationProfile) -> float:
+    return float(profile.prior_brier_score) - float(profile.brier_score)
+
+
 def calibrate_direction_confidence(
     *,
     horizon_days: int,
@@ -404,17 +440,48 @@ def calibrate_direction_confidence(
     bucket = int(snapshot["horizon_bucket"])
 
     empirical_profile = get_empirical_calibration_profile(resolved_prediction_type)
+    confidence_cap, confidence_cap_reason = _confidence_cap_for_profile(empirical_profile, bucket)
     if empirical_profile:
-        calibrated_probability = _apply_empirical_profile(snapshot=snapshot, profile=empirical_profile)
+        calibrated_probability = _clip(
+            _apply_empirical_profile(snapshot=snapshot, profile=empirical_profile),
+            0.0,
+            confidence_cap,
+        )
         calibrator_method = empirical_profile.method
+        snapshot.update(
+            {
+                "empirical_profile_available": True,
+                "empirical_sample_count": int(empirical_profile.sample_count),
+                "empirical_max_reliability_gap": (
+                    round(float(empirical_profile.max_reliability_gap), 6)
+                    if empirical_profile.max_reliability_gap is not None
+                    else None
+                ),
+                "empirical_brier_delta": round(_brier_delta(empirical_profile), 6),
+            }
+        )
     else:
         params = CALIBRATION_PARAMS[bucket]
         calibrated_probability = _clip(
             _sigmoid(params["slope"] * (float(snapshot["raw_support"] or 0.0) - params["center"])),
             0.0,
-            BOOTSTRAP_CONFIDENCE_MAX,
+            confidence_cap,
         )
-        calibrator_method = f"bootstrap_sigmoid_{bucket}d"
+        calibrator_method = f"bootstrap_conservative_sigmoid_{bucket}d"
+        snapshot.update(
+            {
+                "empirical_profile_available": False,
+                "empirical_sample_count": 0,
+                "empirical_max_reliability_gap": None,
+                "empirical_brier_delta": None,
+            }
+        )
+    snapshot.update(
+        {
+            "confidence_cap": round(confidence_cap, 6),
+            "confidence_cap_reason": confidence_cap_reason,
+        }
+    )
     display_confidence = calibrated_probability * 100.0
 
     return ConfidenceResult(

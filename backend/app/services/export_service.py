@@ -17,7 +17,7 @@ SECTION_TITLES = {
     "score": "점수",
     "institutional_analysis": "기관 관점",
     "top_stocks": "상위 종목",
-    "analysis_summary": "AI 분석",
+    "analysis_summary": "분석 요약",
     "buy_sell_guide": "매매 가이드",
     "key_news": "핵심 뉴스",
 }
@@ -248,4 +248,3 @@ def export_pdf(data: dict, title: str = "주식 분석 리포트") -> bytes:
     if isinstance(rendered, bytearray):
         return bytes(rendered)
     return str(rendered).encode("latin-1", errors="ignore")
-

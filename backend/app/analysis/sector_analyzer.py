@@ -138,7 +138,7 @@ async def analyze_sector(country_code: str, sector_name: str) -> dict:
 
     summary = llm_result.get("summary", "")
     if llm_failed:
-        summary = llm_result.get("error", "AI analysis unavailable. Showing quantitative rankings only.")
+        summary = llm_result.get("error", "분석 요약을 사용할 수 없어 정량 순위만 먼저 표시합니다.")
 
     errors = []
     if llm_failed:

@@ -46,7 +46,7 @@ describe("getUserFacingErrorMessage", () => {
   });
 
   it("ApiTimeoutError는 timeout 메시지를 반환한다", () => {
-    const error = new ApiTimeoutError("timeout");
+    const error = new ApiTimeoutError("/api/test", 1000);
     expect(getUserFacingErrorMessage(error, "기본", { timeoutMessage: "지연" })).toBe("지연");
   });
 

@@ -7,7 +7,7 @@ import type {
   HeatmapData,
   MarketMovers,
   ScreenerResponse,
-} from "@/lib/api";
+} from "@/lib/api/types";
 import type {
   CountryListItem,
   CountryReport,

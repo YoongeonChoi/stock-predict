@@ -82,7 +82,7 @@ class AccountRouterTests(unittest.TestCase):
             ),
         ):
             with patched_client() as client:
-                for _ in range(12):
+                for _ in range(60):
                     response = client.get("/api/account/username-availability?username=alpha_01")
                     self.assertEqual(response.status_code, 200)
 
@@ -118,7 +118,7 @@ class AccountRouterTests(unittest.TestCase):
                     "password": "Secure!234A",
                     "password_confirm": "Secure!234A",
                 }
-                for _ in range(6):
+                for _ in range(20):
                     response = client.post("/api/account/signup/validate", json=payload)
                     self.assertEqual(response.status_code, 200)
 

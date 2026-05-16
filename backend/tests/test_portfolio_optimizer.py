@@ -108,6 +108,54 @@ class PortfolioOptimizerTests(unittest.TestCase):
         tech_weight = weights["005930.KS"] + weights["AAPL"]
         self.assertLessEqual(tech_weight, 50.0 + 0.2)
 
+    def test_fill_weights_stress_respects_group_caps_while_filling_target(self):
+        candidates = [
+            _candidate(
+                key=f"TEST{index}",
+                country_code=["KR", "KR", "US", "US", "JP", "JP", "EU", "EU"][index],
+                sector=["Tech", "Finance", "Tech", "Health", "Finance", "Health", "Energy", "Energy"][index],
+                current_weight_pct=0.0,
+                model_score=86.0 - index,
+                expected_return_pct_20d=5.0 - index * 0.15,
+                expected_excess_return_pct_20d=3.5 - index * 0.1,
+                up_probability_20d=66.0 - index,
+                down_probability_20d=16.0 + index * 0.5,
+                volatility_pct_20d=7.0 + index * 0.2,
+                returns=[0.006 + index * 0.0002, -0.002, 0.004, 0.005, -0.001, 0.003, 0.004, 0.002],
+            )
+            for index in range(8)
+        ]
+        budget = {
+            "style": "balanced",
+            "recommended_equity_pct": 90.0,
+            "max_single_weight_pct": 18.0,
+            "max_country_weight_pct": 40.0,
+            "max_sector_weight_pct": 35.0,
+        }
+
+        result = optimize_portfolio_weights(candidates, budget)
+        weights = result.target_weights
+
+        self.assertGreaterEqual(result.actual_equity_pct, 88.0)
+        self.assertLessEqual(result.actual_equity_pct, 90.2)
+        self.assertTrue(all(weight <= 18.2 for weight in weights.values()))
+
+        for country in {"KR", "US", "JP", "EU"}:
+            country_weight = sum(
+                weight
+                for key, weight in weights.items()
+                if next(candidate for candidate in candidates if candidate["key"] == key)["country_code"] == country
+            )
+            self.assertLessEqual(country_weight, 40.2)
+
+        for sector in {"Tech", "Finance", "Health", "Energy"}:
+            sector_weight = sum(
+                weight
+                for key, weight in weights.items()
+                if next(candidate for candidate in candidates if candidate["key"] == key)["sector"] == sector
+            )
+            self.assertLessEqual(sector_weight, 35.2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -63,11 +63,13 @@ class DatabaseCacheResilienceTests(unittest.IsolatedAsyncioTestCase):
             stats = await self.db.prediction_stats("next_day")
             recent = await self.db.prediction_recent("next_day", 5)
             calibration = await self.db.prediction_confidence_buckets("next_day")
+            return_cohorts = await self.db.prediction_return_cohorts("next_day", 3)
 
         self.assertEqual(stats["total_predictions"], 0)
         self.assertEqual(stats["stored_predictions"], 0)
         self.assertEqual(recent, [])
         self.assertEqual(calibration, [])
+        self.assertEqual(return_cohorts, [])
 
     async def test_initialize_does_not_repeat_constructor_bootstrap(self):
         with patch.object(Database, "_bootstrap_schema_sync", autospec=True) as bootstrap_mock:

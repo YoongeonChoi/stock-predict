@@ -228,8 +228,51 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                     "blend_weight": 0.31,
                     "profile_fitted_at": "2026-03-28T10:15:00",
                 },
+                "confidence_cap": 0.78,
+                "confidence_cap_reason": "bootstrap_profile_missing",
+                "empirical_profile_available": False,
+                "empirical_sample_count": 0,
+                "empirical_max_reliability_gap": None,
+                "empirical_brier_delta": None,
             }
         )
+
+        async def _prediction_return_cohorts(prediction_type: str = "next_day", limit: int = 6):
+            rows = {
+                "next_day": [
+                    {
+                        "target_date": "2026-03-20",
+                        "prediction_type": "next_day",
+                        "evaluated_total": 3,
+                        "direction_hits": 2,
+                        "within_range": 2,
+                        "avg_predicted_return_pct": 1.0,
+                        "avg_realized_return_pct": 4.25,
+                        "avg_return_error_pct": 3.25,
+                        "avg_abs_error_pct": 0.7,
+                        "avg_confidence": 67.0,
+                        "confidence_brier_score": 0.2111,
+                    }
+                ],
+                "distributional_5d": [
+                    {
+                        "target_date": "2026-03-24",
+                        "prediction_type": "distributional_5d",
+                        "evaluated_total": 2,
+                        "direction_hits": 1,
+                        "within_range": 1,
+                        "avg_predicted_return_pct": 2.4,
+                        "avg_realized_return_pct": 1.1,
+                        "avg_return_error_pct": -1.3,
+                        "avg_abs_error_pct": 1.3,
+                        "avg_confidence": 61.0,
+                        "confidence_brier_score": 0.2442,
+                    }
+                ],
+                "distributional_20d": [],
+            }
+            return rows.get(prediction_type, [])[:limit]
+
         with (
             patch("app.services.research_service.cache.get", new=AsyncMock(return_value=None)),
             patch("app.services.research_service.cache.set", new=AsyncMock()),
@@ -315,6 +358,10 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
                         }
                     ]
                 ),
+            ),
+            patch(
+                "app.services.research_service.db.prediction_return_cohorts",
+                new=AsyncMock(side_effect=_prediction_return_cohorts),
             ),
             patch(
                 "app.services.research_service.db.prediction_country_breakdown",
@@ -586,11 +633,21 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["recent_records"][0]["direction_hit"], True)
         self.assertEqual(result["recent_records"][0]["prediction_type"], "next_day")
         self.assertEqual(result["recent_records"][0]["fusion_method"], "learned_blended_graph")
+        self.assertEqual(result["recent_records"][0]["confidence_cap"], 78.0)
+        self.assertEqual(result["recent_records"][0]["confidence_cap_reason"], "bootstrap_profile_missing")
+        self.assertEqual(len(result["return_cohorts"]), 2)
+        self.assertEqual(result["return_cohorts"][0]["label"], "1D")
+        self.assertEqual(result["return_cohorts"][0]["avg_realized_return_pct"], 4.25)
+        self.assertEqual(result["return_cohorts"][1]["avg_return_error_pct"], -1.3)
+        self.assertEqual(result["return_cohorts"][1]["confidence_brier_score"], 0.2442)
         self.assertTrue(result["action_queue"])
+        self.assertTrue(any(item["key"] == "next_day:return-bias:2026-03-20" for item in result["action_queue"]))
         self.assertEqual(result["failure_patterns"], [])
         self.assertEqual(result["review_queue"][0]["symbol"], "005930.KS")
         self.assertEqual(result["review_queue"][0]["review_kind"], "clean-hit")
+        self.assertEqual(result["review_queue"][0]["confidence_cap"], 78.0)
         self.assertTrue(result["insights"])
+        self.assertTrue(any("수익률" in line and "과소 추정" in line for line in result["insights"]))
         self.assertEqual(result["pipeline_health"]["stored_predictions"], 26)
         self.assertEqual(result["pipeline_health"]["stale_pending_predictions"], 2)
         self.assertEqual(result["pipeline_health"]["backfill_updated_reports"], 1)
@@ -621,6 +678,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("app.services.research_service.db.prediction_recent", new=AsyncMock(side_effect=_slow_recent)),
             patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_return_cohorts", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
@@ -730,6 +788,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_return_cohorts", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
@@ -745,11 +804,11 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await asyncio.wait_for(
                 research_service.get_prediction_lab(limit_recent=20, refresh=False),
-                timeout=0.1,
+                timeout=0.5,
             )
             await asyncio.wait_for(
                 asyncio.gather(backfill_started.wait(), refresh_started.wait()),
-                timeout=0.1,
+                timeout=0.5,
             )
             release_background.set()
             await asyncio.sleep(0)
@@ -786,6 +845,7 @@ class ResearchAndPortfolioTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("app.services.research_service.db.prediction_recent", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_daily_trend", new=AsyncMock(return_value=[])),
+            patch("app.services.research_service.db.prediction_return_cohorts", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_country_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_scope_breakdown", new=AsyncMock(return_value=[])),
             patch("app.services.research_service.db.prediction_model_breakdown", new=AsyncMock(return_value=[])),
