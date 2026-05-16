@@ -9,11 +9,16 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.64.0`
+현재 릴리즈: `v2.65.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 기회 레이더는 이제 1차 후보 스캔부터 당일 급등률 중심 정렬을 쓰지 않습니다. `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점`으로 quick score를 만들고, 급등률만 높은 종목은 정밀 분석 전에 우선순위를 낮춥니다.
+- 레이더 후보와 다음 거래일 포커스는 같은 `OpportunityQuality` 기준을 공유합니다. 응답에는 `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `entry_style`, `recommended_entry_condition`, `flow_data_status`가 optional 필드로 추가됩니다.
+- KRX 투자자별 수급은 실시간 체결 주체가 아니라 EOD 데이터로 다룹니다. 장중에는 `eod_pending`, 18시 이후 확보 시 `fresh_eod`, 실패 시 `flow_unavailable`로 표시하며 화면은 partial 상태에서도 가격/거래량 기준 후보를 유지합니다.
+- 레이더 사후 평가는 KST 기준일을 사용하고 `support_json`에 당시 품질 신호를 저장합니다. `evaluation_json`에는 1D/5D/20D 수익률, 최대 역행폭, benchmark 미확보 상태, 맞은 근거/틀린 근거를 함께 남기며, 레이더 캡처 뒤 pending 평가 refresh를 백그라운드로 가볍게 예약합니다.
+- `/radar`와 다음 거래일 포커스 카드는 `추격 위험`, `거래량`, `수급`, `섹터`, `진입 조건`을 짧은 metric strip으로 보여줍니다. 오래된 캐시처럼 새 필드가 없는 응답은 기존 카드로 안전하게 표시됩니다.
 - 점수 보고서의 감점 항목을 검증 루프에 직접 연결했습니다. `verify.py`는 이제 conflict marker, 과장된 AI 문구, LLM 숫자 prompt, stale API 계약, 프론트 `check` script, 릴리즈 버전 drift를 `scripts/evaluation_gate.py`로 먼저 확인합니다.
 - confidence calibration은 empirical profile이 없는 horizon에서 bootstrap confidence를 horizon별 상한으로 더 보수적으로 제한합니다. 실측 profile이 있더라도 표본 수가 작거나 reliability gap이 큰 경우에는 표시 confidence를 다시 capped score로 낮추고, 그 사유를 `calibration_snapshot`에 남깁니다.
 - 예측 연구실의 최근 로그와 리뷰 큐는 이제 표시 confidence cap과 cap 사유를 함께 보여줍니다. 그래서 특정 신뢰도 숫자가 bootstrap fallback인지, 표본 부족 또는 reliability gap guard로 제한됐는지 바로 확인할 수 있습니다.

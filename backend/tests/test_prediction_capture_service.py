@@ -7,6 +7,7 @@ from app.services import prediction_capture_service
 class PredictionCaptureServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_capture_market_opportunity_predictions_stores_focus_and_distributional_rows(self):
         payload = {
+            "generated_at": "2026-04-07T15:00:00+09:00",
             "next_day_focus": {
                 "ticker": "005930.KS",
                 "next_day_forecast": {
@@ -47,6 +48,10 @@ class PredictionCaptureServiceTests(unittest.IsolatedAsyncioTestCase):
                 "app.services.prediction_capture_service.opportunity_radar_lab_service.capture_opportunity_radar_snapshot",
                 new=AsyncMock(return_value={"captured_snapshots": 1, "reference_date": "2026-04-07"}),
             ) as capture_snapshot,
+            patch(
+                "app.services.prediction_capture_service.opportunity_radar_lab_service.schedule_opportunity_radar_accuracy_refresh",
+                return_value=True,
+            ) as schedule_refresh,
         ):
             result = await prediction_capture_service.capture_market_opportunity_predictions(
                 "KR",
@@ -61,7 +66,34 @@ class PredictionCaptureServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prediction_upsert.await_count, 2)
         self.assertEqual(prediction_upsert.await_args_list[0].kwargs["prediction_type"], "next_day")
         self.assertEqual(prediction_upsert.await_args_list[1].kwargs["prediction_type"], "distributional_20d")
+        self.assertEqual(prediction_upsert.await_args_list[1].kwargs["reference_date"], "2026-04-07")
         capture_snapshot.assert_awaited_once()
+        schedule_refresh.assert_called_once()
+
+    def test_opportunity_rows_use_kst_payload_reference_date(self):
+        payload = {
+            "generated_at": "2026-04-07T23:30:00+00:00",
+            "opportunities": [
+                {
+                    "ticker": "000660.KS",
+                    "current_price": 182000.0,
+                    "target_date_20d": "2026-05-06",
+                    "price_q50_20d": 191000.0,
+                    "up_probability_20d": 64.0,
+                    "down_probability_20d": 18.0,
+                    "flat_probability_20d": 18.0,
+                    "distribution_confidence_20d": 61.0,
+                    "quality_score": 66.0,
+                    "chase_risk_score": 42.0,
+                }
+            ],
+        }
+
+        rows = prediction_capture_service._build_opportunity_prediction_rows("KR", payload, 10)
+
+        self.assertEqual(rows[0]["reference_date"], "2026-04-08")
+        self.assertEqual(rows[0]["calibration_json"]["quality_score"], 66.0)
+        self.assertEqual(rows[0]["calibration_json"]["chase_risk_score"], 42.0)
 
     async def test_backfill_recent_archive_predictions_only_writes_missing_rows(self):
         archive_rows = [

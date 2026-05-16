@@ -25,9 +25,23 @@ class FlowSignal(BaseModel):
     source: str = ""
     market: str = ""
     unit: str = ""
+    data_status: Literal["fresh_eod", "eod_pending", "flow_unavailable"] | str = "flow_unavailable"
+    reference_date: str | None = None
     foreign_net_buy: float | None = None
     institutional_net_buy: float | None = None
     retail_net_buy: float | None = None
+    foreign_net_buy_1d: float | None = None
+    foreign_net_buy_5d: float | None = None
+    foreign_net_buy_20d: float | None = None
+    institutional_net_buy_1d: float | None = None
+    institutional_net_buy_5d: float | None = None
+    institutional_net_buy_20d: float | None = None
+    retail_net_buy_1d: float | None = None
+    retail_net_buy_5d: float | None = None
+    retail_net_buy_20d: float | None = None
+    foreign_positive_days_20d: int | None = None
+    institutional_positive_days_20d: int | None = None
+    retail_positive_days_20d: int | None = None
 
 
 class ForecastDriver(BaseModel):

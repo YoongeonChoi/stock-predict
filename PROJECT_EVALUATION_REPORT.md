@@ -541,3 +541,47 @@ Loop 5에서 cohort 표는 생겼지만, 사용자가 표를 직접 읽어야만
 
 - 수익률 편향 액션은 표본 수 3건부터 보수적으로 표시하므로, 초기 표본에서는 “경고”보다 “복기 후보”로 읽어야 합니다.
 - 다음 개선은 모델 버전별 cohort 비교를 추가해 새 엔진/가중치가 실제로 좋아졌는지 더 직접적으로 보는 쪽입니다.
+
+## 13. Remediation Loop 7 - 2026-05-16
+
+이번 루프는 기회 레이더가 이미 오른 종목을 추격 후보로 올리는 문제를 1차 후보 스캔부터 줄이는 데 집중했습니다. 리서치 근거는 “중기 모멘텀은 유효하지만 초단기 급등 추격은 반전 위험이 커지고, 거래량/수급/섹터 breadth가 지속 가능성을 가르는 필터”라는 가정으로 정리했습니다.
+
+### 추가 완료 항목
+
+- 1차 quote screen을 `change_pct` 중심 quick score에서 `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점` 기반으로 바꿨습니다.
+- `OpportunityQuality` 점수표를 추가해 메인 레이더와 `NextDayFocus`가 같은 품질 기준을 공유합니다.
+- 새 optional API 필드를 추가했습니다: `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `score_breakdown`, `flow_data_status`, `quality_data_status`, `entry_style`, `recommended_entry_condition`.
+- KRX 수급은 EOD 성격으로 고정했습니다. 장중은 `eod_pending`, 18시 이후 확보는 `fresh_eod`, 실패는 `flow_unavailable`로 표시합니다.
+- 레이더 capture 기준일을 UTC today가 아니라 KST payload 생성일/마지막 가격일 기준으로 맞췄습니다.
+- `support_json`과 `evaluation_json`에 품질 신호, 1D/5D/20D 수익률, 최대 역행폭, 맞은 근거/틀린 근거를 남기도록 확장했습니다.
+- 레이더 캡처 뒤 pending radar 평가 refresh를 백그라운드로 예약해 `/archive/accuracy/stats?refresh=true` 호출에만 의존하지 않게 했습니다.
+- `/radar`와 다음 거래일 포커스 UI에 추격 위험, 거래량, 수급, 섹터, 진입 조건 strip을 추가했습니다.
+- README, API_CONTRACT, DESIGN_BIBLE, CHANGELOG, 버전을 `v2.65.0`으로 동기화했습니다.
+
+### 재평가 점수
+
+| 영역 | 배점 | 재평가 점수 | 변경 근거 |
+| --- | ---: | ---: | --- |
+| 제품/UX/디자인 | 14 | 13 | 레이더 카드에서 추격 위험/수급/거래량/진입 조건을 바로 읽을 수 있게 개선 |
+| 프론트 기능 완성도 | 14 | 13 | optional 필드 fallback 유지, typecheck 통과 |
+| 백엔드/API 설계 | 13 | 12 | additive API 확장과 캐시 호환 유지 |
+| 예측/주식 추천 방법론 | 22 | 21 | 급등 추격 감점, 수급/거래량/섹터 품질 점수, 사후 평가 루프 보강 |
+| 포트폴리오 최적화 | 10 | 9 | 기존 optimizer 회귀 유지 |
+| 데이터/운영 안정성 | 11 | 10 | KST 기준일, EOD 수급 상태, background pending 평가 보강 |
+| 계정/보안/개인정보 | 8 | 7 | 계정 계약 영향 없음 |
+| 테스트/문서/릴리즈 거버넌스 | 8 | 8 | 신규 회귀 테스트와 문서/버전 동기화 |
+| **총점** | **100** | **93** | 레이더 추천 방법론의 핵심 리스크였던 초단기 추격 매수 편향을 구조적으로 낮춤 |
+
+### 추가 재검증 결과
+
+| 검증 | 결과 |
+| --- | --- |
+| `cd backend; ..\venv\Scripts\python.exe -m compileall app` | 통과 |
+| `cd frontend; npx tsc --noEmit` | 통과 |
+| `cd backend; ..\venv\Scripts\python.exe -m unittest tests.test_opportunity_quality tests.test_investor_flow_client tests.test_opportunity_radar_lab_service tests.test_prediction_capture_service -v` | 통과, 10 tests |
+
+### 현재 남은 리스크
+
+- 실시간 Level 2/order book, 실제 IB 내부 flow, 체결 주체 실시간 식별은 무료 KR-first 데이터 범위 밖입니다. 현재 구현은 일봉 OHLCV, 상대 거래량, KRX EOD 수급, 섹터 breadth 프록시 기준입니다.
+- KRX EOD 수급은 18시 이후에도 원천 지연이나 pykrx 장애가 있으면 `flow_unavailable`로 내려갈 수 있습니다. 이 경우 후보는 가격/거래량/섹터 기준으로 유지됩니다.
+- 품질 가중치의 empirical 조정은 평가된 cohort가 충분히 쌓여야 안정화됩니다. 표본 수 gate와 `±6점` cap은 유지했습니다.

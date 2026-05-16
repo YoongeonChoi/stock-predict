@@ -53,6 +53,16 @@ def build_quote_only_opportunity_item(
     change_pct: float,
     country_code: str,
     market_regime,
+    quality_score: float | None = None,
+    chase_risk_score: float | None = None,
+    volume_quality_score: float | None = None,
+    flow_accumulation_score: float | None = None,
+    sector_catalyst_score: float | None = None,
+    score_breakdown: dict[str, object] | None = None,
+    flow_data_status: str | None = None,
+    quality_data_status: str | None = None,
+    entry_style: str | None = None,
+    recommended_entry_condition: str | None = None,
 ) -> OpportunityItem:
     regime_bias = 3.0 if market_regime.stance == "risk_on" else -3.0 if market_regime.stance == "risk_off" else 0.0
     rank_denominator = max(total_ranked - 1, 1)
@@ -60,6 +70,10 @@ def build_quote_only_opportunity_item(
     momentum_component = 11.5 * math.tanh(change_pct / 6.25)
     rank_component = 10.0 * rank_fraction
     opportunity_score = clip(62.0 + momentum_component + rank_component + regime_bias, 15.0, 86.0)
+    if quality_score is not None:
+        opportunity_score = clip(opportunity_score * 0.72 + float(quality_score) * 0.28, 15.0, 86.0)
+    if chase_risk_score is not None and chase_risk_score >= 70.0:
+        opportunity_score = min(opportunity_score, 70.0 if chase_risk_score < 84.0 else 60.0)
     up_probability = clip(50.0 + change_pct * 1.9 + regime_bias * 0.7, 34.0, 77.0)
     predicted_return_pct = round(clip(change_pct * 0.55, -5.0, 6.5), 2)
     from datetime import datetime, timedelta
@@ -69,6 +83,10 @@ def build_quote_only_opportunity_item(
     base_case_price = round(current_price * (1.0 + predicted_return_pct / 100.0), 2)
     bear_case_price = round(current_price * 0.97, 2)
     action = "accumulate" if predicted_return_pct >= 1.4 else "breakout_watch" if predicted_return_pct >= 0.2 else "wait_pullback"
+    if chase_risk_score is not None and chase_risk_score >= 84.0:
+        action = "avoid"
+    elif chase_risk_score is not None and chase_risk_score >= 70.0:
+        action = "wait_pullback"
     return OpportunityItem(
         rank=rank,
         ticker=ticker,
@@ -78,6 +96,16 @@ def build_quote_only_opportunity_item(
         current_price=round(current_price, 2),
         change_pct=round(change_pct, 2),
         opportunity_score=round(opportunity_score, 1),
+        quality_score=round(float(quality_score), 1) if quality_score is not None else None,
+        chase_risk_score=round(float(chase_risk_score), 1) if chase_risk_score is not None else None,
+        volume_quality_score=round(float(volume_quality_score), 1) if volume_quality_score is not None else None,
+        flow_accumulation_score=round(float(flow_accumulation_score), 1) if flow_accumulation_score is not None else None,
+        sector_catalyst_score=round(float(sector_catalyst_score), 1) if sector_catalyst_score is not None else None,
+        score_breakdown=score_breakdown,
+        flow_data_status=flow_data_status,
+        quality_data_status=quality_data_status,
+        entry_style=entry_style,
+        recommended_entry_condition=recommended_entry_condition,
         quant_score=round(clip(50.0 + change_pct * 1.8, 22.0, 78.0), 1),
         up_probability=round(up_probability, 1),
         confidence=41.0,

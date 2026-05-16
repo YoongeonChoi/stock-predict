@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import json
 from math import exp
 from typing import Any
 
 from app.database import db
+from app.runtime import get_or_create_background_job
 from app.utils.lazy_module import LazyModuleProxy
 
 RADAR_CAPTURE_LIMIT = 10
@@ -18,6 +20,7 @@ RADAR_PROFILE_MAX_ROWS = 600
 RADAR_PROFILE_DECAY_DAYS = 45.0
 RADAR_DIRECTION_FLAT_THRESHOLD_PCT = 0.15
 RADAR_MAX_SCORE_ADJUSTMENT_POINTS = 6.0
+KST = ZoneInfo("Asia/Seoul")
 
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 
@@ -45,6 +48,12 @@ _FEATURE_LABELS = {
     "support_analog_strong": "유사 패턴",
     "support_data_quality_weak": "데이터 품질 약함",
     "support_risk_reward": "손익비",
+    "quality_low_chase": "낮은 추격 위험",
+    "quality_chase_high": "높은 추격 위험",
+    "quality_volume_confirmed": "거래량 확인",
+    "quality_flow_accumulation": "수급 누적",
+    "quality_sector_tailwind": "섹터 강도",
+    "quality_flow_missing": "수급 지연",
 }
 
 _runtime_profile: dict[str, Any] | None = None
@@ -113,11 +122,30 @@ def _normalize_thesis(items: Any) -> list[str]:
 
 
 def _payload_reference_date(payload: dict) -> str:
+    explicit = str(payload.get("reference_date") or "").strip()
+    explicit_date = _parse_date(explicit)
+    if explicit_date is not None:
+        return explicit_date.isoformat()
+    for item in list(payload.get("opportunities") or []):
+        if not isinstance(item, dict):
+            continue
+        breakdown = item.get("score_breakdown")
+        if isinstance(breakdown, dict):
+            latest_price_date = _parse_date(breakdown.get("latest_price_date"))
+            if latest_price_date is not None:
+                return latest_price_date.isoformat()
     generated_at = str(payload.get("generated_at") or "").strip()
-    generated_date = _parse_date(generated_at)
-    if generated_date is not None:
-        return generated_date.isoformat()
-    return datetime.utcnow().date().isoformat()
+    if generated_at:
+        try:
+            parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(KST).date().isoformat()
+            return parsed.date().isoformat()
+        except (TypeError, ValueError):
+            generated_date = _parse_date(generated_at)
+            if generated_date is not None:
+                return generated_date.isoformat()
+    return datetime.now(KST).date().isoformat()
 
 
 def _extract_radar_tags(thesis: list[str], sector: str | None = None) -> list[str]:
@@ -144,6 +172,16 @@ def _build_support_snapshot(item: dict) -> dict[str, Any]:
         "risk_reward_estimate": _safe_float(item.get("risk_reward_estimate")),
         "action": item.get("action"),
         "execution_bias": item.get("execution_bias"),
+        "quality_score": _safe_float(item.get("quality_score")),
+        "chase_risk_score": _safe_float(item.get("chase_risk_score")),
+        "volume_quality_score": _safe_float(item.get("volume_quality_score")),
+        "flow_accumulation_score": _safe_float(item.get("flow_accumulation_score")),
+        "sector_catalyst_score": _safe_float(item.get("sector_catalyst_score")),
+        "flow_data_status": item.get("flow_data_status"),
+        "quality_data_status": item.get("quality_data_status"),
+        "entry_style": item.get("entry_style"),
+        "recommended_entry_condition": item.get("recommended_entry_condition"),
+        "score_breakdown": item.get("score_breakdown") if isinstance(item.get("score_breakdown"), dict) else {},
     }
 
 
@@ -163,6 +201,18 @@ def _feature_names(tags: list[str], support: dict[str, Any]) -> list[str]:
         feature_names.append("support_data_quality_weak")
     if (_safe_float(support.get("risk_reward_estimate")) or 0.0) >= 1.2:
         feature_names.append("support_risk_reward")
+    if (_safe_float(support.get("chase_risk_score")) or 0.0) >= 70.0:
+        feature_names.append("quality_chase_high")
+    elif (_safe_float(support.get("chase_risk_score")) or 100.0) <= 48.0:
+        feature_names.append("quality_low_chase")
+    if (_safe_float(support.get("volume_quality_score")) or 0.0) >= 65.0:
+        feature_names.append("quality_volume_confirmed")
+    if (_safe_float(support.get("flow_accumulation_score")) or 0.0) >= 65.0:
+        feature_names.append("quality_flow_accumulation")
+    elif str(support.get("flow_data_status") or "") in {"eod_pending", "flow_unavailable"}:
+        feature_names.append("quality_flow_missing")
+    if (_safe_float(support.get("sector_catalyst_score")) or 0.0) >= 65.0:
+        feature_names.append("quality_sector_tailwind")
     return feature_names
 
 
@@ -303,6 +353,33 @@ def _build_horizon_payload(
     }
 
 
+def _max_adverse_excursion_pct(
+    history: list[dict],
+    *,
+    anchor_index: int,
+    target_date: str | None,
+    reference_price: float,
+) -> float | None:
+    if reference_price <= 0 or target_date is None:
+        return None
+    parsed_target = _parse_date(target_date)
+    if parsed_target is None:
+        return None
+    worst_pct: float | None = None
+    for row in history[anchor_index + 1 :]:
+        row_date = _parse_date(row.get("date"))
+        if row_date is None:
+            continue
+        if row_date > parsed_target:
+            break
+        low = _safe_float(row.get("low"), _safe_float(row.get("close"), None))
+        if low is None:
+            continue
+        drawdown_pct = ((float(low) / reference_price) - 1.0) * 100.0
+        worst_pct = drawdown_pct if worst_pct is None else min(worst_pct, drawdown_pct)
+    return round(worst_pct, 2) if worst_pct is not None else None
+
+
 def _context_labels(tags: list[str], support: dict[str, Any], *, positive: bool) -> list[str]:
     labels: list[str] = []
     if positive:
@@ -316,6 +393,12 @@ def _context_labels(tags: list[str], support: dict[str, Any], *, positive: bool)
             labels.append("시장 국면")
         if (_safe_float(support.get("up_probability_20d")) or 0.0) >= 60.0:
             labels.append("상승 확률 우위")
+        if (_safe_float(support.get("chase_risk_score")) or 100.0) <= 48.0:
+            labels.append("낮은 추격 위험")
+        if (_safe_float(support.get("volume_quality_score")) or 0.0) >= 65.0:
+            labels.append("거래량 확인")
+        if (_safe_float(support.get("flow_accumulation_score")) or 0.0) >= 65.0:
+            labels.append("외국인/기관 누적 수급")
     else:
         if (_safe_float(support.get("data_quality_support_20d")) or 1.0) < 0.45:
             labels.append("데이터 품질")
@@ -323,6 +406,12 @@ def _context_labels(tags: list[str], support: dict[str, Any], *, positive: bool)
             labels.append("국면 역풍")
         if (_safe_float(support.get("confidence_20d")) or 0.0) >= 68.0:
             labels.append("고신뢰 미스")
+        if (_safe_float(support.get("chase_risk_score")) or 0.0) >= 70.0:
+            labels.append("추격 위험")
+        if (_safe_float(support.get("volume_quality_score")) or 100.0) <= 42.0:
+            labels.append("거래량 품질")
+        if str(support.get("flow_data_status") or "") in {"eod_pending", "flow_unavailable"}:
+            labels.append("수급 지연")
     return labels
 
 
@@ -334,7 +423,7 @@ def _build_review_payload(
     horizon_1d: dict[str, Any],
     horizon_5d: dict[str, Any],
     horizon_20d: dict[str, Any],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     hit_20d = horizon_20d.get("direction_hit")
     hit_5d = horizon_5d.get("direction_hit")
     band_20d = horizon_20d.get("within_band")
@@ -348,12 +437,20 @@ def _build_review_payload(
             if positive_context
             else "상승 thesis가 과하지 않게 유지되면서 실제 종가가 예상 밴드 안에서 마감했습니다."
         )
-        return {"kind": "clean-hit", "summary": summary, "detail": detail}
+        return {
+            "kind": "clean-hit",
+            "summary": summary,
+            "detail": detail,
+            "matched_signals": positive_context[:4],
+            "missed_signals": [],
+        }
     if hit_20d is True:
         return {
             "kind": "direction-hit",
             "summary": f"{symbol}은 방향은 맞췄지만 20거래일 밴드는 벗어났습니다.",
             "detail": "상승 방향 자체는 유지됐지만 변동성 폭을 다소 좁게 본 구간으로 해석됩니다.",
+            "matched_signals": positive_context[:4],
+            "missed_signals": ["변동성 밴드"],
         }
     if hit_5d is True:
         detail = (
@@ -365,12 +462,16 @@ def _build_review_payload(
             "kind": "reversal-miss",
             "summary": f"{symbol}은 초기 1주 흐름은 맞았지만 20거래일 방향은 지키지 못했습니다.",
             "detail": detail,
+            "matched_signals": positive_context[:3],
+            "missed_signals": negative_context[:4],
         }
     if horizon_1d.get("direction_hit") is True:
         return {
             "kind": "early-hit",
             "summary": f"{symbol}은 다음날 반응은 맞았지만 추세 확장까지 이어지지는 않았습니다.",
             "detail": "단기 반응과 중기 유지력을 다른 문제로 보고, 수급/업황 가중을 더 보수적으로 볼 필요가 있습니다.",
+            "matched_signals": positive_context[:3],
+            "missed_signals": negative_context[:4],
         }
     detail = (
         f"{', '.join(negative_context[:3])} 신호를 충분히 깎지 못한 채 상위 후보로 남은 사례입니다."
@@ -381,6 +482,8 @@ def _build_review_payload(
         "kind": "miss",
         "summary": f"{symbol}은 상승 thesis가 유지되지 못해 방향 미스로 끝났습니다.",
         "detail": detail,
+        "matched_signals": [],
+        "missed_signals": negative_context[:4],
     }
 
 
@@ -414,6 +517,21 @@ def _build_evaluation_payload(row: dict, history: list[dict]) -> dict[str, Any] 
         predicted_low=predicted_low_20d,
         predicted_high=predicted_high_20d,
     )
+    resolved_targets = {
+        "1d": resolved_target_1d or horizon_1d.get("target_date"),
+        "5d": resolved_target_5d or horizon_5d.get("target_date"),
+        "20d": resolved_target_20d or horizon_20d.get("target_date"),
+    }
+    for key, horizon_payload in (("1d", horizon_1d), ("5d", horizon_5d), ("20d", horizon_20d)):
+        horizon_payload["max_adverse_excursion_pct"] = _max_adverse_excursion_pct(
+            history,
+            anchor_index=anchor_index,
+            target_date=resolved_targets.get(key),
+            reference_price=reference_price,
+        )
+        horizon_payload["market_excess_return_pct"] = None
+        horizon_payload["sector_excess_return_pct"] = None
+        horizon_payload["relative_return_status"] = "benchmark_unavailable"
     review = _build_review_payload(
         symbol=str(row.get("symbol") or ""),
         tags=tags,
@@ -427,10 +545,11 @@ def _build_evaluation_payload(row: dict, history: list[dict]) -> dict[str, Any] 
         "reference_date": reference_date,
         "reference_price": round(reference_price, 2),
         "horizons": {
-            "1d": {**horizon_1d, "target_date": resolved_target_1d or horizon_1d.get("target_date")},
-            "5d": {**horizon_5d, "target_date": resolved_target_5d or horizon_5d.get("target_date")},
-            "20d": {**horizon_20d, "target_date": resolved_target_20d or horizon_20d.get("target_date")},
+            "1d": {**horizon_1d, "target_date": resolved_targets["1d"]},
+            "5d": {**horizon_5d, "target_date": resolved_targets["5d"]},
+            "20d": {**horizon_20d, "target_date": resolved_targets["20d"]},
         },
+        "support_snapshot": support,
         "review": review,
     }
 
@@ -452,7 +571,7 @@ def _success_score(evaluation: dict[str, Any]) -> float | None:
 
 
 def _build_profile_from_rows(rows: list[dict]) -> dict[str, Any]:
-    today = date.today()
+    today = datetime.now(KST).date()
     samples: list[dict[str, Any]] = []
     for row in rows:
         evaluation = _parse_json_dict(row.get("evaluation_json"))
@@ -475,7 +594,7 @@ def _build_profile_from_rows(rows: list[dict]) -> dict[str, Any]:
         return {
             **_empty_profile(),
             "sample_count": len(samples),
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": datetime.now(KST).isoformat(),
         }
 
     total_weight = sum(item["weight"] for item in samples)
@@ -517,7 +636,7 @@ def _build_profile_from_rows(rows: list[dict]) -> dict[str, Any]:
         "feature_weights": feature_weights,
         "top_positive": top_positive,
         "top_negative": top_negative,
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": datetime.now(KST).isoformat(),
     }
 
 
@@ -582,7 +701,7 @@ def adjust_opportunity_score(
 async def refresh_opportunity_radar_accuracy(limit: int = 200) -> dict[str, Any]:
     rows = await db.opportunity_radar_snapshot_recent(limit=max(limit, RADAR_CAPTURE_LIMIT))
     pending_rows = []
-    today = date.today()
+    today = datetime.now(KST).date()
     for row in rows:
         reference_date = _parse_date(row.get("reference_date"))
         if reference_date is None or reference_date > today:
@@ -636,8 +755,16 @@ async def refresh_opportunity_radar_accuracy(limit: int = 200) -> dict[str, Any]
         "fetch_errors": fetch_errors,
         "profile_status": profile.get("status"),
         "profile_sample_count": int(profile.get("sample_count") or 0),
-        "checked_at": datetime.now().isoformat(),
+        "checked_at": datetime.now(KST).isoformat(),
     }
+
+
+def schedule_opportunity_radar_accuracy_refresh(limit: int = 120) -> bool:
+    async def _run_refresh() -> None:
+        await refresh_opportunity_radar_accuracy(limit=limit)
+
+    _, created = get_or_create_background_job("opportunity_radar:accuracy_refresh", _run_refresh)
+    return bool(created)
 
 
 async def get_lab_summary(limit: int = 300) -> dict[str, Any]:

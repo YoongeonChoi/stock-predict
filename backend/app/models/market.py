@@ -70,6 +70,16 @@ class OpportunityItem(BaseModel):
     base_opportunity_score: float | None = None
     empirical_adjustment_points: float | None = None
     empirical_adjustment_reason: str | None = None
+    quality_score: float | None = None
+    chase_risk_score: float | None = None
+    volume_quality_score: float | None = None
+    flow_accumulation_score: float | None = None
+    sector_catalyst_score: float | None = None
+    score_breakdown: dict[str, object] | None = None
+    flow_data_status: str | None = None
+    quality_data_status: str | None = None
+    entry_style: str | None = None
+    recommended_entry_condition: str | None = None
     quant_score: float
     up_probability: float
     confidence: float
@@ -130,6 +140,16 @@ class NextDayFocusRecommendation(BaseModel):
     expected_edge_pct: float
     selection_score: float
     selection_summary: str = ""
+    quality_score: float | None = None
+    chase_risk_score: float | None = None
+    volume_quality_score: float | None = None
+    flow_accumulation_score: float | None = None
+    sector_catalyst_score: float | None = None
+    score_breakdown: dict[str, object] | None = None
+    flow_data_status: str | None = None
+    quality_data_status: str | None = None
+    entry_style: str | None = None
+    recommended_entry_condition: str | None = None
     thesis: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
     chart_analysis: ShortTermChartAnalysis
