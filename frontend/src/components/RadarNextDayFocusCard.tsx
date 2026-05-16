@@ -51,6 +51,39 @@ function entryStyleLabel(entryStyle: "pullback" | "breakout" | "balanced" | "sta
   return "유연 대응";
 }
 
+function scoreValue(value?: number | null) {
+  return value == null || Number.isNaN(value) ? "대기" : value.toFixed(0);
+}
+
+function riskTone(value?: number | null) {
+  if (value == null) return "text-text-secondary";
+  if (value >= 70) return "text-negative";
+  if (value >= 55) return "text-warning";
+  return "text-positive";
+}
+
+function strengthTone(value?: number | null) {
+  if (value == null) return "text-text-secondary";
+  if (value >= 65) return "text-positive";
+  if (value >= 50) return "text-accent";
+  return "text-warning";
+}
+
+function flowStatusLabel(status?: string | null) {
+  if (status === "eod_pending") return "18시 이후 갱신";
+  if (status === "fresh_eod") return "EOD 반영";
+  if (status === "flow_unavailable") return "수급 대기";
+  return "상태 대기";
+}
+
+function qualityEntryLabel(style?: string | null) {
+  if (style === "avoid_chase") return "추격 회피";
+  if (style === "wait_pullback") return "눌림 대기";
+  if (style === "breakout_watch") return "돌파 확인";
+  if (style === "accumulate") return "분할 매수";
+  return "선별 관찰";
+}
+
 function entryRangeText(focus: NextDayFocusRecommendation) {
   const { entry_low, entry_high } = focus.trade_plan;
   if (entry_low != null && entry_high != null) {
@@ -112,6 +145,12 @@ export default function RadarNextDayFocusCard({
                 <span className="text-sm text-text-secondary">{focus.sector}</span>
               </div>
               <div className="mt-2 text-sm leading-6 text-text-secondary">{focus.selection_summary}</div>
+              {focus.recommended_entry_condition ? (
+                <div className="mt-3 text-xs leading-5 text-text-secondary">
+                  <span className="font-semibold text-text">진입 조건 · {qualityEntryLabel(focus.entry_style)} · </span>
+                  {focus.recommended_entry_condition}
+                </div>
+              ) : null}
             </div>
             <div className="rounded-2xl border border-border/70 bg-surface/70 px-4 py-3 text-right">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
@@ -131,6 +170,29 @@ export default function RadarNextDayFocusCard({
               <div className="mt-1 text-xs text-text-secondary">확신도 {forecast.confidence.toFixed(0)} / 100</div>
             </div>
           </div>
+
+          {focus.quality_score != null || focus.chase_risk_score != null ? (
+            <div className="grid gap-2 text-[11px] sm:grid-cols-4">
+              <div className="rounded-lg border border-border/60 bg-surface/55 px-2 py-2">
+                <div className="text-text-secondary">추격 위험</div>
+                <div className={`mt-1 font-semibold ${riskTone(focus.chase_risk_score)}`}>{scoreValue(focus.chase_risk_score)}</div>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-surface/55 px-2 py-2">
+                <div className="text-text-secondary">거래량</div>
+                <div className={`mt-1 font-semibold ${strengthTone(focus.volume_quality_score)}`}>{scoreValue(focus.volume_quality_score)}</div>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-surface/55 px-2 py-2">
+                <div className="text-text-secondary">수급</div>
+                <div className={`mt-1 font-semibold ${strengthTone(focus.flow_accumulation_score)}`}>
+                  {focus.flow_accumulation_score == null ? flowStatusLabel(focus.flow_data_status) : scoreValue(focus.flow_accumulation_score)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-surface/55 px-2 py-2">
+                <div className="text-text-secondary">섹터</div>
+                <div className={`mt-1 font-semibold ${strengthTone(focus.sector_catalyst_score)}`}>{scoreValue(focus.sector_catalyst_score)}</div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="workspace-metric-grid">
             <div className="metric-card">

@@ -5,7 +5,7 @@ import Link from "next/link";
 import ModelOutputNotice from "@/components/ModelOutputNotice";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import { useToast } from "@/components/Toast";
-import type { OpportunityRadarResponse } from "@/lib/types";
+import type { OpportunityItem, OpportunityRadarResponse } from "@/lib/types";
 import { cn, changeColor, formatPct, formatPrice } from "@/lib/utils";
 
 interface Props {
@@ -72,6 +72,67 @@ function priceRange(low?: number | null, high?: number | null, key = "KR") {
   if (low == null && high == null) return "미정";
   if (low != null && high != null) return `${formatPrice(low, key)} - ${formatPrice(high, key)}`;
   return formatPrice(low ?? high, key);
+}
+
+function scoreValue(value?: number | null) {
+  return value == null || Number.isNaN(value) ? "대기" : value.toFixed(0);
+}
+
+function riskTone(value?: number | null) {
+  if (value == null) return "text-text-secondary";
+  if (value >= 70) return "text-negative";
+  if (value >= 55) return "text-warning";
+  return "text-positive";
+}
+
+function strengthTone(value?: number | null) {
+  if (value == null) return "text-text-secondary";
+  if (value >= 65) return "text-positive";
+  if (value >= 50) return "text-accent";
+  return "text-warning";
+}
+
+function flowStatusLabel(status?: string | null) {
+  if (status === "eod_pending") return "18시 이후 갱신";
+  if (status === "fresh_eod") return "EOD 반영";
+  if (status === "flow_unavailable") return "수급 대기";
+  return "상태 대기";
+}
+
+function entryStyleLabel(style?: string | null) {
+  if (style === "avoid_chase") return "추격 회피";
+  if (style === "wait_pullback") return "눌림 대기";
+  if (style === "breakout_watch") return "돌파 확인";
+  if (style === "accumulate") return "분할 매수";
+  return "선별 관찰";
+}
+
+function QualityMetricStrip({ item, compact = false }: { item: OpportunityItem; compact?: boolean }) {
+  if (
+    item.quality_score == null &&
+    item.chase_risk_score == null &&
+    item.volume_quality_score == null &&
+    item.flow_accumulation_score == null &&
+    item.sector_catalyst_score == null
+  ) {
+    return null;
+  }
+  const metrics = [
+    { label: "추격 위험", value: scoreValue(item.chase_risk_score), tone: riskTone(item.chase_risk_score) },
+    { label: "거래량", value: scoreValue(item.volume_quality_score), tone: strengthTone(item.volume_quality_score) },
+    { label: "수급", value: item.flow_accumulation_score == null ? flowStatusLabel(item.flow_data_status) : scoreValue(item.flow_accumulation_score), tone: strengthTone(item.flow_accumulation_score) },
+    { label: "섹터", value: scoreValue(item.sector_catalyst_score), tone: strengthTone(item.sector_catalyst_score) },
+  ];
+  return (
+    <div className={cn("grid gap-2 text-[11px]", compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 md:grid-cols-4")}>
+      {metrics.map((metric) => (
+        <div key={metric.label} className="min-w-0 rounded-lg border border-border/60 bg-surface/55 px-2 py-2">
+          <div className="truncate text-text-secondary">{metric.label}</div>
+          <div className={cn("mt-1 truncate font-semibold", metric.tone)}>{metric.value}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function OpportunityRadarBoard({ data, compact = false, embedded = false }: Props) {
@@ -204,6 +265,16 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                   <span className="rounded-full bg-border/35 px-2 py-1 text-text-secondary">{item.setup_label}</span>
                 </div>
 
+                <div className="mt-3 space-y-2">
+                  <QualityMetricStrip item={item} compact />
+                  {item.recommended_entry_condition ? (
+                    <div className="text-xs leading-5 text-text-secondary">
+                      <span className="font-semibold text-text">진입 조건 · {entryStyleLabel(item.entry_style)} · </span>
+                      {item.recommended_entry_condition}
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-2xl border border-border/60 bg-surface/70 px-3 py-2">
                     <div className="text-[11px] text-text-secondary">현재가</div>
@@ -290,7 +361,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
             {items.length > 0 ? (
               <button
                 onClick={() => {
-                  const lines = items.map((o) => `${o.name} (${o.ticker}) · 기대수익 ${formatPct(o.expected_return_pct_20d ?? o.predicted_return_pct)} · 상승확률 ${(o.up_probability * 100).toFixed(0)}%`);
+                  const lines = items.map((o) => `${o.name} (${o.ticker}) · 기대수익 ${formatPct(o.expected_return_pct_20d ?? o.predicted_return_pct)} · 상승확률 ${o.up_probability.toFixed(0)}% · 추격위험 ${scoreValue(o.chase_risk_score)}`);
                   navigator.clipboard.writeText(`[기회 레이더 후보]\n${lines.join("\n")}`).then(() => toast("후보 목록이 복사되었습니다.", "success")).catch(() => {});
                 }}
                 className="ui-button-secondary px-4"
@@ -366,6 +437,16 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
                 <span className={`rounded-full px-2 py-1 ${executionBiasTone(item.execution_bias)}`}>
                   {executionBiasLabel(item.execution_bias)}
                 </span>
+              </div>
+
+              <div className="mb-3 space-y-2">
+                <QualityMetricStrip item={item} />
+                {item.recommended_entry_condition ? (
+                  <div className="text-xs leading-5 text-text-secondary">
+                    <span className="font-semibold text-text">진입 조건 · {entryStyleLabel(item.entry_style)} · </span>
+                    {item.recommended_entry_condition}
+                  </div>
+                ) : null}
               </div>
 
               <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">

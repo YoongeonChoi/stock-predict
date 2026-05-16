@@ -38,6 +38,53 @@ class OpportunityRadarLabServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("강했습니다", result["reason"])
 
+    def test_quality_features_and_evaluation_payload_are_recorded(self):
+        tags = ["momentum"]
+        support = {
+            "confidence_20d": 69.0,
+            "up_probability_20d": 61.0,
+            "chase_risk_score": 38.0,
+            "volume_quality_score": 72.0,
+            "flow_accumulation_score": 68.0,
+            "sector_catalyst_score": 70.0,
+            "flow_data_status": "fresh_eod",
+        }
+        features = opportunity_radar_lab_service._feature_names(tags, support)
+        self.assertIn("quality_low_chase", features)
+        self.assertIn("quality_volume_confirmed", features)
+        self.assertIn("quality_flow_accumulation", features)
+        self.assertIn("quality_sector_tailwind", features)
+
+        history = [
+            {"date": "2026-04-07", "close": 100.0, "low": 99.0},
+            {"date": "2026-04-08", "close": 102.0, "low": 97.0},
+            {"date": "2026-04-09", "close": 104.0, "low": 101.0},
+            {"date": "2026-04-10", "close": 103.0, "low": 100.0},
+            {"date": "2026-04-13", "close": 105.0, "low": 102.0},
+            {"date": "2026-04-14", "close": 106.0, "low": 104.0},
+        ]
+        row = {
+            "symbol": "TEST.KS",
+            "reference_date": "2026-04-07",
+            "reference_price": 100.0,
+            "target_date_1d": "2026-04-08",
+            "target_date_5d": "2026-04-14",
+            "target_date_20d": "2026-04-14",
+            "predicted_low_20d": 96.0,
+            "predicted_high_20d": 108.0,
+            "tags_json": tags,
+            "support_json": support,
+        }
+
+        evaluation = opportunity_radar_lab_service._build_evaluation_payload(row, history)
+
+        self.assertIsNotNone(evaluation)
+        assert evaluation is not None
+        self.assertEqual(evaluation["horizons"]["1d"]["max_adverse_excursion_pct"], -3.0)
+        self.assertEqual(evaluation["horizons"]["20d"]["relative_return_status"], "benchmark_unavailable")
+        self.assertIn("support_snapshot", evaluation)
+        self.assertIn("낮은 추격 위험", evaluation["review"]["matched_signals"])
+
     async def test_get_lab_summary_aggregates_recent_cohorts(self):
         rows = [
             {

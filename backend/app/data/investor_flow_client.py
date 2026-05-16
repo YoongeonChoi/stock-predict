@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.data import cache
 from app.models.forecast import FlowSignal
@@ -21,11 +22,12 @@ KRX_MARKET_BY_TICKER = {
     "^KS11": "KOSPI",
     "^KQ11": "KOSDAQ",
 }
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _parse_date(value: str | date | datetime | None) -> date:
     if value is None:
-        return datetime.now().date()
+        return datetime.now(KST).date()
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -57,6 +59,24 @@ def _pick_column(columns: list[str], *needles: str) -> str | None:
 def _safe_sum(df, column: str | None, window: int = 5) -> float | None:
     if not column or column not in df.columns:
         return None
+
+
+def _safe_positive_days(df, column: str | None, window: int = 20) -> int | None:
+    if not column or column not in df.columns:
+        return None
+    try:
+        return int((df[column].tail(window).astype(float) > 0).sum())
+    except Exception:
+        return None
+
+
+def _flow_data_status(anchor_date: date) -> str:
+    now = datetime.now(KST)
+    if anchor_date > now.date():
+        return "eod_pending"
+    if anchor_date == now.date() and now.hour < 18:
+        return "eod_pending"
+    return "fresh_eod"
     try:
         value = float(df[column].tail(window).sum())
         return round(value, 2)
@@ -65,8 +85,26 @@ def _safe_sum(df, column: str | None, window: int = 5) -> float | None:
 
 
 def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: date) -> dict:
+    data_status = _flow_data_status(anchor_date)
+    if data_status == "eod_pending":
+        return FlowSignal(
+            available=False,
+            source="pykrx_pending",
+            market=market or _normalize_kr_ticker(ticker or ""),
+            unit="KRW",
+            data_status="eod_pending",
+            reference_date=anchor_date.isoformat(),
+        ).model_dump()
+
     if pykrx_stock is None:
-        return FlowSignal(available=False, source="pykrx_unavailable", market=market or "", unit="KRW").model_dump()
+        return FlowSignal(
+            available=False,
+            source="pykrx_unavailable",
+            market=market or "",
+            unit="KRW",
+            data_status="flow_unavailable",
+            reference_date=anchor_date.isoformat(),
+        ).model_dump()
 
     end_date = anchor_date.strftime("%Y%m%d")
     start_date = (anchor_date - timedelta(days=21)).strftime("%Y%m%d")
@@ -89,6 +127,8 @@ def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: dat
             source="pykrx_error",
             market=market or query,
             unit="KRW",
+            data_status="flow_unavailable",
+            reference_date=anchor_date.isoformat(),
         ).model_dump()
 
     if df is None or getattr(df, "empty", True):
@@ -97,6 +137,8 @@ def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: dat
             source="pykrx_empty",
             market=market or query,
             unit="KRW",
+            data_status="flow_unavailable",
+            reference_date=anchor_date.isoformat(),
         ).model_dump()
 
     columns = [str(col) for col in df.columns]
@@ -109,9 +151,23 @@ def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: dat
         source="pykrx",
         market=market or query,
         unit="KRW",
+        data_status=data_status,
+        reference_date=anchor_date.isoformat(),
         foreign_net_buy=_safe_sum(df, foreign_col),
         institutional_net_buy=_safe_sum(df, institutional_col),
         retail_net_buy=_safe_sum(df, retail_col),
+        foreign_net_buy_1d=_safe_sum(df, foreign_col, window=1),
+        foreign_net_buy_5d=_safe_sum(df, foreign_col, window=5),
+        foreign_net_buy_20d=_safe_sum(df, foreign_col, window=20),
+        institutional_net_buy_1d=_safe_sum(df, institutional_col, window=1),
+        institutional_net_buy_5d=_safe_sum(df, institutional_col, window=5),
+        institutional_net_buy_20d=_safe_sum(df, institutional_col, window=20),
+        retail_net_buy_1d=_safe_sum(df, retail_col, window=1),
+        retail_net_buy_5d=_safe_sum(df, retail_col, window=5),
+        retail_net_buy_20d=_safe_sum(df, retail_col, window=20),
+        foreign_positive_days_20d=_safe_positive_days(df, foreign_col, window=20),
+        institutional_positive_days_20d=_safe_positive_days(df, institutional_col, window=20),
+        retail_positive_days_20d=_safe_positive_days(df, retail_col, window=20),
     )
     return signal.model_dump()
 
@@ -126,7 +182,13 @@ async def get_flow_signal(
 ) -> FlowSignal:
     """Return best-effort net-buying flow data for the requested market or ticker."""
     if country_code != "KR":
-        return FlowSignal(available=False, source="not_supported", market=market or ticker or "", unit="")
+        return FlowSignal(
+            available=False,
+            source="not_supported",
+            market=market or ticker or "",
+            unit="",
+            data_status="flow_unavailable",
+        )
 
     anchor = _resolve_anchor(reference_date, price_history)
     resolved_market = market or KRX_MARKET_BY_TICKER.get(ticker or "", "")
@@ -141,4 +203,6 @@ async def get_flow_signal(
         source="unavailable",
         market=resolved_market or ticker or "",
         unit="KRW",
+        data_status="flow_unavailable",
+        reference_date=anchor.isoformat(),
     )

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.analysis.stock_analyzer import analyze_stock
 from app.database import db
@@ -21,10 +22,38 @@ MULTI_HORIZON_PREDICTION_TYPES = {
 OPPORTUNITY_CAPTURE_LIMIT = 10
 ARCHIVE_BACKFILL_LIMIT = 25
 _stock_capture_semaphore: asyncio.Semaphore | None = None
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _utc_today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _payload_reference_date(payload: dict) -> str:
+    explicit = str(payload.get("reference_date") or "").strip()
+    if explicit:
+        try:
+            return datetime.fromisoformat(explicit[:10]).date().isoformat()
+        except (TypeError, ValueError):
+            pass
+    for item in list(payload.get("opportunities") or []):
+        if not isinstance(item, dict):
+            continue
+        breakdown = item.get("score_breakdown")
+        if isinstance(breakdown, dict):
+            latest_price_date = str(breakdown.get("latest_price_date") or "").strip()
+            if latest_price_date:
+                return latest_price_date[:10]
+    generated_at = str(payload.get("generated_at") or "").strip()
+    if generated_at:
+        try:
+            parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(KST).date().isoformat()
+            return parsed.date().isoformat()
+        except (TypeError, ValueError):
+            pass
+    return datetime.now(KST).date().isoformat()
 
 
 def _prediction_symbol(report_type: str, report: dict, ticker: str | None) -> str | None:
@@ -195,6 +224,7 @@ async def _capture_opportunity_focus(country_code: str, focus: dict) -> int:
 
 def _build_opportunity_prediction_rows(country_code: str, payload: dict, limit: int) -> list[dict]:
     rows: list[dict] = []
+    reference_date = _payload_reference_date(payload)
     for item in list(payload.get("opportunities") or [])[: max(limit, 0)]:
         if not isinstance(item, dict):
             continue
@@ -226,7 +256,7 @@ def _build_opportunity_prediction_rows(country_code: str, payload: dict, limit: 
                 "country_code": country_code,
                 "prediction_type": "distributional_20d",
                 "target_date": target_date,
-                "reference_date": _utc_today(),
+                "reference_date": reference_date,
                 "reference_price": reference_price,
                 "predicted_close": predicted_close,
                 "predicted_low": predicted_low,
@@ -245,6 +275,15 @@ def _build_opportunity_prediction_rows(country_code: str, payload: dict, limit: 
                     "agreement_support": item.get("agreement_support_20d"),
                     "data_quality_support": item.get("data_quality_support_20d"),
                     "confidence_calibrator": item.get("confidence_calibrator_20d"),
+                    "quality_score": item.get("quality_score"),
+                    "chase_risk_score": item.get("chase_risk_score"),
+                    "volume_quality_score": item.get("volume_quality_score"),
+                    "flow_accumulation_score": item.get("flow_accumulation_score"),
+                    "sector_catalyst_score": item.get("sector_catalyst_score"),
+                    "flow_data_status": item.get("flow_data_status"),
+                    "quality_data_status": item.get("quality_data_status"),
+                    "entry_style": item.get("entry_style"),
+                    "recommended_entry_condition": item.get("recommended_entry_condition"),
                 },
                 "model_version": "opportunity_radar_20d",
             }
@@ -278,6 +317,7 @@ async def capture_market_opportunity_predictions(
         payload,
         limit=limit,
     )
+    opportunity_radar_lab_service.schedule_opportunity_radar_accuracy_refresh()
     return {
         "captured_predictions": captured_focus + captured_opportunities,
         "captured_focus": captured_focus,
