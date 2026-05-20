@@ -15,7 +15,7 @@
 ### 이번 릴리즈 하이라이트
 
 - 기회 레이더는 이제 1차 후보 스캔부터 당일 급등률 중심 정렬을 쓰지 않습니다. `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점`으로 quick score를 만들고, 급등률만 높은 종목은 정밀 분석 전에 우선순위를 낮춥니다.
-- Render 백엔드는 Python `3.11.15` 런타임으로 빌드합니다. backend dependency pin이 `numpy==2.4.4`를 사용하므로 Python 3.10 계열로 내려가면 배포 빌드가 실패합니다.
+- Render 백엔드는 Python `3.11.15` 런타임으로 빌드합니다. Render Dashboard에 이전 Python 3.10 설정이 남아 있어도 설치가 막히지 않도록 backend data stack은 `numpy==2.2.6`, `pandas==2.3.3`으로 고정했습니다.
 - 레이더 후보와 다음 거래일 포커스는 같은 `OpportunityQuality` 기준을 공유합니다. 응답에는 `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `entry_style`, `recommended_entry_condition`, `flow_data_status`가 optional 필드로 추가됩니다.
 - KRX 투자자별 수급은 실시간 체결 주체가 아니라 EOD 데이터로 다룹니다. 장중에는 `eod_pending`, 18시 이후 확보 시 `fresh_eod`, 실패 시 `flow_unavailable`로 표시하며 화면은 partial 상태에서도 가격/거래량 기준 후보를 유지합니다.
 - 레이더 사후 평가는 KST 기준일을 사용하고 `support_json`에 당시 품질 신호를 저장합니다. `evaluation_json`에는 1D/5D/20D 수익률, 최대 역행폭, benchmark 미확보 상태, 맞은 근거/틀린 근거를 함께 남기며, 레이더 캡처 뒤 pending 평가 refresh를 백그라운드로 가볍게 예약합니다.

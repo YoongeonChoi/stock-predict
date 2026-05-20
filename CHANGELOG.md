@@ -5,7 +5,7 @@ All notable changes to this project are tracked here.
 ## v2.65.0 - 2026-05-16
 
 - 기회 레이더 1차 스캔을 `change_pct` 중심 정렬에서 `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점` 기반 quick score로 바꿨습니다. 당일 급등률만 높은 후보는 정밀 분석 전에 낮게 보내고, 강한 섹터 안의 덜 과열된 후보가 상위로 올라오게 했습니다.
-- Render 백엔드 런타임을 Python `3.11.15`로 맞춰 `numpy==2.4.4`가 Python 3.10에서 설치되지 않아 배포가 실패하던 경로를 막았습니다. 배포 설정 회귀 테스트도 추가해 dependency pin과 런타임 버전이 다시 어긋나지 않게 고정했습니다.
+- Render 백엔드 런타임을 Python `3.11.15`로 맞추고, Dashboard에 Python 3.10 설정이 남아 있어도 설치가 막히지 않도록 backend data stack을 `numpy==2.2.6`, `pandas==2.3.3`으로 고정했습니다. 배포 설정 회귀 테스트도 추가해 dependency pin과 런타임 버전이 다시 어긋나지 않게 고정했습니다.
 - `Render Backend Deploy` workflow를 추가해 `main` 백엔드 변경 시 Render deploy hook을 호출하고 `/api/health` 버전이 현재 `APP_VERSION`으로 올라올 때까지 확인합니다. deploy hook secret이 없으면 workflow가 명시적으로 실패하며, 기존 `Render Keepalive`는 스케줄/수동 워밍업 전용으로 좁혔습니다.
 - `OpportunityQuality` 점수표를 추가해 `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `entry_style`, `recommended_entry_condition`을 레이더와 다음 거래일 포커스가 같은 기준으로 사용합니다.
 - KRX 투자자별 수급은 장중에는 `eod_pending`, 18시 이후 확보 시 `fresh_eod`, 실패 시 `flow_unavailable`로 내려보냅니다. 새 필드는 optional이라 오래된 캐시나 partial 응답도 기존 UI를 깨지 않습니다.

@@ -53,7 +53,7 @@ class DeploymentSettingsTests(unittest.TestCase):
         )
         self.assertFalse(settings.effective_startup_prediction_accuracy_refresh)
 
-    def test_render_python_version_supports_pinned_numpy(self):
+    def test_render_python_version_supports_pinned_data_stack(self):
         root = Path(__file__).resolve().parents[2]
         render_yaml = root / "render.yaml"
         requirements = root / "backend" / "requirements.txt"
@@ -66,6 +66,8 @@ class DeploymentSettingsTests(unittest.TestCase):
         requirements_text = requirements.read_text(encoding="utf-8")
 
         if re.search(r"^numpy==2\.(?:[3-9]|\d{2,})\.", requirements_text, flags=re.MULTILINE):
+            self.assertGreaterEqual(python_version, (3, 11))
+        if re.search(r"^pandas==(?:3|[4-9]|\d{2,})\.", requirements_text, flags=re.MULTILINE):
             self.assertGreaterEqual(python_version, (3, 11))
 
 
