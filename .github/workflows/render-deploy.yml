@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # This job intentionally fails fast when the deploy hook secret is missing.
   trigger-render:
     runs-on: ubuntu-latest
     timeout-minutes: 20
