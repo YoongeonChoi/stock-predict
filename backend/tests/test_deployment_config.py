@@ -1,4 +1,6 @@
+import re
 import unittest
+from pathlib import Path
 
 from app.config import Settings
 
@@ -50,6 +52,21 @@ class DeploymentSettingsTests(unittest.TestCase):
             startup_prediction_accuracy_refresh_on_render=True,
         )
         self.assertFalse(settings.effective_startup_prediction_accuracy_refresh)
+
+    def test_render_python_version_supports_pinned_numpy(self):
+        root = Path(__file__).resolve().parents[2]
+        render_yaml = root / "render.yaml"
+        requirements = root / "backend" / "requirements.txt"
+
+        render_config = render_yaml.read_text(encoding="utf-8")
+        version_match = re.search(r"key:\s*PYTHON_VERSION\s*\n\s*value:\s*([0-9.]+)", render_config)
+        self.assertIsNotNone(version_match)
+
+        python_version = tuple(int(part) for part in version_match.group(1).split(".")[:2])
+        requirements_text = requirements.read_text(encoding="utf-8")
+
+        if re.search(r"^numpy==2\.(?:[3-9]|\d{2,})\.", requirements_text, flags=re.MULTILINE):
+            self.assertGreaterEqual(python_version, (3, 11))
 
 
 if __name__ == "__main__":
