@@ -19,6 +19,7 @@
 - KRX 투자자별 수급은 실시간 체결 주체가 아니라 EOD 데이터로 다룹니다. 장중에는 `eod_pending`, 18시 이후 확보 시 `fresh_eod`, 실패 시 `flow_unavailable`로 표시하며 화면은 partial 상태에서도 가격/거래량 기준 후보를 유지합니다.
 - 레이더 사후 평가는 KST 기준일을 사용하고 `support_json`에 당시 품질 신호를 저장합니다. `evaluation_json`에는 1D/5D/20D 수익률, 최대 역행폭, benchmark 미확보 상태, 맞은 근거/틀린 근거를 함께 남기며, 레이더 캡처 뒤 pending 평가 refresh를 백그라운드로 가볍게 예약합니다.
 - `/radar`와 다음 거래일 포커스 카드는 `추격 위험`, `거래량`, `수급`, `섹터`, `진입 조건`을 짧은 metric strip으로 보여줍니다. 오래된 캐시처럼 새 필드가 없는 응답은 기존 카드로 안전하게 표시됩니다.
+- `main`에 백엔드 변경이 들어오면 `Render Backend Deploy` GitHub Actions가 `RENDER_DEPLOY_HOOK_URL` secret으로 Render deploy hook을 호출하고, `/api/health`가 현재 `APP_VERSION`을 반환할 때까지 기다립니다. deploy hook secret이 없으면 workflow가 실패해 운영 백엔드가 오래된 버전에 머무는 상태를 숨기지 않습니다.
 - 점수 보고서의 감점 항목을 검증 루프에 직접 연결했습니다. `verify.py`는 이제 conflict marker, 과장된 AI 문구, LLM 숫자 prompt, stale API 계약, 프론트 `check` script, 릴리즈 버전 drift를 `scripts/evaluation_gate.py`로 먼저 확인합니다.
 - confidence calibration은 empirical profile이 없는 horizon에서 bootstrap confidence를 horizon별 상한으로 더 보수적으로 제한합니다. 실측 profile이 있더라도 표본 수가 작거나 reliability gap이 큰 경우에는 표시 confidence를 다시 capped score로 낮추고, 그 사유를 `calibration_snapshot`에 남깁니다.
 - 예측 연구실의 최근 로그와 리뷰 큐는 이제 표시 confidence cap과 cap 사유를 함께 보여줍니다. 그래서 특정 신뢰도 숫자가 bootstrap fallback인지, 표본 부족 또는 reliability gap guard로 제한됐는지 바로 확인할 수 있습니다.
@@ -1101,6 +1102,8 @@ py .\verify.py --full-sweep
 py .\verify.py --live-api-smoke
 py .\verify.py --deployed-site-smoke
 ```
+
+`main` push 이후 백엔드는 `.github/workflows/render-deploy.yml`의 `Render Backend Deploy`가 배포 훅을 호출합니다. 이 workflow가 `Missing repository secret RENDER_DEPLOY_HOOK_URL`로 실패하면 GitHub 저장소 secret에 Render deploy hook URL을 추가한 뒤 workflow를 다시 실행해야 합니다. 기존 `Render Keepalive`는 스케줄/수동 워밍업 전용이며, 배포 성공 판정은 `wait_for_deployed_version.py`와 `verify.py --deployed-site-smoke`를 기준으로 봅니다.
 
 ### 관련 문서
 

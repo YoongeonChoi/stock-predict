@@ -5,6 +5,7 @@ All notable changes to this project are tracked here.
 ## v2.65.0 - 2026-05-16
 
 - 기회 레이더 1차 스캔을 `change_pct` 중심 정렬에서 `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점` 기반 quick score로 바꿨습니다. 당일 급등률만 높은 후보는 정밀 분석 전에 낮게 보내고, 강한 섹터 안의 덜 과열된 후보가 상위로 올라오게 했습니다.
+- `Render Backend Deploy` workflow를 추가해 `main` 백엔드 변경 시 Render deploy hook을 호출하고 `/api/health` 버전이 현재 `APP_VERSION`으로 올라올 때까지 확인합니다. deploy hook secret이 없으면 workflow가 명시적으로 실패하며, 기존 `Render Keepalive`는 스케줄/수동 워밍업 전용으로 좁혔습니다.
 - `OpportunityQuality` 점수표를 추가해 `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `entry_style`, `recommended_entry_condition`을 레이더와 다음 거래일 포커스가 같은 기준으로 사용합니다.
 - KRX 투자자별 수급은 장중에는 `eod_pending`, 18시 이후 확보 시 `fresh_eod`, 실패 시 `flow_unavailable`로 내려보냅니다. 새 필드는 optional이라 오래된 캐시나 partial 응답도 기존 UI를 깨지 않습니다.
 - 레이더 캡처 기준일을 KST payload 생성일로 고정하고, `support_json`/`evaluation_json`에는 당시 품질 신호, 1D/5D/20D 수익률, 최대 역행폭, 맞은 근거/틀린 근거를 함께 남기도록 보강했습니다. 레이더 캡처 뒤 pending 평가 refresh도 백그라운드로 예약합니다.
