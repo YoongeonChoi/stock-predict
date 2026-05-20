@@ -7,18 +7,6 @@ from app.routers.screener import screen_stocks
 
 class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
     async def test_screener_skips_invalid_market_snapshots(self):
-        async def snapshot_side_effect(ticker: str, period: str = "6mo"):
-            if ticker == "BAD":
-                return {"ticker": "BAD", "valid": False, "current_price": 0.0}
-            return {
-                "ticker": "GOOD",
-                "valid": True,
-                "name": "Valid Corp",
-                "current_price": 125.0,
-                "prev_close": 120.0,
-                "market_cap": 2500000000,
-            }
-
         async def stock_info_side_effect(ticker: str):
             return {
                 "name": "Valid Corp",
@@ -34,6 +22,19 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
             }
 
         get_stock_info = AsyncMock(side_effect=stock_info_side_effect)
+        get_kr_bulk_quotes = AsyncMock(
+            return_value={
+                "BAD": {"ticker": "BAD", "name": "Bad Corp", "current_price": 0.0, "prev_close": 0.0, "market_cap": 0},
+                "GOOD": {
+                    "ticker": "GOOD",
+                    "name": "Valid Corp",
+                    "current_price": 125.0,
+                    "prev_close": 120.0,
+                    "change_pct": 4.17,
+                    "market_cap": 2500000000,
+                },
+            }
+        )
 
         async def _return_fetcher(key, fetcher, ttl=None, **kwargs):
             return await fetcher()
@@ -45,8 +46,8 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value={"Information Technology": ["BAD", "GOOD"]}),
             ),
             patch(
-                "app.routers.screener.yfinance_client.get_market_snapshot",
-                new=AsyncMock(side_effect=snapshot_side_effect),
+                "app.routers.screener.kr_market_quote_client.get_kr_bulk_quotes",
+                new=get_kr_bulk_quotes,
             ),
             patch("app.routers.screener.yfinance_client.get_stock_info", new=get_stock_info),
             patch("app.routers.screener.yfinance_client.get_price_history", new=AsyncMock(return_value=[])),
@@ -62,11 +63,12 @@ class MarketRouteStabilityTests(unittest.IsolatedAsyncioTestCase):
                 score_min=None,
                 sort_by="market_cap",
                 sort_dir="desc",
-                limit=20,
+                limit=2,
             )
 
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["results"][0]["ticker"], "GOOD")
+        get_kr_bulk_quotes.assert_awaited_once()
         get_stock_info.assert_not_awaited()
 
     async def test_sector_performance_aggregates_live_constituent_snapshots(self):
