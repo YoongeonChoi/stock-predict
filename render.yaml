@@ -12,7 +12,7 @@ services:
       - key: DB_PATH
         value: data/stock_predict.db
       - key: PYTHON_VERSION
-        value: 3.10.16
+        value: 3.11.15
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVER_KEY
