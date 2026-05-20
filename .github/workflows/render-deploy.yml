@@ -1,0 +1,56 @@
+name: Render Backend Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "render.yaml"
+      - "scripts/wait_for_deployed_version.py"
+      - ".github/workflows/render-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-backend-deploy
+  cancel-in-progress: true
+
+jobs:
+  trigger-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read expected backend version
+        id: version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          namespace = {}
+          with open("backend/app/version.py", encoding="utf-8") as handle:
+              exec(handle.read(), namespace)
+          print(f"expected={namespace['APP_VERSION']}")
+          PY
+
+      - name: Require Render deploy hook secret
+        if: ${{ env.RENDER_DEPLOY_HOOK_URL == '' }}
+        run: |
+          echo "::error::Missing repository secret RENDER_DEPLOY_HOOK_URL. Add the Render deploy hook URL as a GitHub Actions secret, then rerun this workflow."
+          exit 1
+
+      - name: Trigger Render deploy
+        run: |
+          curl --fail --silent --show-error --request POST "$RENDER_DEPLOY_HOOK_URL" >/tmp/render-deploy.json
+          cat /tmp/render-deploy.json
+
+      - name: Wait for deployed backend version
+        run: |
+          python scripts/wait_for_deployed_version.py \
+            --expected-version "${{ steps.version.outputs.expected }}" \
+            --timeout-seconds 900 \
+            --interval-seconds 30
