@@ -55,7 +55,7 @@ export type {
   CalendarSummary, CalendarEvent, CalendarResponse, SearchResult,
   TickerResolution, MarketSessionItem, MarketSessionsResponse, DailyBriefingMarketView,
   DailyBriefingFocusCard, DailyBriefingEvent, DailyBriefingResponse, PortfolioEventRadarEvent,
-  PortfolioEventRadarResponse, ForecastDeltaHistoryItem, ForecastDeltaResponse, WatchlistTrackingState,
+  PortfolioEventRadarResponse, ForecastDeltaHistoryItem, WeeklyPlanExecutionHistoryItem, ForecastDeltaResponse, WatchlistTrackingState,
   WatchlistTrackingSnapshot, WatchlistTrackingAccuracySummary, WatchlistCurrentContextSummary, WatchlistTrackingDetailResponse,
   WatchlistTrackingToggleResponse,
 } from "@/lib/api/types";

@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from app.database import db
@@ -9,6 +10,89 @@ def _direction_label(value: str | None) -> str:
     return {"up": "상승", "down": "하락", "flat": "보합"}.get(str(value or ""), "없음")
 
 
+def _parse_json_dict(raw_value) -> dict:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if isinstance(raw_value, str):
+        try:
+            parsed = json.loads(raw_value)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _outcome_label(outcome: str | None) -> str:
+    return {
+        "target_zone_touched": "목표 구간 도달",
+        "stop_loss_touched": "손절 구간 접촉",
+        "target_and_stop_touched_order_unknown": "목표·손절 모두 접촉",
+        "entry_touched": "매수 구간 접촉",
+        "not_triggered": "진입 미발생",
+    }.get(str(outcome or ""), "평가 대기")
+
+
+def _weekly_plan_from_row(row: dict) -> dict:
+    execution = _parse_json_dict(row.get("execution_json"))
+    calibration = _parse_json_dict(row.get("calibration_json"))
+    plan = execution if execution else calibration.get("weekly_trade_plan") if isinstance(calibration.get("weekly_trade_plan"), dict) else {}
+    if not plan:
+        return {}
+    outcome = execution.get("outcome") if execution else None
+    return {
+        "target_date": row["target_date"],
+        "reference_date": row.get("reference_date"),
+        "action": plan.get("action"),
+        "buy_price": plan.get("buy_price"),
+        "buy_zone_low": plan.get("buy_zone_low"),
+        "buy_zone_high": plan.get("buy_zone_high"),
+        "sell_price": plan.get("sell_price"),
+        "sell_zone_low": plan.get("sell_zone_low"),
+        "sell_zone_high": plan.get("sell_zone_high"),
+        "stop_loss": plan.get("stop_loss"),
+        "window_low": execution.get("window_low") or row.get("actual_window_low"),
+        "window_high": execution.get("window_high") or row.get("actual_window_high"),
+        "actual_close": row.get("actual_close"),
+        "buy_zone_touched": execution.get("buy_zone_touched"),
+        "buy_price_touched": execution.get("buy_price_touched"),
+        "sell_zone_touched": execution.get("sell_zone_touched"),
+        "sell_price_touched": execution.get("sell_price_touched"),
+        "stop_loss_touched": execution.get("stop_loss_touched"),
+        "actual_return_pct": execution.get("actual_return_pct"),
+        "outcome": outcome,
+        "outcome_label": _outcome_label(outcome),
+        "confidence": round(float(row.get("confidence") or plan.get("confidence") or 0.0), 2),
+        "up_probability": round(float(row.get("up_probability") or plan.get("p_up") or 0.0), 2),
+        "model_version": row.get("model_version") or "unknown",
+        "created_at": row.get("created_at"),
+    }
+
+
+def _weekly_plan_summary(history: list[dict]) -> dict:
+    history = [item for item in history if item]
+    if not history:
+        return {
+            "available": False,
+            "message": "이 종목의 5거래일 실행 판단 검증 이력이 아직 부족합니다.",
+            "history": [],
+        }
+    evaluated = [item for item in history if item.get("outcome")]
+    target_hits = [item for item in evaluated if item.get("sell_zone_touched")]
+    stop_hits = [item for item in evaluated if item.get("stop_loss_touched")]
+    return {
+        "available": True,
+        "evaluated_count": len(evaluated),
+        "target_hit_rate": round(len(target_hits) / len(evaluated) * 100.0, 1) if evaluated else None,
+        "stop_hit_rate": round(len(stop_hits) / len(evaluated) * 100.0, 1) if evaluated else None,
+        "message": (
+            f"최근 5거래일 실행안 {len(evaluated)}건 중 목표 구간 도달 {len(target_hits)}건, 손절 접촉 {len(stop_hits)}건을 기록했습니다."
+            if evaluated
+            else "5거래일 실행안은 저장됐지만 아직 target date가 지나지 않아 평가 대기 중입니다."
+        ),
+        "history": history,
+    }
+
+
 async def get_stock_forecast_delta(ticker: str, limit: int = 8) -> dict:
     rows = await db.prediction_symbol_history(
         symbol=ticker.upper(),
@@ -16,11 +100,19 @@ async def get_stock_forecast_delta(ticker: str, limit: int = 8) -> dict:
         prediction_type="next_day",
         limit=max(3, min(limit, 20)),
     )
+    weekly_rows = await db.prediction_symbol_history(
+        symbol=ticker.upper(),
+        scope="stock",
+        prediction_type="distributional_5d",
+        limit=max(3, min(limit, 20)),
+    )
+    weekly_plan = _weekly_plan_summary([_weekly_plan_from_row(row) for row in weekly_rows])
     if not rows:
         return {
             "generated_at": datetime.now().isoformat(),
             "ticker": ticker.upper(),
             "history": [],
+            "weekly_plan": weekly_plan,
             "summary": {
                 "available": False,
                 "message": "이 종목의 저장된 예측 이력이 아직 부족합니다.",
@@ -91,4 +183,5 @@ async def get_stock_forecast_delta(ticker: str, limit: int = 8) -> dict:
         "ticker": ticker.upper(),
         "summary": summary,
         "history": history,
+        "weekly_plan": weekly_plan,
     }

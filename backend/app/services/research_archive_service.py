@@ -22,6 +22,7 @@ log = logging.getLogger("stock_predict.research_archive")
 
 SYNC_STATUS_CACHE_KEY = "research_archive:sync_status:v2"
 SUPPORTED_REGIONS = {"KR", "US", "EU", "JP"}
+STOCK_RESEARCH_CONTEXT_LIMIT = 6
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -35,6 +36,56 @@ KDI_DOWNLOAD_RE = re.compile(r'["\'](/file/download\?[^"\']+)["\']', re.I)
 KDI_ITEM_RE = re.compile(
     r'<div class="item">\s*<a href="([^"]+)"[^>]*>.*?<b[^>]*>(.*?)</b>.*?<strong>(.*?)</strong>.*?<p>(.*?)</p>.*?<span>(\d{4}\.\d{2}\.\d{2})</span>',
     re.I | re.S,
+)
+
+SECTOR_KEYWORD_HINTS: dict[str, tuple[str, ...]] = {
+    "technology": ("기술", "반도체", "메모리", "hbm", "ai", "전자", "디스플레이", "소프트웨어"),
+    "semiconductor": ("반도체", "메모리", "hbm", "foundry", "파운드리", "ai chip"),
+    "consumer electronics": ("전자", "가전", "스마트폰", "디스플레이"),
+    "financial": ("금융", "은행", "증권", "보험", "금리", "credit"),
+    "bank": ("은행", "금리", "대출", "credit", "spread"),
+    "materials": ("소재", "화학", "철강", "배터리", "원자재"),
+    "chemical": ("화학", "정유", "석유화학", "원자재"),
+    "energy": ("에너지", "정유", "전력", "유가", "lng"),
+    "industrial": ("산업재", "기계", "건설", "조선", "설비투자"),
+    "health": ("헬스케어", "바이오", "제약", "의료"),
+    "communication": ("통신", "미디어", "플랫폼", "콘텐츠"),
+    "consumer": ("소비", "유통", "자동차", "화장품", "음식료"),
+    "auto": ("자동차", "전기차", "배터리", "모빌리티"),
+}
+
+BULLISH_RESEARCH_TERMS = (
+    "회복",
+    "개선",
+    "성장",
+    "확대",
+    "호조",
+    "상승",
+    "수출 증가",
+    "투자 확대",
+    "upturn",
+    "recovery",
+    "growth",
+    "improvement",
+    "expansion",
+    "resilient",
+)
+
+BEARISH_RESEARCH_TERMS = (
+    "둔화",
+    "부진",
+    "위축",
+    "하락",
+    "리스크",
+    "침체",
+    "불확실",
+    "감소",
+    "slowdown",
+    "weakness",
+    "contraction",
+    "risk",
+    "uncertainty",
+    "decline",
 )
 
 
@@ -217,6 +268,56 @@ def _strip_html(value: str | None) -> str:
         return ""
     cleaned = HTML_TAG_RE.sub(" ", value)
     return " ".join(html.unescape(cleaned).split())
+
+
+def _normalize_search_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", _strip_html(value).lower()).strip()
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = _normalize_search_text(value)
+        if len(normalized) < 2 or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _stock_research_keywords(
+    *,
+    ticker: str,
+    stock_name: str | None,
+    sector: str | None,
+    industry: str | None,
+) -> list[str]:
+    raw_keywords = [
+        ticker,
+        ticker.split(".")[0],
+        stock_name or "",
+        (stock_name or "").replace(" ", ""),
+        sector or "",
+        industry or "",
+    ]
+    taxonomy_text = f"{sector or ''} {industry or ''}".lower()
+    for anchor, hints in SECTOR_KEYWORD_HINTS.items():
+        if anchor == "consumer" and "consumer electronics" in taxonomy_text:
+            continue
+        if anchor in taxonomy_text:
+            raw_keywords.extend(hints)
+    return _ordered_unique(raw_keywords)
+
+
+def _classify_research_signal(text: str) -> str:
+    bullish = sum(1 for keyword in BULLISH_RESEARCH_TERMS if keyword in text)
+    bearish = sum(1 for keyword in BEARISH_RESEARCH_TERMS if keyword in text)
+    if bullish - bearish >= 2:
+        return "bullish"
+    if bearish - bullish >= 2:
+        return "bearish"
+    return "neutral"
 
 
 def _current_sync_job_name(force: bool) -> str:
@@ -565,3 +666,112 @@ async def list_public_research_reports(
         row["has_pdf"] = bool(row.get("pdf_url"))
         row["summary_plain"] = _strip_html(row.get("summary"))
     return rows
+
+
+async def build_stock_research_context(
+    *,
+    ticker: str,
+    stock_name: str | None,
+    sector: str | None,
+    industry: str | None,
+    country_code: str = "KR",
+    limit: int = STOCK_RESEARCH_CONTEXT_LIMIT,
+    auto_refresh: bool = True,
+) -> list[dict[str, Any]]:
+    """Return official/allowed research metadata relevant to a stock.
+
+    This intentionally uses only metadata already allowed by the public
+    research archive. It does not download or parse broker PDFs.
+    """
+
+    candidate_limit = min(max(limit * 8, 24), 120)
+    rows = await list_public_research_reports(
+        region_code=country_code if country_code in SUPPORTED_REGIONS else None,
+        limit=candidate_limit,
+        auto_refresh=auto_refresh,
+    )
+    keywords = _stock_research_keywords(
+        ticker=ticker,
+        stock_name=stock_name,
+        sector=sector,
+        industry=industry,
+    )
+    direct_terms = {
+        _normalize_search_text(ticker),
+        _normalize_search_text(ticker.split(".")[0]),
+        _normalize_search_text(stock_name or ""),
+        _normalize_search_text((stock_name or "").replace(" ", "")),
+    }
+    direct_terms.discard("")
+
+    selected: list[dict[str, Any]] = []
+    fallback_rows: list[dict[str, Any]] = []
+    for row in rows:
+        title = _strip_html(row.get("title"))
+        summary = _strip_html(row.get("summary") or row.get("summary_plain"))
+        category = _strip_html(row.get("category"))
+        text = _normalize_search_text(f"{title} {summary} {category}")
+        matched_keywords = [keyword for keyword in keywords if keyword and keyword in text]
+        if not matched_keywords:
+            fallback_rows.append(row)
+            continue
+
+        direct_match = any(keyword in direct_terms for keyword in matched_keywords)
+        relevance = 8 if direct_match else 3
+        relevance += min(len(matched_keywords), 4)
+        if str(row.get("region_code") or "") == country_code:
+            relevance += 1
+
+        selected.append(
+            {
+                "source_id": row.get("source_id"),
+                "source_name": row.get("source_name"),
+                "region_code": row.get("region_code"),
+                "organization_type": row.get("organization_type"),
+                "category": row.get("category"),
+                "title": title,
+                "summary": summary[:260],
+                "published_at": row.get("published_at"),
+                "report_url": row.get("report_url"),
+                "has_pdf": bool(row.get("pdf_url")),
+                "matched_keywords": matched_keywords[:5],
+                "relevance_score": relevance,
+                "signal": _classify_research_signal(text),
+                "metadata_only": True,
+                "usage_note": "공식/허용 메타데이터만 사용하며 PDF 본문을 무단 수집하지 않습니다.",
+            }
+        )
+
+    if not selected:
+        for row in fallback_rows[: min(2, limit)]:
+            title = _strip_html(row.get("title"))
+            summary = _strip_html(row.get("summary") or row.get("summary_plain"))
+            text = _normalize_search_text(f"{title} {summary} {row.get('category') or ''}")
+            selected.append(
+                {
+                    "source_id": row.get("source_id"),
+                    "source_name": row.get("source_name"),
+                    "region_code": row.get("region_code"),
+                    "organization_type": row.get("organization_type"),
+                    "category": row.get("category"),
+                    "title": title,
+                    "summary": summary[:260],
+                    "published_at": row.get("published_at"),
+                    "report_url": row.get("report_url"),
+                    "has_pdf": bool(row.get("pdf_url")),
+                    "matched_keywords": ["시장 공통"],
+                    "relevance_score": 1,
+                    "signal": _classify_research_signal(text),
+                    "metadata_only": True,
+                    "usage_note": "종목 직접 매칭 전에는 최근 공식 리서치를 시장 공통 근거로만 표시합니다.",
+                }
+            )
+
+    selected.sort(
+        key=lambda item: (
+            int(item.get("relevance_score") or 0),
+            str(item.get("published_at") or ""),
+        ),
+        reverse=True,
+    )
+    return selected[:limit]

@@ -53,6 +53,27 @@ class ArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
                     },
                 ],
             },
+            "weekly_trade_plan": {
+                "horizon_days": 5,
+                "target_date": "2026-04-04",
+                "reference_date": "2026-03-28",
+                "action": "accumulate",
+                "buy_price": 99.0,
+                "buy_zone_low": 98.0,
+                "buy_zone_high": 100.0,
+                "sell_price": 106.0,
+                "sell_zone_low": 105.0,
+                "sell_zone_high": 108.0,
+                "stop_loss": 95.0,
+                "expected_return_pct": 3.0,
+                "p_up": 58.0,
+                "p_down": 22.0,
+                "confidence": 66.0,
+                "risk_reward_estimate": 1.5,
+                "partial": False,
+                "evidence": [{"key": "official_research"}],
+                "source_freshness": [{"name": "공식 리서치·IB 메타데이터", "status": "fresh"}],
+            },
         }
 
         with (
@@ -74,7 +95,62 @@ class ArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
             prediction_upsert.await_args_list[1].kwargs["calibration_json"]["prediction_type"],
             "distributional_5d",
         )
+        weekly_plan = prediction_upsert.await_args_list[1].kwargs["calibration_json"]["weekly_trade_plan"]
+        self.assertEqual(weekly_plan["buy_price"], 99.0)
+        self.assertEqual(weekly_plan["sell_price"], 106.0)
+        self.assertEqual(weekly_plan["source_statuses"]["공식 리서치·IB 메타데이터"], "fresh")
         self.assertEqual(
             prediction_upsert.await_args_list[2].kwargs["calibration_json"]["prediction_type"],
             "distributional_20d",
         )
+
+    async def test_refresh_prediction_accuracy_records_weekly_execution_window(self):
+        pending_rows = [
+            {
+                "id": 7,
+                "scope": "stock",
+                "symbol": "005930.KS",
+                "prediction_type": "distributional_5d",
+                "target_date": "2026-04-04",
+                "reference_date": "2026-03-28",
+                "reference_price": 100.0,
+                "calibration_json": {
+                    "prediction_type": "distributional_5d",
+                    "weekly_trade_plan": {
+                        "action": "accumulate",
+                        "buy_price": 99.0,
+                        "buy_zone_low": 98.0,
+                        "buy_zone_high": 100.0,
+                        "sell_price": 106.0,
+                        "sell_zone_low": 105.0,
+                        "sell_zone_high": 108.0,
+                        "stop_loss": 95.0,
+                    },
+                },
+            }
+        ]
+        prices = [
+            {"date": "2026-03-28", "close": 100.0, "low": 99.0, "high": 101.0},
+            {"date": "2026-04-01", "close": 102.0, "low": 98.5, "high": 104.0},
+            {"date": "2026-04-02", "close": 104.0, "low": 101.0, "high": 105.5},
+            {"date": "2026-04-04", "close": 106.5, "low": 103.0, "high": 107.0},
+        ]
+
+        with (
+            patch("app.services.archive_service.db.prediction_pending", new=AsyncMock(return_value=pending_rows)),
+            patch("app.services.archive_service.yfinance_client.get_price_history", new=AsyncMock(return_value=prices)),
+            patch("app.services.archive_service.db.prediction_update_actual", new=AsyncMock()) as update_actual,
+            patch("app.services.confidence_calibration_service.refresh_empirical_profiles", new=AsyncMock()),
+            patch("app.services.archive_service.opportunity_radar_lab_service.refresh_opportunity_radar_accuracy", new=AsyncMock(return_value={})),
+        ):
+            result = await archive_service.refresh_prediction_accuracy(limit=10)
+
+        self.assertEqual(result["evaluated_count"], 1)
+        update_actual.assert_awaited_once()
+        kwargs = update_actual.await_args.kwargs
+        self.assertEqual(kwargs["actual_window_low"], 98.5)
+        self.assertEqual(kwargs["actual_window_high"], 107.0)
+        self.assertTrue(kwargs["execution_json"]["buy_zone_touched"])
+        self.assertTrue(kwargs["execution_json"]["sell_zone_touched"])
+        self.assertFalse(kwargs["execution_json"]["stop_loss_touched"])
+        self.assertEqual(kwargs["execution_json"]["outcome"], "target_zone_touched")

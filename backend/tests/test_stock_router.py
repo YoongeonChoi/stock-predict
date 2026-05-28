@@ -454,6 +454,9 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
         self.assertEqual(payload["name"], "005930.KS")
         self.assertEqual(payload["current_price"], 0.0)
+        self.assertEqual(payload["weekly_trade_plan"]["partial"], True)
+        self.assertEqual(payload["weekly_trade_plan"]["fallback_reason"], "stock_memory_guard")
+        self.assertEqual(payload["weekly_trade_plan"]["action"], "wait_pullback")
         self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
 
     def test_stock_detail_cold_import_guard_returns_memory_shell_even_at_low_pressure(self):
@@ -643,6 +646,7 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
         self.assertIn("SP-3003", payload["errors"])
+        self.assertEqual(payload["weekly_trade_plan"]["fallback_reason"], "stock_minimal_shell")
         self.assertEqual(payload["public_summary"]["data_quality"], "티커·기본 메타데이터 중심 최소 응답")
 
     def test_stock_detail_returns_minimal_shell_when_timeout_and_no_cache_available(self):
@@ -668,6 +672,7 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_minimal_shell")
         self.assertIn("SP-5018", payload["errors"])
+        self.assertEqual(payload["weekly_trade_plan"]["fallback_reason"], "stock_minimal_shell")
 
 
 if __name__ == "__main__":

@@ -279,6 +279,48 @@ export interface TradePlan {
   invalidation: string;
 }
 
+export interface WeeklyTradePlanEvidence {
+  key: string;
+  label: string;
+  signal: "bullish" | "neutral" | "bearish";
+  detail: string;
+}
+
+export interface WeeklyTradePlanSourceFreshness {
+  name: string;
+  status: string;
+  item_count: number;
+  note: string;
+  updated_at?: string | null;
+}
+
+export interface WeeklyTradePlan {
+  horizon_days: number;
+  target_date: string;
+  reference_date: string;
+  reference_price: number;
+  action: "accumulate" | "breakout_watch" | "wait_pullback" | "reduce_risk" | "avoid";
+  buy_price?: number | null;
+  buy_zone_low?: number | null;
+  buy_zone_high?: number | null;
+  sell_price?: number | null;
+  sell_zone_low?: number | null;
+  sell_zone_high?: number | null;
+  stop_loss?: number | null;
+  expected_return_pct?: number | null;
+  expected_excess_return_pct?: number | null;
+  p_up?: number | null;
+  p_flat?: number | null;
+  p_down?: number | null;
+  confidence: number;
+  risk_reward_estimate: number;
+  evidence: WeeklyTradePlanEvidence[];
+  source_freshness: WeeklyTradePlanSourceFreshness[];
+  partial: boolean;
+  fallback_reason?: string | null;
+  data_quality: string;
+}
+
 export interface ShortTermChartFactor {
   key: string;
   label: string;
@@ -361,6 +403,7 @@ export interface OpportunityItem {
   take_profit_1?: number | null;
   take_profit_2?: number | null;
   risk_reward_estimate: number;
+  weekly_trade_plan?: WeeklyTradePlan | null;
   thesis: string[];
   risk_flags: string[];
   forecast_date: string;
@@ -639,6 +682,7 @@ export interface StockDetail {
   setup_backtest?: SetupBacktest | null;
   market_regime?: MarketRegime;
   trade_plan?: TradePlan;
+  weekly_trade_plan?: WeeklyTradePlan | null;
   public_summary?: PublicStockSummary;
   analysis_summary?: string;
   key_risks?: string[];

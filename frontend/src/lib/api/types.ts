@@ -1398,6 +1398,34 @@ export interface ForecastDeltaHistoryItem {
   created_at: number;
 }
 
+export interface WeeklyPlanExecutionHistoryItem {
+  target_date: string;
+  reference_date?: string | null;
+  action?: string | null;
+  buy_price?: number | null;
+  buy_zone_low?: number | null;
+  buy_zone_high?: number | null;
+  sell_price?: number | null;
+  sell_zone_low?: number | null;
+  sell_zone_high?: number | null;
+  stop_loss?: number | null;
+  window_low?: number | null;
+  window_high?: number | null;
+  actual_close?: number | null;
+  buy_zone_touched?: boolean | null;
+  buy_price_touched?: boolean | null;
+  sell_zone_touched?: boolean | null;
+  sell_price_touched?: boolean | null;
+  stop_loss_touched?: boolean | null;
+  actual_return_pct?: number | null;
+  outcome?: string | null;
+  outcome_label: string;
+  confidence: number;
+  up_probability: number;
+  model_version: string;
+  created_at?: number | null;
+}
+
 export interface ForecastDeltaResponse {
   generated_at: string;
   ticker: string;
@@ -1413,6 +1441,14 @@ export interface ForecastDeltaResponse {
     message: string;
   };
   history: ForecastDeltaHistoryItem[];
+  weekly_plan?: {
+    available: boolean;
+    evaluated_count?: number;
+    target_hit_rate?: number | null;
+    stop_hit_rate?: number | null;
+    message: string;
+    history: WeeklyPlanExecutionHistoryItem[];
+  };
 }
 
 export type WatchlistTrackingState = "active" | "inactive";

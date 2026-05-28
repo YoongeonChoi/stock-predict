@@ -17,6 +17,7 @@ import PivotLevelsCard from "@/components/PivotLevelsCard";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import SetupBacktestCard from "@/components/SetupBacktestCard";
 import TradePlanCard from "@/components/TradePlanCard";
+import WeeklyTradePlanCard from "@/components/WeeklyTradePlanCard";
 import { useToast } from "@/components/Toast";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import AnalystConsensus from "@/components/charts/AnalystConsensus";
@@ -177,11 +178,11 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           variant="compact"
           eyebrow="종목 상세"
           title={initialTicker.toUpperCase()}
-          description="가격 흐름, 기술 신호, 공개 판단 요약을 먼저 정리하고 세부 분석을 이어서 불러옵니다."
+          description="이번 주 매수·매도 판단과 공개 요약을 먼저 정리하고 세부 분석을 이어서 불러옵니다."
         />
         <WorkspaceLoadingCard
-          title="종목 핵심 수치를 불러오고 있습니다"
-          message="현재가와 공개 판단 요약, 관심종목 상태를 먼저 확인할 수 있도록 준비하고 있습니다."
+          title="이번 주 판단을 불러오고 있습니다"
+          message="매수 가능가, 매도 목표가, 손절가를 먼저 확인할 수 있도록 준비하고 있습니다."
           className="min-h-[180px]"
         />
         <WorkspaceLoadingCard
@@ -335,6 +336,11 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           </div>
         }
       />
+
+      {stock.weekly_trade_plan ? (
+        <WeeklyTradePlanCard plan={stock.weekly_trade_plan} priceKey={priceKey} assetLabel={stock.name} />
+      ) : null}
+
       {(stock.generated_at || stock.partial || stock.fallback_reason || (stock.errors && stock.errors.length > 0)) ? (
         <div className="card !p-4 space-y-3">
           <PublicAuditStrip meta={stock} />
@@ -344,42 +350,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           {stock.errors && stock.errors.length > 0 ? <WarningBanner codes={stock.errors} /> : null}
         </div>
       ) : null}
-
-      <div className="card !p-4 space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="font-semibold">관심종목 · 심화 추적</h2>
-            <p className="mt-1 text-sm leading-6 text-text-secondary">
-              종목을 먼저 관심종목에 저장하고, 필요한 경우 심화 추적으로 올려 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.
-            </p>
-          </div>
-          <button
-            onClick={handleTrackingAction}
-            disabled={watchlistSyncing}
-            className="ui-button-primary w-full justify-center px-4 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-          >
-            {watchlistActionLabel}
-          </button>
-        </div>
-        <div className="text-sm text-text-secondary">
-          {!session
-            ? "로그인 후 관심종목과 심화 추적을 계정별로 저장할 수 있습니다."
-            : watchlistEntry?.tracking_enabled
-              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 이어서 확인할 수 있습니다."
-              : watchlistEntry
-                ? "이미 관심종목에 들어 있습니다. 심화 추적을 시작하면 최근 예측 변화와 적중 기록이 추가됩니다."
-                : "아직 관심종목에 없는 종목입니다. 먼저 저장한 뒤 심화 추적으로 이어갈 수 있습니다."}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {overviewMetrics.map((item) => (
-          <div key={item.label} className="metric-card">
-            <div className="text-xs text-text-secondary">{item.label}</div>
-            <div className="mt-2 font-bold">{item.value}</div>
-          </div>
-        ))}
-      </div>
 
       {stock.public_summary ? (
         <div className="card space-y-5">
@@ -413,13 +383,6 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
             <div className="text-xs text-text-secondary">데이터 품질</div>
             <p className="mt-2 text-sm leading-relaxed text-text">{stock.public_summary.data_quality}</p>
           </div>
-        </div>
-      ) : null}
-
-      {stock.analysis_summary ? (
-        <div className="card">
-          <h2 className="font-semibold mb-3">상세 분석</h2>
-          <p className="text-sm leading-relaxed whitespace-pre-line">{stock.analysis_summary}</p>
         </div>
       ) : null}
 
@@ -465,7 +428,50 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
 
       {stock.next_day_forecast ? <NextDayForecastCard forecast={stock.next_day_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
       {stock.free_kr_forecast ? <FreeKrForecastCard forecast={stock.free_kr_forecast} assetLabel={stock.name} priceKey={priceKey} /> : null}
-      {forecastDelta ? <ForecastDeltaCard data={forecastDelta} /> : null}
+      {forecastDelta ? <ForecastDeltaCard data={forecastDelta} priceKey={priceKey} /> : null}
+
+      <div className="card !p-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="font-semibold">관심종목 · 심화 추적</h2>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              종목을 먼저 관심종목에 저장하고, 필요한 경우 심화 추적으로 올려 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.
+            </p>
+          </div>
+          <button
+            onClick={handleTrackingAction}
+            disabled={watchlistSyncing}
+            className="ui-button-primary w-full justify-center px-4 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+          >
+            {watchlistActionLabel}
+          </button>
+        </div>
+        <div className="text-sm text-text-secondary">
+          {!session
+            ? "로그인 후 관심종목과 심화 추적을 계정별로 저장할 수 있습니다."
+            : watchlistEntry?.tracking_enabled
+              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 이어서 확인할 수 있습니다."
+              : watchlistEntry
+                ? "이미 관심종목에 들어 있습니다. 심화 추적을 시작하면 최근 예측 변화와 적중 기록이 추가됩니다."
+                : "아직 관심종목에 없는 종목입니다. 먼저 저장한 뒤 심화 추적으로 이어갈 수 있습니다."}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {overviewMetrics.map((item) => (
+          <div key={item.label} className="metric-card">
+            <div className="text-xs text-text-secondary">{item.label}</div>
+            <div className="mt-2 font-bold">{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {stock.analysis_summary ? (
+        <div className="card">
+          <h2 className="font-semibold mb-3">상세 분석</h2>
+          <p className="text-sm leading-relaxed whitespace-pre-line">{stock.analysis_summary}</p>
+        </div>
+      ) : null}
 
       {stock.historical_pattern_warning ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">

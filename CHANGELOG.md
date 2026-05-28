@@ -2,6 +2,23 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.0 - 2026-05-28
+
+- `/stock/[ticker]` 상세 응답에 `weekly_trade_plan`을 추가했습니다. 5거래일 조건부 분포의 q25/q50/q75/q90, ATR, 기존 매수·매도 가이드를 교차해 이번 주 매수 가능가, 매도 목표가, 손절가, 상승/보합/하락 확률, 손익비, 데이터 최신성을 함께 내려보냅니다.
+- 새 산정 로직은 `backend/app/analysis/trade_planner.py`의 `build_weekly_trade_plan()`으로 분리했고, LLM 숫자 입력은 매수가·매도가에 반영하지 않도록 회귀 테스트를 추가했습니다. 뉴스·공시·리포트 맥락은 이벤트/근거 요약과 불확실성 보정 신호로만 사용합니다.
+- `archive/research`의 공식 리서치 메타데이터를 종목명·티커·섹터 키워드로 매칭해 `weekly_trade_plan.evidence`와 `source_freshness`에 반영합니다. 승인된 API/허용 메타데이터만 사용하며 무단 PDF scraping은 계속 금지합니다.
+- `/stock/[ticker]` 화면은 감사/제한 배너보다 `이번 주 판단` 카드를 먼저 렌더링합니다. 카드 내부도 공식 리서치·IB 메타데이터, 뉴스·공시, PyKRX 수급 같은 핵심 근거가 뒤쪽 배열에 있어도 잘리지 않게 정렬하고, 근거 최신성 반영 개수를 함께 표시합니다.
+- 프론트 progressive flow는 상세 payload 자체가 partial이 아니어도 `weekly_trade_plan.partial=true`이면 `prefer_full=true` 후속 요청을 시도합니다. 그래서 첫 HTML은 빠르게 유지하면서 5거래일 판단만 대기 상태로 남는 경우를 한 번 더 정밀 응답으로 끌어올립니다.
+- `prediction_records`에 5거래일 실행안 메타와 실행 평가 결과를 저장합니다. `distributional_5d` row의 calibration에는 `weekly_trade_plan`이 들어가고, target date 이후에는 reference 다음 거래일부터 target date까지의 고저 범위로 매수 구간 접촉, 목표 구간 도달, 손절 접촉을 평가합니다.
+- `/api/stock/{ticker}/forecast-delta` 응답과 `예측 변화 추적` 카드에 `weekly_plan` 검증 블록을 추가했습니다. 최근 5거래일 실행안의 목표 도달률, 손절 접촉률, 실제 범위를 함께 보여줘 매수가·매도가 제안이 시간에 따라 검증되는 흐름을 확인할 수 있습니다.
+- 종목 상세 cache namespace를 `v10/latest-v10/quick-v2`로 올려, 이전 5거래일 판단 source label이나 근거 상태가 새 화면에 오래 남지 않게 했습니다.
+- `/api/stock/{ticker}/detail` quick/shell fallback에도 `weekly_trade_plan.partial=true` 또는 대기 상태를 넣어, Render memory-safe 구간에서도 종목 첫 화면이 빈 판단 카드로 보이지 않게 했습니다.
+- `/radar` 후보는 `weekly_trade_plan`이 있을 때만 5거래일 매수·매도 요약을 추가로 보여주고, 오래된 캐시처럼 필드가 없으면 기존 카드로 안전하게 렌더링합니다.
+- PyKRX 수급 합계가 항상 `None`이 되던 `_safe_sum` 누락을 고쳐 1D/5D/20D 외국인·기관·개인 순매수 합계가 정상적으로 계산되도록 했습니다.
+- 루트 `npm install`/`frontend:*` 스크립트는 긴 `node -e` inline escape 대신 `scripts/frontend_npm.js`를 직접 호출하게 바꿔 macOS zsh와 최신 Node에서도 프론트 의존성 설치가 끊기지 않게 했습니다.
+- 개발 서버 런처는 macOS/Linux에서 백그라운드 프로세스를 독립 세션으로 띄우고 종료 시 해당 프로세스 그룹만 정리해, `start.py`가 반환된 직후 dev server가 같이 내려가지 않게 했습니다.
+- README, API 계약, 디자인 기준, 프론트 타입, 백엔드 모델, 회귀 테스트를 함께 갱신하고 릴리즈 버전을 `v2.66.0`으로 동기화했습니다.
+
 ## v2.65.0 - 2026-05-16
 
 - 기회 레이더 1차 스캔을 `change_pct` 중심 정렬에서 `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점` 기반 quick score로 바꿨습니다. 당일 급등률만 높은 후보는 정밀 분석 전에 낮게 보내고, 강한 섹터 안의 덜 과열된 후보가 상위로 올라오게 했습니다.

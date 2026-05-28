@@ -23,6 +23,9 @@ from app.models.market import (
     ShortTermChartAnalysis,
     ShortTermChartFactor,
     TradePlan,
+    WeeklyTradePlan,
+    WeeklyTradePlanEvidence,
+    WeeklyTradePlanSourceFreshness,
 )
 from app.models.watchlist import WatchlistItem
 from app.models.archive import ArchiveEntry, AccuracyStats

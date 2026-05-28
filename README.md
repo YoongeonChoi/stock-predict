@@ -9,11 +9,20 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.65.0`
+현재 릴리즈: `v2.66.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 ### 이번 릴리즈 하이라이트
 
+- 종목 상세 첫 판단에 `이번 주 판단` 카드를 추가했습니다. 사용자는 종목 진입 직후 5거래일 조건부 분포 기반 매수 가능가, 매도 목표가, 손절가, 상승/보합/하락 확률, 신뢰도, 데이터 상태를 먼저 봅니다.
+- `weekly_trade_plan`은 canonical `distributional_return_engine.py`의 5거래일 분포를 사용하고, LLM은 숫자 생성이 아니라 뉴스·공시 이벤트 구조화와 서술 요약에만 사용합니다.
+- 5거래일 판단은 가격·수급·뉴스·공시 외에도 `archive/research`의 공식 리서치 메타데이터를 종목명/티커/섹터 키워드로 매칭해 근거 상태에 포함합니다. KOFIA·증권사·IB 리포트는 승인된 API나 허용 메타데이터가 있을 때만 반영하며, 무단 PDF scraping은 사용하지 않습니다.
+- `/stock/[ticker]` 첫 화면은 감사/제한 배너보다 `이번 주 판단` 카드를 먼저 보여 줍니다. 카드 안에서는 공식 리서치·IB 메타데이터와 수급·뉴스·공시 최신성까지 잘리지 않고 보이며, `weekly_trade_plan.partial=true`이면 hydration 뒤 full detail 업그레이드를 한 번 더 시도합니다.
+- 5거래일 실행안은 `prediction_records`에 함께 저장되고, target date가 지나면 reference 이후 5거래일 고저 범위로 `매수 구간 접촉`, `목표 구간 도달`, `손절 접촉`을 평가합니다. `/stock/[ticker]`의 예측 변화 추적 카드에서 최근 실행안 검증 결과를 확인할 수 있습니다.
+- 종목 상세 cache namespace를 함께 올려, 이전 판단 카드의 source label이나 fallback 상태가 새 `weekly_trade_plan` 계약과 섞이지 않게 했습니다.
+- quick/shell fallback에도 `weekly_trade_plan.partial=true` 또는 대기 상태를 넣어, Render memory-safe 구간에서도 종목 상세 첫 화면이 빈 판단 카드로 멈추지 않게 했습니다.
+- `/radar` 후보는 새 5거래일 판단이 있을 때만 매수·매도 요약을 선택적으로 보여주며, 오래된 캐시나 partial 응답에는 기존 카드로 안전하게 내려갑니다.
+- PyKRX 투자자별 수급 합계 누락을 고쳐 1D/5D/20D 외국인·기관·개인 순매수 합계가 5거래일 판단 근거에 정상 반영될 수 있게 했습니다.
 - 기회 레이더는 이제 1차 후보 스캔부터 당일 급등률 중심 정렬을 쓰지 않습니다. `섹터 강도 + 유동성 + 거래량 품질 + 추격 위험 감점`으로 quick score를 만들고, 급등률만 높은 종목은 정밀 분석 전에 우선순위를 낮춥니다.
 - Render 백엔드는 Python `3.11.15` 런타임으로 빌드합니다. Render Dashboard에 이전 Python 3.10 설정이 남아 있어도 설치가 막히지 않도록 backend data stack은 `numpy==2.2.6`, `pandas==2.3.3`으로 고정했습니다.
 - 레이더 후보와 다음 거래일 포커스는 같은 `OpportunityQuality` 기준을 공유합니다. 응답에는 `quality_score`, `chase_risk_score`, `volume_quality_score`, `flow_accumulation_score`, `sector_catalyst_score`, `entry_style`, `recommended_entry_condition`, `flow_data_status`가 optional 필드로 추가됩니다.
@@ -306,7 +315,8 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 
 ### 4. 종목 상세
 
-- 방향 확률, 분위수 기반 가격 범위, 기술 요약, 이벤트/공시 맥락을 함께 보여 줍니다.
+- 첫 화면에서 5거래일 조건부 분포 기반 `이번 주 판단`을 먼저 보여 줍니다. 대표 매수 가능가, 매도 목표가, 손절가, 확률, 신뢰도, 데이터 상태를 한 slab 안에서 확인합니다.
+- 이어서 방향 확률, 분위수 기반 가격 범위, 기술 요약, 이벤트/공시 맥락을 함께 보여 줍니다.
 - `quick snapshot -> prefer_full` 업그레이드 구조를 유지해 first usable을 먼저 확보합니다.
 
 ### 5. 포트폴리오
@@ -706,7 +716,7 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 
 1. 예측 생성
 2. `prediction_records`에 저장
-3. target date 도달 후 실제값(`actual_close`, `actual_low`, `actual_high`) 업데이트
+3. target date 도달 후 실제값(`actual_close`, `actual_low`, `actual_high`)과 5거래일 실행 범위(`actual_window_low`, `actual_window_high`) 업데이트
 4. calibration profile refresh
 5. `/lab`과 diagnostics에 반영
 
@@ -736,7 +746,8 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 - `model_version`
 - `prediction_json`
 - `calibration_json`
-- `actual_close / actual_low / actual_high`
+- 5거래일 실행안 메타(`weekly_trade_plan`)와 평가 결과(`execution_json`)
+- `actual_close / actual_low / actual_high / actual_window_low / actual_window_high`
 
 ### pending prediction vs evaluated prediction
 
@@ -776,7 +787,7 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 | Auth / User Data | Supabase | 인증, 계정 프로필, 사용자별 watchlist/portfolio |
 | Runtime Storage | SQLite | 캐시, prediction log, runtime diagnostics |
 | Infra | Vercel, Render, Cloudflare | 프론트/백엔드 배포, DNS, edge 보조 |
-| External Data | ECOS, KOSIS, OpenDART, Naver, Yahoo Finance, FMP, 연구 리포트 | 시장/거시/공시/뉴스/시세 입력 |
+| External Data | ECOS, KOSIS, OpenDART, Naver, Yahoo Finance, FMP, 공식 리서치 메타데이터 | 시장/거시/공시/뉴스/시세 입력 |
 | AI Layer | OpenAI | 이벤트 구조화, 내러티브 요약 |
 
 ### Frontend
@@ -872,7 +883,7 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 | `Naver` | KR 대표 quote, 뉴스, 시총 페이지 | HTML 구조 변경 가능성 | cached snapshot / representative quote |
 | `Yahoo Finance` | 가격 이력, 일부 quote | 느림, 비일관성, rate limit 가능성 | 제한된 범위에서만 사용, representative scan 우선 |
 | `FMP` | 보조 quote / news | free tier 변동성, 제한 | source disable / cached fallback |
-| 공식 리서치 소스 | archive/research | source별 품질 편차 | archive sync partial 허용 |
+| 공식 리서치 메타데이터 | archive/research, 승인된 KOFIA/증권사 API만 허용 | source별 품질 편차, API 승인 필요 | archive sync partial 허용 + 무단 PDF scraping 금지 |
 
 ### fallback 전략 핵심
 

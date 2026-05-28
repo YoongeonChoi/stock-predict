@@ -121,7 +121,7 @@
 
 ### calibration_json 내부 확장 규칙
 
-`prediction_records`는 새 SQL 컬럼을 추가하지 않고 기존 `calibration_json`을 확장합니다. top-level calibration 필드는 유지하고, 아래 nested block이 추가될 수 있습니다.
+`prediction_records`는 top-level calibration 필드를 유지하면서 nested block을 확장합니다. v2.66.0의 5거래일 실행안 검증부터는 실제 target-date OHLC와 별개로 실행 기간 고저 범위와 평가 결과도 저장할 수 있습니다.
 
 - `fusion_features`
   - `prior_fused_score`, `fundamental_score`, `macro_score`, `event_sentiment`, `event_surprise`, `event_uncertainty`, `flow_score`, `coverage_naver`, `coverage_opendart`, `regime_spread`
@@ -129,6 +129,18 @@
   - `used`, `coverage`, `peer_count`, `peer_momentum_5d`, `peer_momentum_20d`, `peer_dispersion`, `sector_relative_strength`, `correlation_support`, `news_relation_support`, `graph_context_score`
 - `fusion_metadata`
   - `method`, `profile_bucket`, `profile_sample_count`, `blend_weight`, `profile_fitted_at`
+- `weekly_trade_plan`
+  - `distributional_5d` row에 optional로 저장되는 5거래일 실행안입니다.
+  - `action`, `buy_price`, `buy_zone_low/high`, `sell_price`, `sell_zone_low/high`, `stop_loss`, `p_up`, `confidence`, `risk_reward_estimate`, `evidence_keys`, `source_statuses`를 포함할 수 있습니다.
+
+### prediction_records 실행 평가 확장
+
+- `actual_window_low`, `actual_window_high`
+  - `reference_date` 다음 거래일부터 `target_date`까지의 실제 저가/고가 범위입니다.
+- `execution_json`
+  - `weekly_trade_plan`이 있는 5D row에서 target date 이후 채워지는 실행 평가 결과입니다.
+  - 주요 필드: `buy_zone_touched`, `sell_zone_touched`, `stop_loss_touched`, `outcome`, `actual_return_pct`, `window_low`, `window_high`
+  - 일중 선후관계는 확정하지 않고, 5거래일 범위 안에서 접촉 여부만 평가합니다.
 
 old/new record가 섞여 있어도 집계 API와 연구실 UI는 이를 정상적으로 읽어야 합니다.
 
@@ -155,6 +167,8 @@ v2.65.0부터 `opportunities[]`와 `next_day_focus`는 다음 품질 필드를 o
 - `recommended_entry_condition`
 
 기회 레이더 1차 후보 정렬은 당일 `change_pct` 자체가 아니라 섹터 강도, 유동성, 거래량 품질, 추격 위험 감점을 조합한 quick score를 사용합니다. KRX 투자자별 수급은 장중 실시간 데이터가 아니라 EOD 보조 신호입니다. 18시 전에는 `eod_pending`으로 표시하고, 확보 실패 시에도 `200 + partial` 후보를 유지합니다.
+
+v2.66.0부터 `opportunities[]`는 optional `weekly_trade_plan`을 가질 수 있습니다. 상세 계산이 끝난 후보에만 붙으며, 오래된 캐시·quote-only·placeholder 응답에는 없을 수 있습니다. 프론트는 필드가 없으면 기존 20거래일 후보 카드만 표시하고, 있으면 5거래일 매수·매도 요약을 보조로 표시합니다.
 
 `/api/archive/research` 공개 목록 계약:
 
@@ -233,6 +247,13 @@ v2.65.0부터 `opportunities[]`와 `next_day_focus`는 다음 품질 필드를 o
 
 - `GET /api/country/{code}/sector/{sector_id}/report`
 - `GET /api/stock/{ticker}/detail`
+  - `weekly_trade_plan`
+    - 5거래일 조건부 분포 기반 실행 판단 블록입니다.
+    - 주요 필드: `horizon_days=5`, `target_date`, `reference_price`, `action`, `buy_price`, `buy_zone_low/high`, `sell_price`, `sell_zone_low/high`, `stop_loss`, `expected_return_pct`, `expected_excess_return_pct`, `p_up`, `p_flat`, `p_down`, `confidence`, `risk_reward_estimate`, `evidence[]`, `source_freshness[]`, `partial`, `fallback_reason`, `data_quality`
+    - 숫자는 canonical `distributional_return_engine.py`의 5거래일 분포와 ATR, 기존 `buy_sell_guide` 교차로 산정합니다. LLM 응답의 가격 숫자는 이 필드에 반영하지 않습니다.
+    - `evidence[]`에는 가격·분포·시장 국면·수급·뉴스/공시 외에, 매칭된 경우 `official_research`가 포함될 수 있습니다. 이 항목은 `archive/research`의 공식/허용 메타데이터만 사용하며 PDF 본문 무단 수집을 전제로 하지 않습니다.
+    - 프론트는 `source_freshness[]`를 최신성 UI로 모두 소비할 수 있어야 하며, 공식 리서치·IB 메타데이터와 PyKRX 수급처럼 사용자의 판단에 직접 영향을 주는 소스는 배열 뒤쪽에 있어도 숨기지 않습니다.
+    - quick/shell fallback도 빈 카드가 되지 않도록 `partial=true` 또는 대기 상태를 내려보냅니다.
   - `public_summary`
     - 공개 판단 요약 전용 블록
     - UI는 `근거 -> 반대 근거 -> 지금 바로 사지 않는 이유 -> 무효화 조건 -> 데이터 품질 / 신뢰 메모` 순서로 읽습니다.
@@ -240,6 +261,7 @@ v2.65.0부터 `opportunities[]`와 `next_day_focus`는 다음 품질 필드를 o
     - freshness / fallback audit 메타
   - query `prefer_full=true`
     - partial quick snapshot 뒤에 full detail 업그레이드를 우선 시도할 때 사용하는 힌트입니다.
+    - 응답 최상위 `partial=false`라도 `weekly_trade_plan.partial=true`이면 프론트는 한 번 더 full detail 업그레이드를 시도할 수 있습니다.
     - quick snapshot이 이미 있으면 먼저 즉시 서빙하고, full detail은 bounded 예산 안에서만 업그레이드합니다.
     - full detail이 timeout 또는 조합 오류로 끝나지 않으면 quick/cached partial로 안전하게 되돌아갑니다.
   - `fallback_reason=stock_quick_detail`
@@ -255,6 +277,8 @@ v2.65.0부터 `opportunities[]`와 `next_day_focus`는 다음 품질 필드를 o
 - `GET /api/stock/{ticker}/technical-summary`
 - `GET /api/stock/{ticker}/pivot-points`
 - `GET /api/stock/{ticker}/forecast-delta`
+  - 기존 next-day 예측 변화 요약에 더해 optional `weekly_plan` 블록을 반환할 수 있습니다.
+  - `weekly_plan.history[]`는 5거래일 실행안의 매수가, 매도가, 손절가, 실제 5거래일 범위, 매수/목표/손절 접촉 여부, `outcome_label`을 포함합니다.
 - `GET /api/search`
 - `GET /api/ticker/resolve`
 

@@ -377,6 +377,47 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
             "thesis": ["정밀 종목 분석을 기다리는 동안 최소 시세 스냅샷만 제공합니다."],
             "invalidation": "정밀 종목 분석이 다시 가능해지면 계획을 갱신합니다.",
         },
+        "weekly_trade_plan": {
+            "horizon_days": 5,
+            "target_date": "",
+            "reference_date": "",
+            "reference_price": current_price,
+            "action": "wait_pullback",
+            "buy_price": None,
+            "buy_zone_low": None,
+            "buy_zone_high": None,
+            "sell_price": None,
+            "sell_zone_low": None,
+            "sell_zone_high": None,
+            "stop_loss": None,
+            "expected_return_pct": None,
+            "expected_excess_return_pct": None,
+            "p_up": None,
+            "p_flat": None,
+            "p_down": None,
+            "confidence": 0.0,
+            "risk_reward_estimate": 0.0,
+            "evidence": [
+                {
+                    "key": "shell",
+                    "label": "최소 스냅샷",
+                    "signal": "neutral",
+                    "detail": "메모리 보호 구간이라 5거래일 분포 계산은 이번 응답에서 생략했습니다.",
+                }
+            ],
+            "source_freshness": [
+                {
+                    "name": "가격·거래량",
+                    "status": "pending",
+                    "item_count": 0,
+                    "note": "quick 또는 full 응답이 준비되면 최신 가격 기준으로 갱신합니다.",
+                    "updated_at": None,
+                }
+            ],
+            "partial": True,
+            "fallback_reason": "stock_memory_guard",
+            "data_quality": "정밀 종목 분석 전 최소 응답이라 이번 주 매수·매도 가격은 대기 상태로 표시합니다.",
+        },
         "public_summary": {
             "summary": fallback_summary,
             "evidence_for": [],
@@ -397,7 +438,7 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
     }
     await _timed_stock_cache_write(
         cache.set(
-            f"stock_detail:quick-v1:{ticker}",
+            stock_detail_quick_cache_key(ticker),
             payload,
             ttl=min(get_settings().cache_ttl_report, 120),
             persist=False,
@@ -422,6 +463,19 @@ async def _build_stock_minimal_shell(
         **dict(payload.get("trade_plan") or {}),
         "thesis": [summary],
         "invalidation": "정밀 종목 분석이 다시 가능해지면 계획을 갱신합니다.",
+    }
+    payload["weekly_trade_plan"] = {
+        **dict(payload.get("weekly_trade_plan") or {}),
+        "fallback_reason": fallback_reason,
+        "data_quality": "정밀 종목 분석 전 최소 응답이라 이번 주 매수·매도 가격은 대기 상태로 표시합니다.",
+        "evidence": [
+            {
+                "key": "shell",
+                "label": "최소 스냅샷",
+                "signal": "neutral",
+                "detail": summary,
+            }
+        ],
     }
     payload["public_summary"] = {
         **dict(payload.get("public_summary") or {}),

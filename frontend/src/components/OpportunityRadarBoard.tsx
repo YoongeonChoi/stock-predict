@@ -135,6 +135,33 @@ function QualityMetricStrip({ item, compact = false }: { item: OpportunityItem; 
   );
 }
 
+function WeeklyTradePlanSummary({ item, compact = false }: { item: OpportunityItem; compact?: boolean }) {
+  const plan = item.weekly_trade_plan;
+  if (!plan) return null;
+  return (
+    <div className={cn("rounded-lg border border-border/70 bg-surface/55 px-3 py-3", compact ? "text-[11px]" : "text-xs")}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-text">이번 주 매수·매도</span>
+        <span className={cn("rounded-full px-2 py-0.5", actionTone(plan.action))}>{actionLabel(plan.action)}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <div className="text-text-secondary">매수가</div>
+          <div className="mt-1 font-semibold text-positive">{formatPrice(plan.buy_price ?? plan.buy_zone_high, item.country_code)}</div>
+        </div>
+        <div>
+          <div className="text-text-secondary">매도가</div>
+          <div className="mt-1 font-semibold text-accent">{formatPrice(plan.sell_price ?? plan.sell_zone_low, item.country_code)}</div>
+        </div>
+        <div>
+          <div className="text-text-secondary">상승 확률</div>
+          <div className="mt-1 font-semibold">{plan.p_up == null ? "대기" : `${plan.p_up.toFixed(1)}%`}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OpportunityRadarBoard({ data, compact = false, embedded = false }: Props) {
   const { toast } = useToast();
   const items = compact ? data.opportunities.slice(0, 4) : data.opportunities;
@@ -267,6 +294,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
 
                 <div className="mt-3 space-y-2">
                   <QualityMetricStrip item={item} compact />
+                  <WeeklyTradePlanSummary item={item} compact />
                   {item.recommended_entry_condition ? (
                     <div className="text-xs leading-5 text-text-secondary">
                       <span className="font-semibold text-text">진입 조건 · {entryStyleLabel(item.entry_style)} · </span>
@@ -441,6 +469,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
 
               <div className="mb-3 space-y-2">
                 <QualityMetricStrip item={item} />
+                <WeeklyTradePlanSummary item={item} />
                 {item.recommended_entry_condition ? (
                   <div className="text-xs leading-5 text-text-secondary">
                     <span className="font-semibold text-text">진입 조건 · {entryStyleLabel(item.entry_style)} · </span>
