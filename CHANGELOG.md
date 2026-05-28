@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.1 - 2026-05-29
+
+- `/api/stock/{ticker}/detail` quick 응답에서도 canonical 5거래일 분포를 계산합니다. Render memory-safe 구간에서 full 분석을 억지로 붙이지 않아도, 첫 `이번 주 판단` 카드가 ATR 대기값만 보여주는 대신 q25/q50/q75/q90 기반 매수 가능가, 매도 목표가, 손절가, 상승/보합/하락 확률을 먼저 받을 수 있습니다.
+- quick 경로의 `weekly_trade_plan`은 `fallback_reason=stock_quick_distributional`로 내려가며, 정밀 뉴스·공시·리서치·수급 보강이 남아 있으면 `partial=true`를 유지합니다. 프론트는 기존처럼 후속 `prefer_full=true` 업그레이드를 시도하되 첫 카드 숫자는 비워 두지 않습니다.
+- `backend/tests/test_stock_analyzer.py`에 quick 종목 상세가 5거래일 분포 기반 weekly plan과 `free_kr_forecast`를 함께 생성하는 회귀 테스트를 추가했습니다.
+
 ## v2.66.0 - 2026-05-28
 
 - `/stock/[ticker]` 상세 응답에 `weekly_trade_plan`을 추가했습니다. 5거래일 조건부 분포의 q25/q50/q75/q90, ATR, 기존 매수·매도 가이드를 교차해 이번 주 매수 가능가, 매도 목표가, 손절가, 상승/보합/하락 확률, 손익비, 데이터 최신성을 함께 내려보냅니다.

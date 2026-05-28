@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date, timedelta
 from types import SimpleNamespace
 import time
 import unittest
@@ -6,6 +7,26 @@ from unittest.mock import AsyncMock, patch
 
 from app.analysis import stock_analyzer
 from app.analysis.distributional_return_engine import EventFeatures
+
+
+def _sample_price_rows(days: int = 180, *, daily_drift: float = 0.0028) -> list[dict]:
+    base = date(2025, 8, 1)
+    price = 65000.0
+    rows = []
+    for index in range(days):
+        pullback = -0.006 if index % 29 == 0 else 0.0
+        price *= 1.0 + daily_drift + pullback
+        rows.append(
+            {
+                "date": (base + timedelta(days=index)).isoformat(),
+                "open": round(price * 0.995, 2),
+                "high": round(price * 1.015, 2),
+                "low": round(price * 0.985, 2),
+                "close": round(price, 2),
+                "volume": 1_200_000 + index * 1500,
+            }
+        )
+    return rows
 
 
 class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
@@ -83,6 +104,48 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
         self.assertLess(elapsed, 0.08)
+
+    async def test_quick_stock_detail_builds_weekly_distribution_prices(self):
+        stock_prices = _sample_price_rows()
+        market_prices = _sample_price_rows(daily_drift=0.0016)
+
+        async def _history(ticker: str, period: str = "6mo"):
+            if ticker == "005930.KS":
+                return stock_prices
+            return market_prices
+
+        stock_info = {
+            "ticker": "005930.KS",
+            "name": "삼성전자",
+            "sector": "Technology",
+            "industry": "Semiconductors",
+            "market_cap": 450_000_000_000_000,
+            "current_price": stock_prices[-1]["close"],
+            "prev_close": stock_prices[-2]["close"],
+            "target_mean": stock_prices[-1]["close"] * 1.12,
+            "52w_high": stock_prices[-1]["close"] * 1.2,
+            "52w_low": stock_prices[-1]["close"] * 0.75,
+        }
+
+        with (
+            patch("app.analysis.stock_analyzer.yfinance_client.get_price_history", new=AsyncMock(side_effect=_history)),
+            patch("app.analysis.stock_analyzer.yfinance_client.get_stock_info", new=AsyncMock(return_value=stock_info)),
+            patch("app.analysis.stock_analyzer.cache.set", new=AsyncMock(return_value=True)),
+        ):
+            result = await stock_analyzer.build_quick_stock_detail("005930.KS")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        plan = result["weekly_trade_plan"]
+        self.assertTrue(result["partial"])
+        self.assertTrue(plan["partial"])
+        self.assertEqual(plan["fallback_reason"], "stock_quick_distributional")
+        self.assertIsNotNone(plan["buy_price"])
+        self.assertIsNotNone(plan["sell_price"])
+        self.assertIsNotNone(plan["p_up"])
+        self.assertNotEqual(plan["data_quality"], "5거래일 분포가 준비되지 않아 가격·ATR 기반 대기 구간으로 먼저 표시합니다.")
+        self.assertIsNotNone(result["free_kr_forecast"])
+        self.assertTrue(any(item["key"] == "fused" for item in plan["evidence"]))
 
     async def test_analyze_stock_prefers_latest_cached_detail_before_history_fetch(self):
         cached_snapshot = {

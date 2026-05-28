@@ -160,6 +160,40 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
             event_context=heuristic_event_context,
         ),
     )
+    quick_free_kr_forecast = None
+    quick_weekly_horizon = None
+    quick_distribution_evidence = []
+    try:
+        quick_free_kr_forecast = build_free_kr_forecast(
+            ticker=ticker,
+            name=info.get("name", ticker),
+            price_history=prices_full or price_source,
+            market_history=market_prices_full or market_prices,
+            google_news=[],
+            naver_news=[],
+            filings=[],
+            flow_signal=None,
+            analyst_context={
+                **analyst_raw,
+                "target_mean": info.get("target_mean"),
+                "target_median": info.get("target_median"),
+                "target_high": info.get("target_high"),
+                "target_low": info.get("target_low"),
+            },
+            ecos_snapshot={},
+            kosis_snapshot={},
+            fundamental_context=info,
+            event_context=heuristic_event_context,
+        )
+        if quick_free_kr_forecast:
+            quick_weekly_horizon = next(
+                (horizon for horizon in quick_free_kr_forecast.horizons if horizon.horizon_days == 5),
+                None,
+            )
+            quick_distribution_evidence = list(getattr(quick_free_kr_forecast, "evidence", []) or [])
+    except Exception as exc:
+        logger.info("quick stock distribution unavailable for %s: %s", ticker, str(exc)[:160])
+
     next_day_forecast = forecast_next_day(
         ticker=ticker,
         name=info.get("name", ticker),
@@ -185,10 +219,11 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         price_history=price_history,
         technical=technical,
         buy_sell_guide=buy_sell,
-        weekly_horizon=None,
+        weekly_horizon=quick_weekly_horizon,
         market_regime=market_regime,
         event_context=heuristic_event_context,
         flow_signal=None,
+        distribution_evidence=quick_distribution_evidence,
         source_freshness=_build_weekly_source_freshness(
             price_history=price_source,
             financials_raw=[],
@@ -203,7 +238,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         ),
         reference_date=reference_date,
         partial=True,
-        fallback_reason="stock_quick_detail",
+        fallback_reason="stock_quick_distributional" if quick_weekly_horizon else "stock_quick_detail",
     )
     public_summary = _build_public_stock_summary(
         llm_result={},
@@ -244,7 +279,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         score=quant_score,
         buy_sell_guide=buy_sell,
         next_day_forecast=next_day_forecast,
-        free_kr_forecast=None,
+        free_kr_forecast=quick_free_kr_forecast,
         historical_pattern_forecast=None,
         setup_backtest=None,
         market_regime=market_regime,

@@ -299,6 +299,8 @@ def build_weekly_trade_plan(
     if action in {"avoid", "reduce_risk"}:
         buy_price_for_rr = current_price
         sell_price = max(current_price * 1.006, min(sell_price, buy_sell_guide.sell_zone_low or sell_price))
+        sell_low = min(sell_low, sell_price)
+        sell_high = max(sell_high, sell_price)
         stop_loss = min(current_price * (1.0 - max(atr_pct * 0.75, 2.0) / 100.0), q10)
         risk_reward = ((sell_price - buy_price_for_rr) / (buy_price_for_rr - stop_loss)) if buy_price_for_rr > stop_loss else 0.0
 

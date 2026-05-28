@@ -341,6 +341,8 @@ class MarketPlaybookTests(unittest.TestCase):
         self.assertGreater(bullish.sell_price or 0, bullish.buy_price or 0)
         self.assertLess(bearish.expected_return_pct or 0, bullish.expected_return_pct or 0)
         self.assertGreaterEqual(bullish.risk_reward_estimate, 0)
+        self.assertLessEqual(bearish.sell_zone_low or 0, bearish.sell_price or 0)
+        self.assertGreaterEqual(bearish.sell_zone_high or 0, bearish.sell_price or 0)
 
     def test_weekly_trade_plan_does_not_consume_llm_numeric_fields(self):
         history = [PricePoint(**row) for row in _price_series()]
