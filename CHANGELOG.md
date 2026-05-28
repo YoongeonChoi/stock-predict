@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.2 - 2026-05-29
+
+- Render memory-safe cold start에서 stock analyzer가 아직 import되지 않아 첫 `/api/stock/{ticker}/detail`이 최소 shell을 반환하더라도, 메모리 압박이 높지 않으면 응답 뒤 quick 분포 warm을 예약합니다. 그래서 첫 화면을 막지 않으면서도 다음 조회나 hydration upgrade가 5거래일 분포 기반 `weekly_trade_plan`으로 더 빨리 승격됩니다.
+- quick warm은 더 이상 `stock_analyzer` 모듈이 이미 warm 상태일 때만 동작하지 않습니다. full 분석 background refresh는 계속 safe mode에서 막고, quick snapshot만 bounded timeout으로 캐시에 올리는 경로로 분리했습니다.
+- `backend/tests/test_stock_router.py`에 cold import guard가 shell을 반환하면서 quick warm을 예약하는 회귀와, cold module 상태에서도 quick warm task를 생성하는 회귀를 추가했습니다.
+
 ## v2.66.1 - 2026-05-29
 
 - `/api/stock/{ticker}/detail` quick 응답에서도 canonical 5거래일 분포를 계산합니다. Render memory-safe 구간에서 full 분석을 억지로 붙이지 않아도, 첫 `이번 주 판단` 카드가 ATR 대기값만 보여주는 대신 q25/q50/q75/q90 기반 매수 가능가, 매도 목표가, 손절가, 상승/보합/하락 확률을 먼저 받을 수 있습니다.

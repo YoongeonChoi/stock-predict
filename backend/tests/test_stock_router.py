@@ -469,6 +469,7 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(return_value=None)),
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock._schedule_stock_detail_quick_warm", new=MagicMock(return_value=True)) as schedule_quick_warm,
             patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
             patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
         ):
@@ -479,6 +480,7 @@ class StockRouterTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
+        schedule_quick_warm.assert_called_once_with("005930.KS")
 
     def test_stock_detail_cold_import_guard_skips_cache_lookups_for_non_prefer_full(self):
         with (
@@ -489,6 +491,7 @@ class StockRouterTests(unittest.TestCase):
             patch("app.routers.stock.get_cached_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick cache lookup should be skipped"))),
             patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(side_effect=AssertionError("quick builder should be skipped"))),
             patch("app.routers.stock.analyze_stock", new=AsyncMock(side_effect=AssertionError("full analyzer should be skipped"))),
+            patch("app.routers.stock._schedule_stock_detail_quick_warm", new=MagicMock(return_value=True)) as schedule_quick_warm,
             patch("app.routers.stock.ticker_resolver_service.resolve_ticker", side_effect=AssertionError("resolver should be skipped")),
             patch("app.routers.stock.ticker_resolver_service.get_ticker_metadata", return_value={"country_code": "KR", "sector": "Information Technology"}),
             patch("app.routers.stock.cache.set", new=AsyncMock(return_value=None)),
@@ -501,6 +504,7 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
         self.assertEqual(payload["ticker"], "005930.KS")
+        schedule_quick_warm.assert_called_once_with("005930.KS")
 
     def test_stock_detail_safe_mode_cache_miss_serves_memory_guard_and_schedules_quick_warm(self):
         with (
@@ -524,6 +528,25 @@ class StockRouterTests(unittest.TestCase):
         self.assertTrue(payload["partial"])
         self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
         schedule_quick_warm.assert_called_once_with("005930.KS")
+
+    def test_stock_detail_quick_warm_allows_cold_analysis_import_after_shell_response(self):
+        created = []
+
+        def _capture_task(coro):
+            created.append(coro)
+            coro.close()
+            return MagicMock(done=MagicMock(return_value=False))
+
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock._is_stock_analysis_module_warm", return_value=False),
+            patch("app.routers.stock.asyncio.create_task", side_effect=_capture_task),
+        ):
+            result = stock_router._schedule_stock_detail_quick_warm("005930.KS")
+
+        self.assertTrue(result)
+        self.assertEqual(len(created), 1)
 
     def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
         with (

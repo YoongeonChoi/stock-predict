@@ -646,12 +646,6 @@ def _schedule_stock_detail_quick_warm(ticker: str) -> bool:
             ticker,
         )
         return False
-    if not _is_stock_analysis_module_warm():
-        logger.info(
-            "Skipping stock detail quick warm for %s because stock analysis module is still cold.",
-            ticker,
-        )
-        return False
 
     existing = _STOCK_DETAIL_QUICK_WARM_TASKS.get(ticker)
     if existing and not existing.done():
@@ -790,8 +784,12 @@ async def get_stock_detail(
 ):
     started_at = time.perf_counter()
     detail_timeout = STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS if prefer_full else STOCK_DETAIL_TIMEOUT_SECONDS
-    if not prefer_full and (_should_use_ultra_fast_public_fallback() or _should_avoid_cold_stock_analysis_import()):
+    fast_public_fallback = _should_use_ultra_fast_public_fallback()
+    cold_stock_analysis_import = _should_avoid_cold_stock_analysis_import()
+    if not prefer_full and (fast_public_fallback or cold_stock_analysis_import):
         ticker = _resolve_kr_ticker(ticker, allow_fast_path=True)
+        if cold_stock_analysis_import and not fast_public_fallback:
+            _schedule_stock_detail_quick_warm(ticker)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
@@ -865,6 +863,7 @@ async def get_stock_detail(
             "Serving stock memory guard shell for %s because Render safe mode avoids cold stock analysis import.",
             ticker,
         )
+        _schedule_stock_detail_quick_warm(ticker)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
