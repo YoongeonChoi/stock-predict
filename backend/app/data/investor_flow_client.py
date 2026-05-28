@@ -59,6 +59,11 @@ def _pick_column(columns: list[str], *needles: str) -> str | None:
 def _safe_sum(df, column: str | None, window: int = 5) -> float | None:
     if not column or column not in df.columns:
         return None
+    try:
+        value = float(df[column].tail(window).astype(float).sum())
+        return round(value, 2)
+    except Exception:
+        return None
 
 
 def _safe_positive_days(df, column: str | None, window: int = 20) -> int | None:
@@ -77,11 +82,6 @@ def _flow_data_status(anchor_date: date) -> str:
     if anchor_date == now.date() and now.hour < 18:
         return "eod_pending"
     return "fresh_eod"
-    try:
-        value = float(df[column].tail(window).sum())
-        return round(value, 2)
-    except Exception:
-        return None
 
 
 def _fetch_kr_flow_sync(market: str | None, ticker: str | None, anchor_date: date) -> dict:

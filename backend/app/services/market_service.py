@@ -131,6 +131,10 @@ def build_trade_plan(*args, **kwargs):
     return _trade_planner.build_trade_plan(*args, **kwargs)
 
 
+def build_weekly_trade_plan(*args, **kwargs):
+    return _trade_planner.build_weekly_trade_plan(*args, **kwargs)
+
+
 def build_quick_buy_sell(*args, **kwargs):
     return _valuation_blend.build_quick_buy_sell(*args, **kwargs)
 
@@ -1479,6 +1483,56 @@ async def get_market_opportunities(
                 next_day_forecast=forecast,
                 market_regime=market_regime,
             )
+            weekly_horizon = distributional_forecast.horizons.get(5) if distributional_forecast else None
+            analyst_count = int(analyst_raw.get("buy", 0) or 0) + int(analyst_raw.get("hold", 0) or 0) + int(analyst_raw.get("sell", 0) or 0)
+            weekly_trade_plan = build_weekly_trade_plan(
+                ticker=ticker,
+                current_price=current_price,
+                price_history=price_points,
+                technical=technical,
+                buy_sell_guide=buy_sell,
+                weekly_horizon=weekly_horizon,
+                market_regime=market_regime,
+                flow_signal=flow_signal,
+                distribution_evidence=list(getattr(distributional_forecast, "evidence", []) or []),
+                source_freshness=[
+                    {
+                        "name": "가격·거래량",
+                        "status": "fresh" if prices else "missing",
+                        "item_count": len(prices or []),
+                        "updated_at": prices[-1].get("date") if prices else None,
+                        "note": "레이더 상세 후보의 5거래일 분포 주 입력입니다.",
+                    },
+                    {
+                        "name": "ECOS 거시",
+                        "status": "fresh" if macro_snapshot else "partial",
+                        "item_count": len([value for value in (macro_snapshot or {}).values() if value is not None]),
+                        "note": "거시 스냅샷은 기대수익률 분포의 보조 게이트로 사용합니다.",
+                    },
+                    {
+                        "name": "KOSIS 거시",
+                        "status": "fresh" if kosis_snapshot else "partial",
+                        "item_count": len([value for value in (kosis_snapshot or {}).values() if value is not None]),
+                        "note": "정부 통계 스냅샷은 시장 국면 보조 신호입니다.",
+                    },
+                    {
+                        "name": "PyKRX 수급",
+                        "status": "fresh" if flow_signal and getattr(flow_signal, "available", False) else "pending",
+                        "item_count": 1 if flow_signal and getattr(flow_signal, "available", False) else 0,
+                        "updated_at": str(getattr(flow_signal, "reference_date", "") or "") or None,
+                        "note": "외국인·기관 수급은 실행 강도 보조 신호로 사용합니다.",
+                    },
+                    {
+                        "name": "증권사 컨센서스",
+                        "status": "fresh" if analyst_count > 0 else "partial",
+                        "item_count": analyst_count,
+                        "note": "허용된 컨센서스 메타데이터만 반영합니다.",
+                    },
+                ],
+                reference_date=prices[-1].get("date") if prices else None,
+                partial=weekly_horizon is None,
+                fallback_reason=None if weekly_horizon else "weekly_trade_plan_distribution_pending",
+            )
 
             prev_close = _safe_float(info.get("prev_close"), current_price)
             change_pct = ((current_price - prev_close) / prev_close * 100.0) if prev_close else 0.0
@@ -1663,6 +1717,7 @@ async def get_market_opportunities(
                 take_profit_1=trade_plan.take_profit_1,
                 take_profit_2=trade_plan.take_profit_2,
                 risk_reward_estimate=trade_plan.risk_reward_estimate,
+                weekly_trade_plan=weekly_trade_plan,
                 thesis=_dedupe_items(
                     [
                         quality.recommended_entry_condition,

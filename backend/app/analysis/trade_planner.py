@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import pandas as pd
 from ta.volatility import AverageTrueRange
+from math import exp
+from typing import Any
 
 from app.models.forecast import NextDayForecast
-from app.models.market import MarketRegime, TradePlan
+from app.models.market import MarketRegime, TradePlan, WeeklyTradePlan
 from app.models.stock import BuySellGuide, PricePoint, TechnicalIndicators
+from app.utils.market_calendar import trading_days_forward
 
 
 def _clip(value: float, low: float, high: float) -> float:
@@ -34,6 +37,370 @@ def _atr_pct(price_history: list[PricePoint], current_price: float) -> float:
         window=min(14, len(df) - 1),
     ).average_true_range()
     return max(float(atr.iloc[-1]) / current_price * 100.0, 1.2)
+
+
+def _finite_float(value: Any, default: float | None = None) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not pd.notna(parsed):
+        return default
+    return parsed
+
+
+def _rounded(value: float | None, digits: int = 2) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _horizon_price(horizon: Any, field: str, reference_price: float, log_field: str) -> float | None:
+    direct = _finite_float(getattr(horizon, field, None))
+    if direct is not None and direct > 0:
+        return direct
+    log_return = _finite_float(getattr(horizon, log_field, None))
+    if log_return is None or reference_price <= 0:
+        return None
+    return reference_price * exp(log_return)
+
+
+def _weekly_target_date(horizon: Any, reference_date: str | None) -> str:
+    target_date = str(getattr(horizon, "target_date", "") or "").strip()
+    if target_date:
+        return target_date
+    if not reference_date:
+        return ""
+    try:
+        dates = trading_days_forward("KR", reference_date, 5)
+        return dates[-1].isoformat() if len(dates) >= 5 else reference_date
+    except Exception:
+        return reference_date
+
+
+def _weekly_signal(value: float | None) -> str:
+    if value is None:
+        return "neutral"
+    if value >= 0.04:
+        return "bullish"
+    if value <= -0.04:
+        return "bearish"
+    return "neutral"
+
+
+def _event_uncertainty(event_context: Any | None) -> float:
+    if event_context is None:
+        return 0.0
+    if isinstance(event_context, dict):
+        return _clip(_finite_float(event_context.get("uncertainty"), 0.0) or 0.0, 0.0, 1.0)
+    return _clip(_finite_float(getattr(event_context, "uncertainty", None), 0.0) or 0.0, 0.0, 1.0)
+
+
+def _flow_detail(flow_signal: Any | None) -> tuple[str, str]:
+    if flow_signal is None:
+        return "neutral", "수급 데이터는 이번 판단에서 보조 신호로 제한적으로 반영했습니다."
+    available = bool(getattr(flow_signal, "available", False))
+    if not available:
+        status = str(getattr(flow_signal, "data_status", "") or "").strip()
+        if status == "eod_pending":
+            return "neutral", "수급 데이터는 장 마감 집계 전이라 대기 상태입니다."
+        return "neutral", "수급 데이터가 제한적이라 가격·변동성 신호를 우선했습니다."
+    foreign_5d = _finite_float(getattr(flow_signal, "foreign_net_buy_5d", None), 0.0) or 0.0
+    institutional_5d = _finite_float(getattr(flow_signal, "institutional_net_buy_5d", None), 0.0) or 0.0
+    combined = foreign_5d + institutional_5d
+    if combined > 0:
+        return "bullish", "최근 5거래일 외국인·기관 합산 수급이 순매수 쪽입니다."
+    if combined < 0:
+        return "bearish", "최근 5거래일 외국인·기관 합산 수급이 순매도 쪽입니다."
+    return "neutral", "최근 5거래일 수급은 한쪽으로 크게 기울지 않았습니다."
+
+
+def _research_signal(research_context: list[Any] | None) -> tuple[str, str, int]:
+    if not research_context:
+        return "neutral", "공식 리서치 메타데이터는 아직 종목 판단에 직접 매칭되지 않았습니다.", 0
+
+    signal_score = 0
+    titles: list[str] = []
+    for item in research_context[:3]:
+        signal = str(item.get("signal") if isinstance(item, dict) else getattr(item, "signal", "") or "")
+        if signal == "bullish":
+            signal_score += 1
+        elif signal == "bearish":
+            signal_score -= 1
+        title = str(item.get("title") if isinstance(item, dict) else getattr(item, "title", "") or "").strip()
+        if title:
+            titles.append(title)
+
+    tone = "bullish" if signal_score >= 2 else "bearish" if signal_score <= -2 else "neutral"
+    lead = " / ".join(titles[:2])
+    detail = (
+        f"공식·허용 리서치 메타데이터 {len(research_context)}건을 확인했습니다."
+        if not lead
+        else f"공식·허용 리서치 메타데이터 {len(research_context)}건을 확인했습니다: {lead[:180]}"
+    )
+    return tone, detail, len(research_context)
+
+
+def build_weekly_trade_plan(
+    *,
+    ticker: str,
+    current_price: float,
+    price_history: list[PricePoint],
+    technical: TechnicalIndicators,
+    buy_sell_guide: BuySellGuide,
+    weekly_horizon: Any | None,
+    market_regime: MarketRegime | None = None,
+    event_context: Any | None = None,
+    flow_signal: Any | None = None,
+    distribution_evidence: list[Any] | None = None,
+    research_context: list[Any] | None = None,
+    source_freshness: list[dict | Any] | None = None,
+    reference_date: str | None = None,
+    partial: bool = False,
+    fallback_reason: str | None = None,
+) -> WeeklyTradePlan:
+    if current_price <= 0:
+        return WeeklyTradePlan(
+            horizon_days=5,
+            target_date=reference_date or "",
+            reference_date=reference_date or "",
+            reference_price=0.0,
+            action="avoid",
+            partial=True,
+            fallback_reason=fallback_reason or "weekly_trade_plan_price_missing",
+            data_quality="현재가가 없어 5거래일 매수·매도 가격을 계산하지 않았습니다.",
+            evidence=[
+                {
+                    "key": "price",
+                    "label": "가격 데이터",
+                    "signal": "bearish",
+                    "detail": "현재가와 OHLC 시계열이 확보되면 다시 계산합니다.",
+                }
+            ],
+            source_freshness=source_freshness or [],
+        )
+
+    reference_date = reference_date or (price_history[-1].date if price_history else "")
+    atr_pct = _atr_pct(price_history, current_price)
+    event_uncertainty = _event_uncertainty(event_context)
+    ma20 = _last_value(technical.ma_20)
+    ma60 = _last_value(technical.ma_60)
+    trend_supported = bool(ma20 is None or current_price >= ma20 * 0.985)
+    if ma60 is not None:
+        trend_supported = trend_supported and current_price >= ma60 * 0.97
+
+    if weekly_horizon is None:
+        risk_buffer_pct = _clip(max(atr_pct * 1.15, 3.0), 2.8, 9.0)
+        buy_high = min(buy_sell_guide.buy_zone_high, current_price * 0.995)
+        buy_low = max(buy_sell_guide.buy_zone_low, buy_high * (1.0 - min(atr_pct, 4.5) / 100.0))
+        if buy_low > buy_high:
+            buy_low = buy_high * 0.985
+        sell_low = max(buy_sell_guide.sell_zone_low, current_price * 1.015)
+        sell_high = max(sell_low, min(buy_sell_guide.sell_zone_high, current_price * 1.055))
+        buy_price = (buy_low + buy_high) / 2.0
+        stop_loss = min(buy_price * (1.0 - risk_buffer_pct / 100.0), current_price * 0.965)
+        risk_reward = ((sell_low - buy_price) / (buy_price - stop_loss)) if buy_price > stop_loss else 0.0
+        return WeeklyTradePlan(
+            horizon_days=5,
+            target_date=_weekly_target_date(weekly_horizon, reference_date),
+            reference_date=reference_date,
+            reference_price=round(current_price, 2),
+            action="wait_pullback",
+            buy_price=round(buy_price, 2),
+            buy_zone_low=round(buy_low, 2),
+            buy_zone_high=round(buy_high, 2),
+            sell_price=round(sell_low, 2),
+            sell_zone_low=round(sell_low, 2),
+            sell_zone_high=round(sell_high, 2),
+            stop_loss=round(stop_loss, 2),
+            expected_return_pct=None,
+            expected_excess_return_pct=None,
+            p_up=None,
+            p_flat=None,
+            p_down=None,
+            confidence=32.0,
+            risk_reward_estimate=round(max(risk_reward, 0.0), 2),
+            evidence=[
+                {
+                    "key": "distribution",
+                    "label": "5거래일 분포",
+                    "signal": "neutral",
+                    "detail": "정밀 분포 계산이 아직 없어 기존 가격 밴드와 ATR로 대기 구간만 표시합니다.",
+                }
+            ],
+            source_freshness=source_freshness or [],
+            partial=True,
+            fallback_reason=fallback_reason or "weekly_trade_plan_distribution_pending",
+            data_quality="5거래일 분포가 준비되지 않아 가격·ATR 기반 대기 구간으로 먼저 표시합니다.",
+        )
+
+    q10 = _horizon_price(weekly_horizon, "price_q10", current_price, "q10") or current_price * 0.96
+    q25 = _horizon_price(weekly_horizon, "price_q25", current_price, "q25") or current_price * 0.985
+    q50 = _horizon_price(weekly_horizon, "price_q50", current_price, "q50") or current_price
+    q75 = _horizon_price(weekly_horizon, "price_q75", current_price, "q75") or current_price * 1.02
+    q90 = _horizon_price(weekly_horizon, "price_q90", current_price, "q90") or current_price * 1.04
+
+    distribution_buy_low = min(q25, q50)
+    distribution_buy_high = max(q25, q50)
+    chase_limit = current_price * (1.0 + min(max(atr_pct * 0.22, 0.4), 1.3) / 100.0)
+    guide_ceiling = buy_sell_guide.buy_zone_high * 1.01 if buy_sell_guide.buy_zone_high else chase_limit
+    buy_high = min(distribution_buy_high, chase_limit, guide_ceiling)
+    buy_low = max(
+        min(distribution_buy_low, buy_high),
+        buy_sell_guide.buy_zone_low * 0.985 if buy_sell_guide.buy_zone_low else current_price * 0.95,
+        current_price * (1.0 - min(max(atr_pct * 1.05, 1.6), 7.5) / 100.0),
+    )
+    if buy_low > buy_high:
+        buy_high = min(chase_limit, guide_ceiling, max(distribution_buy_high, current_price * 0.998))
+        buy_low = min(buy_high, current_price) * (1.0 - min(max(atr_pct * 0.45, 0.8), 3.2) / 100.0)
+    buy_price = (buy_low + buy_high) / 2.0
+
+    distribution_sell_low = max(min(q75, q90), buy_price * 1.006)
+    distribution_sell_high = max(q75, q90, distribution_sell_low)
+    guide_sell_low = buy_sell_guide.sell_zone_low or current_price * 1.025
+    guide_sell_high = buy_sell_guide.sell_zone_high or current_price * 1.06
+    sell_low = max(distribution_sell_low, guide_sell_low * 0.97, buy_price * 1.012)
+    sell_high = min(distribution_sell_high, guide_sell_high * 1.015, current_price * (1.0 + max(atr_pct * 2.2, 3.0) / 100.0))
+    if sell_high < sell_low:
+        sell_low = max(buy_price * 1.01, min(distribution_sell_low, guide_sell_low))
+        sell_high = max(sell_low, min(max(distribution_sell_high, sell_low * 1.015), guide_sell_high * 1.015))
+    sell_price = (sell_low + sell_high) / 2.0
+
+    atr_stop = buy_price * (1.0 - _clip(max(atr_pct * 1.15, 3.0), 2.8, 9.0) / 100.0)
+    stop_loss = max(min(atr_stop, q10), buy_price * 0.9)
+    if stop_loss >= buy_price:
+        stop_loss = buy_price * 0.965
+
+    expected_return_pct = (_finite_float(getattr(weekly_horizon, "mean_return_raw", None), 0.0) or 0.0) * 100.0
+    expected_excess_return_pct = (_finite_float(getattr(weekly_horizon, "mean_return_excess", None), 0.0) or 0.0) * 100.0
+    p_up = _finite_float(getattr(weekly_horizon, "p_up", None), 0.0) or 0.0
+    p_flat = _finite_float(getattr(weekly_horizon, "p_flat", None), 0.0) or 0.0
+    p_down = _finite_float(getattr(weekly_horizon, "p_down", None), 0.0) or 0.0
+    confidence = _finite_float(getattr(weekly_horizon, "confidence", None), 0.0) or 0.0
+    research_tone, research_detail, research_count = _research_signal(research_context)
+
+    risk_reward = ((sell_price - buy_price) / (buy_price - stop_loss)) if buy_price > stop_loss else 0.0
+    risk_off = getattr(market_regime, "stance", None) == "risk_off"
+    risk_on = getattr(market_regime, "stance", None) == "risk_on"
+
+    action: str = "wait_pullback"
+    if p_up < 39.0 or (expected_return_pct < -0.9 and confidence >= 48.0):
+        action = "avoid"
+    elif p_up < 46.0 or (risk_off and (p_up < 53.0 or confidence < 58.0)) or event_uncertainty >= 0.72:
+        action = "reduce_risk"
+    elif p_up >= 62.0 and confidence >= 60.0 and risk_reward >= 1.25 and not risk_off and trend_supported:
+        action = "accumulate" if current_price <= buy_high * 1.004 else "breakout_watch"
+    elif p_up >= 55.0 and confidence >= 50.0 and risk_reward >= 1.05 and (risk_on or trend_supported):
+        action = "breakout_watch" if current_price > buy_high else "wait_pullback"
+
+    if research_tone == "bearish" and action in {"accumulate", "breakout_watch"}:
+        action = "wait_pullback"
+    elif research_tone == "bearish" and action == "wait_pullback" and p_up < 55.0:
+        action = "reduce_risk"
+
+    if action in {"avoid", "reduce_risk"}:
+        buy_price_for_rr = current_price
+        sell_price = max(current_price * 1.006, min(sell_price, buy_sell_guide.sell_zone_low or sell_price))
+        stop_loss = min(current_price * (1.0 - max(atr_pct * 0.75, 2.0) / 100.0), q10)
+        risk_reward = ((sell_price - buy_price_for_rr) / (buy_price_for_rr - stop_loss)) if buy_price_for_rr > stop_loss else 0.0
+
+    evidence: list[dict[str, str]] = [
+        {
+            "key": "distribution",
+            "label": "5거래일 분포",
+            "signal": "bullish" if p_up >= 58.0 else "bearish" if p_up <= 44.0 else "neutral",
+            "detail": f"상승 {p_up:.1f}%, 보합 {p_flat:.1f}%, 하락 {p_down:.1f}%로 계산했습니다.",
+        },
+        {
+            "key": "price_band",
+            "label": "가격·ATR",
+            "signal": "bullish" if trend_supported else "neutral",
+            "detail": f"ATR {atr_pct:.1f}%와 현재가를 사용해 추격 매수 상단을 제한했습니다.",
+        },
+    ]
+    if market_regime:
+        evidence.append(
+            {
+                "key": "market_regime",
+                "label": "시장 국면",
+                "signal": "bullish" if market_regime.stance == "risk_on" else "bearish" if market_regime.stance == "risk_off" else "neutral",
+                "detail": market_regime.summary or f"시장 국면은 {market_regime.stance}입니다.",
+            }
+        )
+    flow_signal_label, flow_signal_detail = _flow_detail(flow_signal)
+    evidence.append(
+        {
+            "key": "flow",
+            "label": "수급",
+            "signal": flow_signal_label,
+            "detail": flow_signal_detail,
+        }
+    )
+    if event_context:
+        summary = getattr(event_context, "summary", "") if not isinstance(event_context, dict) else str(event_context.get("summary") or "")
+        evidence.append(
+            {
+                "key": "event",
+                "label": "뉴스·공시 이벤트",
+                "signal": "bearish" if event_uncertainty >= 0.6 else "neutral",
+                "detail": summary or "뉴스·공시 이벤트는 숫자 생성이 아니라 리스크 보정 신호로만 반영했습니다.",
+            }
+        )
+    if research_count > 0:
+        evidence.append(
+            {
+                "key": "official_research",
+                "label": "공식 리서치",
+                "signal": research_tone,
+                "detail": research_detail,
+            }
+        )
+    for item in distribution_evidence or []:
+        contribution = _finite_float(getattr(item, "contribution", None), None)
+        detail = str(getattr(item, "detail", "") or "")
+        evidence.append(
+            {
+                "key": str(getattr(item, "key", "distribution_evidence")),
+                "label": str(getattr(item, "label", "분포 근거")),
+                "signal": _weekly_signal(contribution),
+                "detail": detail[:220],
+            }
+        )
+        if len(evidence) >= 7:
+            break
+
+    data_quality = "5거래일 분포, 가격·변동성, 시장 국면, 이벤트 보조 신호를 함께 반영했습니다."
+    if research_count > 0:
+        data_quality = f"{data_quality} 공식 리서치 메타데이터 {research_count}건도 근거 상태에 포함했습니다."
+    if partial:
+        data_quality = "정밀 소스 일부가 제한돼 확보된 5거래일 분포와 가격·변동성 신호를 우선 반영했습니다."
+    if event_uncertainty >= 0.72:
+        data_quality = f"{data_quality} 이벤트 불확실성이 높아 실행 강도를 낮췄습니다."
+
+    return WeeklyTradePlan(
+        horizon_days=5,
+        target_date=_weekly_target_date(weekly_horizon, reference_date),
+        reference_date=reference_date,
+        reference_price=round(current_price, 2),
+        action=action,  # type: ignore[arg-type]
+        buy_price=_rounded(buy_price),
+        buy_zone_low=_rounded(buy_low),
+        buy_zone_high=_rounded(buy_high),
+        sell_price=_rounded(sell_price),
+        sell_zone_low=_rounded(sell_low),
+        sell_zone_high=_rounded(sell_high),
+        stop_loss=_rounded(stop_loss),
+        expected_return_pct=round(expected_return_pct, 2),
+        expected_excess_return_pct=round(expected_excess_return_pct, 2),
+        p_up=round(p_up, 1),
+        p_flat=round(p_flat, 1),
+        p_down=round(p_down, 1),
+        confidence=round(confidence, 1),
+        risk_reward_estimate=round(max(risk_reward, 0.0), 2),
+        evidence=evidence,
+        source_freshness=source_freshness or [],
+        partial=partial,
+        fallback_reason=fallback_reason,
+        data_quality=data_quality,
+    )
 
 
 def build_trade_plan(

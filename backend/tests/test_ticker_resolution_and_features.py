@@ -79,12 +79,44 @@ class TickerResolutionAndFeatureTests(unittest.TestCase):
             },
         ]
 
-        with patch("app.services.forecast_monitor_service.db.prediction_symbol_history", new=AsyncMock(return_value=rows)):
+        weekly_rows = [
+            {
+                "target_date": "2026-04-10",
+                "reference_date": "2026-04-03",
+                "confidence": 67.0,
+                "up_probability": 61.0,
+                "actual_close": 106.0,
+                "actual_window_low": 98.0,
+                "actual_window_high": 107.0,
+                "model_version": "dist-studentt-v3.3-lfgraph",
+                "created_at": 3,
+                "execution_json": {
+                    "action": "accumulate",
+                    "buy_price": 99.0,
+                    "sell_price": 106.0,
+                    "stop_loss": 95.0,
+                    "buy_zone_touched": True,
+                    "sell_zone_touched": True,
+                    "stop_loss_touched": False,
+                    "outcome": "target_zone_touched",
+                    "window_low": 98.0,
+                    "window_high": 107.0,
+                },
+            }
+        ]
+
+        with patch(
+            "app.services.forecast_monitor_service.db.prediction_symbol_history",
+            new=AsyncMock(side_effect=[rows, weekly_rows]),
+        ):
             result = asyncio.run(forecast_monitor_service.get_stock_forecast_delta("005930.KS", limit=5))
 
         self.assertTrue(result["summary"]["available"])
         self.assertAlmostEqual(result["summary"]["up_probability_delta"], 6.0)
         self.assertEqual(result["history"][0]["direction_label"], "상승")
+        self.assertTrue(result["weekly_plan"]["available"])
+        self.assertEqual(result["weekly_plan"]["target_hit_rate"], 100.0)
+        self.assertEqual(result["weekly_plan"]["history"][0]["outcome_label"], "목표 구간 도달")
 
 
 if __name__ == "__main__":

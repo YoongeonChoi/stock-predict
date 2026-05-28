@@ -179,6 +179,53 @@ class ResearchArchiveServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual({item["region_code"] for item in result}, {"KR", "US"})
 
+    async def test_build_stock_research_context_uses_allowed_metadata_only(self):
+        rows = [
+            {
+                "id": 1,
+                "source_id": "bok_research_ko",
+                "source_name": "한국은행 경제연구(국문)",
+                "region_code": "KR",
+                "organization_type": "중앙은행 연구",
+                "category": "경제연구",
+                "title": "반도체 수출 회복과 설비투자 확대",
+                "summary": "메모리 업황 개선과 AI 투자 확대를 점검합니다.",
+                "published_at": "2026-05-20",
+                "report_url": "https://example.com/report",
+                "pdf_url": "https://example.com/report.pdf",
+            },
+            {
+                "id": 2,
+                "source_id": "kdi_publications",
+                "source_name": "KDI 한국개발연구원",
+                "region_code": "KR",
+                "organization_type": "국책연구원",
+                "category": "한국 경제 전망·정책 연구",
+                "title": "서비스업 고용 동향",
+                "summary": "소비 경기 점검",
+                "published_at": "2026-05-19",
+                "report_url": "https://example.com/other",
+                "pdf_url": None,
+            },
+        ]
+
+        with patch.object(service, "list_public_research_reports", new=AsyncMock(return_value=rows)):
+            result = await service.build_stock_research_context(
+                ticker="005930.KS",
+                stock_name="SamsungElec",
+                sector="Technology",
+                industry="Consumer Electronics",
+                country_code="KR",
+                limit=3,
+                auto_refresh=False,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["source_id"], "bok_research_ko")
+        self.assertTrue(result[0]["metadata_only"])
+        self.assertEqual(result[0]["signal"], "bullish")
+        self.assertIn("반도체", result[0]["matched_keywords"])
+
 
 if __name__ == "__main__":
     unittest.main()

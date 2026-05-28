@@ -26,7 +26,7 @@ from app.analysis.llm_client import ask_json
 from app.analysis.market_regime import build_market_regime
 from app.analysis.next_day_forecast import forecast_next_day
 from app.analysis.prompts import stock_detail_analysis_prompt, stock_public_summary_prompt
-from app.analysis.trade_planner import build_trade_plan
+from app.analysis.trade_planner import build_trade_plan, build_weekly_trade_plan
 from app.analysis.valuation_blend import build_quick_buy_sell, preferred_entry_ceiling
 from app.config import get_settings
 from app.errors import SP_4004
@@ -55,6 +55,7 @@ from app.models.stock import (
     TechnicalIndicators,
 )
 from app.scoring.stock_scorer import score_composite, score_stock
+from app.services import research_archive_service
 from app.utils.async_tools import gather_limited
 
 STOCK_ANALYSIS_LLM_TIMEOUT_SECONDS = 8.0
@@ -63,6 +64,7 @@ STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
 STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 2.25
 STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS = 900
+STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS = 1.2
 logger = logging.getLogger(__name__)
 
 
@@ -177,6 +179,32 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         next_day_forecast=next_day_forecast,
         market_regime=market_regime,
     )
+    weekly_trade_plan = build_weekly_trade_plan(
+        ticker=ticker,
+        current_price=round(float(info.get("current_price") or 0.0), 2),
+        price_history=price_history,
+        technical=technical,
+        buy_sell_guide=buy_sell,
+        weekly_horizon=None,
+        market_regime=market_regime,
+        event_context=heuristic_event_context,
+        flow_signal=None,
+        source_freshness=_build_weekly_source_freshness(
+            price_history=price_source,
+            financials_raw=[],
+            google_news=[],
+            naver_news=[],
+            filings=[],
+            ecos_snapshot={},
+            kosis_snapshot={},
+            flow_signal=None,
+            analyst_raw=analyst_raw,
+            research_context=[],
+        ),
+        reference_date=reference_date,
+        partial=True,
+        fallback_reason="stock_quick_detail",
+    )
     public_summary = _build_public_stock_summary(
         llm_result={},
         info=info,
@@ -221,6 +249,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         setup_backtest=None,
         market_regime=market_regime,
         trade_plan=trade_plan,
+        weekly_trade_plan=weekly_trade_plan,
         public_summary=public_summary,
     )
 
@@ -300,6 +329,13 @@ async def analyze_stock(ticker: str) -> dict:
         reference_date=prices_6mo[-1]["date"] if prices_6mo else None,
         price_history=prices_6mo or prices_raw,
     )
+    research_context_task = _build_stock_research_context_with_timeout(
+        ticker=ticker,
+        stock_name=info.get("name", ticker),
+        sector=info.get("sector"),
+        industry=info.get("industry"),
+        country_code=country_code,
+    )
     (
         peer_avg,
         google_news,
@@ -308,6 +344,7 @@ async def analyze_stock(ticker: str) -> dict:
         ecos_snapshot,
         kosis_snapshot,
         flow_signal,
+        research_context,
     ) = await asyncio.gather(
         peer_avg_task,
         google_news_task,
@@ -316,6 +353,7 @@ async def analyze_stock(ticker: str) -> dict:
         ecos_task,
         kosis_task,
         flow_task,
+        research_context_task,
     )
 
     quant_score = score_stock(info, peers_avg=peer_avg, price_hist=prices_raw, analyst_counts=analyst_raw)
@@ -451,6 +489,40 @@ async def analyze_stock(ticker: str) -> dict:
         next_day_forecast=next_day_forecast,
         market_regime=market_regime,
     )
+    weekly_horizon = None
+    if free_kr_forecast:
+        weekly_horizon = next(
+            (horizon for horizon in free_kr_forecast.horizons if horizon.horizon_days == 5),
+            None,
+        )
+    weekly_trade_plan = build_weekly_trade_plan(
+        ticker=ticker,
+        current_price=round(price, 2),
+        price_history=price_history,
+        technical=technical,
+        buy_sell_guide=buy_sell,
+        weekly_horizon=weekly_horizon,
+        market_regime=market_regime,
+        event_context=event_context,
+        flow_signal=flow_signal,
+        distribution_evidence=list(getattr(free_kr_forecast, "evidence", []) or []),
+        research_context=research_context,
+        source_freshness=_build_weekly_source_freshness(
+            price_history=prices_full or prices_6mo or prices_raw,
+            financials_raw=financials_raw,
+            google_news=google_news,
+            naver_news=naver_news,
+            filings=filings,
+            ecos_snapshot=ecos_snapshot,
+            kosis_snapshot=kosis_snapshot,
+            flow_signal=flow_signal,
+            analyst_raw=analyst_raw,
+            research_context=research_context,
+        ),
+        reference_date=reference_date,
+        partial=weekly_horizon is None,
+        fallback_reason=None if weekly_horizon else "weekly_trade_plan_distribution_pending",
+    )
     public_summary = _build_public_stock_summary(
         llm_result=public_llm_result,
         info=info,
@@ -501,6 +573,7 @@ async def analyze_stock(ticker: str) -> dict:
         setup_backtest=setup_backtest,
         market_regime=market_regime,
         trade_plan=trade_plan,
+        weekly_trade_plan=weekly_trade_plan,
         public_summary=public_summary,
     )
 
@@ -608,6 +681,32 @@ async def _build_event_context_with_timeout(
         return heuristic
 
 
+async def _build_stock_research_context_with_timeout(
+    *,
+    ticker: str,
+    stock_name: str | None,
+    sector: str | None,
+    industry: str | None,
+    country_code: str,
+) -> list[dict]:
+    try:
+        return await asyncio.wait_for(
+            research_archive_service.build_stock_research_context(
+                ticker=ticker,
+                stock_name=stock_name,
+                sector=sector,
+                industry=industry,
+                country_code=country_code,
+                limit=6,
+                auto_refresh=True,
+            ),
+            timeout=STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.info("stock research context unavailable for %s: %s", ticker, str(exc)[:160])
+        return []
+
+
 def _normalize_public_summary_text(value: str | None) -> str:
     return " ".join(str(value or "").split())
 
@@ -636,6 +735,92 @@ def _contains_public_summary_prohibited_content(value: str) -> bool:
     if re.search(r"[A-Za-z]", value) and not _contains_hangul(value):
         return True
     return bool(re.search(r"\d", value))
+
+
+def _build_weekly_source_freshness(
+    *,
+    price_history: list[dict],
+    financials_raw: list[dict],
+    google_news: list[dict],
+    naver_news: list[dict],
+    filings: list[dict],
+    ecos_snapshot: dict,
+    kosis_snapshot: dict,
+    flow_signal,
+    analyst_raw: dict,
+    research_context: list[dict] | None = None,
+) -> list[dict]:
+    settings = get_settings()
+
+    def _macro_count(snapshot: dict) -> int:
+        return len([value for value in (snapshot or {}).values() if value is not None])
+
+    flow_available = bool(flow_signal and getattr(flow_signal, "available", False))
+    flow_status = str(getattr(flow_signal, "data_status", "") or "") if flow_signal else ""
+    analyst_count = int(analyst_raw.get("buy", 0) or 0) + int(analyst_raw.get("hold", 0) or 0) + int(analyst_raw.get("sell", 0) or 0)
+    research_count = len(research_context or [])
+    report_note = (
+        "KDI·한국은행 등 공식 리서치와 허용된 증권사·IB 메타데이터만 반영합니다. 무단 PDF scraping은 사용하지 않습니다."
+    )
+
+    return [
+        {
+            "name": "가격·거래량",
+            "status": "fresh" if price_history else "missing",
+            "item_count": len(price_history or []),
+            "updated_at": (price_history[-1].get("date") if price_history else None),
+            "note": "5거래일 분포와 ATR 산정의 주 입력입니다.",
+        },
+        {
+            "name": "펀더멘털",
+            "status": "fresh" if financials_raw else "partial",
+            "item_count": len(financials_raw or []),
+            "note": "실적·밸류에이션은 기대수익률 분포의 보조 게이트로 사용합니다.",
+        },
+        {
+            "name": "ECOS 거시",
+            "status": "fresh" if ecos_snapshot else "missing" if settings.ecos_api_key else "not_configured",
+            "item_count": _macro_count(ecos_snapshot),
+            "note": "금리·환율 등 공개 거시 스냅샷을 압축해 반영합니다.",
+        },
+        {
+            "name": "KOSIS 거시",
+            "status": "fresh" if kosis_snapshot else "missing" if settings.kosis_api_key else "not_configured",
+            "item_count": _macro_count(kosis_snapshot),
+            "note": "생산·고용 등 정부 통계 기반 보조 신호입니다.",
+        },
+        {
+            "name": "OpenDART 공시",
+            "status": "fresh" if filings else "missing" if settings.opendart_api_key else "not_configured",
+            "item_count": len(filings or []),
+            "note": "공시 이벤트는 숫자 생성이 아니라 이벤트 불확실성 보정에 사용합니다.",
+        },
+        {
+            "name": "뉴스 메타데이터",
+            "status": "fresh" if (google_news or naver_news) else "partial",
+            "item_count": len(google_news or []) + len(naver_news or []),
+            "note": "Google RSS와 Naver Search API 헤드라인을 구조화 이벤트 입력으로 사용합니다.",
+        },
+        {
+            "name": "PyKRX 수급",
+            "status": "fresh" if flow_available else "pending" if flow_status == "eod_pending" else "missing",
+            "item_count": 1 if flow_available else 0,
+            "updated_at": str(getattr(flow_signal, "reference_date", "") or "") or None,
+            "note": "외국인·기관 5거래일 순매수를 실행 강도 보조 신호로 사용합니다.",
+        },
+        {
+            "name": "증권사 컨센서스",
+            "status": "fresh" if analyst_count > 0 else "partial",
+            "item_count": analyst_count,
+            "note": "허용된 컨센서스 메타데이터만 반영하고 숫자 예측은 분포 엔진이 담당합니다.",
+        },
+        {
+            "name": "공식 리서치·IB 메타데이터",
+            "status": "fresh" if research_count > 0 else "pending",
+            "item_count": research_count,
+            "note": report_note,
+        },
+    ]
 
 
 def _clean_public_summary_text(value: str | None, fallback: str) -> str:

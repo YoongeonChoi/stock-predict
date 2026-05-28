@@ -1,8 +1,9 @@
 import unittest
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from app.analysis.market_regime import build_market_regime
-from app.analysis.trade_planner import build_short_horizon_trade_plan, build_trade_plan
+from app.analysis.trade_planner import build_short_horizon_trade_plan, build_trade_plan, build_weekly_trade_plan
 from app.models.forecast import NextDayForecast
 from app.models.market import MarketRegime
 from app.models.stock import BuySellGuide, PricePoint, TechnicalIndicators
@@ -249,3 +250,216 @@ class MarketPlaybookTests(unittest.TestCase):
         self.assertIsNotNone(plan.stop_loss)
         self.assertIsNotNone(plan.take_profit_1)
         self.assertGreater(plan.take_profit_1, plan.stop_loss)
+
+    def test_weekly_trade_plan_changes_with_bullish_and_bearish_5d_inputs(self):
+        history = [PricePoint(**row) for row in _price_series()]
+        technical = TechnicalIndicators(
+            ma_20=[None] * 79 + [126.0],
+            ma_60=[None] * 79 + [118.0],
+            rsi_14=[None] * 79 + [52.0],
+            macd=[None] * 79 + [1.0],
+            macd_signal=[None] * 79 + [0.7],
+            macd_hist=[None] * 79 + [0.3],
+            dates=[row.date for row in history],
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=120.0,
+            buy_zone_high=124.0,
+            fair_value=132.0,
+            sell_zone_low=128.0,
+            sell_zone_high=138.0,
+            risk_reward_ratio=2.0,
+            confidence_grade="B",
+            methodology=[],
+            summary="",
+        )
+        regime = MarketRegime(
+            label="Risk-On Trend",
+            stance="risk_on",
+            trend="uptrend",
+            volatility="normal",
+            breadth="strong",
+            score=68.0,
+            conviction=71.0,
+            summary="시장 국면이 우호적입니다.",
+            playbook=[],
+            warnings=[],
+            signals=[],
+        )
+        bullish_horizon = SimpleNamespace(
+            target_date="2026-03-27",
+            price_q10=119.0,
+            price_q25=122.0,
+            price_q50=124.0,
+            price_q75=130.0,
+            price_q90=134.0,
+            mean_return_raw=0.035,
+            mean_return_excess=0.02,
+            p_up=66.0,
+            p_flat=18.0,
+            p_down=16.0,
+            confidence=72.0,
+        )
+        bearish_horizon = SimpleNamespace(
+            target_date="2026-03-27",
+            price_q10=112.0,
+            price_q25=116.0,
+            price_q50=119.0,
+            price_q75=122.0,
+            price_q90=125.0,
+            mean_return_raw=-0.028,
+            mean_return_excess=-0.035,
+            p_up=34.0,
+            p_flat=20.0,
+            p_down=46.0,
+            confidence=64.0,
+        )
+
+        bullish = build_weekly_trade_plan(
+            ticker="TEST",
+            current_price=123.0,
+            price_history=history,
+            technical=technical,
+            buy_sell_guide=buy_sell,
+            weekly_horizon=bullish_horizon,
+            market_regime=regime,
+            reference_date="2026-03-20",
+        )
+        bearish = build_weekly_trade_plan(
+            ticker="TEST",
+            current_price=123.0,
+            price_history=history,
+            technical=technical,
+            buy_sell_guide=buy_sell,
+            weekly_horizon=bearish_horizon,
+            market_regime=regime,
+            reference_date="2026-03-20",
+        )
+
+        self.assertIn(bullish.action, {"accumulate", "breakout_watch", "wait_pullback"})
+        self.assertIn(bearish.action, {"avoid", "reduce_risk"})
+        self.assertGreater(bullish.sell_price or 0, bullish.buy_price or 0)
+        self.assertLess(bearish.expected_return_pct or 0, bullish.expected_return_pct or 0)
+        self.assertGreaterEqual(bullish.risk_reward_estimate, 0)
+
+    def test_weekly_trade_plan_does_not_consume_llm_numeric_fields(self):
+        history = [PricePoint(**row) for row in _price_series()]
+        technical = TechnicalIndicators(
+            ma_20=[None] * 79 + [126.0],
+            ma_60=[None] * 79 + [118.0],
+            rsi_14=[None] * 79 + [52.0],
+            macd=[None] * 79 + [1.0],
+            macd_signal=[None] * 79 + [0.7],
+            macd_hist=[None] * 79 + [0.3],
+            dates=[row.date for row in history],
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=120.0,
+            buy_zone_high=124.0,
+            fair_value=132.0,
+            sell_zone_low=128.0,
+            sell_zone_high=138.0,
+            risk_reward_ratio=2.0,
+            confidence_grade="B",
+            methodology=[],
+            summary="",
+        )
+        fake_llm_numbers = {"buy_price": 1.0, "sell_price": 9999.0, "stop_loss": 0.5}
+        horizon = SimpleNamespace(
+            target_date="2026-03-27",
+            price_q10=119.0,
+            price_q25=122.0,
+            price_q50=124.0,
+            price_q75=130.0,
+            price_q90=134.0,
+            mean_return_raw=0.03,
+            mean_return_excess=0.02,
+            p_up=62.0,
+            p_flat=20.0,
+            p_down=18.0,
+            confidence=70.0,
+        )
+
+        plan = build_weekly_trade_plan(
+            ticker="TEST",
+            current_price=123.0,
+            price_history=history,
+            technical=technical,
+            buy_sell_guide=buy_sell,
+            weekly_horizon=horizon,
+            reference_date="2026-03-20",
+        )
+
+        self.assertNotEqual(plan.buy_price, fake_llm_numbers["buy_price"])
+        self.assertNotEqual(plan.sell_price, fake_llm_numbers["sell_price"])
+        self.assertGreater(plan.buy_price or 0, 100.0)
+        self.assertLess(plan.sell_price or 0, 150.0)
+
+    def test_weekly_trade_plan_uses_official_research_metadata_as_guardrail(self):
+        history = [PricePoint(**row) for row in _price_series()]
+        technical = TechnicalIndicators(
+            ma_20=[None] * 79 + [126.0],
+            ma_60=[None] * 79 + [118.0],
+            rsi_14=[None] * 79 + [52.0],
+            macd=[None] * 79 + [1.0],
+            macd_signal=[None] * 79 + [0.7],
+            macd_hist=[None] * 79 + [0.3],
+            dates=[row.date for row in history],
+        )
+        buy_sell = BuySellGuide(
+            buy_zone_low=120.0,
+            buy_zone_high=124.0,
+            fair_value=132.0,
+            sell_zone_low=128.0,
+            sell_zone_high=138.0,
+            risk_reward_ratio=2.0,
+            confidence_grade="B",
+            methodology=[],
+            summary="",
+        )
+        horizon = SimpleNamespace(
+            target_date="2026-03-27",
+            price_q10=119.0,
+            price_q25=122.0,
+            price_q50=124.0,
+            price_q75=130.0,
+            price_q90=134.0,
+            mean_return_raw=0.04,
+            mean_return_excess=0.03,
+            p_up=70.0,
+            p_flat=16.0,
+            p_down=14.0,
+            confidence=74.0,
+        )
+        regime = MarketRegime(
+            label="Risk-On Trend",
+            stance="risk_on",
+            trend="uptrend",
+            volatility="normal",
+            breadth="strong",
+            score=68.0,
+            conviction=71.0,
+            summary="시장 국면이 우호적입니다.",
+            playbook=[],
+            warnings=[],
+            signals=[],
+        )
+
+        plan = build_weekly_trade_plan(
+            ticker="TEST",
+            current_price=123.0,
+            price_history=history,
+            technical=technical,
+            buy_sell_guide=buy_sell,
+            weekly_horizon=horizon,
+            market_regime=regime,
+            research_context=[
+                {"title": "반도체 수출 둔화 리스크 점검", "signal": "bearish"},
+                {"title": "AI 투자 불확실성 확대", "signal": "bearish"},
+            ],
+            reference_date="2026-03-20",
+        )
+
+        self.assertEqual(plan.action, "wait_pullback")
+        self.assertTrue(any(item.key == "official_research" for item in plan.evidence))
+        self.assertIn("공식 리서치 메타데이터", plan.data_quality)

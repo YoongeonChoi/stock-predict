@@ -95,6 +95,9 @@ CREATE TABLE IF NOT EXISTS prediction_records (
     actual_close REAL,
     actual_low REAL,
     actual_high REAL,
+    actual_window_low REAL,
+    actual_window_high REAL,
+    execution_json TEXT,
     evaluated_at REAL
 );
 
@@ -220,6 +223,12 @@ class Database:
         existing_columns = {row[1] for row in rows}
         if "calibration_json" not in existing_columns:
             conn.execute("ALTER TABLE prediction_records ADD COLUMN calibration_json TEXT")
+        if "actual_window_low" not in existing_columns:
+            conn.execute("ALTER TABLE prediction_records ADD COLUMN actual_window_low REAL")
+        if "actual_window_high" not in existing_columns:
+            conn.execute("ALTER TABLE prediction_records ADD COLUMN actual_window_high REAL")
+        if "execution_json" not in existing_columns:
+            conn.execute("ALTER TABLE prediction_records ADD COLUMN execution_json TEXT")
 
     def _bootstrap_schema_sync(self) -> None:
         self._ensure_db_parent_dir()
@@ -288,6 +297,12 @@ class Database:
         existing_columns = {row[1] for row in rows}
         if "calibration_json" not in existing_columns:
             await conn.execute("ALTER TABLE prediction_records ADD COLUMN calibration_json TEXT")
+        if "actual_window_low" not in existing_columns:
+            await conn.execute("ALTER TABLE prediction_records ADD COLUMN actual_window_low REAL")
+        if "actual_window_high" not in existing_columns:
+            await conn.execute("ALTER TABLE prediction_records ADD COLUMN actual_window_high REAL")
+        if "execution_json" not in existing_columns:
+            await conn.execute("ALTER TABLE prediction_records ADD COLUMN execution_json TEXT")
 
     # ── cache ──────────────────────────────────────────────
 
@@ -756,15 +771,34 @@ class Database:
         actual_close: float,
         actual_low: float | None,
         actual_high: float | None,
+        actual_window_low: float | None = None,
+        actual_window_high: float | None = None,
+        execution_json: dict | None = None,
     ):
         async with self._connect() as conn:
+            await self._ensure_prediction_record_schema(conn)
             await conn.execute(
                 """
                 UPDATE prediction_records
-                SET actual_close = ?, actual_low = ?, actual_high = ?, evaluated_at = ?
+                SET actual_close = ?,
+                    actual_low = ?,
+                    actual_high = ?,
+                    actual_window_low = ?,
+                    actual_window_high = ?,
+                    execution_json = ?,
+                    evaluated_at = ?
                 WHERE id = ?
                 """,
-                (actual_close, actual_low, actual_high, time.time(), record_id),
+                (
+                    actual_close,
+                    actual_low,
+                    actual_high,
+                    actual_window_low,
+                    actual_window_high,
+                    json.dumps(execution_json, ensure_ascii=False, default=str) if execution_json is not None else None,
+                    time.time(),
+                    record_id,
+                ),
             )
             await conn.commit()
 

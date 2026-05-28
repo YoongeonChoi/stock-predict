@@ -27,6 +27,10 @@ interface UseStockDetailFlowOptions {
   initialData?: StockDetail | null;
 }
 
+export function shouldUpgradeStockDetail(snapshot: StockDetail | null | undefined) {
+  return Boolean(snapshot?.partial || snapshot?.weekly_trade_plan?.partial);
+}
+
 export function useStockDetailFlow({
   initialTicker,
   initialData = null,
@@ -110,14 +114,14 @@ export function useStockDetailFlow({
     const startDetailFlow = async () => {
       if (!initialData) {
         const quick = await loadQuickDetail();
-        if (quick?.partial) {
+        if (shouldUpgradeStockDetail(quick)) {
           void upgradeToFullDetail();
         }
         return;
       }
 
       setLoading(false);
-      if (initialData.partial) {
+      if (shouldUpgradeStockDetail(initialData)) {
         void upgradeToFullDetail();
       }
     };

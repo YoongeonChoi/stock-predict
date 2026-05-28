@@ -131,6 +131,47 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["current_price"], 70100)
         self.assertEqual(result["change_pct"], -0.4)
 
+    async def test_stock_research_context_timeout_returns_empty_list(self):
+        async def _slow_context(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return [{"title": "slow"}]
+
+        with (
+            patch("app.analysis.stock_analyzer.STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS", 0.01),
+            patch(
+                "app.analysis.stock_analyzer.research_archive_service.build_stock_research_context",
+                new=AsyncMock(side_effect=_slow_context),
+            ),
+        ):
+            result = await stock_analyzer._build_stock_research_context_with_timeout(
+                ticker="005930.KS",
+                stock_name="SamsungElec",
+                sector="Technology",
+                industry="Consumer Electronics",
+                country_code="KR",
+            )
+
+        self.assertEqual(result, [])
+
+    def test_weekly_source_freshness_marks_official_research_metadata(self):
+        freshness = stock_analyzer._build_weekly_source_freshness(
+            price_history=[],
+            financials_raw=[],
+            google_news=[],
+            naver_news=[],
+            filings=[],
+            ecos_snapshot={},
+            kosis_snapshot={},
+            flow_signal=None,
+            analyst_raw={"buy": 1, "hold": 1, "sell": 0},
+            research_context=[{"title": "반도체 수출 회복"}],
+        )
+
+        research_row = next(item for item in freshness if item["name"] == "공식 리서치·IB 메타데이터")
+        self.assertEqual(research_row["status"], "fresh")
+        self.assertEqual(research_row["item_count"], 1)
+        self.assertIn("무단 PDF scraping", research_row["note"])
+
     def test_build_public_stock_summary_uses_fallback_without_sell_side_copy(self):
         summary = stock_analyzer._build_public_stock_summary(
             llm_result={

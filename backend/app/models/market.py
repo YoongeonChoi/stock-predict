@@ -41,6 +41,48 @@ class TradePlan(BaseModel):
     invalidation: str = ""
 
 
+class WeeklyTradePlanEvidence(BaseModel):
+    key: str
+    label: str
+    signal: Literal["bullish", "neutral", "bearish"] = "neutral"
+    detail: str = ""
+
+
+class WeeklyTradePlanSourceFreshness(BaseModel):
+    name: str
+    status: str
+    item_count: int = 0
+    note: str = ""
+    updated_at: str | None = None
+
+
+class WeeklyTradePlan(BaseModel):
+    horizon_days: int = 5
+    target_date: str = ""
+    reference_date: str = ""
+    reference_price: float = 0.0
+    action: Literal["accumulate", "breakout_watch", "wait_pullback", "reduce_risk", "avoid"] = "wait_pullback"
+    buy_price: float | None = None
+    buy_zone_low: float | None = None
+    buy_zone_high: float | None = None
+    sell_price: float | None = None
+    sell_zone_low: float | None = None
+    sell_zone_high: float | None = None
+    stop_loss: float | None = None
+    expected_return_pct: float | None = None
+    expected_excess_return_pct: float | None = None
+    p_up: float | None = None
+    p_flat: float | None = None
+    p_down: float | None = None
+    confidence: float = 0.0
+    risk_reward_estimate: float = 0.0
+    evidence: list[WeeklyTradePlanEvidence] = Field(default_factory=list)
+    source_freshness: list[WeeklyTradePlanSourceFreshness] = Field(default_factory=list)
+    partial: bool = False
+    fallback_reason: str | None = None
+    data_quality: str = ""
+
+
 class ShortTermChartFactor(BaseModel):
     key: str
     label: str
@@ -123,6 +165,7 @@ class OpportunityItem(BaseModel):
     take_profit_1: float | None = None
     take_profit_2: float | None = None
     risk_reward_estimate: float = 0
+    weekly_trade_plan: WeeklyTradePlan | None = None
     thesis: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
     forecast_date: str = ""

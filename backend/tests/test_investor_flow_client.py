@@ -2,6 +2,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
+import pandas as pd
+
 from app.data import investor_flow_client
 
 
@@ -31,6 +33,13 @@ class InvestorFlowClientTests(unittest.TestCase):
                 investor_flow_client._flow_data_status(datetime(2026, 4, 7).date()),
                 "fresh_eod",
             )
+
+    def test_safe_sum_returns_recent_window_total(self):
+        df = pd.DataFrame({"외국인합계": [100.0, -30.0, 40.0, 10.0, -5.0, 15.0]})
+
+        self.assertEqual(investor_flow_client._safe_sum(df, "외국인합계", window=5), 30.0)
+        self.assertEqual(investor_flow_client._safe_sum(df, "외국인합계", window=1), 15.0)
+        self.assertIsNone(investor_flow_client._safe_sum(df, "기관합계", window=5))
 
 
 if __name__ == "__main__":

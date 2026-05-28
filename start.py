@@ -147,7 +147,15 @@ def stop_pid(pid: int | None) -> bool:
             stderr=subprocess.DEVNULL,
         )
     else:
-        os.kill(pid, signal.SIGTERM)
+        try:
+            process_group_id = os.getpgid(pid)
+        except OSError:
+            process_group_id = None
+
+        if process_group_id == pid:
+            os.killpg(process_group_id, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
 
     deadline = time.time() + 10
     while time.time() < deadline:
@@ -357,7 +365,11 @@ def launch_services() -> int:
     frontend_stream = None
     backend_proc: subprocess.Popen[str] | None = None
     frontend_proc: subprocess.Popen[str] | None = None
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
+    process_detach_kwargs = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if IS_WINDOWS
+        else {"start_new_session": True}
+    )
 
     try:
         backend_stream = paths["backend_log"].open("w", encoding="utf-8")
@@ -371,7 +383,7 @@ def launch_services() -> int:
             cwd=display_path(backend_dir),
             stdout=backend_stream,
             stderr=subprocess.STDOUT,
-            creationflags=creationflags,
+            **process_detach_kwargs,
         )
         write_pid(paths["backend_pid"], backend_proc.pid)
 
@@ -385,7 +397,7 @@ def launch_services() -> int:
             cwd=display_path(frontend_dir),
             stdout=frontend_stream,
             stderr=subprocess.STDOUT,
-            creationflags=creationflags,
+            **process_detach_kwargs,
         )
         write_pid(paths["frontend_pid"], frontend_proc.pid)
 

@@ -78,6 +78,63 @@ def _driver_rows_from_texts(items: list[str] | None) -> list[dict] | None:
     return [{"signal": "context", "detail": item} for item in cleaned[:3]]
 
 
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
+
+
+def _weekly_trade_plan_execution_payload(plan: dict | None) -> dict | None:
+    if not isinstance(plan, dict):
+        return None
+    if int(plan.get("horizon_days") or 0) != 5:
+        return None
+    payload = {
+        "horizon_days": 5,
+        "target_date": plan.get("target_date"),
+        "reference_date": plan.get("reference_date"),
+        "action": plan.get("action"),
+        "buy_price": _safe_float(plan.get("buy_price")),
+        "buy_zone_low": _safe_float(plan.get("buy_zone_low")),
+        "buy_zone_high": _safe_float(plan.get("buy_zone_high")),
+        "sell_price": _safe_float(plan.get("sell_price")),
+        "sell_zone_low": _safe_float(plan.get("sell_zone_low")),
+        "sell_zone_high": _safe_float(plan.get("sell_zone_high")),
+        "stop_loss": _safe_float(plan.get("stop_loss")),
+        "expected_return_pct": _safe_float(plan.get("expected_return_pct")),
+        "p_up": _safe_float(plan.get("p_up")),
+        "p_down": _safe_float(plan.get("p_down")),
+        "confidence": _safe_float(plan.get("confidence")),
+        "risk_reward_estimate": _safe_float(plan.get("risk_reward_estimate")),
+        "partial": bool(plan.get("partial")),
+        "fallback_reason": plan.get("fallback_reason"),
+        "evidence_keys": [
+            str(item.get("key"))
+            for item in list(plan.get("evidence") or [])
+            if isinstance(item, dict) and item.get("key")
+        ][:8],
+        "source_statuses": {
+            str(item.get("name")): str(item.get("status"))
+            for item in list(plan.get("source_freshness") or [])
+            if isinstance(item, dict) and item.get("name")
+        },
+    }
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def _merge_weekly_execution_into_calibration(calibration: dict | None, plan: dict | None) -> dict:
+    merged = dict(calibration or {})
+    if "prediction_type" not in merged:
+        merged["prediction_type"] = "distributional_5d"
+    execution_plan = _weekly_trade_plan_execution_payload(plan)
+    if execution_plan:
+        merged["weekly_trade_plan"] = execution_plan
+    return merged
+
+
 async def _upsert_prediction_rows(rows: list[dict]) -> int:
     captured = 0
     for row in rows:
@@ -143,6 +200,7 @@ def _build_report_prediction_rows(
         )
 
     free_kr = report.get("free_kr_forecast")
+    weekly_trade_plan = report.get("weekly_trade_plan")
     if isinstance(free_kr, dict) and symbol and free_kr.get("reference_price") is not None:
         evidence = free_kr.get("evidence")
         model_version = free_kr.get("model_version")
@@ -179,7 +237,11 @@ def _build_report_prediction_rows(
                     "confidence": horizon.get("confidence"),
                     "direction": direction,
                     "drivers_json": evidence,
-                    "calibration_json": horizon.get("calibration_snapshot"),
+                    "calibration_json": (
+                        _merge_weekly_execution_into_calibration(horizon.get("calibration_snapshot"), weekly_trade_plan)
+                        if horizon_days == 5
+                        else horizon.get("calibration_snapshot")
+                    ),
                     "model_version": model_version,
                 }
             )

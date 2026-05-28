@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from app.models.score import StockScore
 from app.models.forecast import FreeKrForecast, HistoricalPatternForecast, NextDayForecast, SetupBacktest
-from app.models.market import MarketRegime, TradePlan
+from app.models.market import MarketRegime, TradePlan, WeeklyTradePlan
 
 
 class PricePoint(BaseModel):
@@ -146,6 +146,7 @@ class StockDetail(BaseModel):
     setup_backtest: SetupBacktest | None = None
     market_regime: MarketRegime | None = None
     trade_plan: TradePlan | None = None
+    weekly_trade_plan: WeeklyTradePlan | None = None
     public_summary: PublicStockSummary | None = None
     generated_at: str | None = None
     partial: bool | None = None

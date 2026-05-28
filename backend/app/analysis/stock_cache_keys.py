@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-STOCK_DETAIL_CACHE_VERSION = "v9"
-STOCK_DETAIL_LATEST_CACHE_VERSION = "latest-v9"
-STOCK_DETAIL_QUICK_CACHE_VERSION = "quick-v1"
+STOCK_DETAIL_CACHE_VERSION = "v10"
+STOCK_DETAIL_LATEST_CACHE_VERSION = "latest-v10"
+STOCK_DETAIL_QUICK_CACHE_VERSION = "quick-v2"
 
 
 def _latest_price_stamp(prices: list[dict]) -> str:
