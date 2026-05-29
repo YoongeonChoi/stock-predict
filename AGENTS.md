@@ -171,6 +171,7 @@
   - `frontend/package-lock.json`
   - `README.md`의 `현재 릴리즈`
   - `CHANGELOG.md`의 최상단 항목
+- README에는 긴 `이번 릴리즈 하이라이트` 블록을 만들지 않습니다. 릴리즈별 상세 변경은 `CHANGELOG.md`에만 정리하고, README는 현재 릴리즈 번호와 운영 기준선, 기능 설명만 짧게 유지합니다.
 - 버전 동기화는 `verify.py` 실행 전에 끝내고, `main` 머지 전에 다시 한 번 확인합니다.
 - `/settings`나 시스템 진단에서 프론트/백엔드 버전을 비교하는 UI를 수정했다면, README와 사용자 안내 문구도 같은 의미를 말해야 합니다.
 
