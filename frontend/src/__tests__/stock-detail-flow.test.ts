@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  STOCK_DETAIL_AUTO_RETRY_DELAYS_MS,
   chooseUsefulStockDetailSnapshot,
   isStockDetailShellSnapshot,
   shouldAutoRetryStockDetail,
@@ -56,7 +57,7 @@ describe("stock detail progressive upgrade", () => {
           partial: true,
           fallback_reason: "stock_minimal_shell",
         } as StockDetail,
-        2,
+        STOCK_DETAIL_AUTO_RETRY_DELAYS_MS.length,
       ),
     ).toBe(false);
   });

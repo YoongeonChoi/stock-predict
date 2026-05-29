@@ -161,4 +161,31 @@ describe("stock detail shell auto retry", () => {
     expect(api.getStockDetail).toHaveBeenCalledTimes(2);
     expect(screen.getByText("68200")).toBeInTheDocument();
   });
+
+  it("shell 재조회는 quick warm 승격 시간대까지 여러 번 이어진다", async () => {
+    vi.mocked(api.getStockDetail)
+      .mockResolvedValueOnce(shellSnapshot())
+      .mockResolvedValueOnce(shellSnapshot())
+      .mockResolvedValueOnce(numericSnapshot());
+
+    render(<FlowProbe initialData={shellSnapshot()} />);
+
+    await flushReactUpdates();
+    expect(api.getStockDetail).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(STOCK_DETAIL_AUTO_RETRY_DELAYS_MS[0]);
+    });
+    await flushReactUpdates();
+    expect(api.getStockDetail).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("no-buy")).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(STOCK_DETAIL_AUTO_RETRY_DELAYS_MS[1]);
+    });
+    await flushReactUpdates();
+
+    expect(api.getStockDetail).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("68200")).toBeInTheDocument();
+  });
 });
