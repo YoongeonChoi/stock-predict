@@ -2,6 +2,14 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.3 - 2026-05-29
+
+- `/api/stock/{ticker}/detail`이 Render memory-safe `stock_memory_guard` shell을 quick cache로 받더라도, 숫자 없는 shell을 최종 quick snapshot처럼 소비하지 않고 다시 quick 분포 warm을 예약합니다. ultra-fast fallback 구간에서도 메모리 압박이 side effect 차단선보다 낮으면 응답 뒤 warm을 걸어 다음 조회가 `stock_quick_distributional`로 승격될 수 있게 했습니다.
+- memory guard shell의 quick cache TTL을 30초로 줄였습니다. 일시적인 최소 응답이 오래 남아 5거래일 매수 가능가, 매도 목표가, 손절가, 확률 필드를 가리는 시간을 줄입니다.
+- `/radar`가 `opportunity_startup_guard`나 placeholder partial을 받으면 짧은 자동 재조회를 최대 2회 예약합니다. Render cold start에서 백엔드 quick warm-up이 먼저 캐시를 채우는 구조와 맞춰, 사용자가 직접 다시 불러오기를 누르지 않아도 usable 후보 보드로 승격될 수 있게 했습니다.
+- placeholder 상태의 안내 문구를 자동 재조회 동작과 같은 의미로 정리했습니다. 이제 “같은 화면을 띄워 두는 것만으로 완료되지 않는다”가 아니라, 자동 재조회와 수동 다시 불러오기가 각각 어떤 역할을 하는지 설명합니다.
+- `backend/tests/test_stock_router.py`에 shell cache 재조회와 ultra-fast fallback warm 예약 회귀를 추가했고, `frontend/src/__tests__/radar-page-client.test.tsx`에 placeholder 이후 자동 재조회와 재조회 제한 조건을 추가했습니다.
+
 ## v2.66.2 - 2026-05-29
 
 - Render memory-safe cold start에서 stock analyzer가 아직 import되지 않아 첫 `/api/stock/{ticker}/detail`이 최소 shell을 반환하더라도, 메모리 압박이 높지 않으면 응답 뒤 quick 분포 warm을 예약합니다. 그래서 첫 화면을 막지 않으면서도 다음 조회나 hydration upgrade가 5거래일 분포 기반 `weekly_trade_plan`으로 더 빨리 승격됩니다.
