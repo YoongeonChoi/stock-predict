@@ -34,6 +34,7 @@ STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 1.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
+STOCK_MEMORY_GUARD_SHELL_TTL_SECONDS = 30
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 _STOCK_DETAIL_QUICK_WARM_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
@@ -283,6 +284,17 @@ def _build_partial_stock_detail(cached: dict, *, error_code: str | None, fallbac
     return partial
 
 
+def _is_stock_memory_guard_snapshot(snapshot: dict | None) -> bool:
+    if not snapshot:
+        return False
+    if snapshot.get("fallback_reason") in {"stock_memory_guard", "stock_minimal_shell"}:
+        return True
+    weekly_plan = dict(snapshot.get("weekly_trade_plan") or {})
+    if weekly_plan.get("fallback_reason") == "stock_memory_guard":
+        return True
+    return False
+
+
 from app.routers._stock_shells import (
     blank_score_detail as _blank_score_detail,
     blank_stock_score as _blank_stock_score,
@@ -440,7 +452,7 @@ async def _build_stock_memory_guard_shell(ticker: str) -> dict:
         cache.set(
             stock_detail_quick_cache_key(ticker),
             payload,
-            ttl=min(get_settings().cache_ttl_report, 120),
+            ttl=min(get_settings().cache_ttl_report, STOCK_MEMORY_GUARD_SHELL_TTL_SECONDS),
             persist=False,
         ),
         label=f"stock guard-shell cache write {ticker}",
@@ -645,6 +657,7 @@ def _schedule_stock_detail_quick_warm(ticker: str) -> bool:
             "Skipping stock detail quick warm for %s because Render memory pressure is high.",
             ticker,
         )
+        _schedule_public_route_memory_trim("stock_detail_quick_warm:skip")
         return False
 
     existing = _STOCK_DETAIL_QUICK_WARM_TASKS.get(ticker)
@@ -684,6 +697,9 @@ async def _serve_quick_stock_detail(
     cache_state: str,
     source_label: str,
 ) -> JSONResponse:
+    if _is_stock_memory_guard_snapshot(quick_snapshot):
+        _schedule_stock_detail_quick_warm(ticker)
+
     if prefer_full:
         if _should_skip_public_stock_full_analysis():
             await _try_schedule_distributional_capture(ticker)
@@ -788,8 +804,7 @@ async def get_stock_detail(
     cold_stock_analysis_import = _should_avoid_cold_stock_analysis_import()
     if not prefer_full and (fast_public_fallback or cold_stock_analysis_import):
         ticker = _resolve_kr_ticker(ticker, allow_fast_path=True)
-        if cold_stock_analysis_import and not fast_public_fallback:
-            _schedule_stock_detail_quick_warm(ticker)
+        _schedule_stock_detail_quick_warm(ticker)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
@@ -847,6 +862,7 @@ async def get_stock_detail(
         )
 
     if _should_use_ultra_fast_public_fallback():
+        _schedule_stock_detail_quick_warm(ticker)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
             started_at,
@@ -971,6 +987,7 @@ async def get_stock_detail(
         err = SP_5018(f"Stock detail timed out for {ticker}")
         err.log()
         if _should_use_ultra_fast_public_fallback():
+            _schedule_stock_detail_quick_warm(ticker)
             shell_payload = await _build_stock_memory_guard_shell(ticker)
             _record_stock_detail_trace(
                 started_at,
@@ -1050,6 +1067,7 @@ async def get_stock_detail(
         err.detail = str(e)[:200]
         err.log()
         if _should_use_ultra_fast_public_fallback():
+            _schedule_stock_detail_quick_warm(ticker)
             shell_payload = await _build_stock_memory_guard_shell(ticker)
             _record_stock_detail_trace(
                 started_at,
