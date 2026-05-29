@@ -126,10 +126,22 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
             "52w_high": stock_prices[-1]["close"] * 1.2,
             "52w_low": stock_prices[-1]["close"] * 0.75,
         }
+        research_context = [
+            {
+                "title": "반도체 수출 회복",
+                "signal": "bullish",
+                "source_name": "KDI 한국개발연구원",
+                "metadata_only": True,
+            }
+        ]
 
         with (
             patch("app.analysis.stock_analyzer.yfinance_client.get_price_history", new=AsyncMock(side_effect=_history)),
             patch("app.analysis.stock_analyzer.yfinance_client.get_stock_info", new=AsyncMock(return_value=stock_info)),
+            patch(
+                "app.analysis.stock_analyzer._build_stock_research_context_with_timeout",
+                new=AsyncMock(return_value=research_context),
+            ) as research_context_mock,
             patch("app.analysis.stock_analyzer.cache.set", new=AsyncMock(return_value=True)),
         ):
             result = await stock_analyzer.build_quick_stock_detail("005930.KS")
@@ -146,6 +158,15 @@ class StockAnalyzerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(plan["data_quality"], "5거래일 분포가 준비되지 않아 가격·ATR 기반 대기 구간으로 먼저 표시합니다.")
         self.assertIsNotNone(result["free_kr_forecast"])
         self.assertTrue(any(item["key"] == "fused" for item in plan["evidence"]))
+        self.assertTrue(any(item["key"] == "official_research" for item in plan["evidence"]))
+        research_freshness = next(
+            item for item in plan["source_freshness"] if item["name"] == "공식 리서치·IB 메타데이터"
+        )
+        self.assertEqual(research_freshness["status"], "fresh")
+        self.assertEqual(research_freshness["item_count"], 1)
+        research_context_mock.assert_awaited_once()
+        self.assertFalse(research_context_mock.await_args.kwargs["auto_refresh"])
+        self.assertEqual(research_context_mock.await_args.kwargs["limit"], 3)
 
     async def test_analyze_stock_prefers_latest_cached_detail_before_history_fetch(self):
         cached_snapshot = {
