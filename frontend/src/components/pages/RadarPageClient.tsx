@@ -25,10 +25,11 @@ function toError(error: unknown): Error {
 }
 
 const MARKETS = ["KR"] as const;
+export const RADAR_AUTO_RETRY_DELAYS_MS = [4_000, 10_000] as const;
 
-type RadarSnapshot = OpportunityRadarResponse & PublicAuditFields;
+export type RadarSnapshot = OpportunityRadarResponse & PublicAuditFields;
 
-function isUsableRadarSnapshot(snapshot?: RadarSnapshot | null) {
+export function isUsableRadarSnapshot(snapshot?: RadarSnapshot | null) {
   if (!snapshot) {
     return false;
   }
@@ -38,8 +39,12 @@ function isUsableRadarSnapshot(snapshot?: RadarSnapshot | null) {
   return Number(snapshot.quote_available_count ?? 0) > 0 && snapshot.opportunities.length > 0;
 }
 
-function isPlaceholderRadarSnapshot(snapshot?: RadarSnapshot | null) {
+export function isPlaceholderRadarSnapshot(snapshot?: RadarSnapshot | null) {
   return Boolean(snapshot?.partial) && !isUsableRadarSnapshot(snapshot);
+}
+
+export function shouldAutoRetryRadarSnapshot(snapshot: RadarSnapshot | null, loading: boolean, attempt: number) {
+  return isPlaceholderRadarSnapshot(snapshot) && !loading && attempt < RADAR_AUTO_RETRY_DELAYS_MS.length;
 }
 
 interface RadarPageClientProps {
@@ -60,12 +65,30 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<Error | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [autoRetryAttempt, setAutoRetryAttempt] = useState(0);
 
   useEffect(() => {
     if (isUsableRadarSnapshot(data)) {
       setLastUsableSnapshot(data);
+      setAutoRetryAttempt(0);
     }
   }, [data]);
+
+  useEffect(() => {
+    setAutoRetryAttempt(0);
+  }, [market]);
+
+  useEffect(() => {
+    if (!shouldAutoRetryRadarSnapshot(data, loading, autoRetryAttempt)) {
+      return undefined;
+    }
+    const delayMs = RADAR_AUTO_RETRY_DELAYS_MS[autoRetryAttempt];
+    const handle = window.setTimeout(() => {
+      setAutoRetryAttempt((value) => value + 1);
+      setReloadToken((value) => value + 1);
+    }, delayMs);
+    return () => window.clearTimeout(handle);
+  }, [autoRetryAttempt, data, loading]);
 
   useEffect(() => {
     if (reportedInitialRef.current) {
@@ -232,7 +255,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
                 <div className="section-slab-muted !px-3 !py-3">
                   <div className="text-xs text-text-secondary">다음 동작</div>
                   <div className="mt-2 leading-6">
-                    다시 불러오기를 누르거나 새로 열면 quick 후보 스냅샷을 새로 만들고, usable 후보가 생기면 그 즉시 후보 보드로 바뀝니다. 계속 같은 화면을 띄워 두는 것만으로 완료되지는 않습니다.
+                    같은 화면을 열어 두면 짧게 자동 재조회하고, 다시 불러오기를 누르면 즉시 fresh quick 스냅샷과 캐시 재사용을 새로 확인합니다. usable 후보가 생기면 그 즉시 후보 보드로 바뀝니다.
                   </div>
                 </div>
               </div>
