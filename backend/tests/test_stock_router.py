@@ -161,6 +161,7 @@ class StockRouterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["partial"])
+        self.assertEqual(payload["fallback_reason"], "stock_memory_guard")
         schedule_quick_warm.assert_called_once_with("005930.KS")
 
     def test_stock_detail_returns_cached_quick_partial_when_quick_builder_times_out(self):
@@ -595,6 +596,42 @@ class StockRouterTests(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(len(created), 1)
+
+    def test_stock_detail_quick_warm_uses_background_timeout_budget(self):
+        stock_router._STOCK_DETAIL_QUICK_WARM_TASKS.pop("005930.KS", None)
+        created = []
+        observed_timeouts = []
+
+        def _capture_task(coro):
+            created.append(coro)
+            return MagicMock(done=MagicMock(return_value=False))
+
+        async def _fake_wait_for(coro, timeout):
+            observed_timeouts.append(timeout)
+            return await coro
+
+        with (
+            patch("app.routers.stock.settings", new=SimpleNamespace(startup_memory_safe_mode=True)),
+            patch("app.routers.stock.get_memory_pressure_snapshot", return_value={"pressure_ratio": 0.2}),
+            patch("app.routers.stock.asyncio.create_task", side_effect=_capture_task),
+        ):
+            result = stock_router._schedule_stock_detail_quick_warm("005930.KS")
+
+        self.assertTrue(result)
+        self.assertEqual(len(created), 1)
+
+        with (
+            patch("app.routers.stock.build_quick_stock_detail", new=AsyncMock(return_value=_cached_snapshot(partial=True, fallback_reason="stock_quick_detail"))),
+            patch("app.routers.stock.asyncio.wait_for", new=_fake_wait_for),
+            patch("app.routers.stock._maybe_trim_public_route_memory"),
+        ):
+            asyncio.run(created[0])
+
+        self.assertEqual(observed_timeouts, [stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS])
+        self.assertGreater(
+            stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS,
+            stock_router.STOCK_DETAIL_TIMEOUT_SECONDS,
+        )
 
     def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
         with (

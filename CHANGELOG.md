@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.5 - 2026-05-29
+
+- `/api/stock/{ticker}/detail`의 Render memory-safe quick warm에 응답 timeout과 분리된 백그라운드 예산을 적용했습니다. 첫 응답은 계속 빠른 shell로 닫고, 같은 화면의 자동 재조회가 5거래일 분포 숫자를 더 일찍 받을 수 있게 했습니다.
+- 숫자 없는 `stock_memory_guard` shell이 quick cache에서 다시 서빙될 때 최상위 `fallback_reason`도 `stock_memory_guard`로 유지합니다. 프론트와 운영 진단이 이를 일반 quick detail이 아니라 자동 재조회 대상 shell로 더 정확하게 읽습니다.
+- `backend/tests/test_stock_router.py`에 shell fallback reason 보존과 quick warm 별도 timeout 예산 회귀를 추가했습니다.
+
 ## v2.66.4 - 2026-05-29
 
 - `/stock/[ticker]` progressive flow가 `stock_memory_guard`나 `stock_minimal_shell`을 받으면 최초 full 업그레이드가 끝난 뒤에도 백엔드 warm cache TTL에 맞춰 최대 2회 지연 재조회를 예약합니다. Render cold start에서 최소 판단 카드가 먼저 보이더라도, quick 분포 캐시가 승격되면 사용자가 새로고침하지 않아도 5거래일 매수 가능가, 매도 목표가, 손절가, 확률 필드가 같은 화면에서 채워집니다.
