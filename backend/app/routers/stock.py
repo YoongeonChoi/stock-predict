@@ -29,6 +29,7 @@ route_stability_service = LazyModuleProxy("app.services.route_stability_service"
 ticker_resolver_service = LazyModuleProxy("app.services.ticker_resolver_service")
 yfinance_client = LazyModuleProxy("app.data.yfinance_client")
 STOCK_DETAIL_TIMEOUT_SECONDS = 3.0
+STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS = 7.5
 STOCK_DETAIL_PREFER_FULL_TIMEOUT_SECONDS = 14.0
 STOCK_DETAIL_FULL_UPGRADE_GRACE_SECONDS = 1.5
 STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
@@ -293,6 +294,10 @@ def _is_stock_memory_guard_snapshot(snapshot: dict | None) -> bool:
     if weekly_plan.get("fallback_reason") == "stock_memory_guard":
         return True
     return False
+
+
+def _quick_snapshot_fallback_reason(snapshot: dict | None) -> str:
+    return "stock_memory_guard" if _is_stock_memory_guard_snapshot(snapshot) else "stock_quick_detail"
 
 
 from app.routers._stock_shells import (
@@ -666,12 +671,15 @@ def _schedule_stock_detail_quick_warm(ticker: str) -> bool:
 
     async def _run_quick_warm() -> None:
         try:
-            await asyncio.wait_for(build_quick_stock_detail(ticker), timeout=STOCK_DETAIL_TIMEOUT_SECONDS)
+            await asyncio.wait_for(
+                build_quick_stock_detail(ticker),
+                timeout=STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS,
+            )
         except asyncio.TimeoutError:
             logger.warning(
                 "stock detail quick warm timed out for %s after %.2fs",
                 ticker,
-                STOCK_DETAIL_TIMEOUT_SECONDS,
+                STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.warning(
@@ -776,19 +784,21 @@ async def _serve_quick_stock_detail(
 
     _schedule_stock_detail_refresh(ticker)
     await _try_schedule_distributional_capture(ticker)
+    fallback_reason = _quick_snapshot_fallback_reason(quick_snapshot)
     partial_payload = _build_traced_partial_stock_detail(
         started_at,
         cached=quick_snapshot,
         cache_state=cache_state,
         timeout_budget_seconds=STOCK_DETAIL_TIMEOUT_SECONDS,
         error_code=None,
-        fallback_reason="stock_quick_detail",
+        fallback_reason=fallback_reason,
     )
     logger.info(
-        "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s",
+        "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s fallback_reason=%s",
         ticker,
         cache_state,
         prefer_full,
+        fallback_reason,
     )
     return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
 
@@ -950,18 +960,20 @@ async def get_stock_detail(
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
             await _try_schedule_distributional_capture(ticker)
+            fallback_reason = _quick_snapshot_fallback_reason(cached_quick)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,
                 cache_state="sqlite_hit",
                 timeout_budget_seconds=detail_timeout,
                 error_code="SP-5018",
-                fallback_reason="stock_quick_detail",
+                fallback_reason=fallback_reason,
             )
             logger.info(
-                "stock detail served | ticker=%s request_phase=quick cache_state=sqlite_hit served_state=partial prefer_full=%s fallback_reason=stock_quick_detail",
+                "stock detail served | ticker=%s request_phase=quick cache_state=sqlite_hit served_state=partial prefer_full=%s fallback_reason=%s",
                 ticker,
                 prefer_full,
+                fallback_reason,
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         cached = await _timed_stock_cache_lookup(
@@ -1027,18 +1039,20 @@ async def get_stock_detail(
             if not prefer_full:
                 _schedule_stock_detail_refresh(ticker)
             await _try_schedule_distributional_capture(ticker)
+            fallback_reason = _quick_snapshot_fallback_reason(cached_quick)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=cached_quick,
                 cache_state="sqlite_hit" if quick_fallback is None else "miss",
                 timeout_budget_seconds=detail_timeout if "detail_timeout" in locals() else STOCK_DETAIL_TIMEOUT_SECONDS,
                 error_code="SP-3003",
-                fallback_reason="stock_quick_detail",
+                fallback_reason=fallback_reason,
             )
             logger.warning(
-                "stock detail degraded to quick snapshot | ticker=%s prefer_full=%s detail=%s",
+                "stock detail degraded to quick snapshot | ticker=%s prefer_full=%s fallback_reason=%s detail=%s",
                 ticker,
                 prefer_full,
+                fallback_reason,
                 str(e)[:200],
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
