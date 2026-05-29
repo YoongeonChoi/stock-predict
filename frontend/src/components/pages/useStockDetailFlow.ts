@@ -16,7 +16,7 @@ import type { PricePoint, StockDetail } from "@/lib/types";
 const ROUTE_KEY = "/stock/[ticker]";
 const QUICK_TIMEOUT_MS = 12_000;
 const FULL_TIMEOUT_MS = 14_000;
-export const STOCK_DETAIL_AUTO_RETRY_DELAYS_MS = [8_000, 30_000] as const;
+export const STOCK_DETAIL_AUTO_RETRY_DELAYS_MS = [6_000, 14_000, 28_000, 45_000] as const;
 const STOCK_DETAIL_SHELL_FALLBACK_REASONS = new Set(["stock_memory_guard", "stock_minimal_shell"]);
 
 function toError(error: unknown): Error {

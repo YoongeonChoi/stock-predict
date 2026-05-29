@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.8 - 2026-05-29
+
+- 종목 상세 safe-mode quick warm의 백그라운드 예산을 14초로 늘렸습니다. 첫 응답은 계속 shell/quick partial로 빠르게 닫지만, cold import와 6개월 가격 시계열 조회가 한 번에 끝날 가능성을 높여 숫자 있는 `stock_quick_distributional` 캐시 승격을 앞당깁니다.
+- `/stock/[ticker]` shell 자동 재조회 간격을 `6초 -> 14초 -> 28초 -> 45초`로 조정했습니다. Render cold start에서 첫 재조회가 아직 shell이어도, quick warm이 성공하는 시간대에 같은 화면에서 매수가·매도가·손절가를 더 빨리 채우도록 맞췄습니다.
+- stock router와 stock detail flow 회귀 테스트를 보강해 quick warm 예산과 다단계 shell 재조회가 유지되는지 확인합니다.
+
 ## v2.66.7 - 2026-05-29
 
 - Render safe mode에서 종목 상세가 이미 준비된 quick cache를 읽기 전에 `stock_memory_guard` shell을 먼저 반환하던 흐름을 고쳤습니다. 이제 cold import/ultra-fast fallback 구간에서도 캐시된 quick 5거래일 판단이 있으면 shell로 덮어쓰지 않고 바로 제공합니다.
