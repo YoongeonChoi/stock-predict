@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.4 - 2026-05-29
+
+- `/stock/[ticker]` progressive flow가 `stock_memory_guard`나 `stock_minimal_shell`을 받으면 최초 full 업그레이드가 끝난 뒤에도 백엔드 warm cache TTL에 맞춰 최대 2회 지연 재조회를 예약합니다. Render cold start에서 최소 판단 카드가 먼저 보이더라도, quick 분포 캐시가 승격되면 사용자가 새로고침하지 않아도 5거래일 매수 가능가, 매도 목표가, 손절가, 확률 필드가 같은 화면에서 채워집니다.
+- 재조회 응답이 다시 shell이면 이미 숫자가 있는 `stock_quick_distributional` 판단을 덮어쓰지 않도록 종목 상세 snapshot 선택 로직을 보강했습니다.
+- `frontend/src/__tests__/stock-detail-flow.test.ts`에 shell 자동 재조회 조건, 재조회 제한, 숫자 판단 보존 회귀를 추가했습니다.
+
 ## v2.66.3 - 2026-05-29
 
 - `/api/stock/{ticker}/detail`이 Render memory-safe `stock_memory_guard` shell을 quick cache로 받더라도, 숫자 없는 shell을 최종 quick snapshot처럼 소비하지 않고 다시 quick 분포 warm을 예약합니다. ultra-fast fallback 구간에서도 메모리 압박이 side effect 차단선보다 낮으면 응답 뒤 warm을 걸어 다음 조회가 `stock_quick_distributional`로 승격될 수 있게 했습니다.
