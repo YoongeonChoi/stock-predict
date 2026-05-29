@@ -16,6 +16,8 @@ import type { PricePoint, StockDetail } from "@/lib/types";
 const ROUTE_KEY = "/stock/[ticker]";
 const QUICK_TIMEOUT_MS = 12_000;
 const FULL_TIMEOUT_MS = 14_000;
+export const STOCK_DETAIL_AUTO_RETRY_DELAYS_MS = [8_000, 30_000] as const;
+const STOCK_DETAIL_SHELL_FALLBACK_REASONS = new Set(["stock_memory_guard", "stock_minimal_shell"]);
 
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -29,6 +31,36 @@ interface UseStockDetailFlowOptions {
 
 export function shouldUpgradeStockDetail(snapshot: StockDetail | null | undefined) {
   return Boolean(snapshot?.partial || snapshot?.weekly_trade_plan?.partial);
+}
+
+export function isStockDetailShellSnapshot(snapshot: StockDetail | null | undefined) {
+  const fallbackReason = snapshot?.fallback_reason ?? null;
+  const weeklyFallbackReason = snapshot?.weekly_trade_plan?.fallback_reason ?? null;
+  return (
+    STOCK_DETAIL_SHELL_FALLBACK_REASONS.has(fallbackReason ?? "")
+    || STOCK_DETAIL_SHELL_FALLBACK_REASONS.has(weeklyFallbackReason ?? "")
+  );
+}
+
+export function shouldAutoRetryStockDetail(
+  snapshot: StockDetail | null | undefined,
+  retryAttempt: number,
+  retryLimit = STOCK_DETAIL_AUTO_RETRY_DELAYS_MS.length,
+) {
+  return Boolean(snapshot && retryAttempt < retryLimit && isStockDetailShellSnapshot(snapshot));
+}
+
+function hasWeeklyTradeNumbers(snapshot: StockDetail | null | undefined) {
+  const plan = snapshot?.weekly_trade_plan;
+  return Boolean(plan && (plan.buy_price != null || plan.sell_price != null || plan.stop_loss != null));
+}
+
+export function chooseUsefulStockDetailSnapshot(current: StockDetail | null, next: StockDetail) {
+  if (!current) return next;
+  if (isStockDetailShellSnapshot(next) && !isStockDetailShellSnapshot(current)) return current;
+  if (hasWeeklyTradeNumbers(current) && !hasWeeklyTradeNumbers(next)) return current;
+  if (!current.partial && next.partial) return current;
+  return next;
 }
 
 export function useStockDetailFlow({
@@ -46,6 +78,8 @@ export function useStockDetailFlow({
   const [forecastDelta, setForecastDelta] = useState<ForecastDeltaResponse | null>(null);
   const [chartPeriod, setChartPeriod] = useState("3mo");
   const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const [fullUpgradePending, setFullUpgradePending] = useState(false);
+  const [autoRetryAttempt, setAutoRetryAttempt] = useState(0);
 
   useEffect(() => {
     if (!normalizedTicker) return;
@@ -60,6 +94,8 @@ export function useStockDetailFlow({
     setChartData([]);
     setChartPeriod("3mo");
     setLoading(!initialData);
+    setFullUpgradePending(false);
+    setAutoRetryAttempt(0);
 
     const loadQuickDetail = async (): Promise<StockDetail | null> => {
       try {
@@ -89,14 +125,11 @@ export function useStockDetailFlow({
     };
 
     const upgradeToFullDetail = async () => {
+      setFullUpgradePending(true);
       try {
         const next = await api.getStockDetail(normalizedTicker, { timeoutMs: FULL_TIMEOUT_MS, preferFull: true });
         if (cancelled) return;
-        setStock((current) => {
-          if (!current) return next;
-          if (!current.partial && next.partial) return current;
-          return next;
-        });
+        setStock((current) => chooseUsefulStockDetailSnapshot(current, next));
         setError(null);
         reportHydrationRefetchSuccess(ROUTE_KEY, "stock_detail_full");
       } catch (err) {
@@ -107,6 +140,10 @@ export function useStockDetailFlow({
           } else {
             reportPanelDegraded(ROUTE_KEY, "stock_detail_full", toError(err).message);
           }
+        }
+      } finally {
+        if (!cancelled) {
+          setFullUpgradePending(false);
         }
       }
     };
@@ -168,6 +205,38 @@ export function useStockDetailFlow({
       cancelled = true;
     };
   }, [initialData, normalizedTicker]);
+
+  useEffect(() => {
+    if (!normalizedTicker || loading || fullUpgradePending) return;
+    if (!shouldAutoRetryStockDetail(stock, autoRetryAttempt)) return;
+
+    const delayMs = STOCK_DETAIL_AUTO_RETRY_DELAYS_MS[autoRetryAttempt];
+    let cancelled = false;
+    const retryHandle = window.setTimeout(() => {
+      setAutoRetryAttempt((attempt) => attempt + 1);
+      api.getStockDetail(normalizedTicker, { timeoutMs: FULL_TIMEOUT_MS, preferFull: true })
+        .then((next) => {
+          if (cancelled) return;
+          setStock((current) => chooseUsefulStockDetailSnapshot(current, next));
+          setError(null);
+          reportHydrationRefetchSuccess(ROUTE_KEY, "stock_detail_shell_retry");
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          console.warn(err);
+          if (err instanceof ApiTimeoutError) {
+            reportHydrationRefetchTimeout(ROUTE_KEY, "stock_detail_shell_retry", FULL_TIMEOUT_MS);
+          } else {
+            reportPanelDegraded(ROUTE_KEY, "stock_detail_shell_retry", toError(err).message);
+          }
+        });
+    }, delayMs);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retryHandle);
+    };
+  }, [autoRetryAttempt, fullUpgradePending, loading, normalizedTicker, stock]);
 
   useEffect(() => {
     if (!initialReportedRef.current && (initialData || stock)) {
