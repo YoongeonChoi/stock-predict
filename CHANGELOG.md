@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.6 - 2026-05-29
+
+- `/api/stock/{ticker}/detail` quick 분포 경로가 캐시된 공식/허용 리서치 메타데이터를 짧은 timeout으로 함께 조회합니다. 첫 5거래일 판단에서도 매칭된 리서치가 있으면 `weekly_trade_plan.evidence`의 `official_research`와 `source_freshness`에 바로 반영됩니다.
+- quick 경로의 리서치 조회는 `auto_refresh=false`로 제한해 외부 리서치 동기화를 응답 경로에 붙이지 않습니다. 최신 리서치 갱신은 기존 archive sync 흐름에 맡기고, 첫 usable 종목 판단은 이미 확보된 공식 메타데이터만 소비합니다.
+- `backend/tests/test_stock_analyzer.py`에 quick 5거래일 판단이 공식 리서치 메타데이터를 evidence/freshness로 반영하는 회귀를 추가했습니다.
+
 ## v2.66.5 - 2026-05-29
 
 - `/api/stock/{ticker}/detail`의 Render memory-safe quick warm에 응답 timeout과 분리된 백그라운드 예산을 적용했습니다. 첫 응답은 계속 빠른 shell로 닫고, 같은 화면의 자동 재조회가 5거래일 분포 숫자를 더 일찍 받을 수 있게 했습니다.

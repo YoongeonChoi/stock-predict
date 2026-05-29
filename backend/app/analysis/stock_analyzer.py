@@ -64,6 +64,7 @@ STOCK_DETAIL_PRICE_REFRESH_TIMEOUT_SECONDS = 3.5
 STOCK_DETAIL_QUICK_TIMEOUT_SECONDS = 2.25
 STOCK_DETAIL_QUICK_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DETAIL_QUICK_CACHE_TTL_SECONDS = 900
+STOCK_DETAIL_QUICK_RESEARCH_CONTEXT_TIMEOUT_SECONDS = 0.45
 STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS = 1.2
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,16 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
 
     market_prices = _window_prices(market_prices_full, 126)
     info = _enrich_info_from_history(info or {"ticker": ticker, "name": ticker}, prices_full or price_source)
+    quick_research_context = await _build_stock_research_context_with_timeout(
+        ticker=ticker,
+        stock_name=info.get("name", ticker),
+        sector=info.get("sector"),
+        industry=info.get("industry"),
+        country_code=country_code,
+        limit=3,
+        auto_refresh=False,
+        timeout_seconds=STOCK_DETAIL_QUICK_RESEARCH_CONTEXT_TIMEOUT_SECONDS,
+    )
     peer_avg = {"pe_avg": None, "pb_avg": None, "ev_ebitda_avg": None}
     analyst_raw = {"buy": 0, "hold": 0, "sell": 0}
     quant_score = score_stock(info, peers_avg=peer_avg, price_hist=price_source, analyst_counts=analyst_raw)
@@ -224,6 +235,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
         event_context=heuristic_event_context,
         flow_signal=None,
         distribution_evidence=quick_distribution_evidence,
+        research_context=quick_research_context,
         source_freshness=_build_weekly_source_freshness(
             price_history=price_source,
             financials_raw=[],
@@ -234,7 +246,7 @@ async def build_quick_stock_detail(ticker: str) -> dict | None:
             kosis_snapshot={},
             flow_signal=None,
             analyst_raw=analyst_raw,
-            research_context=[],
+            research_context=quick_research_context,
         ),
         reference_date=reference_date,
         partial=True,
@@ -723,6 +735,9 @@ async def _build_stock_research_context_with_timeout(
     sector: str | None,
     industry: str | None,
     country_code: str,
+    limit: int = 6,
+    auto_refresh: bool = True,
+    timeout_seconds: float | None = None,
 ) -> list[dict]:
     try:
         return await asyncio.wait_for(
@@ -732,10 +747,10 @@ async def _build_stock_research_context_with_timeout(
                 sector=sector,
                 industry=industry,
                 country_code=country_code,
-                limit=6,
-                auto_refresh=True,
+                limit=limit,
+                auto_refresh=auto_refresh,
             ),
-            timeout=STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS,
+            timeout=timeout_seconds if timeout_seconds is not None else STOCK_RESEARCH_CONTEXT_TIMEOUT_SECONDS,
         )
     except Exception as exc:
         logger.info("stock research context unavailable for %s: %s", ticker, str(exc)[:160])
