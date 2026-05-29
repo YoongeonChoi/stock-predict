@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.7 - 2026-05-29
+
+- Render safe mode에서 종목 상세가 이미 준비된 quick cache를 읽기 전에 `stock_memory_guard` shell을 먼저 반환하던 흐름을 고쳤습니다. 이제 cold import/ultra-fast fallback 구간에서도 캐시된 quick 5거래일 판단이 있으면 shell로 덮어쓰지 않고 바로 제공합니다.
+- `prefer_full=true` 요청도 safe mode에서 full 분석을 건너뛰더라도, 캐시된 quick 판단이 숫자를 갖고 있으면 최상위 fallback을 `stock_quick_detail`로 유지합니다. shell은 실제 shell일 때만 `stock_memory_guard`로 표시됩니다.
+- stock router 회귀 테스트를 갱신해 cold import guard와 elevated pressure 경로가 캐시된 quick 판단을 보존하는지 확인합니다.
+
 ## v2.66.6 - 2026-05-29
 
 - `/api/stock/{ticker}/detail` quick 분포 경로가 캐시된 공식/허용 리서치 메타데이터를 짧은 timeout으로 함께 조회합니다. 첫 5거래일 판단에서도 매칭된 리서치가 있으면 `weekly_trade_plan.evidence`의 `official_research`와 `source_freshness`에 바로 반영됩니다.
