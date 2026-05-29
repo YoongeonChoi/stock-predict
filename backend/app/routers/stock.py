@@ -711,19 +711,21 @@ async def _serve_quick_stock_detail(
     if prefer_full:
         if _should_skip_public_stock_full_analysis():
             await _try_schedule_distributional_capture(ticker)
+            fallback_reason = _quick_snapshot_fallback_reason(quick_snapshot)
             partial_payload = _build_traced_partial_stock_detail(
                 started_at,
                 cached=quick_snapshot,
                 cache_state=cache_state,
                 timeout_budget_seconds=_stock_detail_upgrade_timeout_seconds(),
                 error_code=None,
-                fallback_reason="stock_memory_guard",
+                fallback_reason=fallback_reason,
             )
             logger.info(
-                "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s fallback_reason=stock_memory_guard",
+                "stock detail served | ticker=%s request_phase=quick cache_state=%s served_state=partial prefer_full=%s fallback_reason=%s",
                 ticker,
                 cache_state,
                 prefer_full,
+                fallback_reason,
             )
             return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         upgrade_timeout = _stock_detail_upgrade_timeout_seconds()
@@ -814,6 +816,19 @@ async def get_stock_detail(
     cold_stock_analysis_import = _should_avoid_cold_stock_analysis_import()
     if not prefer_full and (fast_public_fallback or cold_stock_analysis_import):
         ticker = _resolve_kr_ticker(ticker, allow_fast_path=True)
+        cached_quick = await _timed_stock_cache_lookup(
+            get_cached_quick_stock_detail(ticker),
+            label=f"stock quick cache lookup before shell {ticker}",
+        )
+        if cached_quick:
+            return await _serve_quick_stock_detail(
+                started_at,
+                ticker=ticker,
+                prefer_full=prefer_full,
+                quick_snapshot=cached_quick,
+                cache_state="sqlite_hit",
+                source_label="cached quick snapshot",
+            )
         _schedule_stock_detail_quick_warm(ticker)
         shell_payload = await _build_stock_memory_guard_shell(ticker)
         _record_stock_detail_trace(
@@ -852,16 +867,6 @@ async def get_stock_detail(
     )
     quick_fallback = cached_quick
     if cached_quick:
-        if prefer_full and _should_use_ultra_fast_public_fallback():
-            partial_payload = _build_traced_partial_stock_detail(
-                started_at,
-                cached=cached_quick,
-                cache_state="sqlite_hit",
-                timeout_budget_seconds=detail_timeout,
-                error_code=None,
-                fallback_reason="stock_memory_guard",
-            )
-            return _build_stock_success_response(partial_payload, trim_reason="stock_detail")
         return await _serve_quick_stock_detail(
             started_at,
             ticker=ticker,
