@@ -36,6 +36,7 @@ STOCK_DETAIL_CACHE_LOOKUP_TIMEOUT_SECONDS = 0.35
 STOCK_DETAIL_CACHE_WRITE_TIMEOUT_SECONDS = 0.25
 STOCK_DISTRIBUTIONAL_CAPTURE_TIMEOUT_SECONDS = 0.2
 STOCK_MEMORY_GUARD_SHELL_TTL_SECONDS = 30
+PRIMARY_STOCK_DETAIL_QUICK_PREWARM_TICKERS = ("003670.KS", "005930.KS")
 _STOCK_DETAIL_REFRESH_TASKS: dict[str, asyncio.Task] = {}
 _STOCK_DETAIL_QUICK_WARM_TASKS: dict[str, asyncio.Task] = {}
 PUBLIC_SIDE_EFFECT_SKIP_PRESSURE_RATIO = 0.84
@@ -694,6 +695,22 @@ def _schedule_stock_detail_quick_warm(ticker: str) -> bool:
 
     _STOCK_DETAIL_QUICK_WARM_TASKS[ticker] = asyncio.create_task(_run_quick_warm())
     return True
+
+
+async def prewarm_primary_stock_detail_quick_cache(
+    tickers: tuple[str, ...] = PRIMARY_STOCK_DETAIL_QUICK_PREWARM_TICKERS,
+) -> dict[str, list[str]]:
+    scheduled: list[str] = []
+    skipped: list[str] = []
+    for raw_ticker in tickers:
+        ticker = _resolve_kr_ticker(raw_ticker, allow_fast_path=True)
+        if not ticker:
+            continue
+        if _schedule_stock_detail_quick_warm(ticker):
+            scheduled.append(ticker)
+        else:
+            skipped.append(ticker)
+    return {"scheduled": scheduled, "skipped": skipped}
 
 
 async def _serve_quick_stock_detail(

@@ -183,6 +183,7 @@ async def _prewarm_public_dashboard_payloads() -> None:
     await country.prewarm_primary_country_report_cache()
     await screener.prewarm_public_screener_cache_seed()
     await calendar_service.prewarm_public_calendar_cache_seed()
+    await stock.prewarm_primary_stock_detail_quick_cache()
 
 
 @asynccontextmanager

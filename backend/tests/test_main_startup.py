@@ -444,6 +444,12 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                     new=AsyncMock(return_value=None),
                 )
             )
+            stock_detail_prewarm = stack.enter_context(
+                patch(
+                    "app.main.stock.prewarm_primary_stock_detail_quick_cache",
+                    new=AsyncMock(return_value={"scheduled": ["003670.KS", "005930.KS"], "skipped": []}),
+                )
+            )
             stack.enter_context(patch.object(app_settings, "render_environment", True))
             stack.enter_context(patch.object(app_settings, "render_service_name", "stock-predict-api"))
             stack.enter_context(patch.object(app_settings, "startup_allow_heavy_render_jobs", False))
@@ -492,6 +498,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         country_report_prewarm.assert_awaited_once()
         screener_prewarm.assert_awaited_once()
         calendar_prewarm.assert_awaited_once()
+        stock_detail_prewarm.assert_awaited_once()
 
     async def test_render_memory_safe_mode_continues_when_public_dashboard_prewarm_fails(self):
         with ExitStack() as stack:
@@ -550,6 +557,12 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
                     new=AsyncMock(return_value=None),
                 )
             )
+            stock_detail_prewarm = stack.enter_context(
+                patch(
+                    "app.main.stock.prewarm_primary_stock_detail_quick_cache",
+                    new=AsyncMock(return_value={"scheduled": [], "skipped": []}),
+                )
+            )
             stack.enter_context(patch.object(app_settings, "render_environment", True))
             stack.enter_context(patch.object(app_settings, "render_service_name", "stock-predict-api"))
             stack.enter_context(patch.object(app_settings, "startup_allow_heavy_render_jobs", False))
@@ -584,6 +597,7 @@ class StartupLifespanTests(unittest.IsolatedAsyncioTestCase):
         briefing_prewarm.assert_not_called()
         screener_prewarm.assert_not_called()
         calendar_prewarm.assert_not_called()
+        stock_detail_prewarm.assert_not_called()
 
     async def test_startup_raises_when_database_init_fails(self):
         with patch("app.main.db.initialize", new=AsyncMock(side_effect=RuntimeError("db failed"))):
