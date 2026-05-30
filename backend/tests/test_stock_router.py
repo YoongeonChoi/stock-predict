@@ -637,6 +637,19 @@ class StockRouterTests(unittest.TestCase):
         )
         self.assertGreaterEqual(stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS, 24.0)
 
+    def test_prewarm_primary_stock_detail_quick_cache_schedules_representative_tickers(self):
+        with (
+            patch("app.routers.stock._resolve_kr_ticker", side_effect=lambda ticker, allow_fast_path=False: ticker),
+            patch("app.routers.stock._schedule_stock_detail_quick_warm", side_effect=[True, False]) as schedule_quick_warm,
+        ):
+            result = asyncio.run(
+                stock_router.prewarm_primary_stock_detail_quick_cache(("003670.KS", "005930.KS"))
+            )
+
+        self.assertEqual(result["scheduled"], ["003670.KS"])
+        self.assertEqual(result["skipped"], ["005930.KS"])
+        self.assertEqual(schedule_quick_warm.call_count, 2)
+
     def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
         with (
             patch("app.routers.stock.settings", new=SimpleNamespace(effective_stock_detail_background_refresh=True, startup_memory_safe_mode=True)),

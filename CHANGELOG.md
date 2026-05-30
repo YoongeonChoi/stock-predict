@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.11 - 2026-05-30
+
+- Render safe-mode startup의 public dashboard prewarm에 대표 종목 quick detail warm을 추가했습니다. 배포 직후 사용자가 종목 화면에 들어오기 전에 `003670.KS`, `005930.KS`의 5거래일 매수·매도 숫자 캐시 준비를 먼저 시작합니다.
+- stock detail 대표 quick warm은 응답 경로를 기다리게 하지 않고 기존 background warm 경로를 사용합니다. 메모리 압박이 높으면 기존 guard에 따라 스킵되며, 준비된 캐시는 `/stock/[ticker]` shell 자동 재조회가 곧바로 소비합니다.
+
 ## v2.66.10 - 2026-05-30
 
 - 종목 상세 safe-mode quick warm의 백그라운드 예산을 28초로 늘렸습니다. 운영 측정에서 일부 종목이 14초 예산을 넘겨 두 번째 warm까지 기다리던 구간을 줄이고, 첫 warm 안에서 5거래일 매수·매도 숫자를 캐시에 올릴 가능성을 높였습니다.
