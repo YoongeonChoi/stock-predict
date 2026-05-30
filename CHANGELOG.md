@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.66.9 - 2026-05-30
+
+- `/stock/[ticker]` shell 자동 재조회 간격을 `5초 -> 8초 -> 16초 -> 32초`로 다시 조정했습니다. 운영 측정에서 quick 분포 캐시가 약 20초 지점에 확인되던 흐름을 반영해, 두 번째 재조회가 13초대에 도달하도록 앞당겨 첫 숫자 반영 시간을 줄입니다.
+- 백엔드 quick warm 예산은 v2.66.8의 14초를 유지합니다. 응답 경로를 늘리지 않고, 이미 돌고 있는 warm 결과를 프론트가 더 빨리 잡는 쪽으로 조정했습니다.
+
 ## v2.66.8 - 2026-05-29
 
 - 종목 상세 safe-mode quick warm의 백그라운드 예산을 14초로 늘렸습니다. 첫 응답은 계속 shell/quick partial로 빠르게 닫지만, cold import와 6개월 가격 시계열 조회가 한 번에 끝날 가능성을 높여 숫자 있는 `stock_quick_distributional` 캐시 승격을 앞당깁니다.
