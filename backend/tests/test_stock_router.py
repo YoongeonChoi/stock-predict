@@ -635,7 +635,7 @@ class StockRouterTests(unittest.TestCase):
             stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS,
             stock_router.STOCK_DETAIL_TIMEOUT_SECONDS,
         )
-        self.assertGreaterEqual(stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS, 12.0)
+        self.assertGreaterEqual(stock_router.STOCK_DETAIL_QUICK_WARM_TIMEOUT_SECONDS, 24.0)
 
     def test_stock_detail_background_refresh_skips_when_pressure_is_elevated(self):
         with (
