@@ -1,6 +1,6 @@
 # Stock Predict Redesign Brief
 
-This file is the active UI/UX standard for the v2.68.0 redesign. The previous
+This file is the active UI/UX standard for the v2.68.x redesign. The previous
 `DESIGN_BIBLE.md` is preserved as legacy reference, but new redesign work should
 use this document first.
 

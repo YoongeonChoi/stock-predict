@@ -26,45 +26,46 @@ export default function SectorRotationBoard({ data, countryCode = "KR" }: Props)
   const losers = data.filter((s) => s.change_pct <= 0);
 
   return (
-    <section className="card !p-5 space-y-4">
-      <div>
-        <h2 className="section-title">섹터 로테이션</h2>
-        <p className="section-copy">
-          {countryCode === "KR" ? "한국" : countryCode} 시장 섹터별 평균 등락률과 대장주를 한눈에 비교합니다.
-          막대가 길수록 움직임이 큰 섹터입니다.
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="metric-card">
-          <div className="text-xs text-text-secondary">전체 섹터</div>
-          <div className="mt-2 text-2xl font-semibold text-text">{data.length}</div>
-          <div className="mt-1 text-xs text-text-secondary">시세 반영 기준</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-xs text-text-secondary">상승 섹터</div>
-          <div className="mt-2 text-2xl font-semibold text-positive">{gainers.length}</div>
-          <div className="mt-1 text-xs text-text-secondary">평균 등락 &gt; 0</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-xs text-text-secondary">하락 섹터</div>
-          <div className="mt-2 text-2xl font-semibold text-negative">{losers.length}</div>
-          <div className="mt-1 text-xs text-text-secondary">평균 등락 ≤ 0</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-xs text-text-secondary">최대 움직임</div>
-          <div className="mt-2 text-lg font-semibold text-text">{changeLabel(data[0]?.change_pct ?? 0)}</div>
-          <div className="mt-1 text-xs text-text-secondary">{data[0]?.sector ?? "-"}</div>
+    <section className="dashboard-panel">
+      <div className="dashboard-section-header">
+        <div>
+          <h2 className="dashboard-section-title">섹터 로테이션</h2>
+          <p className="dashboard-section-copy">
+            {countryCode === "KR" ? "한국" : countryCode} 시장 섹터별 평균 등락률과 대장주를 비교합니다.
+          </p>
         </div>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="dashboard-signal-grid">
+        <div className="dashboard-signal-tile">
+          <span className="dashboard-tile-label">전체 섹터</span>
+          <strong className="dashboard-tile-value">{data.length}</strong>
+          <span className="dashboard-tile-detail">시세 반영 기준</span>
+        </div>
+        <div className="dashboard-signal-tile">
+          <span className="dashboard-tile-label">상승 섹터</span>
+          <strong className="dashboard-tile-value text-positive">{gainers.length}</strong>
+          <span className="dashboard-tile-detail">평균 등락 &gt; 0</span>
+        </div>
+        <div className="dashboard-signal-tile">
+          <span className="dashboard-tile-label">하락 섹터</span>
+          <strong className="dashboard-tile-value text-negative">{losers.length}</strong>
+          <span className="dashboard-tile-detail">평균 등락 ≤ 0</span>
+        </div>
+        <div className="dashboard-signal-tile">
+          <span className="dashboard-tile-label">최대 움직임</span>
+          <strong className="dashboard-tile-value">{changeLabel(data[0]?.change_pct ?? 0)}</strong>
+          <span className="dashboard-tile-detail">{data[0]?.sector ?? "-"}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
         {data.map((sector) => {
           const isPositive = sector.change_pct > 0;
           return (
             <div
               key={sector.sector}
-              className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-surface/50 px-4 py-3 transition-colors hover:border-accent/30"
+              className="group flex items-center gap-3 rounded-[14px] border border-border bg-surface/65 px-4 py-3 transition-colors hover:border-accent/35"
             >
               <div className="min-w-[140px] shrink-0 sm:min-w-[180px]">
                 <Link

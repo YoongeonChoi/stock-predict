@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
+import {
+  ArrowRight,
+  BarChart3,
+  ExternalLink,
+  LineChart,
+  Radar,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 
 import OpportunityRadarBoard from "@/components/OpportunityRadarBoard";
-import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
 import dynamic from "next/dynamic";
@@ -326,226 +335,277 @@ export default function HomeDashboardClient({
         ? `시장 국면 ${countryReport.market_regime?.label || radarData.market_regime.label} / 오늘의 포커스 ${focusSlots.length}개 / 레이더 상위 ${Math.min(radarData.opportunities.length, 3)}개를 먼저 보여줍니다.`
         : "선택 시장 현황과 핵심 수치를 먼저 보여주고, 아래 카드에서 히트맵과 레이더를 이어서 읽습니다.",
   });
+  const reportClock = countryReport?.generated_at ? toInitialClock(countryReport.generated_at) : "";
+  const nextDayForecast = countryReport?.next_day_forecast ?? null;
+  const radarCount = radarData?.opportunities.length ?? 0;
+  const topMover = movers?.gainers?.[0] ?? null;
+  const weakestMover = movers?.losers?.[0] ?? null;
+  const dashboardStatusLabel = marketView?.label || (reportLoading ? "시장 요약 준비 중" : "선별 관찰");
 
   return (
-    <div className="page-shell">
-      <PageHeader
-        variant="compact"
-        eyebrow="시장 탐색"
-        title="대시보드"
-        description={countryReport && radarData
-          ? "선택 시장 현황과 핵심 수치, 오늘 먼저 볼 신호를 한 흐름으로 정리합니다."
-          : "시장 현황과 브리핑, 히트맵, 레이더 요약을 한 화면에서 먼저 확인합니다."}
-        meta={
-          <>
-            {lastUpdated ? <span className="info-chip">최근 갱신 {lastUpdated}</span> : null}
-            {countryReport?.generated_at ? (
-              <span className="info-chip">리포트 {toInitialClock(countryReport.generated_at)}</span>
-            ) : null}
-            {focusSlots.length > 0 ? <span className="info-chip">오늘 포커스 {focusSlots.length}개</span> : null}
-          </>
-        }
-      />
-      <MarketSessionBadge sessions={initialMarketSessions} />
+    <div className="dashboard-shell">
+      <section className="dashboard-hero" aria-labelledby="dashboard-title">
+        <div className="dashboard-hero-main">
+          <div className="dashboard-kicker">
+            <span>대시보드</span>
+            <span>{selectedCountryItem ? `${COUNTRY_FLAGS[selectedCountry]} ${selectedCountryItem.name_local}` : selectedCountry}</span>
+          </div>
+          <h1 id="dashboard-title" className="dashboard-hero-title">
+            오늘 시장에서 먼저 볼 것만 정리합니다.
+          </h1>
+          <p className="dashboard-hero-copy">{marketSummaryText}</p>
 
-      <section className="card !p-4 sm:!p-5 space-y-4">
-        <PublicAuditStrip meta={dashboardAuditMeta} />
-        <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
-          {dashboardSummary}
-        </div>
+          <div className="dashboard-action-row">
+            <Link href="/radar" className="ui-button-primary">
+              <Radar aria-hidden className="h-4 w-4" />
+              레이더 보기
+              <ArrowRight aria-hidden className="h-4 w-4" />
+            </Link>
+            <Link href="/screener" className="ui-button-secondary">
+              <BarChart3 aria-hidden className="h-4 w-4" />
+              스크리너로 좁히기
+            </Link>
+            <button type="button" onClick={retryCurrentWorkspace} className="ui-button-ghost">
+              <RefreshCw aria-hidden className="h-4 w-4" />
+              다시 불러오기
+            </button>
+          </div>
 
-        {workspaceDelays.length > 0 ? (
-          <WorkspaceStateCard
-            kind="partial"
-            eyebrow="부분 업데이트"
-            title="일부 계산이 더 필요합니다"
-            message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
-            actionLabel="현재 시장 다시 불러오기"
-            onAction={retryCurrentWorkspace}
-          />
-        ) : null}
+          <div className="dashboard-meta-row" aria-label="대시보드 상태">
+            {lastUpdated ? <span>최근 갱신 {lastUpdated}</span> : null}
+            {reportClock ? <span>리포트 {reportClock}</span> : null}
+            <span>오늘 포커스 {focusSlots.length}개</span>
+            <span>레이더 {radarCount > 0 ? `${Math.min(radarCount, HOME_RADAR_LIMIT)}개` : "대기"}</span>
+          </div>
 
-        {countries.length > 1 ? (
-          <div className="flex flex-wrap gap-2">
-            {countries.map((country) => (
+          {countries.length > 1 ? (
+            <div className="dashboard-country-row" aria-label="시장 선택">
+              {countries.map((country) => (
                 <button
                   key={country.code}
+                  type="button"
                   onClick={() => void loadCountryWorkspace(country.code)}
-                  className={`text-sm font-medium transition-colors ${
-                    selectedCountry === country.code
-                      ? "action-chip-primary"
-                      : "action-chip-secondary"
+                  className={`dashboard-country-button ${
+                    selectedCountry === country.code ? "dashboard-country-button-active" : ""
                   }`}
+                  aria-pressed={selectedCountry === country.code}
                 >
                   {COUNTRY_FLAGS[country.code]} {country.name_local}
                 </button>
               ))}
-          </div>
-        ) : null}
-
-        <div className="workspace-grid-balanced">
-          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-text">
-                  {selectedCountryItem ? `${COUNTRY_FLAGS[selectedCountry]} ${selectedCountryItem.name_local}` : selectedCountry}
-                </div>
-                <div className="mt-1 text-sm leading-6 text-text-secondary">
-                  {marketSummaryText}
-                </div>
-              </div>
-              {marketView ? (
-                <span className={`status-token ${statusTone(marketView.stance)}`}>
-                  {marketView.label}
-                </span>
-              ) : null}
             </div>
+          ) : null}
+        </div>
 
-            {macroClaims.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
-                {macroClaims.map((claim) => (
-                  <div key={`${claim.source}-${claim.metric}`} className="metric-strip">
-                    <div className="text-[11px] text-text-secondary">{claim.metric}</div>
-                    <div className={`mt-2 text-base font-semibold ${macroClaimTone(claim.direction)}`}>
-                      {formatMacroClaimValue(claim)}
-                    </div>
-                    <div className="mt-1 text-[11px] leading-5 text-text-secondary">
-                      {claim.source}
-                      {formatMacroClaimDate(claim.published_at) ? ` · ${formatMacroClaimDate(claim.published_at)}` : ""}
-                      {` · 근거 ${Math.round((claim.confidence ?? 0) * 100)}%`}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+        <aside className="dashboard-hero-panel" aria-label="현재 시장 핵심 신호">
+          <div className="dashboard-hero-panel-top">
+            <div>
+              <span className="dashboard-panel-label">현재 시장</span>
+              <div className="mt-2 text-xl font-semibold text-text">{dashboardStatusLabel}</div>
+            </div>
+            {marketView ? <span className={`status-token ${statusTone(marketView.stance)}`}>{marketView.label}</span> : null}
+          </div>
+          <div className="dashboard-session-wrap">
+            <MarketSessionBadge sessions={initialMarketSessions} />
+          </div>
+          <div className="dashboard-stat-grid">
+            <div className="dashboard-stat">
+              <span className="dashboard-stat-label">다음 상방 확률</span>
+              <strong className="dashboard-stat-value">
+                {nextDayForecast ? `${nextDayForecast.up_probability.toFixed(1)}%` : "대기"}
+              </strong>
+              <span className={`dashboard-stat-detail ${nextDayForecast ? changeColor(nextDayForecast.predicted_return_pct) : ""}`}>
+                {nextDayForecast ? `기대 ${formatPct(nextDayForecast.predicted_return_pct)}` : "예측 수집 중"}
+              </span>
+            </div>
+            <div className="dashboard-stat">
+              <span className="dashboard-stat-label">상승 상위</span>
+              <strong className="dashboard-stat-value">{topMover?.ticker ?? "대기"}</strong>
+              <span className={`dashboard-stat-detail ${topMover ? "text-positive" : ""}`}>
+                {topMover ? `+${topMover.change_pct.toFixed(2)}%` : "등락 집계 중"}
+              </span>
+            </div>
+            <div className="dashboard-stat">
+              <span className="dashboard-stat-label">하락 상위</span>
+              <strong className="dashboard-stat-value">{weakestMover?.ticker ?? "대기"}</strong>
+              <span className={`dashboard-stat-detail ${weakestMover ? "text-negative" : ""}`}>
+                {weakestMover ? `${weakestMover.change_pct.toFixed(2)}%` : "등락 집계 중"}
+              </span>
+            </div>
+          </div>
+        </aside>
+      </section>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-              {usableIndices.map((index) => (
-                <div key={index.ticker} className="metric-card">
-                  <div className="text-xs text-text-secondary">{index.name}</div>
-                  <div className="mt-2 text-lg font-semibold text-text">{(index.price ?? index.current_price ?? 0).toLocaleString()}</div>
-                  <div className={`mt-1 text-xs font-medium ${changeColor(index.change_pct ?? 0)}`}>
-                    {formatPct(index.change_pct ?? 0)}
-                  </div>
+      <section className="dashboard-audit-band" aria-label="공개 데이터 상태">
+        <PublicAuditStrip meta={dashboardAuditMeta} />
+        <p>{dashboardSummary}</p>
+      </section>
+
+      {workspaceDelays.length > 0 ? (
+        <WorkspaceStateCard
+          kind="partial"
+          eyebrow="부분 업데이트"
+          title="일부 계산이 더 필요합니다"
+          message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
+          actionLabel="현재 시장 다시 불러오기"
+          onAction={retryCurrentWorkspace}
+        />
+      ) : null}
+
+      <section className="dashboard-two-column" aria-labelledby="dashboard-signals-title">
+        <div className="dashboard-panel dashboard-panel-main">
+          <div className="dashboard-section-header">
+            <div>
+              <h2 id="dashboard-signals-title" className="dashboard-section-title">시장 신호</h2>
+              <p className="dashboard-section-copy">지수, 거시 지표, 다음 거래일 신호를 한 번에 읽습니다.</p>
+            </div>
+            {marketView ? <span className={`dashboard-soft-token ${statusTone(marketView.stance)}`}>{marketView.label}</span> : null}
+          </div>
+
+          {macroClaims.length > 0 ? (
+            <div className="dashboard-signal-grid">
+              {macroClaims.map((claim) => (
+                <div key={`${claim.source}-${claim.metric}`} className="dashboard-signal-tile">
+                  <span className="dashboard-tile-label">{claim.metric}</span>
+                  <strong className={`dashboard-tile-value ${macroClaimTone(claim.direction)}`}>
+                    {formatMacroClaimValue(claim)}
+                  </strong>
+                  <span className="dashboard-tile-detail">
+                    {claim.source}
+                    {formatMacroClaimDate(claim.published_at) ? ` · ${formatMacroClaimDate(claim.published_at)}` : ""}
+                    {` · 근거 ${Math.round((claim.confidence ?? 0) * 100)}%`}
+                  </span>
                 </div>
               ))}
-              {countryReport?.next_day_forecast ? (
-                <div className="metric-card sm:col-span-2 xl:col-span-1">
-                  <div className="text-xs text-text-secondary">다음 거래일 시그널</div>
-                  <div className="mt-2 text-lg font-semibold text-text">상방 {countryReport.next_day_forecast.up_probability.toFixed(1)}%</div>
-                  <div className={`mt-1 text-xs font-medium ${changeColor(countryReport.next_day_forecast.predicted_return_pct)}`}>
-                    기대 {formatPct(countryReport.next_day_forecast.predicted_return_pct)}
-                  </div>
-                </div>
-              ) : null}
             </div>
-            {hasDelayedIndices ? (
-              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
-                대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
+          ) : null}
+
+          <div className="dashboard-signal-grid">
+            {usableIndices.map((index) => (
+              <div key={index.ticker} className="dashboard-signal-tile">
+                <span className="dashboard-tile-label">{index.name}</span>
+                <strong className="dashboard-tile-value">
+                  {(index.price ?? index.current_price ?? 0).toLocaleString()}
+                </strong>
+                <span className={`dashboard-tile-detail ${changeColor(index.change_pct ?? 0)}`}>
+                  {formatPct(index.change_pct ?? 0)}
+                </span>
+              </div>
+            ))}
+            {nextDayForecast ? (
+              <div className="dashboard-signal-tile dashboard-signal-tile-accent">
+                <span className="dashboard-tile-label">다음 거래일 시그널</span>
+                <strong className="dashboard-tile-value">상방 {nextDayForecast.up_probability.toFixed(1)}%</strong>
+                <span className={`dashboard-tile-detail ${changeColor(nextDayForecast.predicted_return_pct)}`}>
+                  기대 {formatPct(nextDayForecast.predicted_return_pct)}
+                </span>
               </div>
             ) : null}
+          </div>
 
-            {visibleIndicators.length > 0 ? (
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
-                {visibleIndicators.map((indicator) => (
-                  <div key={indicator.name} className="metric-strip">
-                    <div className="text-[11px] text-text-secondary">{indicator.name}</div>
-                    <div className="mt-2 text-sm font-semibold text-text">{indicatorLabel(indicator)}</div>
-                    <div className={`mt-1 text-[11px] ${changeColor(indicator.change_pct ?? 0)}`}>
-                      {formatPct(indicator.change_pct ?? 0)}
+          {hasDelayedIndices ? (
+            <p className="dashboard-alert-band">
+              대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
+            </p>
+          ) : null}
+
+          {visibleIndicators.length > 0 ? (
+            <div className="dashboard-indicator-row" aria-label="보조 지표">
+              {visibleIndicators.map((indicator) => (
+                <div key={indicator.name}>
+                  <span>{indicator.name}</span>
+                  <strong>{indicatorLabel(indicator)}</strong>
+                  <em className={changeColor(indicator.change_pct ?? 0)}>{formatPct(indicator.change_pct ?? 0)}</em>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {hasDelayedIndicators ? (
+            <p className="dashboard-alert-band">
+              환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="dashboard-panel">
+          <div className="dashboard-section-header">
+            <div>
+              <h2 className="dashboard-section-title">오늘의 포커스</h2>
+              <p className="dashboard-section-copy">바로 볼 종목과 일정만 남겼습니다.</p>
+            </div>
+            {briefing?.research_archive ? <span className="dashboard-soft-token">리서치 {briefing.research_archive.todays_reports}건</span> : null}
+          </div>
+
+          {briefingLoading ? (
+            <WorkspaceLoadingCard
+              title="오늘의 포커스를 추리고 있습니다"
+              message="브리핑, 핵심 종목, 가까운 일정 중 먼저 확인할 항목만 다시 묶는 중입니다."
+              className="min-h-[230px]"
+            />
+          ) : focusSlots.length > 0 ? (
+            <div className="dashboard-list">
+              {focusSlots.map((slot) => {
+                if (slot.kind === "focus") {
+                  const item = slot.item;
+                  return (
+                    <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="dashboard-list-link">
+                      <span className="dashboard-list-main">
+                        <strong>{item.name}</strong>
+                        <span>{item.ticker} · {item.sector}</span>
+                      </span>
+                      <span className="dashboard-list-metric">
+                        <strong className={changeColor(item.predicted_return_pct)}>{formatPct(item.predicted_return_pct)}</strong>
+                        <span>상방 {item.up_probability.toFixed(1)}%</span>
+                      </span>
+                    </Link>
+                  );
+                }
+
+                if (slot.kind === "event") {
+                  const event = slot.item;
+                  return (
+                    <div key={slot.key} className="dashboard-list-row">
+                      <span className="dashboard-list-main">
+                        <strong>{event.title}</strong>
+                        <span>{event.summary}</span>
+                      </span>
+                      <span className={`dashboard-soft-token ${impactTone(event.impact)}`}>{event.date}</span>
                     </div>
+                  );
+                }
+
+                return (
+                  <div key={slot.key} className="dashboard-list-row">
+                    <span className="dashboard-list-main">
+                      <strong>{slot.title}</strong>
+                      <span>{slot.summary}</span>
+                    </span>
                   </div>
-                ))}
-              </div>
-            ) : null}
-            {hasDelayedIndicators ? (
-              <div className="mt-3 section-slab-subtle !px-4 !py-3 text-sm text-text-secondary">
-                환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
-              </div>
-            ) : null}
-          </div>
-
-          <div className="section-slab-subtle !p-4 sm:!p-5 h-full">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-text">오늘의 포커스</div>
-                <div className="mt-1 text-sm text-text-secondary">선택 시장에서 바로 볼 종목과 일정만 추렸습니다.</div>
-              </div>
-              {briefing?.research_archive ? <span className="info-chip">리서치 {briefing.research_archive.todays_reports}건</span> : null}
+                );
+              })}
             </div>
-            <div className="mt-4">
-              {briefingLoading ? (
-                <WorkspaceLoadingCard
-                  title="오늘의 포커스를 추리고 있습니다"
-                  message="브리핑, 핵심 종목, 가까운 일정 중 먼저 확인할 항목만 다시 묶는 중입니다."
-                  className="min-h-[230px]"
-                />
-              ) : focusSlots.length > 0 ? (
-                <div className="space-y-3">
-                  {focusSlots.map((slot) => {
-                    if (slot.kind === "focus") {
-                      const item = slot.item;
-                      return (
-                        <Link key={slot.key} href={`/stock/${encodeURIComponent(item.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-medium text-text">{item.name}</div>
-                              <div className="mt-1 text-xs text-text-secondary">{item.ticker} · {item.sector}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className={`text-sm font-semibold ${changeColor(item.predicted_return_pct)}`}>{formatPct(item.predicted_return_pct)}</div>
-                              <div className="mt-1 text-[11px] text-text-secondary">상방 {item.up_probability.toFixed(1)}%</div>
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    }
-
-                    if (slot.kind === "event") {
-                      const event = slot.item;
-                      return (
-                        <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-medium text-text">{event.title}</div>
-                            <span className={`status-token ${impactTone(event.impact)}`}>{event.date}</span>
-                          </div>
-                          <div className="mt-1 text-xs text-text-secondary">{event.summary}</div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div key={slot.key} className="section-slab-subtle !px-4 !py-3">
-                        <div className="font-medium text-text">{slot.title}</div>
-                        <div className="mt-1 text-xs leading-6 text-text-secondary">{slot.summary}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <WorkspaceStateCard
-                  eyebrow="포커스 지연"
-                  title="오늘 바로 볼 항목을 아직 정리하지 못했습니다"
-                  message={briefingError || "오늘의 포커스 데이터가 아직 없습니다."}
-                  onAction={() => void loadBriefing()}
-                  tone="warning"
-                />
-              )}
-            </div>
-          </div>
+          ) : (
+            <WorkspaceStateCard
+              eyebrow="포커스 지연"
+              title="오늘 바로 볼 항목을 아직 정리하지 못했습니다"
+              message={briefingError || "오늘의 포커스 데이터가 아직 없습니다."}
+              onAction={() => void loadBriefing()}
+              tone="warning"
+            />
+          )}
         </div>
       </section>
 
-      <section className="workspace-grid-balanced">
-        <div className="card !p-4 h-full">
-          <div className="section-heading gap-4">
+      <section className="dashboard-two-column dashboard-two-column-wide" aria-labelledby="dashboard-map-title">
+        <div className="dashboard-panel dashboard-board">
+          <div className="dashboard-section-header">
             <div>
-              <h2 className="section-title">시장 히트맵</h2>
-              <p className="section-copy">크기는 시가총액, 색은 등락률입니다.</p>
+              <h2 id="dashboard-map-title" className="dashboard-section-title">시장 히트맵</h2>
+              <p className="dashboard-section-copy">크기는 시가총액, 색은 등락률입니다.</p>
             </div>
-            <span className="info-chip">{selectedCountry} 히트맵</span>
+            <span className="dashboard-soft-token">{selectedCountry} 히트맵</span>
           </div>
-          <div className="mt-4">
+          <div className="dashboard-heatmap-frame">
             {heatmapLoading ? (
               <StockHeatmap data={heatmapData} loading />
             ) : heatmapData ? (
@@ -562,109 +622,122 @@ export default function HomeDashboardClient({
           </div>
         </div>
 
-        {initialSectorPerformance && initialSectorPerformance.length > 0 ? (
-          <SectorRotationBoard data={initialSectorPerformance} countryCode={selectedCountry} />
-        ) : null}
+        <div className="dashboard-stack">
+          {initialSectorPerformance && initialSectorPerformance.length > 0 ? (
+            <SectorRotationBoard data={initialSectorPerformance} countryCode={selectedCountry} />
+          ) : null}
 
-        <div className="card !p-5 h-full">
-          <div>
-            <h2 className="section-title">상승·하락 상위</h2>
-            <p className="section-copy">선택 시장에서 강도가 강한 종목과 약한 종목을 같이 봅니다.</p>
-          </div>
-          {moversLoading ? (
-            <div className="mt-5">
+          <div className="dashboard-panel">
+            <div className="dashboard-section-header">
+              <div>
+                <h2 className="dashboard-section-title">상승·하락 상위</h2>
+                <p className="dashboard-section-copy">강한 종목과 약한 종목을 같이 봅니다.</p>
+              </div>
+            </div>
+            {moversLoading ? (
               <WorkspaceLoadingCard
                 title="상승·하락 상위를 정리하고 있습니다"
                 message="강도가 큰 종목과 약한 종목을 분리해 순위 보드로 묶는 중입니다."
                 className="min-h-[240px]"
               />
-            </div>
-          ) : movers && moversHasItems ? (
-            <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
-              <div>
-                <h3 className="text-sm font-semibold text-positive">상승 상위</h3>
-                <div className="mt-3 space-y-2">
-                  {movers.gainers.slice(0, 5).map((stock) => (
-                    <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
-                      <div className="min-w-0">
-                        <div className="font-medium text-text">{stock.ticker}</div>
-                        <div className="mt-1 truncate text-xs text-text-secondary">{stock.name}</div>
-                      </div>
-                      <span className="shrink-0 font-mono text-sm font-medium text-positive">+{stock.change_pct.toFixed(2)}%</span>
-                    </Link>
-                  ))}
+            ) : movers && moversHasItems ? (
+              <div className="dashboard-movers-grid">
+                <div>
+                  <h3 className="dashboard-group-title text-positive">
+                    <TrendingUp aria-hidden className="h-4 w-4" />
+                    상승 상위
+                  </h3>
+                  <div className="dashboard-list dashboard-list-compact">
+                    {movers.gainers.slice(0, 5).map((stock) => (
+                      <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="dashboard-mover-row">
+                        <span>
+                          <strong>{stock.ticker}</strong>
+                          <em>{stock.name}</em>
+                        </span>
+                        <b className="text-positive">+{stock.change_pct.toFixed(2)}%</b>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="dashboard-group-title text-negative">
+                    <TrendingDown aria-hidden className="h-4 w-4" />
+                    하락 상위
+                  </h3>
+                  <div className="dashboard-list dashboard-list-compact">
+                    {movers.losers.slice(0, 5).map((stock) => (
+                      <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="dashboard-mover-row">
+                        <span>
+                          <strong>{stock.ticker}</strong>
+                          <em>{stock.name}</em>
+                        </span>
+                        <b className="text-negative">{stock.change_pct.toFixed(2)}%</b>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-negative">하락 상위</h3>
-                <div className="mt-3 space-y-2">
-                  {movers.losers.slice(0, 5).map((stock) => (
-                    <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="metric-card flex items-center justify-between gap-3 py-3 transition-colors hover:border-accent/35">
-                      <div className="min-w-0">
-                        <div className="font-medium text-text">{stock.ticker}</div>
-                        <div className="mt-1 truncate text-xs text-text-secondary">{stock.name}</div>
-                      </div>
-                      <span className="shrink-0 font-mono text-sm font-medium text-negative">{stock.change_pct.toFixed(2)}%</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-            ) : (
-              <div className="mt-5">
-                <WorkspaceStateCard
-                  eyebrow="상위 집계 지연"
-                  title="등락 상위 집계가 아직 준비되지 않았습니다"
-                  message={moversError || "상승·하락 상위 데이터가 아직 없습니다."}
-                  onAction={retryCurrentWorkspace}
-                  tone="warning"
-                />
-              </div>
-            )}
-        </div>
-      </section>
-
-      <section className="workspace-grid-balanced">
-        <div className="card !p-0 overflow-hidden h-full">
-          <div className="border-b border-border px-5 py-4">
-            <h2 className="section-title">강한 셋업</h2>
-            <p className="section-copy">선택 시장에서 점수와 실행력이 높은 후보를 먼저 봅니다.</p>
-          </div>
-          <div className="px-5 py-5">
-            {radarLoading ? (
-              <WorkspaceLoadingCard
-                title="강한 셋업을 다시 계산하고 있습니다"
-                message="1차 시세 스캔과 실행 메모를 순서대로 정리해 레이더 후보를 채우는 중입니다."
-                className="min-h-[300px]"
-              />
-            ) : radarData ? (
-              <OpportunityRadarBoard data={radarData} compact embedded />
             ) : (
               <WorkspaceStateCard
-                eyebrow="레이더 지연"
-                title="강한 셋업 후보를 아직 정리하지 못했습니다"
-                message={radarError || "강한 셋업 데이터가 아직 없습니다."}
+                eyebrow="상위 집계 지연"
+                title="등락 상위 집계가 아직 준비되지 않았습니다"
+                message={moversError || "상승·하락 상위 데이터가 아직 없습니다."}
                 onAction={retryCurrentWorkspace}
                 tone="warning"
               />
             )}
           </div>
         </div>
+      </section>
 
-        <div className="workspace-stack">
-          <div className="card !p-5 min-h-[260px]">
-            <div className="section-heading gap-3">
-              <div>
-                <h2 className="section-title">주요 뉴스</h2>
-                <p className="section-copy">선택 시장 리포트에서 뽑은 핵심 기사입니다.</p>
-              </div>
-              {reportLoading ? <span className="info-chip">불러오는 중</span> : null}
+      <section className="dashboard-two-column" aria-labelledby="dashboard-radar-title">
+        <div className="dashboard-panel dashboard-board">
+          <div className="dashboard-section-header">
+            <div>
+              <h2 id="dashboard-radar-title" className="dashboard-section-title">강한 셋업</h2>
+              <p className="dashboard-section-copy">점수와 실행력이 높은 후보를 먼저 봅니다.</p>
             </div>
-            <div className="mt-4 space-y-3">
+            <Link href="/radar" className="dashboard-inline-link">
+              전체 보기
+              <ArrowRight aria-hidden className="h-4 w-4" />
+            </Link>
+          </div>
+          {radarLoading ? (
+            <WorkspaceLoadingCard
+              title="강한 셋업을 다시 계산하고 있습니다"
+              message="1차 시세 스캔과 실행 메모를 순서대로 정리해 레이더 후보를 채우는 중입니다."
+              className="min-h-[300px]"
+            />
+          ) : radarData ? (
+            <OpportunityRadarBoard data={radarData} compact embedded />
+          ) : (
+            <WorkspaceStateCard
+              eyebrow="레이더 지연"
+              title="강한 셋업 후보를 아직 정리하지 못했습니다"
+              message={radarError || "강한 셋업 데이터가 아직 없습니다."}
+              onAction={retryCurrentWorkspace}
+              tone="warning"
+            />
+          )}
+        </div>
+
+        <div className="dashboard-stack">
+          <div className="dashboard-panel">
+            <div className="dashboard-section-header">
+              <div>
+                <h2 className="dashboard-section-title">주요 뉴스</h2>
+                <p className="dashboard-section-copy">선택 시장 리포트에서 뽑은 핵심 기사입니다.</p>
+              </div>
+              {reportLoading ? <span className="dashboard-soft-token">불러오는 중</span> : null}
+            </div>
+            <div className="dashboard-list">
               {topNews.map((item) => (
-                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
-                  <div className="font-medium text-text">{item.title}</div>
-                  <div className="mt-2 text-xs text-text-secondary">{item.source} · {item.published}</div>
+                <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="dashboard-list-link">
+                  <span className="dashboard-list-main">
+                    <strong>{item.title}</strong>
+                    <span>{item.source} · {item.published}</span>
+                  </span>
+                  <ExternalLink aria-hidden className="h-4 w-4 shrink-0 text-text-secondary" />
                 </a>
               ))}
               {!reportLoading && topNews.length === 0 ? (
@@ -682,25 +755,25 @@ export default function HomeDashboardClient({
             </div>
           </div>
 
-          <div className="card !p-5 min-h-[260px]">
-            <div>
-              <h2 className="section-title">상위 종목</h2>
-              <p className="section-copy">선택 국가 리포트에서 상단에 위치한 종목입니다.</p>
+          <div className="dashboard-panel">
+            <div className="dashboard-section-header">
+              <div>
+                <h2 className="dashboard-section-title">상위 종목</h2>
+                <p className="dashboard-section-copy">선택 국가 리포트에서 상단에 위치한 종목입니다.</p>
+              </div>
+              <LineChart aria-hidden className="h-5 w-5 text-accent" />
             </div>
-            <div className="mt-4 space-y-2">
+            <div className="dashboard-list">
               {topStocks.map((stock) => (
-                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="block section-slab-subtle !px-4 !py-3 transition-colors hover:border-accent/35">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium text-text">{stock.name}</div>
-                      <div className="mt-1 text-xs text-text-secondary">{stock.ticker}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-text">점수 {stock.score.toFixed(1)}</div>
-                      <div className={`mt-1 text-[11px] ${changeColor(stock.change_pct)}`}>{formatPct(stock.change_pct)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-text-secondary">{stock.reason}</div>
+                <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="dashboard-list-link">
+                  <span className="dashboard-list-main">
+                    <strong>{stock.name}</strong>
+                    <span>{stock.ticker} · {stock.reason}</span>
+                  </span>
+                  <span className="dashboard-list-metric">
+                    <strong>점수 {stock.score.toFixed(1)}</strong>
+                    <span className={changeColor(stock.change_pct)}>{formatPct(stock.change_pct)}</span>
+                  </span>
                 </Link>
               ))}
               {!reportLoading && topStocks.length === 0 ? (
