@@ -14,7 +14,7 @@ DEFAULT_FORBIDDEN_TEXTS = (
 
 
 DASHBOARD_TITLE = "대시보드"
-LANDING_TITLE = "시장 신호를 읽고, 포트폴리오 판단까지 이어갑니다."
+LANDING_TITLE = "Stock Predict"
 RADAR_TITLE = "기회 레이더"
 SCREENER_TITLE = "스크리너"
 COMPARE_TITLE = "종목 비교"
@@ -83,7 +83,7 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         auth_required=False,
         operation_kind="public-read",
         required_visible_state=(LANDING_TITLE,),
-        optional_upgrade_state=("필요한 화면만 남깁니다.", "좋은 판단은 한계를 같이 봅니다."),
+        optional_upgrade_state=("주요 화면", "운영 기준"),
         required_api_calls=(),
         external_dependencies=(),
         timeout_budgets={"static_ms": 2000},
@@ -91,7 +91,7 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         retry_policy="not-applicable",
         smoke=BrowserSmokeExpectation(
             required_texts=(LANDING_TITLE,),
-            any_of_texts=("필요한 화면만 남깁니다.", "좋은 판단은 한계를 같이 봅니다."),
+            any_of_texts=("주요 화면", "운영 기준"),
             include_in_browser_smoke=True,
             include_in_deployed_frontend_smoke=True,
         ),
@@ -129,7 +129,7 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         auth_required=False,
         operation_kind="public-read",
         required_visible_state=(RADAR_TITLE,),
-        optional_upgrade_state=("KR 유니버스", "첫 판단 스레드"),
+        optional_upgrade_state=("대표 유니버스", "레이더 상태"),
         required_api_calls=("/api/market/opportunities/KR",),
         external_dependencies=("Render", "Yahoo", "Naver"),
         timeout_budgets={"shell_ms": 4000, "quick_ms": 12000, "full_ms": 24000},
@@ -137,7 +137,7 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         retry_policy="사용자 재시도는 fresh quick 재요청",
         smoke=BrowserSmokeExpectation(
             required_texts=(RADAR_TITLE,),
-            any_of_texts=("첫 판단 스레드", "KR 유니버스"),
+            any_of_texts=("대표 유니버스", "레이더 상태"),
             include_in_browser_smoke=True,
             include_in_deployed_frontend_smoke=True,
         ),
