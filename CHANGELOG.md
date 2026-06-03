@@ -2,6 +2,11 @@
 
 All notable changes to this project are tracked here.
 
+## v2.68.2 - 2026-06-03
+
+- `/compare`와 `/auth`를 서버 route shell과 클라이언트 page component로 분리해, headless 브라우저 검증이나 JS hydration 전에도 핵심 제목과 안내 문구가 안정적으로 노출되도록 했습니다.
+- 두 페이지에 route-level metadata와 Suspense fallback shell을 추가해 배포 직후 browser smoke가 초기 HTML fallback에서도 같은 화면 계약을 확인할 수 있게 맞췄습니다.
+
 ## v2.68.1 - 2026-06-03
 
 - `/dashboard`를 새 landing과 같은 white base, cobalt accent, 간결한 섹션 흐름으로 재구성했습니다. 기존 데이터 fetch, fallback, 국가 선택, 히트맵, 레이더, 뉴스, 상위 종목 연결은 그대로 유지합니다.
