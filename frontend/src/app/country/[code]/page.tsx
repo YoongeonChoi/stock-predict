@@ -97,7 +97,7 @@ export default function CountryPage() {
   if (!report && error) {
     return (
       <div className="page-shell">
-        <Link href="/" className="ui-button-ghost w-fit px-0">
+        <Link href="/dashboard" className="ui-button-ghost w-fit px-0">
           홈으로 돌아가기
         </Link>
         <ErrorBanner error={error} onRetry={() => window.location.reload()} />
@@ -148,7 +148,7 @@ export default function CountryPage() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/" className="ui-button-secondary px-4">
+            <Link href="/dashboard" className="ui-button-secondary px-4">
               홈으로
             </Link>
             <a href={`/api/country/${code}/report/pdf`} className="ui-button-primary px-4">

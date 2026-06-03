@@ -88,6 +88,53 @@ class BrowserSmokeRuntimeTests(unittest.TestCase):
 
         self.assertFalse(ok)
 
+    def test_save_screenshot_removes_stale_output_before_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "screen.png"
+            destination.write_bytes(b"stale" * 1024)
+            with patch.object(
+                browser_smoke.subprocess,
+                "run",
+                side_effect=browser_smoke.subprocess.TimeoutExpired(cmd=["browser"], timeout=21),
+            ):
+                ok = browser_smoke.save_screenshot(
+                    browser="browser",
+                    url="https://example.com",
+                    destination=destination,
+                    virtual_time_budget_ms=18000,
+                    viewport=(390, 844),
+                    command_timeout_seconds=21,
+                )
+
+        self.assertFalse(ok)
+        self.assertFalse(destination.exists())
+
+    def test_run_check_passes_dom_contract_when_screenshot_is_unavailable(self) -> None:
+        check = browser_smoke.BrowserCheck(
+            name="test",
+            path="/",
+            required_texts=("required",),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            with patch.object(browser_smoke, "dump_dom", return_value="<html>required</html>"):
+                with patch.object(browser_smoke, "save_screenshot", return_value=False):
+                    ok, detail = browser_smoke.run_check(
+                        browser="browser",
+                        base_url="https://example.com",
+                        check=check,
+                        attempts=1,
+                        retry_delay=0.5,
+                        virtual_time_budget_ms=18000,
+                        output_dir=output_dir,
+                        viewport=(390, 844),
+                        command_timeout_seconds=30.0,
+                    )
+
+        self.assertTrue(ok)
+        self.assertIn("DOM ok; screenshot unavailable", detail)
+
     def test_run_check_stops_when_deadline_is_already_exceeded(self) -> None:
         check = browser_smoke.BrowserCheck(
             name="test",

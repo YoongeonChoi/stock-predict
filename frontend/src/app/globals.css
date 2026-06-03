@@ -3,26 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --bg-rgb: 244 241 234;
-  --surface-rgb: 255 252 246;
+  --bg-rgb: 255 255 255;
+  --surface-rgb: 248 250 252;
   --border-rgb: 17 24 39;
   --text-rgb: 17 24 39;
-  --text-secondary-rgb: 96 107 124;
-  --accent-rgb: 37 78 255;
+  --text-secondary-rgb: 82 94 115;
+  --accent-rgb: 37 99 235;
   --positive-rgb: 22 163 74;
   --negative-rgb: 220 38 38;
   --warning-rgb: 180 116 26;
-  --bg: #f4f1ea;
-  --surface: #fffcf6;
-  --surface-elevated: #ece7dc;
-  --surface-muted: #f0ebe2;
-  --surface-strong: #d9d1c4;
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --surface-elevated: #f1f5f9;
+  --surface-muted: #f8fafc;
+  --surface-strong: #e2e8f0;
   --border: rgba(17, 24, 39, 0.12);
   --frame: rgba(17, 24, 39, 0.18);
   --text: #111827;
-  --text-secondary: #606b7c;
-  --accent: #254eff;
-  --accent-strong: #1537d5;
+  --text-secondary: #525e73;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
   --positive: #16a34a;
   --negative: #dc2626;
   --warning: #b4741a;
@@ -43,7 +43,7 @@
   --radius-md: 12px;
   --radius-lg: 14px;
   --radius-xl: 18px;
-  --touch-target-min: 44px;
+  --touch-target-min: 48px;
   --mobile-nav-height: calc(58px + env(safe-area-inset-top, 0px));
   --layout-gutter: clamp(1rem, 0.78rem + 0.68vw, 1.8rem);
   --layout-max: 1640px;
@@ -110,9 +110,7 @@ html {
 body {
   min-height: 100dvh;
   overflow-x: hidden;
-  background:
-    linear-gradient(180deg, rgb(var(--accent-rgb) / 0.05), transparent 18rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans), "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   font-size: var(--font-body);
@@ -120,6 +118,10 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: rgb(var(--accent-rgb) / 0.14);
+}
+
+.landing-page {
+  color: var(--text);
 }
 
 button,

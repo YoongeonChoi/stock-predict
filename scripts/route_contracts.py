@@ -14,6 +14,7 @@ DEFAULT_FORBIDDEN_TEXTS = (
 
 
 DASHBOARD_TITLE = "대시보드"
+LANDING_TITLE = "시장 신호를 읽고, 포트폴리오 판단까지 이어갑니다."
 RADAR_TITLE = "기회 레이더"
 SCREENER_TITLE = "스크리너"
 COMPARE_TITLE = "종목 비교"
@@ -81,6 +82,25 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         route="/",
         auth_required=False,
         operation_kind="public-read",
+        required_visible_state=(LANDING_TITLE,),
+        optional_upgrade_state=("필요한 화면만 남깁니다.", "좋은 판단은 한계를 같이 봅니다."),
+        required_api_calls=(),
+        external_dependencies=(),
+        timeout_budgets={"static_ms": 2000},
+        fallback_policy="static landing은 서버 데이터 없이 렌더링",
+        retry_policy="not-applicable",
+        smoke=BrowserSmokeExpectation(
+            required_texts=(LANDING_TITLE,),
+            any_of_texts=("필요한 화면만 남깁니다.", "좋은 판단은 한계를 같이 봅니다."),
+            include_in_browser_smoke=True,
+            include_in_deployed_frontend_smoke=True,
+        ),
+    ),
+    RouteContract(
+        key="dashboard",
+        route="/dashboard",
+        auth_required=False,
+        operation_kind="public-read",
         required_visible_state=(DASHBOARD_TITLE,),
         optional_upgrade_state=("브리핑", "시장 히트맵", "강한 셋업"),
         required_api_calls=(
@@ -94,7 +114,7 @@ ROUTE_CONTRACTS: tuple[RouteContract, ...] = (
         ),
         external_dependencies=("Render", "Yahoo", "Naver", "OpenAI"),
         timeout_budgets={"shell_ms": 4000, "quick_ms": 12000},
-        fallback_policy="home shell 유지, briefing과 시장 요약은 stale/partial 허용",
+        fallback_policy="dashboard shell 유지, briefing과 시장 요약은 stale/partial 허용",
         retry_policy="hydration에서 패널 단위 재시도",
         smoke=BrowserSmokeExpectation(
             required_texts=(DASHBOARD_TITLE,),

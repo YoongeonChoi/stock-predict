@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.68.0 - 2026-06-03
+
+- `/`를 public landing으로 전면 교체하고, 기존 시장 대시보드는 `/dashboard`로 이동했습니다. 랜딩은 Hero, 핵심 기능, 사용 흐름, 제품 미리보기, 신뢰/제한, 최종 CTA와 전역 Contact 섹션으로 구성됩니다.
+- `DESIGN_BIBLE_NEXT.md`를 새 active design 기준으로 추가하고 `DESIGN_BIBLE.md`는 legacy reference로 보존했습니다. 새 기준은 Toss식 정보 구조, white base, cobalt accent, 48px touch target, Figma Make/MCP handoff 흐름을 명시합니다.
+- `frontend/src/components/ui` primitive layer를 추가해 Button, Card, Badge, Section, FormField, Modal의 공통 구현을 시작했습니다. 전역 shell은 `/`에서 landing top nav를, 앱 라우트에서 기존 side nav와 검색/auth shell을 사용하도록 분기합니다.
+
 ## v2.67.0 - 2026-06-03
 
 - 모든 화면 하단에 Contact 섹션을 추가해 `contact@yoongeon.xyz` mailto 링크와 이름, 이메일, 제목, 메시지 기반 문의 폼을 제공합니다. 폼은 제출 중, 성공, 실패 상태를 화면 안에서 안내하고 모바일 1열 배치와 label/focus/aria-live 접근성 흐름을 유지합니다.
