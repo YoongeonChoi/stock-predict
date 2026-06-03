@@ -12,6 +12,7 @@ import {
   Crosshair,
   FlaskConical,
   GitCompareArrows,
+  Home,
   LayoutDashboard,
   ListFilter,
   Menu,
@@ -28,7 +29,8 @@ const NAV_GROUPS = [
   {
     title: "시장 탐색",
     items: [
-      { href: "/", label: "대시보드", description: "시장 흐름과 오늘의 핵심 판단", icon: LayoutDashboard },
+      { href: "/", label: "홈", description: "서비스 소개와 시작 경로", icon: Home },
+      { href: "/dashboard", label: "대시보드", description: "시장 흐름과 오늘의 핵심 판단", icon: LayoutDashboard },
       { href: "/radar", label: "기회 레이더", description: "지금 바로 볼 후보와 실행 흐름", icon: Crosshair },
       { href: "/screener", label: "스크리너", description: "조건 기반 종목 필터링", icon: ListFilter },
       { href: "/compare", label: "비교", description: "종목 2~4개 정면 비교", icon: GitCompareArrows },
@@ -91,7 +93,7 @@ export default function Navigation() {
     <div className="space-y-6 pb-4">
       {NAV_GROUPS.map((group) => (
         <section key={group.title}>
-          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
+          <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">
             {group.title}
           </div>
           <div className="mt-3 border-t border-border/10">
@@ -110,7 +112,7 @@ export default function Navigation() {
                 >
                   <Icon size={16} strokeWidth={2.1} className={cn("mt-0.5", active ? "text-accent" : "text-text-secondary")} />
                   <span className="min-w-0">
-                    <span className={cn("block text-[0.92rem] font-semibold tracking-tight", active ? "text-text" : "")}>
+                    <span className={cn("block text-[0.92rem] font-semibold", active ? "text-text" : "")}>
                       {item.label}
                     </span>
                     <span className="mt-1 block max-w-[14rem] text-[0.76rem] leading-5 text-text-secondary">
@@ -132,10 +134,10 @@ export default function Navigation() {
       <aside className="hidden lg:flex lg:w-[244px] lg:shrink-0 xl:w-[260px]">
         <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/12 bg-bg px-4 py-4 xl:px-5">
           <Link href="/" className="border-b border-border/12 pb-4">
-            <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">Stock Predict</div>
-            <div className="mt-2 text-[1.22rem] font-semibold tracking-tight text-text">시장 탐색과 운영을 한 흐름으로</div>
+            <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">yoongeon.xyz</div>
+            <div className="mt-2 text-[1.22rem] font-semibold text-text">시장 신호와 운영 판단</div>
             <div className="mt-2 max-w-[15rem] text-[0.8rem] leading-5 text-text-secondary">
-              숫자, 일정, 후보, 검증 흐름을 더 적은 프레임으로 정리합니다.
+              랜딩은 홈에, 실제 시장 작업은 대시보드에서 시작합니다.
             </div>
           </Link>
 
@@ -164,11 +166,11 @@ export default function Navigation() {
         style={{ paddingTop: "max(0.55rem, env(safe-area-inset-top))" }}
       >
         <Link href="/" className="min-w-0 flex-1 pr-3">
-          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-text-secondary" translate="no">
-            Stock Predict
+          <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary" translate="no">
+            yoongeon.xyz
           </div>
-          <div className="mt-1 truncate text-[0.84rem] font-semibold tracking-tight text-text">
-            시장 탐색과 운영
+          <div className="mt-1 truncate text-[0.84rem] font-semibold text-text">
+            시장 신호와 운영 판단
           </div>
         </Link>
         <div className="flex items-center gap-2 pl-3">
@@ -202,8 +204,8 @@ export default function Navigation() {
             style={{ paddingTop: "calc(var(--mobile-nav-height) + 0.55rem)" }}
           >
             <div className="border-b border-border/12 pb-4">
-              <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">Menu</div>
-              <div className="mt-2 text-[1.08rem] font-semibold tracking-tight text-text">탐색, 운영, 검증 흐름</div>
+              <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">Menu</div>
+              <div className="mt-2 text-[1.08rem] font-semibold text-text">탐색, 운영, 검증 흐름</div>
             </div>
             <nav className="mt-5">{navLinks}</nav>
           </div>

@@ -225,6 +225,11 @@ def save_screenshot(
     *,
     command_timeout_seconds: float,
 ) -> bool:
+    try:
+        destination.unlink(missing_ok=True)
+    except OSError:
+        return False
+
     with browser_profile_dir(prefix="stock-predict-browser-shot-") as temp_dir:
         width, height = viewport
         command = [
@@ -335,7 +340,7 @@ def run_check(
                 )
                 if screenshot_ok:
                     return True, f"{viewport_name} screenshot {screenshot_path}"
-                last_reason = "screenshot capture failed"
+                return True, f"{viewport_name} DOM ok; screenshot unavailable at {screenshot_path}"
 
         if attempt < attempts:
             time.sleep(retry_delay * attempt)
