@@ -62,7 +62,7 @@ export default function WatchlistTrackingPageClient({
       <PageHeader
         eyebrow="Watchlist"
         title={`${displayName} 심화 추적`}
-        description="최근 예측 변화, 현재 판단 근거, 적중 기록을 한 화면에 모아 두고 필요할 때 종목 상세로 바로 이어집니다."
+        description="최근 예측 변화, 현재 판단 근거, 적중 기록을 한 화면에 표시합니다."
         meta={
           <>
             <span className="info-chip">{initialTicker}</span>
@@ -101,7 +101,7 @@ export default function WatchlistTrackingPageClient({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="section-title">최신 예측 스냅샷</h2>
-              <p className="section-copy">현재 저장된 최신 예측값과 최근 판단 근거를 먼저 보여드립니다.</p>
+              <p className="section-copy">현재 저장된 최신 예측값과 최근 판단 근거를 표시합니다.</p>
             </div>
             <span className="info-chip self-start">
               최근 기록 {formatPredictionAt(activeSnapshot?.last_prediction_at || detail?.watchlist_meta.last_prediction_at)}
@@ -136,7 +136,7 @@ export default function WatchlistTrackingPageClient({
               <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
                 <div className="font-medium text-text">{activeSnapshot.direction_label}</div>
                 <div className="mt-2">
-                  {activeSnapshot.summary || activeSnapshot.confidence_note || "현재 스냅샷을 기준으로 심화 추적을 이어가고 있습니다."}
+                  {activeSnapshot.summary || activeSnapshot.confidence_note || "현재 스냅샷을 기준으로 심화 추적 상태를 유지합니다."}
                 </div>
                 {activeSnapshot.target_date ? (
                   <div className="mt-2 text-xs">목표일 {activeSnapshot.target_date}</div>
@@ -147,7 +147,7 @@ export default function WatchlistTrackingPageClient({
             <WorkspaceStateCard
               eyebrow="스냅샷 준비"
               title="현재 스냅샷을 아직 준비하지 못했습니다"
-              message="과거 기록은 유지한 채로, 최신 예측 요약이 준비되면 이 영역부터 먼저 채워집니다."
+              message="과거 기록은 유지한 채로, 최신 예측 요약이 준비되면 이 영역이 채워집니다."
               tone="warning"
               actionLabel="다시 불러오기"
               onAction={() => void reload(true)}
@@ -159,8 +159,8 @@ export default function WatchlistTrackingPageClient({
           {!session ? (
             <WorkspaceStateCard
               eyebrow="로그인 필요"
-              title="로그인 후 심화 추적 데이터를 이어서 볼 수 있습니다"
-              message="이 화면은 공개 shell을 먼저 보여드리고, 로그인 후에는 관심종목 기준의 최근 예측 변화와 적중 기록을 이어서 불러옵니다."
+              title="로그인 후 심화 추적 데이터를 확인할 수 있습니다"
+              message="이 화면은 공개 스냅샷만 표시합니다. 로그인 후에는 관심종목 기준의 최근 예측 변화와 적중 기록을 불러옵니다."
               aside={
                 <Link href={`/auth?next=${encodeURIComponent(`/watchlist/${initialTicker}`)}`} className="ui-button-primary px-4">
                   로그인하기
@@ -185,7 +185,7 @@ export default function WatchlistTrackingPageClient({
           ) : isInactive ? (
             <WorkspaceStateCard
               eyebrow="추적 준비"
-              title="심화 추적을 시작하면 예측 변화 기록이 이어집니다"
+              title="심화 추적을 시작하면 예측 변화 기록이 저장됩니다"
               message="관심종목에는 이미 들어 있고, 여기서 추적만 켜면 최신 예측 변화와 적중 기록을 계속 쌓아 확인할 수 있습니다."
               actionLabel="심화 추적 시작"
               onAction={() => void toggleTracking(true)}
@@ -194,7 +194,7 @@ export default function WatchlistTrackingPageClient({
             <WorkspaceStateCard
               eyebrow="추적 상태"
               title="심화 추적이 활성화되어 있습니다"
-              message="최근 예측 변화, 적중 기록, 현재 판단 근거를 이 화면에서 계속 이어서 확인할 수 있습니다."
+              message="최근 예측 변화, 적중 기록, 현재 판단 근거를 이 화면에서 확인할 수 있습니다."
               aside={<span className="info-chip">추적 중</span>}
               actionLabel="심화 추적 중지"
               onAction={() => void toggleTracking(false)}
@@ -233,7 +233,7 @@ export default function WatchlistTrackingPageClient({
       <section className="card !p-5 space-y-4">
         <div>
           <h2 className="section-title">현재 판단 근거</h2>
-          <p className="section-copy">종목 상세에서 이미 계산한 현재 판단 근거를 심화 추적 흐름에 맞게 다시 모아 보여드립니다.</p>
+          <p className="section-copy">종목 상세에서 계산한 현재 판단 근거를 심화 추적 기준으로 표시합니다.</p>
         </div>
 
         {contextSummary?.available ? (
@@ -285,7 +285,7 @@ export default function WatchlistTrackingPageClient({
           <WorkspaceStateCard
             eyebrow="근거 준비"
             title="현재 판단 근거를 아직 정리하지 못했습니다"
-            message="빠른 스냅샷은 유지한 채로, 현재 해석 포인트와 리스크는 이어서 채워집니다."
+            message="빠른 스냅샷은 유지한 채로, 현재 해석 포인트와 리스크를 준비 중입니다."
             tone="warning"
           />
         )}

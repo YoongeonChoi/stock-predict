@@ -283,7 +283,7 @@ export default function AccountSettingsPanel() {
       return;
     }
     if (normalizedNextEmail === pendingEmail) {
-      toast("이미 변경 대기 중인 이메일입니다. 받은 편지함의 인증 메일을 먼저 확인해 주세요.", "error");
+      toast("이미 변경 대기 중인 이메일입니다. 받은 편지함의 인증 메일을 확인해 주세요.", "error");
       return;
     }
 

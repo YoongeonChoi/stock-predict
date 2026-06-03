@@ -226,14 +226,14 @@ export default function HomeDashboardClient({
         ? {
             key: "reason-report-sync",
             title: "리포트 동기화 중",
-            summary: "브리핑과 시장 요약 계산이 길어져 현재 확보된 신호와 일정부터 먼저 보여주고 있습니다.",
+            summary: "브리핑과 시장 요약 계산이 길어져 현재 확보된 신호와 일정만 표시됩니다.",
           }
         : null,
       (radarData as PublicAuditFields | null)?.partial
         ? {
             key: "reason-radar-partial",
             title: "후보 부족: 보수 모드 유지",
-            summary: "레이더 정밀 계산이 지연돼도 지금은 무리하게 늘리지 않고, 먼저 확보된 후보 기준으로 선별 대응합니다.",
+            summary: "레이더 정밀 계산이 지연되어 확보된 후보 기준으로 선별합니다.",
           }
         : null,
       events.length > 0
@@ -246,7 +246,7 @@ export default function HomeDashboardClient({
       {
         key: "reason-selective",
         title: "보수 모드 유지",
-        summary: "당장 늘릴 이유가 뚜렷하지 않으면 관찰과 일정 확인을 먼저 두고, 다시 열었을 때 후보를 이어받습니다.",
+        summary: "당장 늘릴 이유가 뚜렷하지 않으면 관찰과 일정 확인 상태를 유지합니다.",
       },
     ].filter((item): item is NonNullable<typeof item> => Boolean(item));
 
@@ -332,8 +332,8 @@ export default function HomeDashboardClient({
   const dashboardSummary = buildPublicAuditSummary(dashboardAuditMeta, {
     defaultSummary:
       radarData && countryReport
-        ? `시장 국면 ${countryReport.market_regime?.label || radarData.market_regime.label} / 오늘의 포커스 ${focusSlots.length}개 / 레이더 상위 ${Math.min(radarData.opportunities.length, 3)}개를 먼저 보여줍니다.`
-        : "선택 시장 현황과 핵심 수치를 먼저 보여주고, 아래 카드에서 히트맵과 레이더를 이어서 읽습니다.",
+        ? `시장 국면 ${countryReport.market_regime?.label || radarData.market_regime.label} / 오늘의 포커스 ${focusSlots.length}개 / 레이더 상위 ${Math.min(radarData.opportunities.length, 3)}개`
+        : "선택 시장 현황, 핵심 수치, 히트맵, 레이더 상태를 표시합니다.",
   });
   const reportClock = countryReport?.generated_at ? toInitialClock(countryReport.generated_at) : "";
   const nextDayForecast = countryReport?.next_day_forecast ?? null;
@@ -351,7 +351,7 @@ export default function HomeDashboardClient({
             <span>{selectedCountryItem ? `${COUNTRY_FLAGS[selectedCountry]} ${selectedCountryItem.name_local}` : selectedCountry}</span>
           </div>
           <h1 id="dashboard-title" className="dashboard-hero-title">
-            오늘 시장에서 먼저 볼 것만 정리합니다.
+            {selectedCountryItem ? `${selectedCountryItem.name_local} 시장 대시보드` : `${selectedCountry} 시장 대시보드`}
           </h1>
           <p className="dashboard-hero-copy">{marketSummaryText}</p>
 
@@ -446,7 +446,7 @@ export default function HomeDashboardClient({
           kind="partial"
           eyebrow="부분 업데이트"
           title="일부 계산이 더 필요합니다"
-          message={`${workspaceDelays.join(", ")} 섹션은 계산이 길어져 현재 확보된 데이터부터 먼저 보여주고 있습니다.`}
+          message={`${workspaceDelays.join(", ")} 섹션은 계산이 지연되어 현재 확보된 데이터만 표시됩니다.`}
           actionLabel="현재 시장 다시 불러오기"
           onAction={retryCurrentWorkspace}
         />
@@ -505,7 +505,7 @@ export default function HomeDashboardClient({
 
           {hasDelayedIndices ? (
             <p className="dashboard-alert-band">
-              대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널을 먼저 보여주고 있습니다.
+              대표 지수 실시간 수집이 늦어져 거시 지표와 다음 거래일 시그널만 표시됩니다.
             </p>
           ) : null}
 
@@ -522,7 +522,7 @@ export default function HomeDashboardClient({
           ) : null}
           {hasDelayedIndicators ? (
             <p className="dashboard-alert-band">
-              환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 먼저 유지합니다.
+              환율·원자재·가상자산 보조 지표는 외부 원본 응답이 늦어지는 동안 숨기고, 확보된 시장 요약만 표시합니다.
             </p>
           ) : null}
         </div>
@@ -539,11 +539,11 @@ export default function HomeDashboardClient({
           {briefingLoading ? (
             <WorkspaceLoadingCard
               title="오늘의 포커스를 추리고 있습니다"
-              message="브리핑, 핵심 종목, 가까운 일정 중 먼저 확인할 항목만 다시 묶는 중입니다."
+              message="브리핑, 핵심 종목, 가까운 일정 항목을 다시 계산하는 중입니다."
               className="min-h-[230px]"
             />
           ) : focusSlots.length > 0 ? (
-            <div className="dashboard-list">
+            <div className="dashboard-list dashboard-list-grid">
               {focusSlots.map((slot) => {
                 if (slot.kind === "focus") {
                   const item = slot.item;
@@ -695,7 +695,7 @@ export default function HomeDashboardClient({
           <div className="dashboard-section-header">
             <div>
               <h2 id="dashboard-radar-title" className="dashboard-section-title">강한 셋업</h2>
-              <p className="dashboard-section-copy">점수와 실행력이 높은 후보를 먼저 봅니다.</p>
+              <p className="dashboard-section-copy">점수와 실행력이 높은 후보입니다.</p>
             </div>
             <Link href="/radar" className="dashboard-inline-link">
               전체 보기
@@ -730,7 +730,7 @@ export default function HomeDashboardClient({
               </div>
               {reportLoading ? <span className="dashboard-soft-token">불러오는 중</span> : null}
             </div>
-            <div className="dashboard-list">
+            <div className="dashboard-list dashboard-list-grid">
               {topNews.map((item) => (
                 <a key={`${item.source}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" className="dashboard-list-link">
                   <span className="dashboard-list-main">
@@ -746,7 +746,7 @@ export default function HomeDashboardClient({
                   title={reportError ? "핵심 기사 연결이 늦어지고 있습니다" : "오늘 핵심 기사 목록을 준비하고 있습니다"}
                   message={
                     reportError ||
-                    "시장 요약은 먼저 준비됐고, 핵심 기사 연결은 이어서 보강됩니다. 잠시 뒤 다시 열면 기사 목록이 채워질 수 있습니다."
+                    "시장 요약은 준비됐고, 핵심 기사 연결은 추가 계산 중입니다. 잠시 뒤 다시 열면 기사 목록이 채워질 수 있습니다."
                   }
                   onAction={reportError ? retryCurrentWorkspace : undefined}
                   tone={reportError ? "warning" : "neutral"}
@@ -763,7 +763,7 @@ export default function HomeDashboardClient({
               </div>
               <LineChart aria-hidden className="h-5 w-5 text-accent" />
             </div>
-            <div className="dashboard-list">
+            <div className="dashboard-list dashboard-list-grid">
               {topStocks.map((stock) => (
                 <Link key={stock.ticker} href={`/stock/${encodeURIComponent(stock.ticker)}`} className="dashboard-list-link">
                   <span className="dashboard-list-main">
@@ -796,7 +796,7 @@ export default function HomeDashboardClient({
       {loading ? (
         <WorkspaceLoadingCard
           title="시장 워크스페이스를 준비하고 있습니다"
-          message="국가 목록과 대표 지표를 먼저 정리한 뒤 대시보드 패널을 순서대로 채웁니다."
+          message="국가 목록과 대표 지표를 확인한 뒤 대시보드 패널을 채웁니다."
           className="min-h-[120px]"
         />
       ) : null}

@@ -178,16 +178,16 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           variant="compact"
           eyebrow="종목 상세"
           title={initialTicker.toUpperCase()}
-          description="이번 주 매수·매도 판단과 공개 요약을 먼저 정리하고 세부 분석을 이어서 불러옵니다."
+          description="이번 주 매수·매도 판단, 공개 요약, 세부 분석 상태를 표시합니다."
         />
         <WorkspaceLoadingCard
           title="이번 주 판단을 불러오고 있습니다"
-          message="매수 가능가, 매도 목표가, 손절가를 먼저 확인할 수 있도록 준비하고 있습니다."
+          message="매수 가능가, 매도 목표가, 손절가를 계산하고 있습니다."
           className="min-h-[180px]"
         />
         <WorkspaceLoadingCard
-          title="차트와 세부 분석을 이어서 준비하고 있습니다"
-          message="기술 요약, 예측 차트, 매수·매도 가이드가 순서대로 이어집니다."
+          title="차트와 세부 분석을 준비하고 있습니다"
+          message="기술 요약, 예측 차트, 매수·매도 가이드를 불러오고 있습니다."
           className="min-h-[260px]"
         />
       </div>
@@ -283,7 +283,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
     { title: "무효화 조건", items: stock.public_summary.thesis_breakers },
   ].filter((section) => section.items.length > 0) : [];
   const stockAuditSummary = buildPublicAuditSummary(stock, {
-    defaultSummary: "종목 상세는 최신 스냅샷과 공개 판단 요약을 기준으로 먼저 정리합니다.",
+    defaultSummary: "최신 스냅샷, 공개 판단 요약, 데이터 상태를 기준으로 표시합니다.",
   });
   const watchlistActionLabel = watchlistSyncing
     ? "관심종목 확인 중"
@@ -357,7 +357,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
             <div className="space-y-1">
               <h2 className="font-semibold">판단 요약</h2>
               <p className="text-sm text-text-secondary">
-                공개 요약은 상승 근거보다 반대 조건과 실패 시그널을 먼저 읽도록 정리했습니다.
+                공개 요약은 상승 근거, 반대 조건, 실패 시그널을 분리해 표시합니다.
               </p>
             </div>
             <div className="section-slab-subtle w-full !px-4 !py-3 sm:max-w-[360px] xl:min-w-[260px]">
@@ -435,7 +435,7 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           <div>
             <h2 className="font-semibold">관심종목 · 심화 추적</h2>
             <p className="mt-1 text-sm leading-6 text-text-secondary">
-              종목을 먼저 관심종목에 저장하고, 필요한 경우 심화 추적으로 올려 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.
+              관심종목에 저장한 뒤 필요한 경우 심화 추적으로 전환해 최근 예측 변화와 적중 기록을 확인할 수 있습니다.
             </p>
           </div>
           <button
@@ -450,10 +450,10 @@ export default function StockPageClient({ initialTicker, initialData = null }: S
           {!session
             ? "로그인 후 관심종목과 심화 추적을 계정별로 저장할 수 있습니다."
             : watchlistEntry?.tracking_enabled
-              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 이어서 확인할 수 있습니다."
+              ? "이미 심화 추적 중인 종목입니다. 추적 화면에서 최근 예측 변화와 현재 판단 근거를 확인할 수 있습니다."
               : watchlistEntry
                 ? "이미 관심종목에 들어 있습니다. 심화 추적을 시작하면 최근 예측 변화와 적중 기록이 추가됩니다."
-                : "아직 관심종목에 없는 종목입니다. 먼저 저장한 뒤 심화 추적으로 이어갈 수 있습니다."}
+                : "아직 관심종목에 없는 종목입니다. 저장한 뒤 심화 추적으로 전환할 수 있습니다."}
         </div>
       </div>
 

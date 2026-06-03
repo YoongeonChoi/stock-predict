@@ -324,7 +324,7 @@ export default function PredictionLabDashboard({ data }: Props) {
           <div>
             <h2 className="font-semibold text-base">레이더 복기 큐</h2>
             <p className="text-sm text-text-secondary mt-1">
-              미스와 반전 사례를 우선 위로 올려, 다음 점수 보정이 어느 신호에서 시작되는지 보여줍니다.
+              미스와 반전 사례를 기준으로 다음 점수 보정에 필요한 신호를 표시합니다.
             </p>
           </div>
           <div className="space-y-3">
@@ -424,7 +424,7 @@ export default function PredictionLabDashboard({ data }: Props) {
             <div className="workspace-empty-frame mt-4 min-h-[260px] space-y-3">
               <div className="text-sm font-semibold text-text">보정 차트는 표본이 쌓이면 자동으로 채워집니다</div>
               <div className="text-sm leading-6 text-text-secondary">
-                지금은 실측 종가 기준 검증 표본이 충분하지 않아 캘리브레이션 막대를 그리지 않고, 현재 모델 상태와 표본 축적 단계를 먼저 보여줍니다.
+                실측 종가 기준 검증 표본이 충분하지 않아 캘리브레이션 막대 대신 현재 모델 상태와 표본 축적 단계를 표시합니다.
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
                 <span className="info-chip">검증 완료 {accuracy.total_predictions}건</span>
@@ -440,7 +440,7 @@ export default function PredictionLabDashboard({ data }: Props) {
           <div>
             <h2 className="font-semibold text-base">Learned Fusion 상태</h2>
             <p className="text-sm text-text-secondary mt-1">
-              prior backbone 위에 학습형 fusion이 어느 horizon에서 실제로 활성화됐는지, prior 대비 Brier가 얼마나 줄었는지 먼저 보여줍니다.
+              prior backbone 위에서 학습형 fusion이 활성화된 horizon과 prior 대비 Brier 개선폭을 표시합니다.
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
@@ -689,7 +689,7 @@ export default function PredictionLabDashboard({ data }: Props) {
             <div className="workspace-empty-frame mt-4 min-h-[260px] space-y-3">
               <div className="text-sm font-semibold text-text">추세 차트는 아직 공개할 만큼 쌓이지 않았습니다</div>
               <div className="text-sm leading-6 text-text-secondary">
-                날짜별 적중률과 평균 오차는 검증 완료 표본이 일정 수준을 넘으면 자동으로 그려집니다. 지금은 horizon별 표본 상태와 fusion/graph 진단을 먼저 읽는 단계입니다.
+                날짜별 적중률과 평균 오차는 검증 완료 표본이 일정 수준을 넘으면 자동으로 그려집니다. 현재는 horizon별 표본 상태와 fusion/graph 진단을 표시합니다.
               </div>
             </div>
           )}
@@ -698,12 +698,12 @@ export default function PredictionLabDashboard({ data }: Props) {
         <div className="card !p-4 space-y-4">
           <div>
             <h2 className="font-semibold text-base">시장별 신뢰도</h2>
-            <p className="text-sm text-text-secondary mt-1">지금 시점에서 어느 시장에서 모델이 더 안정적으로 작동하는지 보여줍니다.</p>
+            <p className="text-sm text-text-secondary mt-1">시장별 검증 표본과 모델 안정도 차이를 표시합니다.</p>
           </div>
           <div className="space-y-2">
             {!hasCountryBreakdown ? (
               <div className="workspace-empty-frame min-h-[220px] text-sm leading-6 text-text-secondary">
-                시장별 비교는 같은 시점의 검증 표본이 더 쌓이면 채워집니다. 지금은 모델이 어느 시장에서 안정적인지 결론을 내리기보다, 전체 표본을 먼저 축적하는 단계입니다.
+                시장별 비교는 같은 시점의 검증 표본이 더 쌓이면 채워집니다. 현재는 전체 표본을 축적하는 단계입니다.
               </div>
             ) : (
               data.breakdown.by_country.map((row) => (
@@ -729,7 +729,7 @@ export default function PredictionLabDashboard({ data }: Props) {
         <div className="card !p-4 space-y-3">
           <div>
             <h2 className="font-semibold text-base">반복되는 실패 패턴</h2>
-            <p className="text-sm text-text-secondary mt-1">최근 미스 기록을 묶어서 어디에서 자주 흔들리는지 먼저 보여줍니다.</p>
+            <p className="text-sm text-text-secondary mt-1">최근 미스 기록을 묶어 흔들림이 반복되는 구간을 표시합니다.</p>
           </div>
           {failurePatterns.length === 0 ? (
             <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
@@ -765,7 +765,7 @@ export default function PredictionLabDashboard({ data }: Props) {
         <div className="card !p-4 space-y-3">
           <div>
             <h2 className="font-semibold text-base">리뷰 큐</h2>
-            <p className="text-sm text-text-secondary mt-1">바로 복기할 예측을 우선순위대로 정리해 상세 화면으로 이어서 볼 수 있게 했습니다.</p>
+            <p className="text-sm text-text-secondary mt-1">복기할 예측을 우선순위대로 선별해 상세 화면에서 확인할 수 있습니다.</p>
           </div>
           {reviewQueue.length === 0 ? (
             <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
@@ -819,7 +819,7 @@ export default function PredictionLabDashboard({ data }: Props) {
       <div className="card !p-4 space-y-3">
         <div>
           <h2 className="font-semibold text-base">최근 실패 사례</h2>
-          <p className="text-sm text-text-secondary mt-1">방향 미스나 밴드 이탈이 있었던 최근 사례를 먼저 공개해 검증 흐름이 좋은 결과만 보여주지 않도록 유지합니다.</p>
+          <p className="text-sm text-text-secondary mt-1">방향 미스나 밴드 이탈 사례를 함께 공개해 좋은 결과만 표시하지 않도록 유지합니다.</p>
         </div>
         {recentFailures.length === 0 ? (
           <div className="rounded-xl border border-border/70 px-3 py-3 text-sm text-text-secondary">
@@ -938,7 +938,7 @@ export default function PredictionLabDashboard({ data }: Props) {
             </div>
           ) : (
             <div className="workspace-empty-frame min-h-[200px] text-sm leading-6 text-text-secondary">
-              모델 버전 비교는 아직 버전별 검증 표본이 분리될 만큼 충분하지 않습니다. 현재는 상단의 active model과 fusion 상태를 기준으로 먼저 읽도록 유지합니다.
+              모델 버전 비교는 아직 버전별 검증 표본이 분리될 만큼 충분하지 않습니다. 현재는 상단의 active model과 fusion 상태를 표시합니다.
             </div>
           )}
         </div>
@@ -1018,7 +1018,7 @@ export default function PredictionLabDashboard({ data }: Props) {
           <div className="workspace-empty-frame mt-4 min-h-[220px] space-y-3">
             <div className="text-sm font-semibold text-text">최근 예측 로그는 아직 축적 중입니다</div>
             <div className="text-sm leading-6 text-text-secondary">
-              지금은 저장된 예측이 많지 않아 표 형식 로그를 크게 비워 두지 않고, 위 카드에서 표본 상태와 fusion/graph 준비 단계를 먼저 읽도록 유지합니다.
+              저장된 예측이 많지 않아 표 형식 로그 대신 위 카드에서 표본 상태와 fusion/graph 준비 단계를 표시합니다.
             </div>
           </div>
         )}

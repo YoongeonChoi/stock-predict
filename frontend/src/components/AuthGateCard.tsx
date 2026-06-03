@@ -50,7 +50,7 @@ export default function AuthGateCard({
           <div>
             <div className="text-sm font-semibold text-text">{previewTitle}</div>
             <div className="mt-1 text-sm leading-6 text-text-secondary">
-              공개 데이터 기준으로 먼저 읽어 볼 수 있는 흐름만 보여줍니다. 로그인하면 저장, 추적, 추천 반영이 바로 연결됩니다.
+              공개 데이터 기준 화면입니다. 로그인하면 저장, 추적, 추천 반영을 사용할 수 있습니다.
             </div>
           </div>
           {preview}

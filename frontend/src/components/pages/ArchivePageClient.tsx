@@ -151,7 +151,7 @@ export default function ArchivePageClient({
       : null,
     {
       staleLabel: researchStatus?.refreshed_at ? "공식 기관 원문 기준" : null,
-      defaultSummary: "기관별 최신 리포트를 먼저 보여주고, 지역 전환 시 같은 구조로 다시 정리합니다.",
+      defaultSummary: "기관별 최신 리포트와 지역별 원문 소스 상태를 표시합니다.",
     },
   );
   const summaryFallback = "요약이 제공되지 않는 원문입니다. 출처와 제목을 확인한 뒤 바로 원문으로 이동할 수 있습니다.";
@@ -231,7 +231,7 @@ export default function ArchivePageClient({
         ) : (
           <WorkspaceStateCard
             eyebrow="최신 리포트 대기"
-            title="상단에 먼저 보여줄 최신 기관 리포트가 아직 없습니다"
+            title="표시할 최신 기관 리포트가 아직 없습니다"
             message="지역별 기관 리포트 목록은 아래에서 바로 확인할 수 있고, 새 원문이 잡히면 이 상단 요약 카드부터 채워집니다."
             tone="neutral"
           />
@@ -335,7 +335,7 @@ export default function ArchivePageClient({
           <div className="space-y-3">
             <WorkspaceLoadingCard
               title={`${RESEARCH_REGION_LABELS[researchRegion]} 기관 리포트를 정리하고 있습니다`}
-              message="출처, 발행일, PDF 여부를 먼저 읽은 뒤 지역별 목록으로 다시 배치합니다."
+              message="출처, 발행일, PDF 여부와 지역별 목록을 표시합니다."
               className="min-h-[160px]"
             />
             <WorkspaceLoadingCard
@@ -348,7 +348,7 @@ export default function ArchivePageClient({
           <WorkspaceStateCard
             eyebrow="리포트 대기"
             title={`${RESEARCH_REGION_LABELS[researchRegion]} 공개 리포트가 아직 없습니다`}
-            message="잠시 후 새로고침하거나 다른 지역을 먼저 확인해 주세요. 원문이 반영되면 이 목록에 바로 추가됩니다."
+            message="잠시 후 새로고침하거나 다른 지역을 확인해 주세요. 원문이 반영되면 이 목록에 바로 추가됩니다."
           />
         ) : (
           <div className="space-y-3">

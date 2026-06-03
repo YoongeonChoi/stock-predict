@@ -141,7 +141,7 @@ export default function PortfolioRiskPanel({ risk, stressTest }: Props) {
           <div className="card !p-4 space-y-3">
             <div>
               <h3 className="font-semibold text-sm">실행 믹스와 우선순위</h3>
-              <p className="text-xs text-text-secondary mt-1">예측 엔진의 실행 바이어스를 포지션 운영 큐로 묶어 보여줍니다.</p>
+              <p className="text-xs text-text-secondary mt-1">예측 엔진의 실행 바이어스를 포지션 운영 큐로 표시합니다.</p>
             </div>
             {risk.execution_mix.length > 0 ? (
               <div className="flex flex-wrap gap-2">

@@ -245,7 +245,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
   const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
   const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
   const auditSummary = buildPublicAuditSummary(data, {
-    defaultSummary: "한국 일정과 주요 해외 매크로·대표 기업 실적을 함께 보여주고, 실제 이벤트가 늦으면 추정 반복 일정으로 먼저 채웁니다.",
+    defaultSummary: "한국 일정과 주요 해외 매크로·대표 기업 실적을 표시하고, 실제 이벤트가 늦으면 추정 반복 일정으로 채웁니다.",
   });
 
   return (
@@ -253,7 +253,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       <PageHeader
         eyebrow="시장 일정"
         title="시장 일정 캘린더"
-        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 함께 읽습니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 같은 흐름으로 보고, 확인된 실제 일정이 들어오면 바로 반영합니다."
+        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 표시합니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 함께 확인합니다."
         variant="compact"
         meta={
           <>
@@ -287,7 +287,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
         <div className="space-y-4">
           <WorkspaceLoadingCard
             title="이번 달 일정 요약을 준비하고 있습니다"
-            message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 먼저 묶는 중입니다."
+            message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 묶는 중입니다."
             className="min-h-[160px]"
           />
           <div className="workspace-grid">
@@ -299,7 +299,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             <div className="workspace-stack">
               <WorkspaceLoadingCard
                 title="선택한 날짜 패널을 준비하고 있습니다"
-                message="날짜별 상세 설명과 태그를 먼저 정리하는 중입니다."
+                message="날짜별 상세 설명과 태그를 확인하는 중입니다."
                 className="min-h-[190px]"
               />
               <WorkspaceLoadingCard
@@ -320,7 +320,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
           <section className="card !p-5 space-y-4">
             <div className="section-heading gap-4">
               <div>
-                <h2 className="section-title">이번 달 먼저 볼 일정</h2>
+                <h2 className="section-title">이번 달 주요 일정</h2>
                 <p className="section-copy">{auditSummary}</p>
               </div>
               <PublicAuditStrip meta={data} />
@@ -388,7 +388,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
             <WorkspaceStateCard
               eyebrow="부분 업데이트"
               title="새 일정 동기화가 잠시 늦어지고 있습니다"
-              message={`${error} 기존에 확인하던 일정은 먼저 유지해 두었습니다.`}
+              message={`${error} 기존에 확인하던 일정은 유지됩니다.`}
               tone="warning"
               kind="partial"
             />
@@ -555,7 +555,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               <div className="card !p-4 space-y-3">
                 <div>
                   <h2 className="text-base font-semibold">다가오는 핵심 일정</h2>
-                  <p className="mt-1 text-sm text-text-secondary">이번 달 안에서 가까운 순서대로 12개까지 보여줍니다.</p>
+                  <p className="mt-1 text-sm text-text-secondary">이번 달 안에서 가까운 순서대로 12개까지 표시합니다.</p>
                 </div>
                 <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
                   {data.upcoming_events.length > 0 ? data.upcoming_events.map((event) => {

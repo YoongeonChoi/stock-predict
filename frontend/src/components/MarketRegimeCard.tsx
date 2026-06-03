@@ -81,7 +81,7 @@ export default function MarketRegimeCard({ regime, title = "시장 국면" }: Pr
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-border/70 bg-surface/70 px-3 py-3 text-sm text-text-secondary">
-                이번 응답에서는 확보된 후보와 핵심 지표를 먼저 읽고, 정밀 플레이북은 회복 시 다시 이어집니다.
+                이번 응답에서는 확보된 후보와 핵심 지표만 표시됩니다. 정밀 플레이북은 회복 후 갱신됩니다.
               </div>
             )}
 
@@ -112,7 +112,7 @@ export default function MarketRegimeCard({ regime, title = "시장 국면" }: Pr
             <div className="mt-3 text-3xl font-bold text-text">{regime.score.toFixed(1)}</div>
             <div className="mt-1 text-xs text-text-secondary">확신도 {regime.conviction.toFixed(0)} / 100</div>
             <div className="mt-3 rounded-2xl border border-border/70 bg-surface/60 px-3 py-2 text-xs text-text-secondary">
-              지금 국면을 먼저 읽고, 바로 아래 세부 신호와 실행 플레이북을 같은 축에서 이어 봅니다.
+              현재 국면, 세부 신호, 실행 플레이북을 같은 기준으로 표시합니다.
             </div>
           </div>
 
@@ -133,7 +133,7 @@ export default function MarketRegimeCard({ regime, title = "시장 국면" }: Pr
             </div>
             {regime.signals.length === 0 ? (
               <div className="mt-3 rounded-xl border border-border/70 bg-surface/70 px-3 py-3 text-sm text-text-secondary">
-                세부 신호는 아직 정리 중입니다. 이번 응답에서는 시장 국면 요약과 실행 플레이북을 먼저 확인해 주세요.
+                세부 신호는 아직 계산 중입니다. 이번 응답에서는 시장 국면 요약과 실행 플레이북만 표시됩니다.
               </div>
             ) : null}
           </div>

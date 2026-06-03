@@ -82,7 +82,7 @@ export default function StockHeatmap({ data, loading }: Props) {
     return (
       <WorkspaceLoadingCard
         title="시장 히트맵을 정리하고 있습니다"
-        message="시가총액 가중 분포와 종목별 등락률을 먼저 묶은 뒤 보드에 배치합니다."
+        message="시가총액 가중 분포와 종목별 등락률을 보드에 배치합니다."
         className="min-h-[260px]"
       />
     );
@@ -120,7 +120,7 @@ export default function StockHeatmap({ data, loading }: Props) {
     <div className="space-y-3">
       {neutralFallback ? (
         <div className="rounded-2xl border border-border/70 bg-surface/50 px-4 py-3 text-sm text-text-secondary">
-          실시간 등락률 분포가 아직 도착하지 않아 중립 섹터 배치를 먼저 보여주고 있습니다.
+          실시간 등락률 분포가 아직 도착하지 않아 중립 섹터 배치를 표시합니다.
         </div>
       ) : null}
       <div className="h-[420px] w-full cursor-pointer">

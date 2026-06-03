@@ -9,7 +9,7 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.68.2`
+현재 릴리즈: `v2.68.3`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 
@@ -38,7 +38,7 @@
 - 종목 하나의 “좋아 보이는 이유”는 볼 수 있어도, 그 판단이 시간이 지나 실제로 얼마나 맞았는지는 보기 어렵습니다.
 - 무료 또는 제한된 데이터 소스를 사용하는 환경에서는, 공개 화면이 자주 `불러오는 중`, `빈 화면`, `에러 전용 화면`으로 무너지기 쉽습니다.
 
-Stock Predict는 이 문제를 아래 방식으로 해결합니다.
+현재 서비스는 이 문제를 아래 방식으로 처리합니다.
 
 - 대시보드에서 시장 전체 상태를 먼저 요약합니다.
 - 기회 레이더와 스크리너로 후보 종목을 빠르게 좁힙니다.
@@ -961,7 +961,7 @@ Figma handoff 파일은 [yoongeon.xyz Full Redesign v2.68](https://www.figma.com
 
 | 원칙 | 의미 |
 |---|---|
-| landing 우선 | `/`는 제품 설명과 CTA를, `/dashboard`는 실제 시장 작업을 담당 |
+| 화면 역할 분리 | `/`는 제품명과 주요 화면 진입을, `/dashboard`는 시장 요약과 후보 데이터를 담당 |
 | Toss식 IA | 시각 모사보다 탐색 비용 감소와 짧은 한국어 문장 우선 |
 | primitive layer | 새 공용 UI는 `frontend/src/components/ui`에서 시작 |
 | Figma handoff | Figma Make는 시안용, Figma MCP/Code Connect는 section 단위 handoff용 |

@@ -278,7 +278,7 @@ export default function RadarNextDayFocusCard({
               </div>
               <div className="mt-3 text-xs font-medium text-text-secondary">실행 메모</div>
               <div className="mt-2 rounded-xl border border-border/70 bg-surface/70 px-3 py-3 text-sm leading-6 text-text-secondary">
-                {forecast.execution_note || "시가 추격 여부보다 체결 가격과 손절 기준을 먼저 확인하는 편이 좋습니다."}
+                {forecast.execution_note || "시가 추격 여부보다 체결 가격과 손절 기준을 확인하는 편이 좋습니다."}
               </div>
             </div>
           </div>

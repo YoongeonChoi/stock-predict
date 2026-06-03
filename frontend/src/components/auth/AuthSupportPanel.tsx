@@ -15,8 +15,8 @@ const ITEMS = [
   },
   {
     icon: WalletCards,
-    title: "접속 후 바로 이어서 사용",
-    description: "한 번 로그인하면 같은 브라우저에서 세션을 유지하고, 다시 들어와도 작업 흐름이 이어집니다.",
+    title: "브라우저 세션 유지",
+    description: "한 번 로그인하면 같은 브라우저에서 세션을 유지하고, 다시 들어와도 계정 상태를 유지합니다.",
   },
 ];
 
@@ -26,7 +26,7 @@ export default function AuthSupportPanel() {
       <div>
         <div className="text-sm font-semibold text-text">계정 연결 후 바로 가능한 일</div>
         <p className="mt-2 text-sm leading-6 text-text-secondary">
-          로그인 이후에는 관심종목, 포트폴리오, 추천 결과가 모두 내 계정 기준으로 이어집니다.
+          로그인 이후에는 관심종목, 포트폴리오, 추천 결과가 모두 내 계정 기준으로 저장됩니다.
         </p>
       </div>
       <div className="space-y-3">
