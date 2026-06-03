@@ -262,8 +262,8 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
   const auditSummary = buildPublicAuditSummary(seedAudit, {
     defaultSummary:
       viewState === "seeded"
-        ? "기본 캐시 결과를 먼저 보여주고, 필터 실행 후에는 사용자 조건 결과로 바로 바뀝니다."
-        : "사용자 조건 결과를 우선 보여주고 있습니다.",
+        ? "기본 캐시 결과입니다. 필터 실행 후 사용자 조건 결과로 바뀝니다."
+        : "사용자 조건 결과입니다.",
   });
 
   return (
@@ -274,7 +274,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
         title="스크리너"
         description={
           viewState === "seeded"
-            ? `전일 종가 기준 기본 후보 ${results.length.toLocaleString("ko-KR")}개를 먼저 보여주고, 이후 조건 실행으로 결과를 다시 좁힙니다.`
+            ? `전일 종가 기준 기본 후보 ${results.length.toLocaleString("ko-KR")}개입니다. 조건 실행 후 결과를 다시 좁힙니다.`
             : "한국장 기준으로 밸류, 퀄리티, 모멘텀, 리스크 조건을 함께 써서 실제 투자 후보군을 압축합니다."
         }
         meta={
@@ -291,7 +291,7 @@ export default function ScreenerPageClient({ initialSeed = null }: ScreenerPageC
         <div className="section-heading gap-4">
           <div>
             <h2 className="section-title">빠른 프리셋</h2>
-            <p className="section-copy">대표 조건 묶음을 먼저 눌러 보고, 아래에서 세부 조건을 조정해 결과를 다시 좁힙니다.</p>
+            <p className="section-copy">대표 조건 묶음을 선택한 뒤 아래에서 세부 조건을 조정해 결과를 좁힙니다.</p>
           </div>
         </div>
         <PublicAuditStrip meta={seedAudit} />

@@ -85,7 +85,7 @@ export default function SectorPage() {
       <PageHeader
         eyebrow="시장 탐색"
         title={`${report.sector?.name || "섹터"} 리포트`}
-        description={`종목 수 ${report.sector?.stock_count ?? 0}개 기준으로 섹터 점수, 상위 종목, 강점과 주의 포인트를 한 화면에서 정리합니다.`}
+        description={`종목 수 ${report.sector?.stock_count ?? 0}개 기준 섹터 점수, 상위 종목, 강점과 주의 포인트입니다.`}
         meta={
           <>
             <span className="info-chip">{code}</span>

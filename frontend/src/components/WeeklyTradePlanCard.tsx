@@ -106,7 +106,7 @@ export default function WeeklyTradePlanCard({ plan, priceKey, assetLabel }: Week
           <div>
             <h2 className="text-lg font-semibold">이번 주 판단</h2>
             <p className="mt-1 break-words text-sm leading-6 text-text-secondary [overflow-wrap:anywhere]">
-              {assetLabel ? `${assetLabel} ` : ""}5거래일 조건부 분포 기준으로 매수 가능가와 매도 목표가를 먼저 정리합니다.
+              {assetLabel ? `${assetLabel} ` : ""}5거래일 조건부 분포 기준 매수 가능가, 매도 목표가, 손절가입니다.
             </p>
           </div>
         </div>

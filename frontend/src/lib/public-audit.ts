@@ -256,71 +256,71 @@ export function buildPublicAuditSummary(
   } = {},
 ) {
   if (meta?.partial && meta?.fallback_reason === "briefing_partial_snapshot") {
-    return "시장 브리핑은 먼저 정리했고, 레이더와 포커스 카드는 이어서 보강합니다.";
+    return "시장 브리핑 일부만 준비됐습니다. 레이더와 포커스 카드는 추가 계산 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "briefing_startup_guard") {
-    return "처음 진입에서는 세션 상태와 핵심 일정부터 먼저 보여주고, 전체 브리핑은 이어서 보강합니다.";
+    return "초기 진입 상태입니다. 세션 상태와 핵심 일정만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "briefing_memory_guard") {
-    return "서버 보호 구간에서는 세션 상태와 핵심 일정부터 먼저 보여주고, 전체 브리핑은 이어서 보강합니다.";
+    return "서버 보호 구간입니다. 세션 상태와 핵심 일정만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "daily_briefing_timeout") {
-    return "브리핑 계산이 길어져 현재 확보된 스냅샷과 핵심 카드부터 먼저 보여주고 있습니다.";
+    return "브리핑 계산이 지연되어 현재 확보된 스냅샷과 핵심 카드만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "daily_briefing_error") {
-    return "브리핑 일부 계산이 실패해 현재 확보된 스냅샷과 핵심 카드부터 먼저 보여주고 있습니다.";
+    return "브리핑 일부 계산이 실패해 현재 확보된 스냅샷과 핵심 카드만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_placeholder_response") {
-    return "이번 요청에서는 사용 가능한 후보를 만들지 못해 시장 국면만 먼저 보여주고 있습니다.";
+    return "이번 요청에서는 사용 가능한 후보가 없어 시장 국면만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "calendar_external_source_unavailable") {
-    return "외부 일정 공급 제한으로 이번 달은 월간 핵심 일정부터 먼저 보여주고 있습니다.";
+    return "외부 일정 공급 제한으로 월간 핵심 일정만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "prediction_lab_partial_data") {
-    return "검증 세부 집계 일부가 늦어도 최근 스냅샷과 fusion 상태부터 먼저 보여주고 있습니다.";
+    return "검증 세부 집계 일부가 지연되어 최근 스냅샷과 fusion 상태만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_startup_guard") {
-    return "처음 진입에서는 대표 시장 스냅샷을 먼저 정리했고, 정밀 시장 요약은 이어서 보강합니다.";
+    return "초기 진입 상태입니다. 대표 시장 스냅샷만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_startup_seed") {
-    return "처음 진입에서는 준비된 시장 스냅샷을 먼저 보여주고, 정밀 시장 요약은 이어서 보강합니다.";
+    return "초기 진입 상태입니다. 준비된 시장 스냅샷만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_memory_guard") {
-    return "서버 보호 구간에서는 대표 시장 스냅샷을 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
+    return "서버 보호 구간입니다. 대표 시장 스냅샷만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "country_report_stale_public") {
-    return "최근 공개 리포트를 먼저 보여주고, 최신 시장 요약은 이어서 보강합니다.";
+    return "최근 공개 리포트를 표시합니다. 최신 시장 요약은 계산 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "heatmap_startup_guard") {
-    return "처음 진입에서는 대표 종목 기준 히트맵을 먼저 정리했고, 정밀 히트맵은 이어서 보강합니다.";
+    return "초기 진입 상태입니다. 대표 종목 기준 히트맵만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "heatmap_memory_guard") {
-    return "서버 보호 구간에서는 대표 종목 기준 히트맵을 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
+    return "서버 보호 구간입니다. 대표 종목 기준 히트맵만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "live_snapshot_timeout") {
-    return "대표 시세 스냅샷을 먼저 보여주고, 세부 히트맵 계산은 이어서 보강합니다.";
+    return "대표 시세 스냅샷을 표시합니다. 세부 히트맵 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_startup_guard") {
-    return "처음 진입에서는 대표 후보 기준 기회 레이더를 먼저 정리했고, 정밀 후보 계산은 이어서 보강합니다.";
+    return "초기 진입 상태입니다. 대표 후보 기준 기회 레이더만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_memory_guard") {
-    return "서버 보호 구간에서는 대표 후보 기준 기회 레이더를 먼저 정리하고, 정밀 계산은 이어서 보강합니다.";
+    return "서버 보호 구간입니다. 대표 후보 기준 기회 레이더만 표시됩니다.";
   }
   if (
     meta?.partial &&
     (meta?.fallback_reason === "opportunity_quick_fallback" ||
       meta?.fallback_reason === "opportunity_quick_response")
   ) {
-    return "대표 후보 기준 빠른 레이더를 먼저 정리했고, 정밀 후보 계산은 이어서 보강합니다.";
+    return "대표 후보 기준 빠른 레이더를 표시합니다. 정밀 후보 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "opportunity_cached_quick_response") {
-    return "직전 후보 스냅샷을 먼저 보여주고, 최신 후보 계산은 이어서 보강합니다.";
+    return "직전 후보 스냅샷을 표시합니다. 최신 후보 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "screener_seeded_cache") {
-    return "기본 스냅샷을 먼저 보여주고, 최신 조건 계산은 이어서 보강합니다.";
+    return "기본 스냅샷을 표시합니다. 최신 조건 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "kr_last_success_snapshot") {
-    return "직전 스크리너 스냅샷을 먼저 보여주고, 최신 조건 계산은 이어서 보강합니다.";
+    return "직전 스크리너 스냅샷을 표시합니다. 최신 조건 계산은 지연 중입니다.";
   }
   if (
     meta?.partial &&
@@ -328,44 +328,44 @@ export function buildPublicAuditSummary(
       meta?.fallback_reason === "screener_timeout_shell" ||
       meta?.fallback_reason === "snapshot_only")
   ) {
-    return "빠르게 확인할 수 있는 스크리너 스냅샷을 먼저 보여주고, 최신 조건 계산은 이어서 보강합니다.";
+    return "스크리너 스냅샷을 표시합니다. 최신 조건 계산은 지연 중입니다.";
   }
   if (
     meta?.partial &&
     (meta?.fallback_reason === "kr_bulk_snapshot_only" || meta?.fallback_reason === "kr_bulk_snapshot_warming")
   ) {
-    return "대표 종목 스냅샷을 먼저 보여주고, 전체 조건 계산은 이어서 보강합니다.";
+    return "대표 종목 스냅샷을 표시합니다. 전체 조건 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "kr_safe_shell_warming") {
-    return "기본 스크리너 스냅샷을 먼저 보여주고, 최신 조건 계산은 이어서 보강합니다.";
+    return "기본 스크리너 스냅샷을 표시합니다. 최신 조건 계산은 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "prediction_lab_cache_wait_timeout") {
-    return "최근 검증 스냅샷을 먼저 보여주고, 최신 집계는 이어서 보강합니다.";
+    return "최근 검증 스냅샷을 표시합니다. 최신 집계는 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "calendar_startup_warming") {
-    return "월간 핵심 일정 스냅샷을 먼저 보여주고, 실제 일정 동기화는 이어서 보강합니다.";
+    return "월간 핵심 일정 스냅샷을 표시합니다. 실제 일정 동기화는 지연 중입니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_cached_detail") {
-    return "상세 계산이 지연돼 최근 저장 종목 스냅샷을 먼저 보여주고 있습니다.";
+    return "상세 계산이 지연되어 최근 저장 종목 스냅샷을 표시합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_memory_guard") {
-    return "서버 보호 구간에서는 기본 종목 스냅샷과 핵심 가격대부터 먼저 보여주고 있습니다.";
+    return "서버 보호 구간입니다. 기본 종목 스냅샷과 핵심 가격대만 표시됩니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_minimal_shell") {
-    return "상세 계산을 완료하지 못해 티커와 기본 메타데이터 중심 최소 스냅샷을 먼저 보여주고 있습니다.";
+    return "상세 계산을 완료하지 못해 티커와 기본 메타데이터 중심 최소 스냅샷을 표시합니다.";
   }
   if (meta?.partial && meta?.fallback_reason === "stock_quick_detail") {
-    return "정밀 종목 분석을 이어가는 동안 가격 흐름과 기술 신호를 기준으로 빠른 상세 스냅샷을 먼저 보여주고 있습니다.";
+    return "가격 흐름과 기술 신호 기준 빠른 상세 스냅샷을 표시합니다.";
   }
   const reason = normalizeReason(meta?.fallback_reason);
   if (meta?.partial && reason) {
-    return `일부 데이터가 늦어 ${reason} 기준으로 먼저 보여주고 있습니다.`;
+    return `일부 데이터가 지연되어 ${reason} 기준 결과만 표시됩니다.`;
   }
   if (meta?.partial) {
-    return "일부 데이터가 늦어 먼저 확보된 결과부터 보여주고 있습니다.";
+    return "일부 데이터가 지연되어 확보된 결과만 표시됩니다.";
   }
   if (reason) {
-    return `${reason} 기준으로 먼저 정리했습니다.`;
+    return `${reason} 기준 결과입니다.`;
   }
   if (options.staleLabel) {
     return options.staleLabel;

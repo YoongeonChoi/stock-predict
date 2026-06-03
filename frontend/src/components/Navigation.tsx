@@ -135,9 +135,9 @@ export default function Navigation() {
         <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/12 bg-bg px-4 py-4 xl:px-5">
           <Link href="/" className="border-b border-border/12 pb-4">
             <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">yoongeon.xyz</div>
-            <div className="mt-2 text-[1.22rem] font-semibold text-text">시장 신호와 운영 판단</div>
+            <div className="mt-2 text-[1.22rem] font-semibold text-text">Stock Predict</div>
             <div className="mt-2 max-w-[15rem] text-[0.8rem] leading-5 text-text-secondary">
-              랜딩은 홈에, 실제 시장 작업은 대시보드에서 시작합니다.
+              대시보드, 레이더, 스크리너, 포트폴리오를 연결합니다.
             </div>
           </Link>
 
@@ -170,7 +170,7 @@ export default function Navigation() {
             yoongeon.xyz
           </div>
           <div className="mt-1 truncate text-[0.84rem] font-semibold text-text">
-            시장 신호와 운영 판단
+            Stock Predict
           </div>
         </Link>
         <div className="flex items-center gap-2 pl-3">
@@ -205,7 +205,7 @@ export default function Navigation() {
           >
             <div className="border-b border-border/12 pb-4">
               <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">Menu</div>
-              <div className="mt-2 text-[1.08rem] font-semibold text-text">탐색, 운영, 검증 흐름</div>
+              <div className="mt-2 text-[1.08rem] font-semibold text-text">시장 탐색 메뉴</div>
             </div>
             <nav className="mt-5">{navLinks}</nav>
           </div>

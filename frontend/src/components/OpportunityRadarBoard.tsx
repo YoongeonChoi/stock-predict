@@ -190,10 +190,10 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
   const radarSummary =
     data.detailed_scanned_count > 0
       ? `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${data.detailed_scanned_count}개를 정밀 분석해 ${visibleCandidateCount}개 후보를 표시합니다.`
-      : `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 먼저 표시합니다.`;
+      : `아래 후보 보드는 20거래일 기대 수익 분포 기준입니다. ${radarUniverseSummary}를 1차 스캔했고, 실제 시세를 확보한 ${quoteAvailableCount}개 중 상위 ${visibleCandidateCount}개 후보를 표시합니다.`;
   const operationalFallbackNote =
     data.partial && hasItems
-      ? "정밀 국면 계산이 길어져 이번 화면은 먼저 확보된 usable 후보와 핵심 수치 중심으로 정리했습니다."
+      ? "정밀 국면 계산이 길어져 이번 화면은 확보된 usable 후보와 핵심 수치만 표시합니다."
       : null;
   const universeBadgeLabel = usingFallbackUniverse
     ? "기본 유니버스 응답"
@@ -220,7 +220,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           </div>
           <div className="ui-panel-muted text-sm leading-6 text-text-secondary">
             {usingFallbackUniverse
-              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군 기준 추천을 표시합니다."
               : usingKrxListingUniverse || usingTop200Universe
                 ? listingUniverseNote
                 : liveUniverseBadge}
@@ -400,7 +400,7 @@ export default function OpportunityRadarBoard({ data, compact = false, embedded 
           </div>
           <div className="ui-panel-muted mt-3 text-sm leading-6 text-text-secondary">
             {usingFallbackUniverse
-              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군으로 먼저 추천하고 있습니다."
+              ? data.universe_note || "실시간 유니버스 연결이 제한돼 기본 종목군 기준 추천을 표시합니다."
               : usingKrxListingUniverse || usingTop200Universe
                 ? listingUniverseNote
                 : liveUniverseBadge}

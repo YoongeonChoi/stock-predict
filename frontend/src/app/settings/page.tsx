@@ -58,7 +58,7 @@ export default function SettingsPage() {
         <WorkspaceStateCard
           eyebrow="부분 업데이트"
           title="일부 운영 패널이 잠시 지연되고 있습니다"
-          message={`${delayedSections.join(", ")} 패널은 늦어지고 있지만, 확인 가능한 정보부터 먼저 보여주고 있습니다.`}
+          message={`${delayedSections.join(", ")} 패널은 지연 중이며, 확인 가능한 정보만 표시됩니다.`}
           tone="warning"
           actionLabel="시스템 패널 다시 불러오기"
           onAction={load}
@@ -71,7 +71,7 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <WorkspaceLoadingCard
             title="시장 세션과 시스템 상태를 불러오고 있습니다"
-            message="현재 운영 상태와 버전 비교 정보를 먼저 정리하는 중입니다."
+            message="현재 운영 상태와 버전 비교 정보를 확인하는 중입니다."
             className="min-h-[180px]"
           />
           <WorkspaceLoadingCard
@@ -200,7 +200,7 @@ export default function SettingsPage() {
             <div className="section-heading">
               <div>
                 <h2 className="section-title">기본 동작 정책</h2>
-                <p className="section-copy">앱이 어떤 기준으로 시작하고, 어떤 링크와 경로를 쓰는지 운영 기준을 정리합니다.</p>
+                <p className="section-copy">앱 시작 기준, 링크, 경로 설정을 확인합니다.</p>
               </div>
             </div>
             <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">

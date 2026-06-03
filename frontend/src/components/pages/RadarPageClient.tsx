@@ -143,13 +143,13 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
   const placeholderData = isPlaceholderRadarSnapshot(data) ? data : null;
   const activeAuditMeta = data || visibleData;
   const auditSummary = buildPublicAuditSummary(activeAuditMeta, {
-    defaultSummary: "시장 국면, 스캔 수, 표시 후보 수를 먼저 보여주고 상세 보드는 뒤이어 갱신합니다.",
+    defaultSummary: "시장 국면, 스캔 수, 표시 후보 수를 기준으로 현재 레이더 상태를 표시합니다.",
   });
   const nextDayFocus = visibleData?.next_day_focus ?? null;
   const placeholderUniverseSize = placeholderData?.universe_size ?? 0;
   const radarHeaderDescription = visibleData
-    ? "대표 유니버스 기준으로 오늘 먼저 볼 후보와 다음 거래일 포커스를 같은 흐름에서 정리합니다."
-    : "한국장에서 지금 바로 확인할 후보를 시장 국면과 실행 액션 기준으로 먼저 정리합니다.";
+    ? "대표 유니버스, 다음 거래일 포커스, 20거래일 후보를 분리해 표시합니다."
+    : "한국장 후보를 시장 국면, 차트 점수, 실행 액션 기준으로 필터링합니다.";
 
   return (
     <div className="page-shell">
@@ -189,8 +189,8 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         <WorkspaceStateCard
           kind="partial"
           eyebrow="다음 거래일 포커스 준비 중"
-          title="단기 추천은 상위 후보를 다시 계산한 뒤 이어집니다"
-          message="레이더 보드는 먼저 확인할 수 있고, 다음 거래일 전용 매수·목표·손절 기준은 정밀 후보 재평가가 끝나는 순서대로 채워집니다."
+          title="단기 추천 계산 중"
+          message="레이더 후보 보드는 표시됐고, 다음 거래일 전용 매수·목표·손절 기준은 정밀 후보 재평가가 끝나면 채워집니다."
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -200,7 +200,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         <section className="card !p-5 space-y-4">
           <div className="section-heading gap-4">
             <div>
-              <h2 className="section-title">첫 판단 스레드</h2>
+              <h2 className="section-title">레이더 상태</h2>
               <p className="section-copy">{auditSummary}</p>
             </div>
             <PublicAuditStrip meta={activeAuditMeta} />
@@ -234,7 +234,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
             <div>
               <h2 className="section-title">첫 판단 스레드 준비 중</h2>
               <p className="section-copy">
-                시장 국면은 먼저 읽었지만, 이번 요청에서는 바로 쓸 후보 스냅샷을 만들지 못했습니다. 지금은 0 / 0 / 0 지표를 크게 보여주기보다 무엇이 실패했는지 먼저 안내합니다.
+                시장 국면은 계산됐지만 이번 요청에서는 후보 스냅샷을 만들지 못했습니다. 0 / 0 / 0 지표 대신 실패 원인을 표시합니다.
               </p>
             </div>
             <PublicAuditStrip meta={placeholderData} />
@@ -269,7 +269,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
           kind="partial"
           eyebrow="레이더 partial"
           title="최신 레이더가 아직 완전히 올라오지 않아 마지막 사용 가능 스냅샷을 유지합니다"
-          message="대표 스냅샷과 audit 정보는 최신 상태로 갱신하고, 실제 후보 보드는 마지막으로 확인된 사용 가능 스냅샷으로 먼저 유지합니다."
+          message="대표 스냅샷과 audit 정보는 최신 상태로 갱신하고, 실제 후보 보드는 마지막으로 확인된 사용 가능 스냅샷으로 유지합니다."
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -280,7 +280,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
           kind="partial"
           eyebrow="다시 확인 필요"
           title="최신 레이더 계산이 잠시 지연되고 있습니다"
-          message={getUserFacingErrorMessage(error, "이전 계산 결과를 먼저 보여주고 있습니다. 잠시 후 다시 시도해 주세요.")}
+          message={getUserFacingErrorMessage(error, "이전 계산 결과를 표시합니다. 잠시 후 다시 시도해 주세요.")}
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />
@@ -290,7 +290,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
         <div className="space-y-4">
           <WorkspaceLoadingCard
             title="시장 국면을 다시 읽고 있습니다"
-            message="대표 흐름과 실행 후보를 먼저 정리한 뒤 레이더 보드를 채웁니다."
+            message="대표 흐름과 실행 후보 계산이 끝나면 레이더 보드를 채웁니다."
             className="min-h-[180px]"
           />
           <WorkspaceLoadingCard
@@ -309,7 +309,7 @@ export default function RadarPageClient({ initialData = null }: RadarPageClientP
           kind="blocking"
           eyebrow="레이더 지연"
           title="기회 레이더를 아직 불러오지 못했습니다"
-          message={getUserFacingErrorMessage(error, "레이더 계산이 길어지면 먼저 시장 국면만 보일 수 있습니다. 잠시 후 다시 시도해 주세요.")}
+          message={getUserFacingErrorMessage(error, "레이더 계산이 길어지면 시장 국면만 표시될 수 있습니다. 잠시 후 다시 시도해 주세요.")}
           actionLabel="레이더 다시 불러오기"
           onAction={retryLoad}
         />

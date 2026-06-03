@@ -434,7 +434,7 @@ function AuthPageContent() {
         description={
           mode === "recovery"
             ? "복구 링크를 통해 들어왔다면 새 비밀번호를 바로 설정할 수 있습니다."
-            : "보유 종목, 추천 결과, 자산 기준을 계정별로 안전하게 분리하려면 먼저 로그인부터 연결해 주세요."
+            : "보유 종목, 추천 결과, 자산 기준을 계정별로 안전하게 분리해 저장합니다."
         }
         meta={<span className="info-chip">로그인 후 이동: {nextPath}</span>}
       />

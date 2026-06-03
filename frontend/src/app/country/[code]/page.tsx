@@ -87,7 +87,7 @@ export default function CountryPage() {
       <div className="page-shell">
         <WorkspaceLoadingCard
           title="국가 리포트를 불러오고 있습니다"
-          message="시장 요약, 지수 흐름, 기관 컨센서스를 같은 흐름으로 다시 정리하는 중입니다."
+          message="시장 요약, 지수 흐름, 기관 컨센서스를 다시 계산하는 중입니다."
           className="min-h-[220px]"
         />
       </div>
@@ -139,7 +139,7 @@ export default function CountryPage() {
       <PageHeader
         eyebrow="시장 탐색"
         title={`${countryTitle} 국가 리포트`}
-        description={`시장 요약, 주요 지수, 기관 컨센서스, 상위 종목을 한 흐름으로 정리합니다. 생성 시각 ${new Date(report.generated_at).toLocaleString("ko-KR")}`}
+        description={`시장 요약, 주요 지수, 기관 컨센서스, 상위 종목을 표시합니다. 생성 시각 ${new Date(report.generated_at).toLocaleString("ko-KR")}`}
         meta={
           <>
             <span className="info-chip">{code}</span>
@@ -168,7 +168,7 @@ export default function CountryPage() {
           <div className="section-heading">
             <div>
               <h2 className="section-title">대표 지수 스냅샷</h2>
-              <p className="section-copy">가격과 등락률을 먼저 보고, 아래에서 차트와 예측 밴드를 이어서 확인합니다.</p>
+              <p className="section-copy">가격, 등락률, 차트, 예측 밴드를 같은 화면에서 확인합니다.</p>
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -191,7 +191,7 @@ export default function CountryPage() {
         <div className="section-heading">
           <div>
             <h2 className="section-title">시장 요약</h2>
-            <p className="section-copy">긴 설명은 박스 안에 또 가두지 않고, 핵심 주장만 아래에 이어서 배치합니다.</p>
+            <p className="section-copy">선택 시장의 핵심 요약과 근거 지표를 표시합니다.</p>
           </div>
         </div>
         <div className="max-w-5xl whitespace-pre-line text-[0.98rem] leading-8 text-text">

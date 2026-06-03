@@ -29,7 +29,7 @@ function opportunityScoreLabel(setupLabel?: string) {
 
 function trackingSummary(item: WatchlistItem) {
   if (!item.tracking_enabled) {
-    return "심화 추적을 시작하면 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다.";
+    return "심화 추적을 시작하면 최근 예측 변화와 적중 기록을 확인할 수 있습니다.";
   }
 
   const parts: string[] = [];
@@ -170,7 +170,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
     return (
       <AuthGateCard
         title="관심종목은 로그인 후 사용할 수 있습니다"
-        description="관심종목과 심화 추적은 계정별로 분리되어 저장됩니다. 로그인하면 내가 고른 종목만 따로 추적하고 최근 예측 변화를 이어서 볼 수 있습니다."
+        description="관심종목과 심화 추적은 계정별로 분리되어 저장됩니다. 로그인하면 내가 고른 종목만 따로 추적하고 최근 예측 변화를 확인할 수 있습니다."
         nextPath="/watchlist"
         previewTitle="공개 레이더 기반 미리보기"
         preview={
@@ -186,7 +186,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                         {item.ticker} · {item.sector} · 레이더 미리보기
                       </div>
                       <div className="mt-2 text-sm leading-6 text-text-secondary">
-                        공개 레이더 상위 후보를 먼저 보여드리고, 로그인 후에는 심화 추적 화면에서 최근 예측 변화와 적중 기록을 이어서 확인할 수 있습니다.
+                        공개 레이더 상위 후보입니다. 로그인 후에는 심화 추적 화면에서 최근 예측 변화와 적중 기록을 확인할 수 있습니다.
                       </div>
                     </div>
                     <div className="text-right">
@@ -200,7 +200,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
                 </div>
               ))}
               <div className="rounded-[22px] border border-border/70 bg-surface/45 px-4 py-4 text-sm leading-6 text-text-secondary">
-                로그인하면 관심종목을 따로 저장하고, 추적 중인 종목만 모아서 예측 변화와 현재 판단 근거를 이어서 볼 수 있습니다.
+                로그인하면 관심종목을 따로 저장하고, 추적 중인 종목만 모아서 예측 변화와 현재 판단 근거를 확인할 수 있습니다.
               </div>
             </div>
           </div>
@@ -215,7 +215,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         variant="compact"
         eyebrow="자산 관리"
         title="관심종목"
-        description="추적할 종목을 먼저 저장해 두고, 필요한 종목은 심화 추적으로 올려 최근 예측 변화와 적중 기록까지 이어서 확인합니다."
+        description="추적할 종목을 저장하고, 필요한 종목은 심화 추적으로 전환해 최근 예측 변화와 적중 기록을 확인합니다."
         meta={
           <>
             <span className="info-chip">전체 {items.length}개</span>
@@ -228,7 +228,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         <div className="card !p-5 space-y-4">
           <div>
             <h2 className="section-title">관심종목 추가</h2>
-            <p className="section-copy">숫자 6자리 또는 티커를 입력하면 먼저 해석 결과를 보여드리고, 저장 후 심화 추적 화면으로 이어집니다.</p>
+            <p className="section-copy">숫자 6자리 또는 티커를 입력하면 해석 결과를 표시하고, 저장 후 심화 추적 화면으로 이동할 수 있습니다.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_92px_auto]">
             <label htmlFor="watchlist-ticker" className="sr-only">
@@ -259,13 +259,13 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         <div className="card !p-5 space-y-3 h-fit">
           <div>
             <h2 className="section-title">현재 상태</h2>
-            <p className="section-copy">심화 추적을 켠 종목은 목록 상단으로 올리고, 최근 예측 기록이 있으면 요약까지 함께 보여드립니다.</p>
+            <p className="section-copy">심화 추적을 켠 종목은 목록 상단으로 올리고, 최근 예측 기록이 있으면 요약을 표시합니다.</p>
           </div>
           <div className="workspace-panel-tight">
             <div className="text-xs text-text-secondary">저장된 관심종목</div>
             <div className="mt-2 text-2xl font-semibold text-text">{items.length}</div>
             <div className="mt-2 text-sm leading-6 text-text-secondary">
-              심화 추적을 켠 종목은 별도 화면에서 최근 방향 변화, 신뢰도, 적중 기록을 이어서 볼 수 있습니다.
+              심화 추적을 켠 종목은 별도 화면에서 최근 방향 변화, 신뢰도, 적중 기록을 확인할 수 있습니다.
             </div>
           </div>
         </div>
@@ -275,7 +275,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
         <div className="border-b border-border px-5 py-4 space-y-3">
           <div>
             <h2 className="section-title">저장한 관심종목</h2>
-            <p className="section-copy">심화 추적 종목을 먼저 보여주고, 상세 보기에서 최근 예측 변화와 현재 판단 근거를 이어서 확인합니다.</p>
+            <p className="section-copy">심화 추적 종목, 최근 예측 변화, 현재 판단 근거를 확인합니다.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -318,7 +318,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
               kind="empty"
               eyebrow="관심종목 비어 있음"
               title="관심종목이 아직 비어 있습니다"
-              message="관심 있는 종목을 추가하면 가격 변화와 현재 점수를 먼저 정리해 두고, 필요할 때 심화 추적으로 올릴 수 있습니다."
+              message="관심 있는 종목을 추가하면 가격 변화와 현재 점수를 저장하고, 필요할 때 심화 추적으로 전환할 수 있습니다."
             />
           </div>
         ) : visibleItems.length === 0 ? (
@@ -327,7 +327,7 @@ export default function WatchlistPageClient({ demoData = null }: WatchlistPageCl
               kind="empty"
               eyebrow="추적 중 없음"
               title="아직 심화 추적 중인 종목이 없습니다"
-              message="목록에서 심화 추적 시작을 누르면 최근 예측 변화와 적중 기록을 이어서 볼 수 있습니다."
+              message="목록에서 심화 추적 시작을 누르면 최근 예측 변화와 적중 기록을 확인할 수 있습니다."
             />
           </div>
         ) : (

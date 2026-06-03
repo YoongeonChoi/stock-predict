@@ -36,7 +36,7 @@ export default function SectorRotationBoard({ data, countryCode = "KR" }: Props)
         </div>
       </div>
 
-      <div className="dashboard-signal-grid">
+      <div className="dashboard-signal-grid dashboard-signal-grid-wide">
         <div className="dashboard-signal-tile">
           <span className="dashboard-tile-label">전체 섹터</span>
           <strong className="dashboard-tile-value">{data.length}</strong>
@@ -59,22 +59,22 @@ export default function SectorRotationBoard({ data, countryCode = "KR" }: Props)
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="dashboard-sector-list">
         {data.map((sector) => {
           const isPositive = sector.change_pct > 0;
           return (
             <div
               key={sector.sector}
-              className="group flex items-center gap-3 rounded-[14px] border border-border bg-surface/65 px-4 py-3 transition-colors hover:border-accent/35"
+              className="dashboard-sector-row"
             >
-              <div className="min-w-[140px] shrink-0 sm:min-w-[180px]">
+              <div className="dashboard-sector-name">
                 <Link
                   href={`/country/${countryCode}/sector/${encodeURIComponent(sector.sector)}`}
-                  className="text-sm font-medium text-text hover:text-accent transition-colors"
+                  className="dashboard-sector-link"
                 >
                   {sector.sector}
                 </Link>
-                <div className="mt-0.5 text-[11px] text-text-secondary">
+                <div className="dashboard-sector-detail">
                   <Link
                     href={`/stock/${encodeURIComponent(sector.ticker)}`}
                     className="hover:text-accent transition-colors"
@@ -85,17 +85,17 @@ export default function SectorRotationBoard({ data, countryCode = "KR" }: Props)
                 </div>
               </div>
 
-              <div className="flex flex-1 items-center gap-2">
-                <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-border/25">
+              <div className="dashboard-sector-meter">
+                <div className="dashboard-sector-bar">
                   <div
-                    className={`absolute inset-y-0 left-0 rounded-full transition-all ${
+                    className={`dashboard-sector-fill ${
                       isPositive ? "bg-positive/70" : "bg-negative/70"
                     }`}
                     style={{ width: barWidth(sector.change_pct, maxAbsPct) }}
                   />
                 </div>
                 <span
-                  className={`min-w-[64px] text-right text-sm font-semibold ${
+                  className={`dashboard-sector-change ${
                     isPositive ? "text-positive" : sector.change_pct < 0 ? "text-negative" : "text-text-secondary"
                   }`}
                 >

@@ -39,7 +39,7 @@ export default async function LabPage() {
         description={
           data
             ? `표본 저장 ${pipelineHealth?.stored_predictions.toLocaleString("ko-KR") ?? 0}건 / 평가 완료 ${pipelineHealth?.evaluated_predictions.toLocaleString("ko-KR") ?? 0}건 / 실측 대기 ${pipelineHealth?.pending_predictions.toLocaleString("ko-KR") ?? 0}건 / 모델 ${fusionSummary?.active_model_version ?? "dist-studentt-v3.3-lfgraph"}`
-            : "표본 저장, 실측 평가, calibration 상태를 한 화면에서 묶어 보고 어떤 horizon이 비어 있는지 먼저 확인합니다."
+            : "표본 저장, 실측 평가, calibration 상태와 비어 있는 horizon을 표시합니다."
         }
         meta={
           <>
@@ -56,7 +56,7 @@ export default async function LabPage() {
               <div>
                 <h2 className="section-title">표본 수집 퍼널</h2>
                 <p className="section-copy">
-                  연구실이 비어 보이면 성과 카드보다 먼저 저장 경로와 평가 지연 여부를 확인합니다.
+                  저장 경로, 평가 지연 여부, horizon 커버리지를 확인합니다.
                 </p>
               </div>
               <PublicAuditStrip
@@ -139,7 +139,7 @@ export default async function LabPage() {
                     ))
                   ) : (
                     <div className="section-slab-muted !px-3 !py-3 text-sm text-text-secondary">
-                      현재 공개 연구실 기준으로는 즉시 조치가 필요한 수집 경고가 크지 않습니다. 아래 검증 섹션에서 horizon별 성과와 review queue를 이어서 확인해 주세요.
+                      현재 공개 연구실 기준으로는 즉시 조치가 필요한 수집 경고가 크지 않습니다. 아래 검증 섹션에서 horizon별 성과와 review queue를 확인해 주세요.
                     </div>
                   )}
                 </div>
@@ -155,7 +155,7 @@ export default async function LabPage() {
             <div>
               <h2 className="section-title">공개 검증 요약</h2>
               <p className="section-copy">
-                세부 연구실 집계가 지연될 때는 저장 표본과 방향 정확도 요약만 먼저 보여줍니다.
+                세부 연구실 집계가 지연되면 저장 표본과 방향 정확도 요약만 표시합니다.
               </p>
             </div>
             <PublicAuditStrip meta={accuracySnapshot} staleLabel="예측 로그 기준" />

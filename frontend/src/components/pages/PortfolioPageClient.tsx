@@ -191,7 +191,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const hasHoldings = Boolean(summary && summary.holding_count > 0);
   const mixedCountries = useMemo(() => false, []);
   const demoPreviewItems = (demoData?.opportunities || []).slice(0, 2);
-  const portfolioHeaderDescription = "총자산과 보유 종목을 먼저 정리하고, 추천과 이벤트 레이더는 그 다음 순서로 확인합니다.";
+  const portfolioHeaderDescription = "총자산, 보유 종목, 추천, 이벤트 레이더를 계정 기준으로 표시합니다.";
   const portfolioHeaderMeta = (
     <>
       <span className="info-chip">보유 종목 {summary?.holding_count ?? 0}개</span>
@@ -376,7 +376,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     return (
       <AuthGateCard
         title="포트폴리오는 로그인 후 관리합니다"
-        description="총자산, 보유 종목, 추천 결과를 계정별로 분리 저장하려면 먼저 로그인해 주세요."
+        description="총자산, 보유 종목, 추천 결과를 계정별로 분리 저장합니다."
         nextPath="/portfolio"
         previewTitle="공개 레이더 기반 포트폴리오 미리보기"
         preview={
@@ -390,7 +390,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
               <div className="metric-card">
                 <div className="text-xs text-text-secondary">관찰 후보</div>
                 <div className="mt-3 text-2xl font-bold text-text">{demoData?.opportunities.slice(0, 3).length ?? 0}개</div>
-                <div className="mt-2 text-[11px] text-text-secondary">상위 후보만 먼저 미리보기</div>
+                <div className="mt-2 text-[11px] text-text-secondary">상위 후보 미리보기</div>
               </div>
               <div className="metric-card">
                 <div className="text-xs text-text-secondary">로그인 후 가능</div>
@@ -408,7 +408,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
                         {item.ticker} · {item.sector} · 레이더 미리보기
                       </div>
                       <div className="mt-2 text-sm leading-6 text-text-secondary">
-                        공개 레이더 상위 후보를 먼저 보여주고, 로그인 후에는 실제 보유 종목 기준 추천과 비중 조정을 이어갑니다.
+                        공개 레이더 상위 후보입니다. 로그인 후 보유 종목 기준 추천과 비중 조정을 확인할 수 있습니다.
                       </div>
                     </div>
                     <div className="grid shrink-0 grid-cols-2 gap-3 text-sm md:min-w-[220px]">
@@ -456,7 +456,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
         </section>
         <WorkspaceLoadingCard
           title="자산 요약과 보유 비중을 계산하고 있습니다"
-          message="총자산, 예수금, 보유 평가액을 먼저 읽어 운영 요약으로 다시 묶는 중입니다."
+          message="총자산, 예수금, 보유 평가액을 계산하는 중입니다."
           className="min-h-[180px]"
         />
         <WorkspaceLoadingCard
@@ -475,7 +475,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           <div className="section-heading">
             <div>
               <h1 className="section-title text-2xl">포트폴리오</h1>
-              <p className="section-copy">총자산과 보유 종목을 먼저 정리하고, 추천은 마지막에 확인합니다.</p>
+              <p className="section-copy">총자산, 보유 종목, 추천 결과를 계정 기준으로 확인합니다.</p>
             </div>
           </div>
         </section>
@@ -497,7 +497,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             <div className="workspace-panel-tight space-y-3">
               <div className="text-sm font-semibold text-text">지금 확인할 것</div>
               <div className="text-sm leading-6 text-text-secondary">
-                계정 세션은 살아 있지만 자산 요약이나 보유 종목 응답이 아직 도착하지 않았습니다. 다시 불러오기로 계정 포트폴리오를 새로 요청하고, 실패가 길어지면 네트워크나 백엔드 상태를 먼저 확인합니다.
+                계정 세션은 살아 있지만 자산 요약이나 보유 종목 응답이 아직 도착하지 않았습니다. 다시 불러오기로 계정 포트폴리오를 새로 요청하고, 실패가 길어지면 네트워크나 백엔드 상태를 확인합니다.
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
                 <span className="info-chip">총자산 → 보유 종목 → 추천 순서 유지</span>
@@ -592,7 +592,7 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
           <div className="section-heading">
             <div>
               <h1 className="section-title text-2xl">포트폴리오</h1>
-              <p className="section-copy">총자산과 보유 종목을 먼저 정리하고, 추천은 마지막에 확인합니다.</p>
+              <p className="section-copy">총자산, 보유 종목, 추천 결과를 계정 기준으로 확인합니다.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="info-chip">보유 종목 {summary?.holding_count ?? 0}개</span>
@@ -921,4 +921,3 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     </div>
   );
 }
-

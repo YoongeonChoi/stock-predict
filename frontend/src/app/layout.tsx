@@ -23,7 +23,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "yoongeon.xyz | Stock Predict",
-  description: "시장 신호, 종목 후보, 포트폴리오 판단을 한 흐름으로 정리하는 투자 분석 서비스",
+  description: "한국 시장 브리핑, 기회 레이더, 스크리너, 포트폴리오 비교를 제공하는 분석 워크스페이스",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
