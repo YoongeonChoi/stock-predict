@@ -7,7 +7,7 @@ from time import monotonic
 
 from fastapi import Request
 
-from app.errors import SP_6016
+from app.errors import SP_6016, SP_6019
 from app.exceptions import ApiAppException
 
 
@@ -53,6 +53,24 @@ _PUBLIC_ACCOUNT_LIMITS = {
     },
 }
 
+_PUBLIC_CONTACT_LIMITS = {
+    "min_interval": {
+        "max_requests": 1,
+        "window_seconds": 8,
+        "label": "문의 제출",
+    },
+    "client_window": {
+        "max_requests": 5,
+        "window_seconds": 60,
+        "label": "문의 제출",
+    },
+    "email_window": {
+        "max_requests": 3,
+        "window_seconds": 600,
+        "label": "같은 이메일 문의",
+    },
+}
+
 
 def get_request_client_identifier(request: Request) -> str:
     cloudflare_ip = (request.headers.get("cf-connecting-ip") or "").strip()
@@ -90,6 +108,49 @@ def enforce_public_account_rate_limit(request: Request, scope: str) -> None:
         ),
         headers={"Retry-After": str(retry_after)},
     )
+
+
+def _raise_contact_rate_limit(label: str, retry_after: int) -> None:
+    raise ApiAppException(
+        429,
+        SP_6019(f"{label} 요청이 너무 많습니다. {retry_after}초 후 다시 시도해 주세요."),
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def enforce_public_contact_rate_limit(request: Request, normalized_email: str) -> None:
+    client_id = get_request_client_identifier(request)
+
+    min_config = _PUBLIC_CONTACT_LIMITS["min_interval"]
+    retry_after = _PUBLIC_LIMITER.check(
+        key=f"contact:min-interval:{client_id}",
+        max_requests=min_config["max_requests"],
+        window_seconds=min_config["window_seconds"],
+    )
+    if retry_after is not None:
+        _raise_contact_rate_limit(min_config["label"], retry_after)
+
+    client_config = _PUBLIC_CONTACT_LIMITS["client_window"]
+    retry_after = _PUBLIC_LIMITER.check(
+        key=f"contact:client-window:{client_id}",
+        max_requests=client_config["max_requests"],
+        window_seconds=client_config["window_seconds"],
+    )
+    if retry_after is not None:
+        _raise_contact_rate_limit(client_config["label"], retry_after)
+
+    email = normalized_email.strip().lower()
+    if not email:
+        return
+
+    email_config = _PUBLIC_CONTACT_LIMITS["email_window"]
+    retry_after = _PUBLIC_LIMITER.check(
+        key=f"contact:email-window:{email}",
+        max_requests=email_config["max_requests"],
+        window_seconds=email_config["window_seconds"],
+    )
+    if retry_after is not None:
+        _raise_contact_rate_limit(email_config["label"], retry_after)
 
 
 def reset_public_rate_limit_state() -> None:

@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import AuthStatus from "@/components/AuthStatus";
+import ContactSection from "@/components/ContactSection";
 import Navigation from "@/components/Navigation";
 import SearchBar from "@/components/SearchBar";
 import { ToastProvider } from "@/components/Toast";
@@ -61,6 +62,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <main id="main-content" className="flex-1">
                     <div className="mx-auto w-full max-w-[var(--layout-max)] px-4 pb-10 pt-2 sm:px-5 sm:pt-4 lg:px-7 lg:pt-6 xl:px-8">
                       {children}
+                      <div className="mt-[var(--space-section)]">
+                        <ContactSection />
+                      </div>
                     </div>
                   </main>
                 </div>

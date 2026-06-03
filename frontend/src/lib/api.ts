@@ -7,6 +7,8 @@ import { systemApi } from "@/lib/api/system";
 import type { PricePoint, StockDetail, WatchlistItem } from "@/lib/types";
 import type {
   ArchiveEntry,
+  ContactSubmissionRequest,
+  ContactSubmissionResponse,
   ForecastDeltaResponse,
   PivotPoints,
   PredictionAccuracyStats,
@@ -34,6 +36,7 @@ export type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared
 export type {
   AccountProfile, AccountProfileUpdateRequest, AccountDeleteRequest, AccountDeleteResponse,
   SignUpValidationRequest, SignUpValidationResponse, UsernameAvailabilityResponse, CompositeScoreItem,
+  ContactSubmissionRequest, ContactSubmissionResponse,
   CompositeScoreDetail, CompositeScore, HeatmapStock, HeatmapSector,
   HeatmapData, TechSignalItem, TechSummaryGroup, TechSummary,
   PivotLevel, PivotPoints, ScreenerResult, ScreenerResponse,
@@ -85,6 +88,8 @@ export const api = {
       `/api/watchlist/${encodeURIComponent(ticker)}/tracking-detail?country_code=${encodeURIComponent(countryCode)}`,
       options,
     ),
+  submitContact: (payload: ContactSubmissionRequest) =>
+    post<ContactSubmissionResponse>("/api/contact", payload),
   compare: (tickers: string[]) => get<unknown[]>(`/api/compare?tickers=${tickers.join(",")}`),
   getArchive: () => get<ArchiveEntry[]>("/api/archive"),
   getArchiveDetail: (id: number) => get<unknown>(`/api/archive/${id}`),

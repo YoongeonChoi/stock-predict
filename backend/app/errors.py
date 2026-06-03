@@ -125,6 +125,11 @@ SP_5018 = lambda d="": AppError(
     d or "The requested aggregated response took too long. Retry shortly.",
 )
 SP_5019 = lambda d="": AppError("SP-5019", "Account service request failed", d)
+SP_5020 = lambda d="": AppError(
+    "SP-5020",
+    "Contact message save failed",
+    d or "Contact message storage is not available. Retry shortly.",
+)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -193,9 +198,18 @@ SP_6017 = lambda d="": AppError(
     "Watchlist item not found",
     d or "Add the ticker to your watchlist before opening deep tracking.",
 )
+SP_6018 = lambda d="": AppError(
+    "SP-6018",
+    "Invalid contact input",
+    d or "Check the contact form fields and try again.",
+)
+SP_6019 = lambda d="": AppError(
+    "SP-6019",
+    "Too many contact requests",
+    d or "Wait briefly before sending another contact message.",
+)
 
 # ---------------------------------------------------------------------------
 # 9xxx  Unexpected server/runtime errors
 # ---------------------------------------------------------------------------
 SP_9999 = lambda d="": AppError("SP-9999", "Unexpected server error", d)
-

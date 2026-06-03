@@ -37,6 +37,7 @@ from app.routers import (
     briefing,
     calendar,
     compare,
+    contact,
     country,
     export,
     portfolio,
@@ -490,6 +491,7 @@ app.include_router(sector.router)
 app.include_router(stock.router)
 app.include_router(watchlist.router)
 app.include_router(compare.router)
+app.include_router(contact.router)
 app.include_router(archive.router)
 app.include_router(calendar.router)
 app.include_router(export.router)

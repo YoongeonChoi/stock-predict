@@ -9,7 +9,7 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.66.11`
+현재 릴리즈: `v2.67.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 
@@ -80,6 +80,7 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 | `/archive` | 리서치/예측 아카이브 | 공개 |
 | `/lab` | 예측 연구실 | 공개 |
 | `/settings` | 계정/시스템/진단/운영 상태 | 로그인 |
+| 전역 하단 Contact | 이메일 링크와 문의 폼 | 공개 |
 
 ## 핵심 기능
 
@@ -128,6 +129,12 @@ Stock Predict는 이 문제를 아래 방식으로 해결합니다.
 - horizon별 목표일 cohort는 예상 수익률과 실제 수익률, 수익률 차이, confidence Brier를 한 표에서 대조해 예측 편향을 더 엄격하게 확인합니다.
 - 실현-예상 수익률 차이가 큰 cohort는 액션 큐와 진단 메모에 자동으로 올라와 수익률 편향을 먼저 복기할 수 있습니다.
 - `/api/research/predictions`는 `pipeline_health`, `coverage_breakdown`, `pipeline_alerts`를 additive로 포함해 저장만 되고 평가가 없는 상태나 5D/20D 누락 상태를 먼저 설명합니다.
+
+### 8. Contact
+
+- 모든 화면 하단에서 `contact@yoongeon.xyz` 메일 링크와 문의 폼을 제공합니다.
+- 폼 제출은 `POST /api/contact`에서 서버 검증, honeypot, rate limit을 통과한 뒤 Supabase `contact_messages`에 저장합니다.
+- 현재 Cloudflare Email Routing은 수신 전달용으로 사용하며, 문의 접수 알림 발송은 추후 Resend, SendGrid, Gmail SMTP 같은 발송 provider로 분리해 연결합니다.
 
 ## 시스템 아키텍처
 
@@ -232,6 +239,7 @@ flowchart TD
 보호된 API는 인증이 없을 때 `401 / SP-6014`를 반환합니다.
 관심종목에 없는 종목으로 심화 추적을 요청하면 `404 / SP-6017`을 사용합니다.
 공개 계정 검증 API는 로그인 전 호출할 수 있지만, 아이디 중복 확인은 클라이언트별 60초 60회, 회원가입 사전 검증은 60초 20회로 제한합니다. 초과 시 `429 / SP-6016`과 재시도 안내를 반환합니다.
+공개 문의 API는 로그인 없이 호출할 수 있지만, `400 / SP-6018` 입력 검증, `429 / SP-6019` 반복 제출 제한, `500 / SP-5020` 저장 실패 계약을 유지합니다.
 
 이 프로젝트에서는 페이지별 ad-hoc 로그인 처리보다, **공통 인증 계약과 세션 복구 흐름**을 우선합니다.
 
@@ -576,7 +584,7 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 |---|---|---|
 | Frontend | Next.js App Router, React, TypeScript, Tailwind CSS | SSR, 공개/보호 페이지 UI, 상태 계약 |
 | Backend | FastAPI, Pydantic, async Python | API, fallback, 분석 orchestration |
-| Auth / User Data | Supabase | 인증, 계정 프로필, 사용자별 watchlist/portfolio |
+| Auth / User Data | Supabase | 인증, 계정 프로필, 사용자별 watchlist/portfolio, 문의 로그 |
 | Runtime Storage | SQLite | 캐시, prediction log, runtime diagnostics |
 | Infra | Vercel, Render, Cloudflare | 프론트/백엔드 배포, DNS, edge 보조 |
 | External Data | ECOS, KOSIS, OpenDART, Naver, Yahoo Finance, FMP, 공식 리서치 메타데이터 | 시장/거시/공시/뉴스/시세 입력 |
@@ -625,6 +633,33 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 - 세션 복구/reauth/metadata sync를 프론트와 백엔드가 같이 맞춰야 합니다.
 - 그래서 이 저장소는 인증 UI 규칙과 보호 API 계약을 강하게 고정합니다.
 
+#### Contact 로그 테이블
+
+문의 폼은 백엔드 service role로 Supabase `contact_messages`에 저장합니다.
+브라우저에서 직접 insert하지 않으므로 public insert policy를 만들지 않습니다.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS public.contact_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),
+  email TEXT NOT NULL CHECK (char_length(email) BETWEEN 1 AND 120),
+  subject TEXT NOT NULL CHECK (char_length(subject) BETWEEN 1 AND 120),
+  message TEXT NOT NULL CHECK (char_length(message) BETWEEN 10 AND 3000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_agent TEXT,
+  ip_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'received'
+    CHECK (status IN ('received', 'reviewed', 'archived'))
+);
+
+ALTER TABLE public.contact_messages ENABLE ROW LEVEL SECURITY;
+```
+
+`CONTACT_IP_HASH_SALT`가 설정되어 있으면 client IP를 salt와 함께 hash해 `ip_hash`만 저장합니다.
+설정하지 않으면 IP 관련 값은 저장하지 않습니다.
+
 ### Runtime Storage
 
 #### 왜 SQLite인가
@@ -651,6 +686,33 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 - Render free는 cold start와 startup time budget 문제가 있습니다.
 - background job, long warmup, always-on cache를 기대하기 어렵습니다.
 - 그래서 이 프로젝트는 route-triggered refresh, representative sample, structured partial response를 적극 사용합니다.
+
+#### Cloudflare Email Worker / D1 후속 설계
+
+사이트 문의 폼 MVP와 별도로, 직접 수신되는 `contact@yoongeon.xyz` 메일은 다음 단계에서 Email Worker로 기록할 수 있습니다.
+
+```mermaid
+flowchart LR
+    IN["contact@yoongeon.xyz 수신"] --> EW["Cloudflare Email Worker"]
+    EW --> D1["D1 email_events 저장"]
+    EW --> GM["Gmail forward"]
+    EW --> RJ["허용되지 않은 주소 reject"]
+```
+
+```sql
+CREATE TABLE IF NOT EXISTS email_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_email TEXT NOT NULL,
+  to_email TEXT NOT NULL,
+  subject TEXT,
+  received_at TEXT NOT NULL,
+  action TEXT NOT NULL,
+  size_bytes INTEGER
+);
+```
+
+Worker는 허용된 수신 주소만 처리하고, `contact@yoongeon.xyz`는 Gmail로 forward하면서 from/to/subject/received_at/action을 저장합니다.
+Cloudflare Email Routing은 수신 전달용이므로 사이트 문의 접수 알림 발송과는 분리합니다.
 
 ### AI Usage
 

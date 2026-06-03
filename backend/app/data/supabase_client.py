@@ -447,5 +447,15 @@ class SupabaseClient:
             "updated_at": _utcnow_iso(),
         }
 
+    async def contact_message_insert(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = await self._request_json(
+            "POST",
+            "/rest/v1/contact_messages",
+            headers=self._service_headers(prefer="return=representation"),
+            json=payload,
+        )
+        rows = _normalize_response_rows(result)
+        return rows[0] if rows else dict(payload)
+
 
 supabase_client = SupabaseClient()
