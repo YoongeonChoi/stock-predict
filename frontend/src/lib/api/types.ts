@@ -56,6 +56,18 @@ export interface UsernameAvailabilityResponse {
   message: string;
 }
 
+export interface ContactSubmissionRequest {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  company?: string;
+}
+
+export interface ContactSubmissionResponse {
+  ok: boolean;
+  message: string;
+}
 
 export interface CompositeScoreItem {
   name: string;

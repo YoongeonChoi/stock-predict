@@ -41,6 +41,7 @@ class Settings(BaseSettings):
             "SUPABASE_SECRET_KEY",
         ),
     )
+    contact_ip_hash_salt: str = ""
 
     frontend_url: str = "http://localhost:3000"
     frontend_urls: str = ""

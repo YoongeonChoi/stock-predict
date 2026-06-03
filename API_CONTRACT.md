@@ -33,6 +33,54 @@
 - 허용되지 않은 HTTP method는 `405 / SP-6012`
 - 입력 검증 실패는 `422 / SP-6010`
 - 공개 계정 검증 API 과호출은 `429 / SP-6016`
+- 문의 폼 입력 검증 실패는 `400 / SP-6018`
+- 문의 폼 과호출은 `429 / SP-6019`
+- 문의 저장 실패는 `500 / SP-5020`
+
+## Contact API
+
+`POST /api/contact`
+
+요청:
+
+```json
+{
+  "name": "홍길동",
+  "email": "user@example.com",
+  "subject": "문의 제목",
+  "message": "문의 내용",
+  "company": ""
+}
+```
+
+규칙:
+
+- `company`는 화면에 보이지 않는 honeypot 필드이며 비어 있어야 합니다.
+- 서버 검증 기준은 `name` 1~80자, `email` 정상 형식 및 120자 이하, `subject` 1~120자, `message` 10~3000자입니다.
+- client identifier 기준 8초당 1회, 60초 5회, normalized email 기준 10분 3회로 제한합니다.
+- IP 원문은 저장하지 않고, `CONTACT_IP_HASH_SALT`가 있을 때만 hash를 `ip_hash`로 저장합니다.
+- 저장소는 Supabase `contact_messages` 테이블입니다. SMTP 발송은 현재 구현하지 않고 추후 provider hook에서 연결합니다.
+
+성공:
+
+```json
+{
+  "ok": true,
+  "message": "문의가 정상적으로 접수되었습니다."
+}
+```
+
+실패:
+
+```json
+{
+  "ok": false,
+  "error": "메시지는 최소 10자 이상 입력해야 합니다.",
+  "error_code": "SP-6018",
+  "message": "Invalid contact input",
+  "detail": "메시지는 최소 10자 이상 입력해야 합니다."
+}
+```
 
 ## 공개 집계형 API의 fallback 규칙
 

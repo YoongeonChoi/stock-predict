@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.67.0 - 2026-06-03
+
+- 모든 화면 하단에 Contact 섹션을 추가해 `contact@yoongeon.xyz` mailto 링크와 이름, 이메일, 제목, 메시지 기반 문의 폼을 제공합니다. 폼은 제출 중, 성공, 실패 상태를 화면 안에서 안내하고 모바일 1열 배치와 label/focus/aria-live 접근성 흐름을 유지합니다.
+- `POST /api/contact`를 추가했습니다. 서버에서 필수값, 이메일 형식, 길이 제한, honeypot, client/email 기준 rate limit을 검증하고 Supabase `contact_messages`에 문의 로그를 저장합니다. IP 원문은 저장하지 않고 `CONTACT_IP_HASH_SALT`가 있을 때만 hash를 저장합니다.
+- 문의 저장 실패와 반복 제출, 입력 검증 오류를 `SP-5020`, `SP-6019`, `SP-6018`로 등록하고 README/API 계약에 Supabase 테이블 SQL, Email Worker/D1 후속 설계, 발송 provider TODO를 정리했습니다.
+
 ## v2.66.11 - 2026-05-30
 
 - Render safe-mode startup의 public dashboard prewarm에 대표 종목 quick detail warm을 추가했습니다. 배포 직후 사용자가 종목 화면에 들어오기 전에 `003670.KS`, `005930.KS`의 5거래일 매수·매도 숫자 캐시 준비를 먼저 시작합니다.
