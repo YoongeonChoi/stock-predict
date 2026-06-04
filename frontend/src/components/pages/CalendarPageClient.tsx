@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Modal } from "@/components/ui";
 import PageHeader from "@/components/PageHeader";
 import PublicAuditStrip from "@/components/PublicAuditStrip";
 import WorkspaceStateCard, { WorkspaceLoadingCard } from "@/components/WorkspaceStateCard";
@@ -147,6 +148,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
@@ -236,16 +238,8 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
     setSelectedDate(todayKey);
   }
 
-  const summaryCards = data ? [
-    { label: "이번 달 총 일정", value: data.summary.total_events, note: data.month_label },
-    { label: "고중요도 일정", value: data.summary.high_impact_count, note: "정책 / CPI / 대형 실적 포함" },
-    { label: "정책 일정", value: data.summary.policy_count, note: "중앙은행·금리 이벤트" },
-    { label: "실적 일정", value: data.summary.earnings_count, note: "주요 기업 발표" },
-  ] : [];
-  const featuredUpcomingEvents = data?.upcoming_events.slice(0, 4) ?? [];
-  const agendaPreviewEvent = selectedEvents[0] ?? data?.upcoming_events[0] ?? null;
   const auditSummary = buildPublicAuditSummary(data, {
-    defaultSummary: "한국 일정과 주요 해외 매크로·대표 기업 실적을 표시하고, 실제 이벤트가 늦으면 추정 반복 일정으로 채웁니다.",
+    defaultSummary: "공식 발표 일정과 주요 실적을 월간 캘린더에 표시합니다.",
   });
 
   return (
@@ -253,7 +247,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       <PageHeader
         eyebrow="시장 일정"
         title="시장 일정 캘린더"
-        description="이번 달 정책·지표·실적 일정을 월간 보드와 선택 날짜 agenda로 표시합니다. 한국 일정과 미국·유로존·일본 핵심 이벤트를 함께 확인합니다."
+        description="정책 발표, 경제지표, 주요 실적 일정을 한 달 단위로 정리합니다. 날짜를 선택하면 세부 일정과 공식 출처를 바로 확인할 수 있습니다."
         variant="compact"
         meta={
           <>
@@ -286,104 +280,18 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
       {loading ? (
         <div className="space-y-4">
           <WorkspaceLoadingCard
-            title="이번 달 일정 요약을 준비하고 있습니다"
-            message="정책, 지표, 실적 일정을 한 달 보드용 요약으로 묶는 중입니다."
+            title="월간 캘린더를 준비하고 있습니다"
+            message="정책, 지표, 실적 일정을 날짜별로 배치하고 있습니다."
             className="min-h-[160px]"
           />
-          <div className="workspace-grid">
-            <WorkspaceLoadingCard
-              title="월간 일정 보드를 그리고 있습니다"
-              message="날짜별 이벤트 수와 중요도를 월간 캘린더 격자에 다시 배치하고 있습니다."
-              className="min-h-[620px]"
-            />
-            <div className="workspace-stack">
-              <WorkspaceLoadingCard
-                title="선택한 날짜 패널을 준비하고 있습니다"
-                message="날짜별 상세 설명과 태그를 확인하는 중입니다."
-                className="min-h-[190px]"
-              />
-              <WorkspaceLoadingCard
-                title="다가오는 일정 목록을 준비하고 있습니다"
-                message="가까운 일정 순서대로 재정렬해 오른쪽 패널에 채웁니다."
-                className="min-h-[180px]"
-              />
-              <WorkspaceLoadingCard
-                title="정기 체크포인트를 준비하고 있습니다"
-                message="매달 반복 확인할 대표 일정만 따로 다시 묶습니다."
-                className="min-h-[180px]"
-              />
-            </div>
-          </div>
+          <WorkspaceLoadingCard
+            title="월간 일정 보드를 그리고 있습니다"
+            message="날짜별 이벤트 수와 중요도를 캘린더 격자에 배치하고 있습니다."
+            className="min-h-[620px]"
+          />
         </div>
       ) : data ? (
         <>
-          <section className="card !p-5 space-y-4">
-            <div className="section-heading gap-4">
-              <div>
-                <h2 className="section-title">이번 달 주요 일정</h2>
-                <p className="section-copy">{auditSummary}</p>
-              </div>
-              <PublicAuditStrip meta={data} />
-            </div>
-            <div className="workspace-grid-balanced">
-              <div className="space-y-3">
-                {featuredUpcomingEvents.map((event) => {
-                const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
-                const sourceLabel = event.source === "recurring" ? "추정 일정" : "확인된 일정";
-                return (
-                  <div key={`${event.date}-${event.title}`} className="rounded-[20px] border border-border/70 bg-surface/55 px-4 py-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${style.badge}`}>{typeLabel(event)}</span>
-                      <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
-                        {eventCountryLabel(event.country_code)}
-                      </span>
-                      <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
-                        {sourceLabel}
-                      </span>
-                      <span className="rounded-full border border-border/70 bg-surface/70 px-2 py-0.5 text-[11px] text-text-secondary">
-                        {impactLabel(event.impact)}
-                      </span>
-                    </div>
-                    <div className="mt-3 text-sm font-semibold text-text">{event.title}</div>
-                    <div className="mt-2 text-sm leading-6 text-text-secondary">{event.description}</div>
-                    <div className="mt-3 text-xs text-text-secondary">{formatDateLabel(event.date)}</div>
-                  </div>
-                );
-              })}
-              </div>
-              <div className="section-slab-subtle !px-4 !py-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">이번 달 리듬</div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  <div className="metric-strip">
-                    <div className="text-xs text-text-secondary">핵심 일정 수</div>
-                    <div className="mt-2 text-lg font-semibold text-text">{data.summary.high_impact_count}건</div>
-                    <div className="mt-1 text-xs text-text-secondary">이번 달 우선 확인할 일정</div>
-                  </div>
-                  <div className="metric-strip">
-                    <div className="text-xs text-text-secondary">선택 기준</div>
-                    <div className="mt-2 text-sm font-semibold text-text">{activeCountry.flag} {activeCountry.label}</div>
-                    <div className="mt-1 text-xs text-text-secondary">{formatMonthLabel(currentMonthDate)}</div>
-                  </div>
-                </div>
-                <div className="mt-4 section-slab-muted !px-3 !py-3">
-                  <div className="text-xs text-text-secondary">agenda 미리보기</div>
-                  {agendaPreviewEvent ? (
-                    <>
-                      <div className="mt-2 font-medium text-text">{agendaPreviewEvent.title}</div>
-                      <div className="mt-1 text-xs leading-5 text-text-secondary">
-                        {formatDateLabel(agendaPreviewEvent.date)}
-                        {agendaPreviewEvent.subtitle ? ` · ${agendaPreviewEvent.subtitle}` : ""}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mt-2 text-sm text-text-secondary">
-                      아직 연결된 agenda 미리보기가 없습니다.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
           {error ? (
             <WorkspaceStateCard
               eyebrow="부분 업데이트"
@@ -393,22 +301,13 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
               kind="partial"
             />
           ) : null}
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {summaryCards.map((item) => (
-              <div key={item.label} className="metric-card">
-                <div className="text-xs text-text-secondary">{item.label}</div>
-                <div className="mt-3 text-2xl font-bold">{item.value}</div>
-                <div className="mt-2 text-xs leading-5 text-text-secondary">{item.note}</div>
-              </div>
-            ))}
-          </section>
 
-          <section className="workspace-grid">
-            <div className="min-w-0 card !p-4 space-y-4">
+          <section className="card overflow-hidden !p-0">
+            <div className="border-b border-border/70 bg-white px-4 py-4 sm:px-5">
               <div className="section-heading gap-4">
                 <div className="min-w-0">
                   <h2 className="section-title">{formatMonthLabel(currentMonthDate)}</h2>
-                  <p className="section-copy">{data.summary.note}</p>
+                  <p className="section-copy">{auditSummary}</p>
                 </div>
                 <div className="ui-button-cluster">
                   <button onClick={() => moveMonth(-1)} className="ui-button-secondary px-4">
@@ -422,49 +321,59 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                   </button>
                 </div>
               </div>
-
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">정책</span>
-                <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-sky-700 dark:text-sky-300">물가 / 핵심 지표</span>
-                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-amber-700 dark:text-amber-300">실적</span>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-white px-3 py-1.5 text-text-secondary">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" /> 정책
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-white px-3 py-1.5 text-text-secondary">
+                    <span className="h-2 w-2 rounded-full bg-sky-500" /> 물가 / 지표
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-white px-3 py-1.5 text-text-secondary">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" /> 실적
+                  </span>
+                </div>
+                <PublicAuditStrip meta={data} />
               </div>
-              <div className="ui-panel-muted text-xs leading-5 text-text-secondary">
-                반복되는 월간 지표는 국가별로 한 달에 1회만 대표 일정으로 표시합니다.
-              </div>
+            </div>
 
-              <div className="grid grid-cols-7 gap-2 px-1 text-xs text-text-secondary">
+            <div className="bg-white px-2 pb-3 pt-2 sm:px-4 sm:pb-5">
+              <div className="grid grid-cols-7 border-b border-border/60 text-xs font-medium text-text-secondary">
                 {WEEK_DAYS.map((day, index) => (
-                  <div key={day} className={`py-2 text-center ${index === 0 ? "text-rose-500" : index === 6 ? "text-sky-500" : ""}`}>
+                  <div key={day} className={`py-3 text-center ${index === 0 ? "text-rose-500" : index === 6 ? "text-sky-500" : ""}`}>
                     {day}
                   </div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-                {days.map((date) => {
+              <div className="grid grid-cols-7">
+                {days.map((date, index) => {
                   const key = dateKey(date);
                   const inMonth = date.getMonth() === viewMonth;
                   const isToday = key === todayKey;
                   const isSelected = key === selectedDate;
                   const dayEvents = eventsByDate[key] || [];
                   const hasHighImpact = dayEvents.some((event) => event.impact === "high");
+                  const isWeekEnd = index % 7 === 6;
 
                   return (
                     <button
                       key={key}
                       onClick={() => setSelectedDate(key)}
-                      className={`min-h-[82px] rounded-[20px] border p-2 text-left transition-[border-color,background-color,box-shadow,opacity] sm:min-h-[100px] sm:p-2.5 lg:min-h-[118px] ${
+                      className={`min-h-[74px] border-b border-border/55 p-1.5 text-left transition-[background-color,box-shadow,opacity] sm:min-h-[112px] sm:p-2.5 lg:min-h-[132px] ${
+                        isWeekEnd ? "" : "border-r"
+                      } ${
                         isSelected
-                          ? "border-accent bg-accent/10 shadow-[0_0_0_1px_rgba(15,118,110,0.16)]"
-                          : "border-border bg-surface/60 hover:border-accent/35 hover:bg-surface"
-                      } ${!inMonth ? "opacity-45" : "opacity-100"} ${hasHighImpact && !isSelected ? "border-rose-300/45" : ""}`}
+                          ? "bg-accent/10 shadow-[inset_0_0_0_2px_rgb(var(--accent-rgb)/0.42)]"
+                          : "bg-white hover:bg-surface/80"
+                      } ${!inMonth ? "opacity-45" : "opacity-100"} ${hasHighImpact && !isSelected ? "bg-rose-50/55" : ""}`}
                       aria-pressed={isSelected}
                       aria-label={`${date.getMonth() + 1}월 ${date.getDate()}일${dayEvents.length > 0 ? `, 일정 ${dayEvents.length}건` : ""}${isToday ? ", 오늘" : ""}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span
                           className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium sm:h-8 sm:w-8 sm:text-sm ${
-                            isToday ? "bg-accent text-white" : isSelected ? "bg-accent/15 text-accent" : "bg-border/45 text-text"
+                            isToday ? "bg-accent text-white" : isSelected ? "bg-accent/15 text-accent" : "text-text"
                           }`}
                         >
                           {date.getDate()}
@@ -478,7 +387,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                         {dayEvents.slice(0, 2).map((event) => {
                           const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
                           return (
-                            <div key={event.id} className="rounded-xl border border-border/60 bg-surface/72 px-2 py-1.5">
+                            <div key={event.id} className="rounded-md bg-surface/95 px-2 py-1.5">
                               <div className="flex items-center gap-1.5">
                                 <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
                                 <span className={`text-[10px] font-medium ${style.label}`}>{typeLabel(event)}</span>
@@ -488,7 +397,7 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                           );
                         })}
                         {dayEvents.length > 2 ? (
-                          <div className="px-1 text-[11px] text-text-secondary">+{dayEvents.length - 2}건 더 보기</div>
+                          <div className="px-1 text-[11px] text-text-secondary">+{dayEvents.length - 2}건</div>
                         ) : null}
                       </div>
 
@@ -507,115 +416,190 @@ export default function CalendarPageClient({ initialData = null }: CalendarPageC
                 })}
               </div>
             </div>
+          </section>
 
-            <div className="workspace-stack xl:sticky xl:top-5">
-              <div className="card !p-4 space-y-3">
-                <div>
-                  <h2 className="text-base font-semibold">선택한 날짜 agenda</h2>
-                  <p className="mt-1 text-sm text-text-secondary">
-                    {selectedDate ? formatDateLabel(selectedDate) : "달력에서 날짜를 선택해 주세요."}
-                  </p>
-                </div>
-
-                {selectedDate && selectedEvents.length > 0 ? (
-                  <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
-                    {selectedEvents.map((event) => {
-                      const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
-                      return (
-                        <div key={event.id} className="rounded-2xl border border-border bg-surface/60 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className={`h-2 w-2 rounded-full ${style.dot}`} />
-                                <div className="font-medium text-text">{event.title}</div>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-secondary">
-                                <span>{eventCountryLabel(event.country_code)}</span>
-                                <span>{typeLabel(event)}</span>
-                                <span>{event.source === "recurring" ? "추정 일정" : "확인된 일정"}</span>
-                                {event.subtitle ? <span>{event.subtitle}</span> : null}
-                              </div>
-                            </div>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
-                              {impactLabel(event.impact)}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm leading-relaxed text-text-secondary">{event.description}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-text-secondary">
-                    선택한 날짜에는 표시할 일정이 없습니다.
-                  </div>
-                )}
+          <section className="card !p-5 space-y-4">
+            <div className="section-heading gap-4">
+              <div>
+                <h2 className="section-title">선택한 날짜 일정</h2>
+                <p className="section-copy">
+                  {selectedDate ? formatDateLabel(selectedDate) : "캘린더에서 날짜를 선택해 주세요."}
+                </p>
               </div>
-
-              <div className="card !p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                 <div>
-                  <h2 className="text-base font-semibold">다가오는 핵심 일정</h2>
-                  <p className="mt-1 text-sm text-text-secondary">이번 달 안에서 가까운 순서대로 12개까지 표시합니다.</p>
+                  <div className="text-xs text-text-secondary">전체</div>
+                  <div className="mt-1 font-semibold text-text">{data.summary.total_events}건</div>
                 </div>
-                <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
-                  {data.upcoming_events.length > 0 ? data.upcoming_events.map((event) => {
-                    const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
-                    return (
-                      <button
-                        key={event.id}
-                        onClick={() => jumpToDate(event.date, setViewYear, setViewMonth, setSelectedDate)}
-                        className="w-full rounded-2xl border border-border bg-surface/50 px-3 py-3 text-left transition-colors hover:border-accent/35"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className={`h-2 w-2 rounded-full ${style.dot}`} />
-                              <span className="font-medium text-text">{event.title}</span>
-                            </div>
-                            <div className="mt-1 text-xs text-text-secondary">
-                              {eventCountryLabel(event.country_code)} · {formatDateLabel(event.date)}
-                              {event.subtitle ? ` · ${event.subtitle}` : ""}
-                            </div>
-                          </div>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
-                            {impactLabel(event.impact)}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  }) : (
-                    <div className="text-sm text-text-secondary">표시할 일정이 없습니다.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="card !p-4 space-y-3">
                 <div>
-                  <h2 className="text-base font-semibold">월간 체크포인트</h2>
-                  <p className="mt-1 text-sm text-text-secondary">매달 반복해서 확인할 대표 일정들입니다.</p>
+                  <div className="text-xs text-text-secondary">중요</div>
+                  <div className="mt-1 font-semibold text-text">{data.summary.high_impact_count}건</div>
                 </div>
-                <div className="space-y-2">
-                  {data.major_events.map((event) => {
-                    const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
-                    return (
-                      <div key={event.name} className="rounded-2xl border border-border bg-surface/60 px-3 py-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-medium text-text">{event.name_local}</div>
-                            <div className="mt-1 text-xs text-text-secondary">{event.frequency}</div>
-                          </div>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
-                            {impactLabel(event.impact)}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm leading-relaxed text-text-secondary">{event.description}</p>
-                      </div>
-                    );
-                  })}
+                <div>
+                  <div className="text-xs text-text-secondary">정책</div>
+                  <div className="mt-1 font-semibold text-text">{data.summary.policy_count}건</div>
+                </div>
+                <div>
+                  <div className="text-xs text-text-secondary">실적</div>
+                  <div className="mt-1 font-semibold text-text">{data.summary.earnings_count}건</div>
                 </div>
               </div>
             </div>
+
+            {selectedDate && selectedEvents.length > 0 ? (
+              <div className="space-y-2">
+                {selectedEvents.map((event) => {
+                  const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
+                  return (
+                    <button
+                      key={event.id}
+                      onClick={() => setSelectedEvent(event)}
+                      className="w-full rounded-xl border border-border/70 bg-white px-4 py-3 text-left transition-colors hover:border-accent/45 hover:bg-surface/50"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
+                            <div className="font-semibold text-text">{event.title}</div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-text-secondary">
+                            <span>{eventCountryLabel(event.country_code)}</span>
+                            <span>{typeLabel(event)}</span>
+                            <span>{event.source === "recurring" ? "대표 일정" : "확인된 일정"}</span>
+                            {event.subtitle ? <span>{event.subtitle}</span> : null}
+                            {event.source_name ? <span>{event.source_name}</span> : null}
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-text-secondary">{event.description}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
+                          {impactLabel(event.impact)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-text-secondary">
+                선택한 날짜에는 표시할 일정이 없습니다.
+              </div>
+            )}
           </section>
+
+          <section className="card !p-5 space-y-4">
+            <div>
+              <h2 className="section-title">다가오는 주요 일정</h2>
+              <p className="section-copy">이번 달 안에서 가까운 순서대로 12개까지 표시합니다.</p>
+            </div>
+            <div className="space-y-2">
+              {data.upcoming_events.length > 0 ? data.upcoming_events.map((event) => {
+                const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => {
+                      jumpToDate(event.date, setViewYear, setViewMonth, setSelectedDate);
+                      setSelectedEvent(event);
+                    }}
+                    className="w-full rounded-xl border border-border/70 bg-white px-4 py-3 text-left transition-colors hover:border-accent/45 hover:bg-surface/50"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
+                          <span className="font-semibold text-text">{event.title}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-text-secondary">
+                          {eventCountryLabel(event.country_code)} · {formatDateLabel(event.date)}
+                          {event.subtitle ? ` · ${event.subtitle}` : ""}
+                          {event.source_name ? ` · ${event.source_name}` : ""}
+                        </div>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
+                        {impactLabel(event.impact)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              }) : (
+                <div className="text-sm text-text-secondary">표시할 일정이 없습니다.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="card !p-5 space-y-4">
+            <div>
+              <h2 className="section-title">월간 체크포인트</h2>
+              <p className="section-copy">매달 반복해서 확인할 대표 일정입니다.</p>
+            </div>
+            <div className="space-y-2">
+              {data.major_events.map((event) => {
+                const style = EVENT_STYLES[event.color] || EVENT_STYLES.slate;
+                return (
+                  <div key={event.name} className="rounded-xl border border-border/70 bg-white px-4 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-text">{event.name_local}</div>
+                        <div className="mt-1 text-xs text-text-secondary">{event.frequency}</div>
+                        <p className="mt-2 text-sm leading-6 text-text-secondary">{event.description}</p>
+                        {event.source_url ? (
+                          <a
+                            className="mt-3 inline-flex text-sm font-semibold text-accent transition-colors hover:text-accent-strong"
+                            href={event.source_url}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {event.source_name || "공식 출처"} 보기
+                          </a>
+                        ) : null}
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
+                        {impactLabel(event.impact)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <Modal
+            className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl"
+            onClose={() => setSelectedEvent(null)}
+            open={Boolean(selectedEvent)}
+            title={selectedEvent?.title || "일정 상세"}
+          >
+            {selectedEvent ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                  <span className="info-chip">{formatDateLabel(selectedEvent.date)}</span>
+                  <span className="info-chip">{eventCountryLabel(selectedEvent.country_code)}</span>
+                  <span className="info-chip">{typeLabel(selectedEvent)}</span>
+                  <span className="info-chip">{impactLabel(selectedEvent.impact)}</span>
+                </div>
+                {selectedEvent.subtitle ? (
+                  <p className="text-sm font-medium text-text">{selectedEvent.subtitle}</p>
+                ) : null}
+                <p className="text-sm leading-6 text-text-secondary">{selectedEvent.description}</p>
+                {selectedEvent.source_name || selectedEvent.source_url ? (
+                  <div className="rounded-xl border border-border/70 bg-surface/55 px-4 py-3">
+                    <div className="text-xs text-text-secondary">출처</div>
+                    <div className="mt-1 font-medium text-text">{selectedEvent.source_name || selectedEvent.source}</div>
+                    {selectedEvent.source_url ? (
+                      <a
+                        className="ui-button-primary mt-3 px-4"
+                        href={selectedEvent.source_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        공식 발표 보기
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </Modal>
         </>
       ) : (
         <WorkspaceStateCard

@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+import { Modal } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 interface ContactFormState {
@@ -62,6 +63,7 @@ function errorToMessage(error: unknown) {
 }
 
 export default function ContactSection() {
+  const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<ContactFormState>(INITIAL_FORM);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ContactField, string>>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +88,11 @@ export default function ContactSection() {
       setStatus("idle");
       setStatusMessage("");
     }
+  };
+
+  const closeModal = () => {
+    if (submitting) return;
+    setModalOpen(false);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -124,26 +131,57 @@ export default function ContactSection() {
   };
 
   return (
-    <section className="card !p-4 sm:!p-5" aria-labelledby="contact-title">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-8">
-        <div className="min-w-0">
-          <p className="page-eyebrow page-eyebrow-compact">CONTACT</p>
-          <h2 id="contact-title" className="section-title mt-2">
-            Contact
-          </h2>
-          <p className="section-copy">
-            프로젝트, 채용, 협업 문의는 아래 이메일 또는 폼으로 연락해 주세요.
-          </p>
-          <div className="mt-5">
-            <a
-              className="inline-flex min-h-[var(--touch-target-min)] max-w-full items-center break-all font-mono text-sm font-semibold text-accent transition-colors hover:text-accent-strong"
-              href="mailto:contact@yoongeon.xyz"
-            >
-              contact@yoongeon.xyz
-            </a>
+    <footer className="border-t border-border/70 py-8 sm:py-10" aria-labelledby="contact-title">
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-3">
+          <div>
+            <h2 id="contact-title" className="text-xl font-bold text-text">
+              Yoongeon Choi
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-text-secondary">
+              Data Engineering · AI Infrastructure · Web Projects
+            </p>
           </div>
+          <a
+            className="inline-flex min-h-[var(--touch-target-min)] max-w-full items-center break-all font-mono text-sm font-semibold text-accent transition-colors hover:text-accent-strong"
+            href="mailto:contact@yoongeon.xyz"
+          >
+            contact@yoongeon.xyz
+          </a>
+          <nav className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-text-secondary" aria-label="Contact links">
+            <a
+              className="transition-colors hover:text-text"
+              href="https://github.com/YoongeonChoi"
+              rel="noreferrer"
+              target="_blank"
+            >
+              GitHub
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              className="transition-colors hover:text-text"
+              href="https://www.linkedin.com/in/yoongeon-choi-83b434339"
+              rel="noreferrer"
+              target="_blank"
+            >
+              LinkedIn
+            </a>
+            <span aria-hidden="true">·</span>
+            <span>Privacy</span>
+          </nav>
+          <p className="text-xs text-text-secondary">
+            © 2026 Yoongeon Choi. All rights reserved.
+          </p>
         </div>
+        <button className="ui-button-primary w-full px-5 sm:w-auto" type="button" onClick={() => setModalOpen(true)}>
+          문의 보내기
+        </button>
+      </div>
 
+      <Modal className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl" onClose={closeModal} open={modalOpen} title="문의 보내기">
+        <p className="mb-5 text-sm leading-6 text-text-secondary">
+          프로젝트, 채용, 협업 문의를 남겨 주세요. 접수된 내용은 contact@yoongeon.xyz로 확인합니다.
+        </p>
         <form className="min-w-0 space-y-4" onSubmit={handleSubmit} noValidate>
           <div className="hidden" aria-hidden="true">
             <label htmlFor="contact-company">회사</label>
@@ -251,11 +289,11 @@ export default function ContactSection() {
               {statusMessage}
             </p>
             <button className="ui-button-primary shrink-0" type="submit" disabled={submitting}>
-              {submitting ? "보내는 중" : "문의 보내기"}
+              {submitting ? "보내는 중" : "보내기"}
             </button>
           </div>
         </form>
-      </div>
-    </section>
+      </Modal>
+    </footer>
   );
 }
