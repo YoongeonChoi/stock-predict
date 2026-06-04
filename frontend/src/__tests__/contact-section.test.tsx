@@ -16,6 +16,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 function fillValidForm() {
+  if (!screen.queryByRole("dialog", { name: "문의 보내기" })) {
+    fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+  }
   fireEvent.change(screen.getByLabelText("이름"), { target: { value: "홍길동" } });
   fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "user@example.com" } });
   fireEvent.change(screen.getByLabelText("제목"), { target: { value: "협업 문의" } });
@@ -29,14 +32,28 @@ describe("ContactSection", () => {
     vi.mocked(api.submitContact).mockReset();
   });
 
-  it("contact email link and form labels are rendered", () => {
+  it("contact footer links and modal trigger are rendered", () => {
     render(<ContactSection />);
 
-    expect(screen.getByRole("heading", { name: "Contact" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Yoongeon Choi" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "contact@yoongeon.xyz" })).toHaveAttribute(
       "href",
       "mailto:contact@yoongeon.xyz",
     );
+    expect(screen.getByRole("link", { name: "GitHub" })).toHaveAttribute(
+      "href",
+      "https://github.com/YoongeonChoi",
+    );
+    expect(screen.getByRole("link", { name: "LinkedIn" })).toHaveAttribute(
+      "href",
+      "https://www.linkedin.com/in/yoongeon-choi-83b434339",
+    );
+    expect(screen.getByText("© 2026 Yoongeon Choi. All rights reserved.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("이름")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+
+    expect(screen.getByRole("dialog", { name: "문의 보내기" })).toBeInTheDocument();
     expect(screen.getByLabelText("이름")).toBeInTheDocument();
     expect(screen.getByLabelText("이메일")).toBeInTheDocument();
     expect(screen.getByLabelText("제목")).toBeInTheDocument();
@@ -49,7 +66,7 @@ describe("ContactSection", () => {
     fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "invalid" } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "보내기" }));
     });
 
     expect(screen.getAllByText("이메일 형식을 올바르게 입력해 주세요.").length).toBeGreaterThan(0);
@@ -62,7 +79,7 @@ describe("ContactSection", () => {
     fireEvent.change(screen.getByLabelText("메시지"), { target: { value: "짧음" } });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "보내기" }));
     });
 
     expect(screen.getAllByText("메시지는 최소 10자 이상 입력해야 합니다.").length).toBeGreaterThan(0);
@@ -78,7 +95,7 @@ describe("ContactSection", () => {
     fillValidForm();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "보내기" }));
     });
 
     await waitFor(() => expect(api.submitContact).toHaveBeenCalledTimes(1));
@@ -101,7 +118,7 @@ describe("ContactSection", () => {
     fillValidForm();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "문의 보내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "보내기" }));
     });
 
     expect(await screen.findByText("메시지는 최소 10자 이상 입력해야 합니다.")).toBeInTheDocument();

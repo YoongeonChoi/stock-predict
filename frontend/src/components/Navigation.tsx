@@ -42,7 +42,7 @@ const NAV_GROUPS = [
       { href: "/portfolio", label: "포트폴리오", description: "보유 종목과 추천 운영", icon: BriefcaseBusiness },
       { href: "/watchlist", label: "관심종목", description: "추적 후보와 빠른 접근", icon: Star },
       { href: "/calendar", label: "캘린더", description: "정책, 지표, 실적 일정", icon: CalendarDays },
-      { href: "/archive", label: "아카이브", description: "과거 리포트와 예측 기록", icon: Archive },
+      { href: "/archive", label: "아카이브", description: "공식 리서치 원문", icon: Archive },
     ],
   },
   {

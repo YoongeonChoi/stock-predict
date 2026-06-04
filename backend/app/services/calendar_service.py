@@ -26,6 +26,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "rose",
         "type": "policy",
+        "source_name": "한국은행",
+        "source_url": "https://www.bok.or.kr/eng/main/contents.do?menuNo=400020",
     },
     {
         "country_code": "KR",
@@ -36,6 +38,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "sky",
         "type": "economic",
+        "source_name": "통계청",
+        "source_url": "https://kostat.go.kr/cpi/",
     },
     {
         "country_code": "KR",
@@ -46,6 +50,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "emerald",
         "type": "economic",
+        "source_name": "산업통상자원부",
+        "source_url": "https://www.motie.go.kr/kor/article/ATCL3f49a5a8c/list",
     },
     {
         "country_code": "KR",
@@ -56,6 +62,8 @@ KR_MAJOR_EVENTS = (
         "impact": "medium",
         "color": "amber",
         "type": "economic",
+        "source_name": "통계청",
+        "source_url": "https://kostat.go.kr/",
     },
     {
         "country_code": "US",
@@ -66,6 +74,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "rose",
         "type": "policy",
+        "source_name": "Federal Reserve",
+        "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
     },
     {
         "country_code": "US",
@@ -76,6 +86,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "sky",
         "type": "economic",
+        "source_name": "U.S. Bureau of Labor Statistics",
+        "source_url": "https://www.bls.gov/schedule/news_release/cpi.htm",
     },
     {
         "country_code": "US",
@@ -86,6 +98,8 @@ KR_MAJOR_EVENTS = (
         "impact": "high",
         "color": "emerald",
         "type": "economic",
+        "source_name": "U.S. Bureau of Labor Statistics",
+        "source_url": "https://www.bls.gov/news.release/empsit.nr0.htm",
     },
     {
         "country_code": "EU",
@@ -96,6 +110,8 @@ KR_MAJOR_EVENTS = (
         "impact": "medium",
         "color": "rose",
         "type": "policy",
+        "source_name": "European Central Bank",
+        "source_url": "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html",
     },
     {
         "country_code": "JP",
@@ -106,6 +122,8 @@ KR_MAJOR_EVENTS = (
         "impact": "medium",
         "color": "rose",
         "type": "policy",
+        "source_name": "Bank of Japan",
+        "source_url": "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm",
     },
 )
 
@@ -322,6 +340,36 @@ def _localize_economic_event(country_code: str, title_en: str) -> str:
     return f"{MARKET_COUNTRY_LABELS.get(country_code, '해외')} {base}"
 
 
+def _source_reference_for_event(country_code: str, title_en: str, category: str) -> tuple[str | None, str | None]:
+    major = MAJOR_EVENT_LOOKUP.get((country_code, title_en))
+    if major:
+        return major.get("source_name"), major.get("source_url")
+
+    if category == "policy":
+        if country_code == "US":
+            return "Federal Reserve", "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+        if country_code == "EU":
+            return "European Central Bank", "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html"
+        if country_code == "JP":
+            return "Bank of Japan", "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
+        if country_code == "KR":
+            return "한국은행", "https://www.bok.or.kr/eng/main/contents.do?menuNo=400020"
+
+    if category == "inflation":
+        if country_code == "US":
+            return "U.S. Bureau of Labor Statistics", "https://www.bls.gov/schedule/news_release/cpi.htm"
+        if country_code == "KR":
+            return "통계청", "https://kostat.go.kr/cpi/"
+
+    if category == "labor" and country_code == "US":
+        return "U.S. Bureau of Labor Statistics", "https://www.bls.gov/news.release/empsit.nr0.htm"
+
+    if category == "trade" and country_code == "KR":
+        return "산업통상자원부", "https://www.motie.go.kr/kor/article/ATCL3f49a5a8c/list"
+
+    return None, None
+
+
 def _is_tracked_economic_event(country_code: str | None, title_en: str) -> bool:
     if country_code not in {"KR", "US", "EU", "JP"}:
         return False
@@ -352,6 +400,7 @@ def _normalize_economic_event(raw: dict, source: str) -> dict | None:
     event_type = "policy" if category == "policy" else "economic"
     title_local = _localize_economic_event(country_code or "KR", title_en)
     impact = _impact_for_event(category, event_type, country_code=country_code or "KR")
+    source_name, source_url = _source_reference_for_event(country_code or "KR", title_en, category)
 
     subtitle_parts: list[str] = []
     actual = raw.get("actual")
@@ -373,6 +422,8 @@ def _normalize_economic_event(raw: dict, source: str) -> dict | None:
         "impact": impact,
         "color": _color_for_event(event_type, impact),
         "source": source,
+        "source_name": source_name,
+        "source_url": source_url,
         "all_day": True,
         "time": None,
         "symbol": None,
@@ -416,6 +467,8 @@ def _normalize_earnings_event(raw: dict) -> dict | None:
         "impact": impact,
         "color": _color_for_event("earnings", impact),
         "source": "fmp",
+        "source_name": None,
+        "source_url": None,
         "all_day": True,
         "time": None,
         "symbol": symbol,
@@ -454,6 +507,8 @@ def _build_recurring_major_events(year: int, month: int) -> list[dict]:
                 "impact": major["impact"],
                 "color": major["color"],
                 "source": "recurring",
+                "source_name": major.get("source_name"),
+                "source_url": major.get("source_url"),
                 "all_day": True,
                 "time": None,
                 "symbol": None,
@@ -525,6 +580,8 @@ def _build_calendar_result(
                 "description": item["description"],
                 "impact": item["impact"],
                 "color": item["color"],
+                "source_name": item.get("source_name"),
+                "source_url": item.get("source_url"),
             }
             for item in KR_MAJOR_EVENTS
         ],

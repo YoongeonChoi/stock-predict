@@ -1213,6 +1213,8 @@ export interface CalendarMajorEvent {
   description: string;
   impact: "high" | "medium" | "low";
   color: string;
+  source_name?: string | null;
+  source_url?: string | null;
 }
 
 export interface CalendarSummary {
@@ -1236,6 +1238,8 @@ export interface CalendarEvent {
   impact: "high" | "medium" | "low";
   color: string;
   source: string;
+  source_name?: string | null;
+  source_url?: string | null;
   all_day: boolean;
   time?: string | null;
   symbol?: string | null;

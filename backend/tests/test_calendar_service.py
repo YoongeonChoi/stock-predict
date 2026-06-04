@@ -79,6 +79,13 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(event["type"] == "earnings" for event in result["events"]))
         self.assertTrue(any(event["type"] in {"economic", "policy"} for event in result["events"]))
         self.assertTrue(all("description" in event for event in result["events"]))
+        cpi_event = next(
+            event
+            for event in result["events"]
+            if event["title_en"] == "CPI Release" and event["country_code"] == "KR"
+        )
+        self.assertEqual(cpi_event["source_name"], "통계청")
+        self.assertEqual(cpi_event["source_url"], "https://kostat.go.kr/cpi/")
 
     async def test_recurring_monthly_events_do_not_repeat_across_multiple_days(self):
         with (
@@ -151,6 +158,16 @@ class CalendarServiceTests(unittest.IsolatedAsyncioTestCase):
                 event["country_code"] == "EU" and event["title"] == "ECB 금리결정"
                 for event in result["economic_events"]
             )
+        )
+        ecb_event = next(
+            event
+            for event in result["economic_events"]
+            if event["country_code"] == "EU" and event["title"] == "ECB 금리결정"
+        )
+        self.assertEqual(ecb_event["source_name"], "European Central Bank")
+        self.assertEqual(
+            ecb_event["source_url"],
+            "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html",
         )
         self.assertTrue(
             any(
