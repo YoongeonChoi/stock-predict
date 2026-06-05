@@ -2,6 +2,13 @@
 
 All notable changes to this project are tracked here.
 
+## v2.70.0 - 2026-06-05
+
+- `/settings`에 계정별 투자 성향 설정을 추가했습니다. `원금보존형`, `안정추구형`, `균형형`, `성장추구형`, `적극투자형` 중 하나를 저장하면 Supabase `investment_profiles`에 사용자별로 분리 저장됩니다.
+- 포트폴리오 추천에 투자 성향 정책 레이어를 추가했습니다. 예측값 자체는 유지하고 후보 기준, 현금 버퍼, 단일/국가/섹터 cap, optimizer의 risk aversion과 turnover penalty, objective weight만 성향별로 조정합니다.
+- `GET/PUT /api/investment-profile`, `GET /api/investment-profile/options`, `POST /api/investment-profile/resolve`, `GET /api/portfolio/recommendations/personalized`를 추가했습니다. 기존 조건/최적 추천 응답에는 `recommendation_policy`와 종목별 `profile_fit`을 additive로 포함할 수 있습니다.
+- Supabase migration에 `investment_profiles`와 best-effort `portfolio_recommendation_snapshots` 테이블을 추가하고, 저장/조회 실패와 입력 검증 오류를 `SP-5021`, `SP-5022`, `SP-6020`으로 구분했습니다.
+
 ## v2.69.0 - 2026-06-04
 
 - 전역 Contact 섹션을 footer 연락처 중심으로 정리하고, `문의 보내기` 버튼을 누를 때 이름, 이메일, 제목, 메시지를 입력하는 모달이 열리도록 변경했습니다. GitHub, LinkedIn, `contact@yoongeon.xyz` 링크와 저작권 표기도 footer에 맞췄습니다.

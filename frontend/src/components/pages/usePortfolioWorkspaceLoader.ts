@@ -3,7 +3,15 @@
 import { useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
-import { api, type PortfolioConditionalRecommendationFilters, type PortfolioConditionalRecommendationResponse, type PortfolioData, type PortfolioEventRadarResponse, type PortfolioOptimalRecommendationResponse } from "@/lib/api";
+import {
+  api,
+  type PortfolioConditionalRecommendationFilters,
+  type PortfolioConditionalRecommendationResponse,
+  type PortfolioData,
+  type PortfolioEventRadarResponse,
+  type PortfolioOptimalRecommendationResponse,
+  type PortfolioPersonalizedRecommendationResponse,
+} from "@/lib/api";
 import { getUserFacingErrorMessage } from "@/lib/request-state";
 import {
   reportErrorOnlyScreen,
@@ -34,8 +42,11 @@ interface UsePortfolioWorkspaceLoaderOptions {
   setConditionalError: Dispatch<SetStateAction<string | null>>;
   setOptimalRecommendation: Dispatch<SetStateAction<PortfolioOptimalRecommendationResponse | null>>;
   setOptimalError: Dispatch<SetStateAction<string | null>>;
+  setPersonalizedRecommendation: Dispatch<SetStateAction<PortfolioPersonalizedRecommendationResponse | null>>;
+  setPersonalizedError: Dispatch<SetStateAction<string | null>>;
   setConditionalLoading: Dispatch<SetStateAction<boolean>>;
   setOptimalLoading: Dispatch<SetStateAction<boolean>>;
+  setPersonalizedLoading: Dispatch<SetStateAction<boolean>>;
   setEventRadarLoading: Dispatch<SetStateAction<boolean>>;
   toast: (message: string, tone?: "info" | "success" | "error") => void;
   formatApiErrorMessage: (error: unknown, fallback: string) => string;
@@ -61,8 +72,11 @@ export function usePortfolioWorkspaceLoader({
   setConditionalError,
   setOptimalRecommendation,
   setOptimalError,
+  setPersonalizedRecommendation,
+  setPersonalizedError,
   setConditionalLoading,
   setOptimalLoading,
+  setPersonalizedLoading,
   setEventRadarLoading,
   toast,
   formatApiErrorMessage,
@@ -93,11 +107,13 @@ export function usePortfolioWorkspaceLoader({
     }
     setConditionalLoading(true);
     setOptimalLoading(true);
+    setPersonalizedLoading(true);
     setEventRadarLoading(true);
-    const [eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
+    const [eventResult, conditionalResult, optimalResult, personalizedResult] = await Promise.allSettled([
       api.getPortfolioEventRadar(14, { timeoutMs: panelTimeoutMs }),
       api.getPortfolioConditionalRecommendation(filters, { timeoutMs: panelTimeoutMs }),
       api.getPortfolioOptimalRecommendation({ timeoutMs: panelTimeoutMs }),
+      api.getPortfolioPersonalizedRecommendation({ timeoutMs: panelTimeoutMs }),
     ]);
 
     if (eventResult.status === "fulfilled") {
@@ -133,8 +149,20 @@ export function usePortfolioWorkspaceLoader({
       reportPanelDegraded(ROUTE_KEY, "optimal_recommendation", message);
     }
 
+    if (personalizedResult.status === "fulfilled") {
+      setPersonalizedRecommendation(personalizedResult.value);
+      setPersonalizedError(null);
+      reportHydrationRefetchSuccess(ROUTE_KEY, "personalized_recommendation");
+    } else {
+      console.error(personalizedResult.reason);
+      const message = getUserFacingErrorMessage(personalizedResult.reason, "개인화 추천을 다시 불러오지 못했습니다.");
+      setPersonalizedError(message);
+      reportPanelDegraded(ROUTE_KEY, "personalized_recommendation", message);
+    }
+
     setConditionalLoading(false);
     setOptimalLoading(false);
+    setPersonalizedLoading(false);
     setEventRadarLoading(false);
   };
 
@@ -149,24 +177,28 @@ export function usePortfolioWorkspaceLoader({
       setEventRadar(null);
       setConditionalRecommendation(null);
       setOptimalRecommendation(null);
+      setPersonalizedRecommendation(null);
       setLoading(false);
       setConditionalLoading(false);
       setOptimalLoading(false);
+      setPersonalizedLoading(false);
       setEventRadarLoading(false);
       setPortfolioLoadError(null);
       setEventRadarError(null);
       setConditionalError(null);
       setOptimalError(null);
+      setPersonalizedError(null);
       return;
     }
 
     const loadWorkspace = async () => {
       setLoading(true);
-      const [portfolioResult, eventResult, conditionalResult, optimalResult] = await Promise.allSettled([
+      const [portfolioResult, eventResult, conditionalResult, optimalResult, personalizedResult] = await Promise.allSettled([
         api.getPortfolio({ timeoutMs: primaryTimeoutMs }),
         api.getPortfolioEventRadar(14, { timeoutMs: panelTimeoutMs }),
         api.getPortfolioConditionalRecommendation(initialFilters, { timeoutMs: panelTimeoutMs }),
         api.getPortfolioOptimalRecommendation({ timeoutMs: panelTimeoutMs }),
+        api.getPortfolioPersonalizedRecommendation({ timeoutMs: panelTimeoutMs }),
       ]);
 
       if (portfolioResult.status === "fulfilled") {
@@ -212,8 +244,19 @@ export function usePortfolioWorkspaceLoader({
         );
       }
 
+      if (personalizedResult.status === "fulfilled") {
+        setPersonalizedRecommendation(personalizedResult.value);
+        setPersonalizedError(null);
+      } else {
+        console.error(personalizedResult.reason);
+        setPersonalizedError(
+          getUserFacingErrorMessage(personalizedResult.reason, "개인화 추천을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."),
+        );
+      }
+
       setConditionalLoading(false);
       setOptimalLoading(false);
+      setPersonalizedLoading(false);
       setEventRadarLoading(false);
       setLoading(false);
     };
@@ -237,6 +280,9 @@ export function usePortfolioWorkspaceLoader({
     setOptimalError,
     setOptimalLoading,
     setOptimalRecommendation,
+    setPersonalizedError,
+    setPersonalizedLoading,
+    setPersonalizedRecommendation,
     setPortfolioLoadError,
   ]);
 

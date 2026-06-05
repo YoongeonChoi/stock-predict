@@ -9,6 +9,7 @@ import type {
   PortfolioEventRadarResponse,
   PortfolioHoldingCreateResponse,
   PortfolioOptimalRecommendationResponse,
+  PortfolioPersonalizedRecommendationResponse,
   PortfolioProfile,
   PortfolioRecommendationStyle,
 } from "@/lib/api/types";
@@ -44,6 +45,8 @@ export const portfolioApi = {
   },
   getPortfolioOptimalRecommendation: (options?: RequestOptions) =>
     get<PortfolioOptimalRecommendationResponse>("/api/portfolio/recommendations/optimal", options),
+  getPortfolioPersonalizedRecommendation: (options?: RequestOptions) =>
+    get<PortfolioPersonalizedRecommendationResponse>("/api/portfolio/recommendations/personalized", options),
   getPortfolioEventRadar: (days = 14, options?: RequestOptions) =>
     get<PortfolioEventRadarResponse>(`/api/portfolio/event-radar?days=${days}`, options),
   getDailyIdealPortfolio: (refresh = false, historyLimit = 10) =>

@@ -151,12 +151,17 @@ Next.js frontend (Vercel)
 - `backend/app/services/portfolio_optimizer.py`
 - `backend/app/services/portfolio_service.py`
 - `backend/app/services/portfolio_recommendation_service.py`
+- `backend/app/services/investment_profile_service.py`
+- `backend/app/services/recommendation_policy.py`
 - `backend/app/services/ideal_portfolio_service.py`
 - `backend/app/services/portfolio_event_service.py`
 
 규칙:
 
 - 추천 / 최적 / 이상적 포트폴리오는 같은 optimizer를 공유합니다.
+- 사용자 투자 성향은 예측값을 바꾸지 않고 후보 필터, 비중 cap, 현금 버퍼, optimizer 파라미터에만 반영합니다.
+- `investment_profiles` 저장 조회가 실패하면 추천 경로는 기본 `balanced` 정책으로 fail-open 처리합니다.
+- `/settings`의 투자 성향 저장 실패는 사용자에게 명확히 표시하지만 시스템/진단 패널 전체를 깨지 않게 격리합니다.
 
 ## 저장 계층
 
@@ -183,6 +188,8 @@ Next.js frontend (Vercel)
 - 사용자별 `watchlist`
 - 사용자별 `portfolio_holdings`
 - 사용자별 `portfolio_profile`
+- 사용자별 `investment_profiles`
+- best-effort `portfolio_recommendation_snapshots`
 - `user_metadata`
 
 ## 외부 데이터와 AI 보조 역할

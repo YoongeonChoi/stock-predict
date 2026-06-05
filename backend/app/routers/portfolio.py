@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.auth import AuthenticatedUser, get_current_user
-from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_5017, SP_6009, SP_6013
+from app.errors import SP_5008, SP_5013, SP_5015, SP_5016, SP_5017, SP_5022, SP_6009, SP_6013
 from app.utils.lazy_module import LazyModuleProxy
 from app.utils.route_trace import build_route_trace
 
@@ -155,6 +155,16 @@ async def get_optimal_portfolio_recommendation(current_user: AuthenticatedUser =
         return await portfolio_recommendation_service.get_optimal_recommendation(current_user.id)
     except Exception as e:
         err = SP_5016(str(e)[:200])
+        err.log()
+        return JSONResponse(status_code=500, content=err.to_dict())
+
+
+@router.get("/portfolio/recommendations/personalized")
+async def get_personalized_portfolio_recommendation(current_user: AuthenticatedUser = Depends(get_current_user)):
+    try:
+        return await portfolio_recommendation_service.get_personalized_recommendation(current_user.id)
+    except Exception as e:
+        err = SP_5022(str(e)[:200])
         err.log()
         return JSONResponse(status_code=500, content=err.to_dict())
 

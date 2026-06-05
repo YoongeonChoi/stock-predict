@@ -40,6 +40,7 @@ from app.routers import (
     contact,
     country,
     export,
+    investment_profile,
     portfolio,
     research,
     screener,
@@ -496,6 +497,7 @@ app.include_router(archive.router)
 app.include_router(calendar.router)
 app.include_router(export.router)
 app.include_router(screener.router)
+app.include_router(investment_profile.router)
 app.include_router(portfolio.router)
 app.include_router(system.router)
 app.include_router(research.router)

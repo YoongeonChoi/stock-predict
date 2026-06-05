@@ -17,7 +17,7 @@ from app.data.supabase_client import supabase_client
 from app.models.country import COUNTRY_REGISTRY
 from app.models.stock import PricePoint
 from app.scoring.selection import regime_alignment_score, score_selection_candidate
-from app.services import market_service, ticker_resolver_service
+from app.services import investment_profile_service, market_service, ticker_resolver_service
 from app.services.portfolio.crud import (
     default_portfolio_profile as _default_portfolio_profile,
     invalidate_portfolio_cache,
@@ -40,6 +40,7 @@ from app.services.portfolio.validation import (
     validate_portfolio_holding_input,
     validate_portfolio_profile_input,
 )
+from app.services.recommendation_policy import build_recommendation_policy, recommendation_policy_public_view
 from app.utils.async_tools import gather_limited
 
 logger = logging.getLogger(__name__)
@@ -408,7 +409,7 @@ def _distributional_view(payload: dict | None) -> dict[str, float | str | None]:
     }
 
 
-def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tuple[float, list[str]]:
+def _holding_model_score(holding: dict, radar_match: dict | None = None, policy: dict | None = None) -> tuple[float, list[str]]:
     merged = {**(radar_match or {}), **holding}
     dist_view = _distributional_view(merged)
     trade_conviction = float(holding.get("trade_conviction") or 50.0)
@@ -443,6 +444,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
         action=trade_action,
         execution_bias=execution_bias,
         legacy_score=float(radar_match.get("opportunity_score") or trade_conviction) if radar_match else trade_conviction,
+        confidence_floor=float((policy or {}).get("min_confidence") or 62.0),
     )
     score = selection.score
 
@@ -462,7 +464,7 @@ def _holding_model_score(holding: dict, radar_match: dict | None = None) -> tupl
     return round(_clip(score, 0.0, 100.0), 1), notes[:3]
 
 
-def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[float, list[str], str, bool]:
+def _radar_model_score(opportunity: dict, watchlist_keys: set[str], policy: dict | None = None) -> tuple[float, list[str], str, bool]:
     watchlist_key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     is_watchlist = watchlist_key in watchlist_keys
     execution_bias = opportunity.get("execution_bias") or "stay_selective"
@@ -497,6 +499,7 @@ def _radar_model_score(opportunity: dict, watchlist_keys: set[str]) -> tuple[flo
         action=action,
         execution_bias=execution_bias,
         legacy_score=float(opportunity.get("opportunity_score") or 0.0),
+        confidence_floor=float((policy or {}).get("min_confidence") or 62.0),
     )
     score = selection.score + (3.0 if is_watchlist else 0.0)
     score = round(_clip(score, 0.0, 100.0), 1)
@@ -697,13 +700,6 @@ async def _build_model_portfolio(
     if not holdings:
         return _portfolio_model_defaults("보유 종목이나 워치리스트를 추가하면 권장 비중과 리밸런싱 큐를 자동으로 계산합니다.")
 
-    budget = _model_budget(
-        overall_label=str(risk.get("overall_label") or "moderate"),
-        portfolio_up_probability=float(risk.get("portfolio_up_probability") or 50.0),
-        risk_off_weight=risk_off_weight,
-        downside_watch_weight=float(risk.get("downside_watch_weight") or 0.0),
-    )
-
     watchlist_rows = await supabase_client.watchlist_list(user_id)
     watchlist_keys = {
         f"{row.get('country_code', 'KR')}:{row.get('ticker')}"
@@ -730,6 +726,26 @@ async def _build_model_portfolio(
         for item in radar_items
         if item.get("ticker")
     }
+    market_view = [
+        {
+            "country_code": response.get("country_code"),
+            "label": (response.get("market_regime") or {}).get("label"),
+            "stance": (response.get("market_regime") or {}).get("stance"),
+            "actionable_count": response.get("actionable_count", 0),
+        }
+        for response in radar_responses
+        if not isinstance(response, Exception)
+    ]
+    try:
+        investment_profile = await investment_profile_service.get_investment_profile(user_id)
+    except Exception as exc:
+        logger.warning("investment profile fallback for model portfolio %s: %s", user_id, exc)
+        investment_profile = investment_profile_service.get_default_investment_profile()
+    budget = build_recommendation_policy(
+        investment_profile.model_dump(),
+        portfolio_risk={**risk, "risk_off_weight": risk_off_weight},
+        market_view=market_view,
+    )
 
     candidates: list[dict] = []
     holding_keys = set()
@@ -737,7 +753,7 @@ async def _build_model_portfolio(
         key = f"{holding['country_code']}:{holding['ticker']}"
         holding_keys.add(key)
         radar_match = radar_lookup.get(key)
-        model_score, notes = _holding_model_score(holding, radar_match=radar_match)
+        model_score, notes = _holding_model_score(holding, radar_match=radar_match, policy=budget)
         candidates.append(
             {
                 "key": key,
@@ -791,7 +807,12 @@ async def _build_model_portfolio(
         key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
         if key in holding_keys:
             continue
-        model_score, notes, source, confidence_floor_passed = _radar_model_score(opportunity, watchlist_keys)
+        dist_view = _distributional_view(opportunity)
+        if float(dist_view["up_probability"] or 0.0) < float(budget.get("min_up_probability") or 0.0):
+            continue
+        if float(dist_view["down_probability"] or 0.0) > float(budget.get("max_down_probability") or 100.0):
+            continue
+        model_score, notes, source, confidence_floor_passed = _radar_model_score(opportunity, watchlist_keys, policy=budget)
         if not confidence_floor_passed:
             continue
         if model_score < 52.0 and source != "watchlist":
@@ -997,6 +1018,7 @@ async def _build_model_portfolio(
         "as_of": datetime.now().isoformat(),
         "objective": "20거래일 분포 기대수익률과 기대초과수익률, EWMA+shrinkage 공분산, 회전율 패널티를 함께 반영해 실제 매매 비중 제안으로 연결한 모델 포트폴리오입니다.",
         "risk_budget": budget,
+        "recommendation_policy": recommendation_policy_public_view(budget),
         "summary": {
             "selected_count": len(recommended_holdings),
             "new_position_count": new_position_count,

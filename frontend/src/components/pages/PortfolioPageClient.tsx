@@ -11,6 +11,7 @@ import PortfolioConditionalRecommendationPanel from "@/components/PortfolioCondi
 import PortfolioEventRadar from "@/components/PortfolioEventRadar";
 import PortfolioModelPanel from "@/components/PortfolioModelPanel";
 import PortfolioOptimalRecommendationPanel from "@/components/PortfolioOptimalRecommendationPanel";
+import PortfolioPersonalizedRecommendationPanel from "@/components/PortfolioPersonalizedRecommendationPanel";
 import PortfolioRiskPanel from "@/components/PortfolioRiskPanel";
 import TickerResolutionHint from "@/components/TickerResolutionHint";
 import { useToast } from "@/components/Toast";
@@ -23,6 +24,7 @@ import type {
   PortfolioEventRadarResponse,
   PortfolioHolding,
   PortfolioOptimalRecommendationResponse,
+  PortfolioPersonalizedRecommendationResponse,
   PortfolioProfile,
   TickerResolution,
 } from "@/lib/api";
@@ -178,9 +180,12 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
   const [conditionalError, setConditionalError] = useState<string | null>(null);
   const [optimalRecommendation, setOptimalRecommendation] = useState<PortfolioOptimalRecommendationResponse | null>(null);
   const [optimalError, setOptimalError] = useState<string | null>(null);
+  const [personalizedRecommendation, setPersonalizedRecommendation] = useState<PortfolioPersonalizedRecommendationResponse | null>(null);
+  const [personalizedError, setPersonalizedError] = useState<string | null>(null);
   const [conditionalLoading, setConditionalLoading] = useState(true);
   const [conditionalRunning, setConditionalRunning] = useState(false);
   const [optimalLoading, setOptimalLoading] = useState(true);
+  const [personalizedLoading, setPersonalizedLoading] = useState(true);
   const [eventRadarLoading, setEventRadarLoading] = useState(true);
   const { toast } = useToast();
   const { session, loading: authLoading } = useAuth();
@@ -223,8 +228,11 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
     setConditionalError,
     setOptimalRecommendation,
     setOptimalError,
+    setPersonalizedRecommendation,
+    setPersonalizedError,
     setConditionalLoading,
     setOptimalLoading,
+    setPersonalizedLoading,
     setEventRadarLoading,
     toast,
     formatApiErrorMessage: getApiErrorMessage,
@@ -537,6 +545,12 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
               검증 기준 보기
             </Link>
           </div>
+          <PortfolioPersonalizedRecommendationPanel
+            data={personalizedRecommendation}
+            loading={personalizedLoading}
+            errorMessage={personalizedError}
+            onRetry={() => void refreshSupportPanels(conditionalFilters)}
+          />
           <div className="workspace-grid-balanced">
             <div className="min-w-0">
               <PortfolioConditionalRecommendationPanel
@@ -895,6 +909,12 @@ export default function PortfolioPageClient({ demoData = null }: PortfolioPageCl
             검증 기준 보기
           </Link>
         </div>
+        <PortfolioPersonalizedRecommendationPanel
+          data={personalizedRecommendation}
+          loading={personalizedLoading}
+          errorMessage={personalizedError}
+          onRetry={() => void refreshSupportPanels(conditionalFilters)}
+        />
         <div className="workspace-grid-balanced">
           <div className="min-w-0">
             <PortfolioConditionalRecommendationPanel

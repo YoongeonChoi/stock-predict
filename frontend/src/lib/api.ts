@@ -1,5 +1,6 @@
 import { apiPath, del, get, post, put, request } from "@/lib/api/client";
 import { accountApi } from "@/lib/api/account";
+import { investmentProfileApi } from "@/lib/api/investment-profile";
 import { marketApi } from "@/lib/api/market";
 import { portfolioApi } from "@/lib/api/portfolio";
 import type { RequestOptions, StockDetailRequestOptions } from "@/lib/api/shared";
@@ -37,14 +38,19 @@ export type {
   AccountProfile, AccountProfileUpdateRequest, AccountDeleteRequest, AccountDeleteResponse,
   SignUpValidationRequest, SignUpValidationResponse, UsernameAvailabilityResponse, CompositeScoreItem,
   ContactSubmissionRequest, ContactSubmissionResponse,
+  InvestmentProfileCode, InvestmentHorizon, InvestmentPreferenceLevel, InvestmentProfile,
+  InvestmentProfileUpdateRequest, InvestmentProfileOption, InvestmentProfileOptionsResponse,
+  InvestmentProfileResolveRequest, InvestmentProfileResolveResponse,
   CompositeScoreDetail, CompositeScore, HeatmapStock, HeatmapSector,
   HeatmapData, TechSignalItem, TechSummaryGroup, TechSummary,
   PivotLevel, PivotPoints, ScreenerResult, ScreenerResponse,
   PortfolioHolding, PortfolioStressScenario, PortfolioRiskRegime, PortfolioExecutionMixItem,
   PortfolioActionQueueItem, PortfolioRiskSnapshot, PortfolioModelBudget, PortfolioModelSummary,
   PortfolioModelAllocationItem, PortfolioModelItem, PortfolioModelPortfolio, PortfolioRecommendationStyle,
-  PortfolioRecommendationBudget, PortfolioRecommendationSummary, PortfolioRecommendationMarketView, PortfolioRecommendationItem,
-  PortfolioConditionalRecommendationFilters, PortfolioConditionalRecommendationResponse, PortfolioOptimalRecommendationResponse, DailyIdealPortfolioTargetDate,
+  PortfolioRecommendationPolicy, PortfolioProfileFit, PortfolioRecommendationBudget,
+  PortfolioRecommendationSummary, PortfolioRecommendationMarketView, PortfolioRecommendationItem,
+  PortfolioConditionalRecommendationFilters, PortfolioConditionalRecommendationResponse,
+  PortfolioOptimalRecommendationResponse, PortfolioPersonalizedRecommendationResponse, DailyIdealPortfolioTargetDate,
   DailyIdealPortfolioMarketView, DailyIdealPortfolioPosition, DailyIdealPortfolioHistoryEntry, DailyIdealPortfolio,
   PortfolioData, PortfolioProfile, PortfolioSummary, PortfolioHoldingCreateResponse,
   WatchlistAddResponse, MarketMovers, PredictionAccuracyStats, ArchiveEntry,
@@ -65,6 +71,7 @@ export type {
 
 export const api = {
   ...accountApi,
+  ...investmentProfileApi,
   ...marketApi,
   ...portfolioApi,
   getStockDetail: (ticker: string, options: StockDetailRequestOptions = {}) => {
