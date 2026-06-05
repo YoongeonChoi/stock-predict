@@ -130,6 +130,16 @@ SP_5020 = lambda d="": AppError(
     "Contact message save failed",
     d or "Contact message storage is not available. Retry shortly.",
 )
+SP_5021 = lambda d="": AppError(
+    "SP-5021",
+    "Investment profile service failed",
+    d or "Investment profile storage is not available. Retry shortly.",
+)
+SP_5022 = lambda d="": AppError(
+    "SP-5022",
+    "Personalized portfolio recommendation failed",
+    d or "Personalized recommendation is not available. Retry shortly.",
+)
 
 # ---------------------------------------------------------------------------
 # 6xxx  Request Validation
@@ -207,6 +217,11 @@ SP_6019 = lambda d="": AppError(
     "SP-6019",
     "Too many contact requests",
     d or "Wait briefly before sending another contact message.",
+)
+SP_6020 = lambda d="": AppError(
+    "SP-6020",
+    "Invalid investment profile input",
+    d or "Check the investment profile fields and try again.",
 )
 
 # ---------------------------------------------------------------------------

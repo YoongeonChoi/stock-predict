@@ -10,6 +10,7 @@ import type {
   PortfolioRecommendationBudget,
   PortfolioRecommendationItem,
   PortfolioRecommendationMarketView,
+  PortfolioRecommendationPolicy,
   PortfolioRecommendationSummary,
 } from "@/lib/api";
 import { changeColor, formatPct, formatPrice } from "@/lib/utils";
@@ -19,6 +20,7 @@ interface Props {
   description: string;
   loading?: boolean;
   budget?: PortfolioRecommendationBudget | null;
+  recommendationPolicy?: PortfolioRecommendationPolicy | null;
   summary?: PortfolioRecommendationSummary | null;
   recommendations?: PortfolioRecommendationItem[];
   notes?: string[];
@@ -93,6 +95,22 @@ function sourceLabel(source: string) {
   return "레이더";
 }
 
+function profileRoleLabel(role?: string) {
+  if (role === "core") return "핵심";
+  if (role === "satellite") return "위성";
+  if (role === "tactical") return "전술";
+  if (role === "trim_candidate") return "축소 검토";
+  if (role === "avoid_for_profile") return "성향 부적합";
+  return "관찰";
+}
+
+function profileFitTone(grade?: string) {
+  if (grade === "A") return "text-positive bg-positive/10";
+  if (grade === "B") return "text-accent bg-accent/10";
+  if (grade === "C") return "text-amber-500 bg-amber-500/10";
+  return "text-negative bg-negative/10";
+}
+
 function stanceLabel(stance?: string | null) {
   if (stance === "risk_on") return "위험 선호";
   if (stance === "risk_off") return "위험 회피";
@@ -136,6 +154,11 @@ function RecommendationCard({ item }: { item: PortfolioRecommendationItem }) {
         <span className="rounded-full border border-border px-2 py-1 text-text-secondary">
           현재 {item.current_weight_pct.toFixed(1)}%
         </span>
+        {item.profile_fit ? (
+          <span className={`rounded-full px-2 py-1 font-medium ${profileFitTone(item.profile_fit.grade)}`}>
+            성향 {item.profile_fit.grade} · {profileRoleLabel(item.profile_fit.role)}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -162,6 +185,16 @@ function RecommendationCard({ item }: { item: PortfolioRecommendationItem }) {
         {item.rationale[0] || "핵심 메모가 아직 없습니다."}
       </div>
 
+      {item.profile_fit ? (
+        <div className="mt-3 rounded-2xl border border-border/70 bg-white px-3 py-3 text-xs leading-5 text-text-secondary">
+          <div className="font-semibold text-text">{item.profile_fit.profile_label} 적합도 {item.profile_fit.score.toFixed(1)}점</div>
+          <div className="mt-1">{item.profile_fit.reason[0] || "성향 기준으로 추가 확인이 필요합니다."}</div>
+          {item.profile_fit.warnings[0] ? (
+            <div className="mt-1 text-amber-600">{item.profile_fit.warnings[0]}</div>
+          ) : null}
+        </div>
+      ) : null}
+
         <div className="mt-3 grid gap-2 text-xs text-text-secondary sm:grid-cols-2">
           <div>
             진입 {item.entry_low != null && item.entry_high != null ? `${formatPrice(item.entry_low, item.country_code)} - ${formatPrice(item.entry_high, item.country_code)}` : "미정"}
@@ -186,6 +219,7 @@ export default function PortfolioRecommendationPanel({
   description,
   loading = false,
   budget,
+  recommendationPolicy,
   summary,
   recommendations = [],
   notes = [],
@@ -233,6 +267,57 @@ export default function PortfolioRecommendationPanel({
       <div className="px-5 py-5 space-y-5">
         {controls}
         <ModelOutputNotice />
+
+        {!loading && recommendationPolicy ? (
+          <div className="section-slab-subtle space-y-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-text-secondary">내 투자 성향</div>
+                <div className="mt-2 text-lg font-semibold text-text">
+                  {recommendationPolicy.profile_label}
+                  {!recommendationPolicy.profile_persisted ? (
+                    <span className="ml-2 rounded-full border border-border bg-white px-2 py-1 align-middle text-[11px] font-medium text-text-secondary">기본값</span>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-sm leading-6 text-text-secondary">
+                  예측값은 그대로 두고 후보 기준, 현금 버퍼, 비중 상한에만 성향 정책을 적용합니다.
+                </div>
+              </div>
+              <Link href="/settings" className="ui-button-secondary w-full px-4 sm:w-auto">
+                설정에서 투자 성향 변경
+              </Link>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="metric-card">
+                <div className="text-xs text-text-secondary">주식 / 현금</div>
+                <div className="mt-2 font-mono text-lg font-semibold text-text">
+                  {(recommendationPolicy.resolved_params.recommended_equity_pct ?? 0).toFixed(1)}% / {(recommendationPolicy.resolved_params.cash_buffer_pct ?? 0).toFixed(1)}%
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="text-xs text-text-secondary">단일 / 섹터 상한</div>
+                <div className="mt-2 font-mono text-lg font-semibold text-text">
+                  {(recommendationPolicy.resolved_params.max_single_weight_pct ?? 0).toFixed(1)}% / {(recommendationPolicy.resolved_params.max_sector_weight_pct ?? 0).toFixed(1)}%
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="text-xs text-text-secondary">확률 guard</div>
+                <div className="mt-2 font-mono text-lg font-semibold text-text">
+                  ↑ {(recommendationPolicy.resolved_params.min_up_probability ?? 0).toFixed(1)}% · ↓ {(recommendationPolicy.resolved_params.max_down_probability ?? 0).toFixed(1)}%
+                </div>
+              </div>
+            </div>
+            {recommendationPolicy.dynamic_adjustments.length > 0 ? (
+              <div className="grid gap-2">
+                {recommendationPolicy.dynamic_adjustments.slice(0, 2).map((adjustment) => (
+                  <div key={adjustment} className="rounded-2xl border border-border/70 bg-white px-3 py-2 text-xs leading-5 text-text-secondary">
+                    {adjustment}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

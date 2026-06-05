@@ -156,6 +156,53 @@ class PortfolioOptimizerTests(unittest.TestCase):
             )
             self.assertLessEqual(sector_weight, 35.2)
 
+    def test_budget_policy_parameters_influence_turnover(self):
+        candidates = [
+            _candidate(
+                key="CURRENT",
+                country_code="KR",
+                sector="Information Technology",
+                current_weight_pct=35.0,
+                model_score=62.0,
+                expected_return_pct_20d=0.4,
+                expected_excess_return_pct_20d=0.1,
+                up_probability_20d=54.0,
+                down_probability_20d=30.0,
+                volatility_pct_20d=6.0,
+                returns=[0.002, -0.001, 0.001, 0.002, -0.001, 0.001, 0.002, 0.001],
+            ),
+            _candidate(
+                key="NEW",
+                country_code="KR",
+                sector="Communication Services",
+                current_weight_pct=0.0,
+                model_score=88.0,
+                expected_return_pct_20d=6.5,
+                expected_excess_return_pct_20d=4.8,
+                up_probability_20d=70.0,
+                down_probability_20d=10.0,
+                volatility_pct_20d=6.0,
+                returns=[0.002, -0.001, 0.001, 0.002, -0.001, 0.001, 0.002, 0.001],
+            ),
+        ]
+        common_budget = {
+            "style": "balanced",
+            "recommended_equity_pct": 60.0,
+            "max_single_weight_pct": 60.0,
+            "max_country_weight_pct": 100.0,
+            "max_sector_weight_pct": 100.0,
+            "risk_aversion": 1.0,
+            "expected_excess_weight": 1.4,
+            "expected_total_weight": 0.6,
+            "probability_edge_weight": 0.08,
+        }
+
+        low_turnover = optimize_portfolio_weights(candidates, {**common_budget, "turnover_penalty": 0.0})
+        high_turnover = optimize_portfolio_weights(candidates, {**common_budget, "turnover_penalty": 0.18})
+
+        self.assertGreater(low_turnover.target_weights["NEW"], high_turnover.target_weights["NEW"])
+        self.assertLess(high_turnover.turnover_pct, low_turnover.turnover_pct)
+
 
 if __name__ == "__main__":
     unittest.main()

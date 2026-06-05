@@ -9,7 +9,7 @@
 - `OpenAI`는 숫자 예측기가 아니라 `구조화 이벤트 추출기 + 서술형 요약기`로 사용합니다.
 - 느린 외부 소스 하나 때문에 화면 전체가 죽지 않도록 `partial + fallback`을 먼저 설계합니다.
 
-현재 릴리즈: `v2.69.0`
+현재 릴리즈: `v2.70.0`
 현재 운영 모델 버전: `dist-studentt-v3.3-lfgraph`
 
 
@@ -80,7 +80,7 @@
 | `/calendar` | 정책·지표·실적 일정 캘린더 | 공개 |
 | `/archive` | 리서치 아카이브 | 공개 |
 | `/lab` | 예측 연구실 | 공개 |
-| `/settings` | 계정/시스템/진단/운영 상태 | 로그인 |
+| `/settings` | 계정/투자 성향/시스템/진단/운영 상태 | 로그인 |
 | 전역 하단 Contact | footer 연락처와 문의 모달 | 공개 |
 
 ## 핵심 기능
@@ -121,7 +121,9 @@
 
 ### 6. 포트폴리오
 
-- 보유 종목, 자산 기준, 조건 추천, 최적 추천, 이벤트 레이더를 하나의 워크스페이스로 연결합니다.
+- 보유 종목, 자산 기준, 개인화 추천, 조건 추천, 최적 추천, 이벤트 레이더를 하나의 워크스페이스로 연결합니다.
+- `/settings`에 저장한 투자 성향을 기준으로 후보 통과 기준, 현금 버퍼, 단일 종목 cap, 섹터 cap, optimizer risk/turnover 파라미터를 조정합니다.
+- 투자 성향은 예측값 자체를 바꾸지 않고, 기존 분포 예측 결과를 포트폴리오 정책 레이어에서 해석하는 방식으로 반영합니다.
 - 모델 포트폴리오 계산이 늦어져도 자산 요약과 보유 종목 패널은 먼저 살립니다.
 
 ### 7. 관심종목 / 심화 추적
@@ -260,6 +262,7 @@ flowchart TD
 관심종목에 없는 종목으로 심화 추적을 요청하면 `404 / SP-6017`을 사용합니다.
 공개 계정 검증 API는 로그인 전 호출할 수 있지만, 아이디 중복 확인은 클라이언트별 60초 60회, 회원가입 사전 검증은 60초 20회로 제한합니다. 초과 시 `429 / SP-6016`과 재시도 안내를 반환합니다.
 공개 문의 API는 로그인 없이 호출할 수 있지만, `400 / SP-6018` 입력 검증, `429 / SP-6019` 반복 제출 제한, `500 / SP-5020` 저장 실패 계약을 유지합니다.
+투자 성향 API는 보호 API이며, 저장소 장애는 `500 / SP-5021`, 입력 검증 실패는 `400 / SP-6020`, 개인화 추천 장애는 `500 / SP-5022`로 구분합니다.
 
 이 프로젝트에서는 페이지별 ad-hoc 로그인 처리보다, **공통 인증 계약과 세션 복구 흐름**을 우선합니다.
 
@@ -507,10 +510,10 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 
 여기서:
 
-- `μ`: 기대 초과수익과 기대 총수익을 혼합한 objective mean
+- `μ`: 기대 초과수익, 기대 총수익, 확률 edge를 투자 성향 정책 가중치로 혼합한 objective mean
 - `Σ`: `EWMA + shrinkage covariance`
-- `λ`: risk aversion
-- `τ`: turnover penalty
+- `λ`: risk aversion. 저장된 투자 성향에 따라 보수형은 높고 성장형은 낮게 들어갑니다.
+- `τ`: turnover penalty. 낮은 회전율 선호 성향에서는 더 크게 적용됩니다.
 
 공분산은 개념적으로 아래처럼 구성합니다.
 
@@ -527,6 +530,10 @@ J(w) = μ'w - λ * (w'Σw) - τ * ||w - w_current||_1
 - 최소 active weight
 
 같은 현실 제약을 projection 단계에서 반복적으로 반영합니다.
+
+투자 성향은 `capital_preservation / conservative / balanced / growth / aggressive` 다섯 단계이며, 기존 optimizer style `defensive / balanced / offensive`와 호환 매핑됩니다.
+정책 preset과 동적 보정은 [`backend/app/services/recommendation_policy.py`](./backend/app/services/recommendation_policy.py)에 모아 두고, 사용자별 저장값은 Supabase `investment_profiles`에 저장합니다.
+추천 결과 snapshot은 `portfolio_recommendation_snapshots`에 best-effort로 저장하며, snapshot 저장 실패는 추천 응답을 막지 않습니다.
 
 ## 예측 로그와 연구실 표본 누적 구조
 

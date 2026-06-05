@@ -139,6 +139,7 @@ export default function PortfolioConditionalRecommendationPanel({
       description="한국 시장 안에서 섹터, 성향, 최소 확률 조건을 정하면 그 범위 안에서 가장 효율적인 신규 비중안을 다시 계산합니다."
       loading={loading}
       budget={data?.budget}
+      recommendationPolicy={data?.recommendation_policy}
       summary={data?.summary}
       recommendations={data?.recommendations}
       notes={data?.notes}

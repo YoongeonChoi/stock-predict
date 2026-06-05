@@ -447,6 +447,47 @@ class SupabaseClient:
             "updated_at": _utcnow_iso(),
         }
 
+    async def investment_profile_get(self, user_id: str) -> dict[str, Any] | None:
+        payload = await self._request_json(
+            "GET",
+            "/rest/v1/investment_profiles",
+            headers=self._service_headers(),
+            params={
+                "select": (
+                    "user_id,profile_code,risk_tolerance,investment_horizon,max_drawdown_pct,"
+                    "turnover_preference,concentration_preference,cash_buffer_min_pct,"
+                    "cash_buffer_max_pct,policy_version,questionnaire_json,created_at,updated_at"
+                ),
+                "user_id": f"eq.{user_id}",
+                "limit": 1,
+            },
+        )
+        rows = _normalize_response_rows(payload)
+        return rows[0] if rows else None
+
+    async def investment_profile_upsert(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        result = await self._request_json(
+            "POST",
+            "/rest/v1/investment_profiles",
+            headers=self._service_headers(
+                prefer="resolution=merge-duplicates,return=representation",
+            ),
+            params={"on_conflict": "user_id"},
+            json={"user_id": user_id, **payload},
+        )
+        rows = _normalize_response_rows(result)
+        return rows[0] if rows else {"user_id": user_id, **payload}
+
+    async def portfolio_recommendation_snapshot_insert(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        result = await self._request_json(
+            "POST",
+            "/rest/v1/portfolio_recommendation_snapshots",
+            headers=self._service_headers(prefer="return=representation"),
+            json=payload,
+        )
+        rows = _normalize_response_rows(result)
+        return rows[0] if rows else None
+
     async def contact_message_insert(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = await self._request_json(
             "POST",

@@ -5,14 +5,22 @@ from datetime import datetime
 import asyncio
 import hashlib
 import json
+import logging
 
 from app.data import cache
 from app.data.universe_data import GICS_SECTORS
 from app.data.supabase_client import supabase_client
 from app.services.portfolio.recommendations import build_recommendation_context_maps
 from app.services.portfolio_optimizer import attach_candidate_return_series
-from app.services import market_service, portfolio_service
+from app.services import investment_profile_service, market_service, portfolio_service
+from app.services.recommendation_policy import (
+    POLICY_VERSION,
+    build_recommendation_policy,
+    recommendation_policy_public_view,
+)
 from app.utils.async_tools import gather_limited, is_async_failure_result
+
+logger = logging.getLogger(__name__)
 
 COUNTRY_FILTERS = ["KR"]
 STYLE_FILTERS = ["defensive", "balanced", "offensive"]
@@ -159,6 +167,170 @@ def _portfolio_state_signature(portfolio_rows: list[dict], watchlist_rows: list[
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
+def _investment_profile_signature(profile: dict) -> str:
+    raw = json.dumps(
+        {
+            "profile_code": profile.get("profile_code"),
+            "policy_version": profile.get("policy_version") or POLICY_VERSION,
+            "updated_at": profile.get("updated_at"),
+            "persisted": bool(profile.get("persisted")),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+async def _load_investment_profile_fail_open(user_id: str) -> dict:
+    try:
+        profile = await investment_profile_service.get_investment_profile(user_id)
+        return profile.model_dump()
+    except Exception as exc:
+        logger.warning("investment profile fallback for recommendation %s: %s", user_id, exc)
+        profile = investment_profile_service.get_default_investment_profile().model_dump()
+        profile["fallback_reason"] = "investment_profile_unavailable"
+        return profile
+
+
+def _budget_from_policy(
+    policy: dict,
+    *,
+    max_items: int,
+    country_locked: bool,
+    sector_locked: bool,
+) -> dict:
+    budget = dict(policy)
+    budget["target_position_count"] = max(3, min(max_items, int(policy.get("target_position_count") or max_items)))
+    if country_locked:
+        budget["max_country_weight_pct"] = 100.0
+    if sector_locked:
+        budget["max_sector_weight_pct"] = 100.0
+    return budget
+
+
+def _candidate_meets_policy(payload: dict, policy: dict) -> bool:
+    up_probability = float(payload.get("up_probability_20d") or payload.get("up_probability") or 0.0)
+    down_probability = float(payload.get("down_probability_20d") or payload.get("bear_probability") or 0.0)
+    confidence = float(payload.get("distribution_confidence_20d") or payload.get("confidence") or 0.0)
+    data_quality = payload.get("data_quality_support_20d") or payload.get("data_quality_support")
+    execution_bias = payload.get("execution_bias")
+
+    if confidence < float(policy.get("min_confidence") or 0.0):
+        return False
+    if up_probability < float(policy.get("min_up_probability") or 0.0):
+        return False
+    if down_probability > float(policy.get("max_down_probability") or 100.0):
+        return False
+    if execution_bias not in {"reduce_risk", "capital_preservation"} and data_quality is not None and float(data_quality) < 0.18:
+        return False
+    return True
+
+
+def _profile_fit(candidate: dict, policy: dict) -> dict:
+    profile_code = str(policy.get("profile_code") or "balanced")
+    profile_label = str(policy.get("profile_label") or "균형형")
+    model_score = float(candidate.get("model_score") or 0.0)
+    confidence = float(candidate.get("distribution_confidence_20d") or candidate.get("confidence") or 50.0)
+    up_probability = float(candidate.get("up_probability_20d") or candidate.get("up_probability") or 50.0)
+    down_probability = float(candidate.get("down_probability_20d") or candidate.get("bear_probability") or 0.0)
+    volatility = float(candidate.get("forecast_volatility_pct_20d") or 0.0)
+    sector_exposure = float(candidate.get("current_sector_exposure_pct") or 0.0)
+    execution_bias = candidate.get("execution_bias")
+
+    score = model_score
+    reasons: list[str] = []
+    warnings: list[str] = []
+
+    if confidence >= float(policy.get("min_confidence") or 0.0):
+        score += 3.0
+        reasons.append("보정 confidence가 성향 기준을 통과했습니다.")
+    if up_probability >= float(policy.get("min_up_probability") or 0.0):
+        score += 3.0
+        reasons.append("20거래일 상승 확률이 성향 기준을 통과했습니다.")
+    if down_probability <= float(policy.get("max_down_probability") or 100.0):
+        score += 2.0
+        reasons.append("하방 확률이 성향 허용 범위 안에 있습니다.")
+    else:
+        score -= 10.0
+        warnings.append("하방 확률이 현재 성향 기준보다 높습니다.")
+    if volatility >= 12.0 and profile_code in {"capital_preservation", "conservative"}:
+        score -= 6.0
+        warnings.append("변동성이 보수적 성향에는 높은 편입니다.")
+    if sector_exposure >= float(policy.get("max_sector_weight_pct") or 100.0) * 0.85:
+        score -= 4.0
+        warnings.append("동일 섹터 추가 편입 시 섹터 비중이 높아질 수 있습니다.")
+    if execution_bias in {"reduce_risk", "capital_preservation"}:
+        score = min(score, 68.0)
+        warnings.append("실행 바이어스가 방어 쪽이라 신규 확대보다 축소·관망 관점으로 봅니다.")
+
+    score = round(_clip(score, 0.0, 100.0), 1)
+    if score >= 85:
+        grade = "A"
+    elif score >= 75:
+        grade = "B"
+    elif score >= 65:
+        grade = "C"
+    else:
+        grade = "D"
+
+    if execution_bias in {"reduce_risk", "capital_preservation"}:
+        role = "trim_candidate"
+    elif grade == "D":
+        role = "avoid_for_profile"
+    elif profile_code in {"growth", "aggressive"} and score >= 80:
+        role = "tactical"
+    elif candidate.get("current_weight_pct", 0.0) > 0.0 or score >= 82:
+        role = "core"
+    elif candidate.get("in_watchlist"):
+        role = "satellite"
+    else:
+        role = "watch"
+
+    if not reasons:
+        reasons.append("성향 기준에서 추가 검토가 필요한 후보입니다.")
+
+    return {
+        "profile_code": profile_code,
+        "profile_label": profile_label,
+        "score": score,
+        "grade": grade,
+        "role": role,
+        "reason": reasons[:3],
+        "warnings": warnings[:2],
+    }
+
+
+async def _save_recommendation_snapshot(
+    *,
+    user_id: str,
+    policy: dict,
+    portfolio_state_hash: str,
+    recommendation_type: str,
+    request_payload: dict,
+    response: dict,
+) -> None:
+    try:
+        await supabase_client.portfolio_recommendation_snapshot_insert(
+            {
+                "user_id": user_id,
+                "profile_code": policy.get("profile_code") or "balanced",
+                "policy_version": policy.get("policy_version") or POLICY_VERSION,
+                "portfolio_state_hash": portfolio_state_hash,
+                "recommendation_type": recommendation_type,
+                "request_json": request_payload,
+                "response_summary_json": {
+                    "summary": response.get("summary") or {},
+                    "budget": response.get("budget") or {},
+                    "recommendation_policy": response.get("recommendation_policy"),
+                },
+                "recommended_items_json": response.get("recommendations") or [],
+            }
+        )
+    except Exception as exc:
+        logger.warning("portfolio recommendation snapshot skipped for %s: %s", user_id, exc)
+
+
 async def _load_recommendation_context(
     scan_countries: list[str],
     *,
@@ -217,10 +389,11 @@ def _build_candidate(
     sector_exposure: dict[str, float],
     country_locked: bool,
     sector_locked: bool,
+    policy: dict | None = None,
 ) -> dict | None:
     key = f"{opportunity.get('country_code', 'KR')}:{opportunity.get('ticker')}"
     current_holding = holding_lookup.get(key)
-    score, notes, source, confidence_floor_passed = portfolio_service._radar_model_score(opportunity, watchlist_keys)
+    score, notes, source, confidence_floor_passed = portfolio_service._radar_model_score(opportunity, watchlist_keys, policy=policy)
     if not confidence_floor_passed:
         return None
     current_weight_pct = round(float((current_holding or {}).get("weight_pct") or 0.0), 2)
@@ -248,7 +421,7 @@ def _build_candidate(
 
     model_score = round(_clip(score, 0.0, 100.0), 1)
     weight_score = max(model_score - 58.0, 1.0) if execution_bias in {"reduce_risk", "capital_preservation"} else max(model_score - 48.0, 4.0)
-    return {
+    candidate = {
         "key": key,
         "ticker": opportunity.get("ticker"),
         "name": opportunity.get("name"),
@@ -297,6 +470,9 @@ def _build_candidate(
         "rationale": notes[:4],
         "risk_flags": list(opportunity.get("risk_flags") or []),
     }
+    if policy:
+        candidate["profile_fit"] = _profile_fit(candidate, policy)
+    return candidate
 
 
 def _select_recommendations(
@@ -395,13 +571,15 @@ async def get_conditional_recommendations(
     normalized_style = _normalize_style(style)
     capped_items = max(3, min(max_items, 8))
     min_probability = round(_clip(float(min_up_probability), 45.0, 75.0), 1)
-    portfolio_rows, watchlist_rows_for_state = await asyncio.gather(
+    portfolio_rows, watchlist_rows_for_state, investment_profile = await asyncio.gather(
         supabase_client.portfolio_list(user_id),
         supabase_client.watchlist_list(user_id),
+        _load_investment_profile_fail_open(user_id),
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows_for_state)
+    profile_signature = _investment_profile_signature(investment_profile)
     cache_key = (
-        f"portfolio_conditional_reco:v3:{user_id}:{normalized_country}:{normalized_sector}:{normalized_style}:"
+        f"portfolio_conditional_reco:v4:{user_id}:{profile_signature}:{normalized_country}:{normalized_sector}:{normalized_style}:"
         f"{capped_items}:{min_probability}:{int(bool(exclude_holdings))}:{int(bool(watchlist_only))}:{state_signature}"
     )
     cached = await cache.get(cache_key)
@@ -409,11 +587,18 @@ async def get_conditional_recommendations(
         return cached
 
     scan_countries = ["KR"]
-    _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
+    portfolio_snapshot, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
         scan_countries,
         user_id=user_id,
         watchlist_rows_seed=watchlist_rows_for_state,
     )
+    policy = build_recommendation_policy(
+        investment_profile,
+        portfolio_risk=portfolio_snapshot.get("risk") or {},
+        market_view=regimes,
+        overrides={"style": normalized_style},
+    )
+    effective_min_probability = round(max(min_probability, float(policy.get("min_up_probability") or 0.0)), 1)
     context_maps = build_recommendation_context_maps(holdings, watchlist_rows)
     watchlist_keys = context_maps["watchlist_keys"]
     holding_lookup = context_maps["holding_lookup"]
@@ -426,7 +611,9 @@ async def get_conditional_recommendations(
             continue
         if normalized_sector != "ALL" and opportunity.get("sector") != normalized_sector:
             continue
-        if float(opportunity.get("up_probability") or 0.0) < min_probability:
+        if float(opportunity.get("up_probability_20d") or opportunity.get("up_probability") or 0.0) < effective_min_probability:
+            continue
+        if not _candidate_meets_policy(opportunity, policy):
             continue
         candidate = _build_candidate(
             opportunity=opportunity,
@@ -436,6 +623,7 @@ async def get_conditional_recommendations(
             sector_exposure=sector_exposure,
             country_locked=True,
             sector_locked=normalized_sector != "ALL",
+            policy=policy,
         )
         if not candidate:
             continue
@@ -445,8 +633,8 @@ async def get_conditional_recommendations(
             continue
         filtered_candidates.append(candidate)
 
-    budget = _budget_for_style(
-        style=normalized_style,
+    budget = _budget_from_policy(
+        policy,
         max_items=capped_items,
         country_locked=True,
         sector_locked=normalized_sector != "ALL",
@@ -464,8 +652,8 @@ async def get_conditional_recommendations(
 
     summary = _build_summary(recommendations, len(filtered_candidates), optimization)
     notes = [
-        f"{STYLE_PRESETS[normalized_style]['style_label']} 기준으로 주식 {budget['recommended_equity_pct']:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
-        f"조건 필터는 국가 `{normalized_country}`, 섹터 `{normalized_sector}`, 20거래일 상승 확률 {min_probability:.1f}% 기준입니다.",
+        f"{policy['profile_label']} 정책과 {budget['style_label']} 운영 기준으로 주식 {budget['recommended_equity_pct']:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%를 제안합니다.",
+        f"조건 필터는 국가 `{normalized_country}`, 섹터 `{normalized_sector}`, 20거래일 상승 확률 {effective_min_probability:.1f}% 기준입니다.",
     ]
     if recommendations:
         notes.append(
@@ -490,28 +678,44 @@ async def get_conditional_recommendations(
             "sector": normalized_sector,
             "style": normalized_style,
             "max_items": capped_items,
-            "min_up_probability": min_probability,
+            "min_up_probability": effective_min_probability,
             "exclude_holdings": bool(exclude_holdings),
             "watchlist_only": bool(watchlist_only),
         },
         "options": _recommendation_options(),
         "budget": budget,
+        "recommendation_policy": recommendation_policy_public_view(policy),
         "summary": summary,
         "recommendations": recommendations,
         "notes": notes[:6] if recommendations else ["현재 조건을 모두 만족하는 후보가 부족합니다. 필터를 조금 넓혀 다시 실행해 보세요."],
         "market_view": regimes,
     }
+    await _save_recommendation_snapshot(
+        user_id=user_id,
+        policy=policy,
+        portfolio_state_hash=state_signature,
+        recommendation_type="conditional",
+        request_payload=response["filters"],
+        response=response,
+    )
     await cache.set(cache_key, response, 300)
     return response
 
 
-async def get_optimal_recommendation(user_id: str) -> dict:
-    portfolio_rows, watchlist_rows = await asyncio.gather(
+async def _build_profile_recommendation(
+    *,
+    user_id: str,
+    recommendation_type: str,
+    objective: str,
+) -> dict:
+    portfolio_rows, watchlist_rows, investment_profile = await asyncio.gather(
         supabase_client.portfolio_list(user_id),
         supabase_client.watchlist_list(user_id),
+        _load_investment_profile_fail_open(user_id),
     )
     state_signature = _portfolio_state_signature(portfolio_rows, watchlist_rows)
-    cache_key = f"portfolio_optimal_reco:v3:{user_id}:{state_signature}"
+    profile_signature = _investment_profile_signature(investment_profile)
+    cache_key = f"portfolio_{recommendation_type}_reco:v4:{user_id}:{profile_signature}:{state_signature}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -519,12 +723,16 @@ async def get_optimal_recommendation(user_id: str) -> dict:
     portfolio = await portfolio_service.get_portfolio(user_id)
     holdings = portfolio.get("holdings") or []
     risk = portfolio.get("risk") or {}
-    auto_style = _auto_style_from_risk(risk)
     _, holdings, watchlist_rows, radar_items, regimes = await _load_recommendation_context(
         ["KR"],
         user_id=user_id,
         portfolio_snapshot=portfolio,
         watchlist_rows_seed=watchlist_rows,
+    )
+    policy = build_recommendation_policy(
+        investment_profile,
+        portfolio_risk=risk,
+        market_view=regimes,
     )
     context_maps = build_recommendation_context_maps(holdings, watchlist_rows)
     watchlist_keys = context_maps["watchlist_keys"]
@@ -542,16 +750,22 @@ async def get_optimal_recommendation(user_id: str) -> dict:
             sector_exposure=sector_exposure,
             country_locked=False,
             sector_locked=False,
+            policy=policy,
         )
         if not candidate:
             continue
-        if float(candidate.get("up_probability") or 0.0) < 53.0:
+        if not _candidate_meets_policy(candidate, policy):
             continue
         if float(candidate.get("current_weight_pct") or 0.0) > 0.0:
             continue
         candidates.append(candidate)
 
-    budget = _budget_for_style(style=auto_style, max_items=6, country_locked=False, sector_locked=False)
+    budget = _budget_from_policy(
+        policy,
+        max_items=int(policy.get("target_position_count") or 7),
+        country_locked=False,
+        sector_locked=False,
+    )
     selected = _select_recommendations(
         candidates,
         max_items=int(budget["target_position_count"]),
@@ -565,9 +779,13 @@ async def get_optimal_recommendation(user_id: str) -> dict:
     summary = _build_summary(recommendations, len(candidates), optimization)
 
     notes = [
-        "최적 추천은 현재 포트폴리오 집중도와 시장 체제를 동시에 반영하고, 20거래일 분포 기대초과수익 기준으로 신규 자금에 가장 적합한 후보를 다시 계산합니다.",
-        f"현재 포트폴리오 위험 상태를 기준으로 `{budget['style_label']}` 운영을 자동 선택했습니다.",
+        f"{policy['profile_label']} 정책으로 신규 편입 후보와 목표 비중을 계산했습니다.",
+        f"현재 기준 주식 {budget['recommended_equity_pct']:.1f}% / 현금 {budget['cash_buffer_pct']:.1f}%, 단일 종목 최대 {budget['max_single_weight_pct']:.1f}%를 적용합니다.",
     ]
+    if not investment_profile.get("persisted"):
+        notes.append("저장된 투자 성향이 없어 기본 균형형 정책을 적용했습니다. 설정에서 성향을 저장하면 다음 추천부터 반영됩니다.")
+    for adjustment in list(policy.get("dynamic_adjustments") or [])[:2]:
+        notes.append(adjustment)
     if recommendations:
         notes.append(
             f"예상 변동성 {optimization.forecast_volatility_pct_20d:.2f}%와 회전율 {optimization.turnover_pct:.2f}%를 함께 반영했습니다."
@@ -581,13 +799,38 @@ async def get_optimal_recommendation(user_id: str) -> dict:
 
     response = {
         "generated_at": datetime.now().isoformat(),
-        "objective": "현재 포트폴리오 리스크와 각 시장의 레이더 점수를 함께 고려해 지금 기준으로 가장 효율적인 신규 비중안을 계산한 결과입니다.",
-        "style": auto_style,
+        "objective": objective,
+        "style": policy["style"],
         "budget": budget,
+        "recommendation_policy": recommendation_policy_public_view(policy),
         "summary": summary,
         "recommendations": recommendations,
         "notes": notes[:6] if recommendations else ["현재 데이터 기준으로 신규 자금에 바로 투입할 만큼 강한 후보가 충분하지 않습니다."],
         "market_view": regimes,
     }
+    await _save_recommendation_snapshot(
+        user_id=user_id,
+        policy=policy,
+        portfolio_state_hash=state_signature,
+        recommendation_type=recommendation_type,
+        request_payload={"source": recommendation_type},
+        response=response,
+    )
     await cache.set(cache_key, response, 300)
     return response
+
+
+async def get_optimal_recommendation(user_id: str) -> dict:
+    return await _build_profile_recommendation(
+        user_id=user_id,
+        recommendation_type="optimal",
+        objective="현재 포트폴리오 리스크와 저장된 투자 성향을 함께 반영해 신규 자금 비중안을 계산한 결과입니다.",
+    )
+
+
+async def get_personalized_recommendation(user_id: str) -> dict:
+    return await _build_profile_recommendation(
+        user_id=user_id,
+        recommendation_type="personalized",
+        objective="저장된 투자 성향, 보유 위험도, 시장 체제를 함께 반영한 개인화 추천입니다.",
+    )

@@ -69,6 +69,75 @@ export interface ContactSubmissionResponse {
   message: string;
 }
 
+export type InvestmentProfileCode =
+  | "capital_preservation"
+  | "conservative"
+  | "balanced"
+  | "growth"
+  | "aggressive";
+
+export type InvestmentHorizon = "short" | "swing" | "medium" | "long";
+export type InvestmentPreferenceLevel = "low" | "medium" | "high";
+
+export interface InvestmentProfile {
+  profile_code: InvestmentProfileCode;
+  profile_label: string;
+  risk_tolerance: number;
+  investment_horizon: InvestmentHorizon;
+  max_drawdown_pct: number;
+  turnover_preference: InvestmentPreferenceLevel;
+  concentration_preference: InvestmentPreferenceLevel;
+  cash_buffer_min_pct: number;
+  cash_buffer_max_pct: number;
+  policy_version: string;
+  questionnaire_json: Record<string, unknown>;
+  updated_at?: string | null;
+  persisted: boolean;
+}
+
+export interface InvestmentProfileUpdateRequest {
+  profile_code?: InvestmentProfileCode;
+  risk_tolerance?: number;
+  investment_horizon?: InvestmentHorizon;
+  max_drawdown_pct?: number;
+  turnover_preference?: InvestmentPreferenceLevel;
+  concentration_preference?: InvestmentPreferenceLevel;
+  cash_buffer_min_pct?: number;
+  cash_buffer_max_pct?: number;
+  questionnaire_json?: Record<string, unknown>;
+}
+
+export interface InvestmentProfileOption {
+  profile_code: InvestmentProfileCode;
+  profile_label: string;
+  description: string;
+  risk_tolerance: number;
+  recommended_equity_pct: number;
+  cash_buffer_pct: number;
+  max_single_weight_pct: number;
+  optimization_style: string;
+}
+
+export interface InvestmentProfileOptionsResponse {
+  policy_version: string;
+  options: InvestmentProfileOption[];
+}
+
+export interface InvestmentProfileResolveRequest {
+  risk_tolerance: number;
+  investment_horizon?: InvestmentHorizon;
+  max_drawdown_pct?: number;
+  turnover_preference?: InvestmentPreferenceLevel;
+  concentration_preference?: InvestmentPreferenceLevel;
+}
+
+export interface InvestmentProfileResolveResponse {
+  profile_code: InvestmentProfileCode;
+  profile_label: string;
+  reason: string;
+  profile: InvestmentProfile;
+}
+
 export interface CompositeScoreItem {
   name: string;
   score: number;
@@ -274,6 +343,18 @@ export interface PortfolioModelBudget {
   max_single_weight_pct: number;
   max_country_weight_pct: number;
   max_sector_weight_pct: number;
+  profile_code?: InvestmentProfileCode;
+  profile_label?: string;
+  policy_version?: string;
+  min_confidence?: number;
+  min_up_probability?: number;
+  max_down_probability?: number;
+  risk_aversion?: number;
+  turnover_penalty?: number;
+  expected_excess_weight?: number;
+  expected_total_weight?: number;
+  probability_edge_weight?: number;
+  dynamic_adjustments?: string[];
 }
 
 export interface PortfolioModelSummary {
@@ -335,6 +416,7 @@ export interface PortfolioModelItem {
   bear_case_price?: number | null;
   execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
   setup_label?: string | null;
+  profile_fit?: PortfolioProfileFit | null;
   rationale: string[];
   risk_flags: string[];
 }
@@ -343,6 +425,7 @@ export interface PortfolioModelPortfolio {
   as_of: string;
   objective: string;
   risk_budget: PortfolioModelBudget;
+  recommendation_policy?: PortfolioRecommendationPolicy | null;
   summary: PortfolioModelSummary;
   allocation: {
     by_country: PortfolioModelAllocationItem[];
@@ -356,6 +439,43 @@ export interface PortfolioModelPortfolio {
 
 export type PortfolioRecommendationStyle = "defensive" | "balanced" | "offensive";
 
+export interface PortfolioRecommendationPolicy {
+  profile_code: InvestmentProfileCode;
+  profile_label: string;
+  profile_persisted?: boolean;
+  profile_fallback_reason?: string | null;
+  policy_version: string;
+  style: PortfolioRecommendationStyle;
+  style_label: string;
+  resolved_params: {
+    recommended_equity_pct?: number;
+    cash_buffer_pct?: number;
+    target_position_count?: number;
+    max_single_weight_pct?: number;
+    max_country_weight_pct?: number;
+    max_sector_weight_pct?: number;
+    min_confidence?: number;
+    min_up_probability?: number;
+    max_down_probability?: number;
+    risk_aversion?: number;
+    turnover_penalty?: number;
+    expected_excess_weight?: number;
+    expected_total_weight?: number;
+    probability_edge_weight?: number;
+  };
+  dynamic_adjustments: string[];
+}
+
+export interface PortfolioProfileFit {
+  profile_code: InvestmentProfileCode;
+  profile_label: string;
+  score: number;
+  grade: "A" | "B" | "C" | "D";
+  role: "core" | "satellite" | "tactical" | "watch" | "trim_candidate" | "avoid_for_profile";
+  reason: string[];
+  warnings: string[];
+}
+
 export interface PortfolioRecommendationBudget {
   style: PortfolioRecommendationStyle;
   style_label: string;
@@ -365,6 +485,18 @@ export interface PortfolioRecommendationBudget {
   max_single_weight_pct: number;
   max_country_weight_pct: number;
   max_sector_weight_pct: number;
+  profile_code?: InvestmentProfileCode;
+  profile_label?: string;
+  policy_version?: string;
+  min_confidence?: number;
+  min_up_probability?: number;
+  max_down_probability?: number;
+  risk_aversion?: number;
+  turnover_penalty?: number;
+  expected_excess_weight?: number;
+  expected_total_weight?: number;
+  probability_edge_weight?: number;
+  dynamic_adjustments?: string[];
 }
 
 export interface PortfolioRecommendationSummary {
@@ -435,6 +567,7 @@ export interface PortfolioRecommendationItem {
   execution_bias?: "press_long" | "lean_long" | "stay_selective" | "reduce_risk" | "capital_preservation" | null;
   setup_label?: string | null;
   action?: string | null;
+  profile_fit?: PortfolioProfileFit | null;
   entry_low?: number | null;
   entry_high?: number | null;
   stop_loss?: number | null;
@@ -465,6 +598,7 @@ export interface PortfolioConditionalRecommendationResponse {
     styles: PortfolioRecommendationStyle[];
   };
   budget: PortfolioRecommendationBudget;
+  recommendation_policy?: PortfolioRecommendationPolicy | null;
   summary: PortfolioRecommendationSummary;
   recommendations: PortfolioRecommendationItem[];
   notes: string[];
@@ -476,11 +610,14 @@ export interface PortfolioOptimalRecommendationResponse {
   objective: string;
   style: PortfolioRecommendationStyle;
   budget: PortfolioRecommendationBudget;
+  recommendation_policy?: PortfolioRecommendationPolicy | null;
   summary: PortfolioRecommendationSummary;
   recommendations: PortfolioRecommendationItem[];
   notes: string[];
   market_view: PortfolioRecommendationMarketView[];
 }
+
+export interface PortfolioPersonalizedRecommendationResponse extends PortfolioOptimalRecommendationResponse {}
 
 export interface DailyIdealPortfolioTargetDate {
   country_code: string;

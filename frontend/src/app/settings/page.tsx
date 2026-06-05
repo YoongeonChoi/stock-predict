@@ -1,6 +1,7 @@
 "use client";
 
 import AccountSettingsPanel from "@/components/settings/AccountSettingsPanel";
+import InvestmentProfileSettingsPanel from "@/components/settings/InvestmentProfileSettingsPanel";
 import MarketSessionPanel from "@/components/MarketSessionPanel";
 import PageHeader from "@/components/PageHeader";
 import SystemStatusCard from "@/components/SystemStatusCard";
@@ -66,6 +67,7 @@ export default function SettingsPage() {
       ) : null}
 
       <AccountSettingsPanel />
+      <InvestmentProfileSettingsPanel />
 
       {loading ? (
         <div className="space-y-4">

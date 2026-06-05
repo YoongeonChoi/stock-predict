@@ -17,6 +17,7 @@ export default function PortfolioOptimalRecommendationPanel({ data, loading, err
       description="현재 포트폴리오의 과대집중도와 각 시장의 체제를 함께 보고, 지금 기준으로 가장 효율적인 신규 자금 배분안을 자동으로 계산합니다."
       loading={loading}
       budget={data?.budget}
+      recommendationPolicy={data?.recommendation_policy}
       summary={data?.summary}
       recommendations={data?.recommendations}
       notes={data?.notes}

@@ -380,7 +380,12 @@ def optimize_portfolio_weights(candidates: list[dict], budget: dict) -> Portfoli
     country_cap = max(float(budget.get("max_country_weight_pct") or 0.0) / 100.0, 0.0)
     sector_cap = max(float(budget.get("max_sector_weight_pct") or 0.0) / 100.0, 0.0)
     style = str(budget.get("style") or "balanced")
-    risk_aversion, turnover_penalty = _style_parameters(style)
+    default_risk_aversion, default_turnover_penalty = _style_parameters(style)
+    risk_aversion = float(budget.get("risk_aversion") or default_risk_aversion)
+    turnover_penalty = float(budget.get("turnover_penalty") or default_turnover_penalty)
+    expected_excess_weight = float(budget.get("expected_excess_weight") or 1.0)
+    expected_total_weight = float(budget.get("expected_total_weight") or 0.35)
+    probability_edge_weight = float(budget.get("probability_edge_weight") or 0.04)
 
     model_scores = np.array([float(candidate.get("model_score") or 0.0) for candidate in candidates], dtype=float)
     expected_total = np.array([float(candidate.get("expected_return_pct_20d") or candidate.get("predicted_return_pct") or 0.0) / 100.0 for candidate in candidates], dtype=float)
@@ -395,7 +400,12 @@ def optimize_portfolio_weights(candidates: list[dict], budget: dict) -> Portfoli
     sector_groups = _group_indices([str(candidate.get("sector") or "Other") for candidate in candidates])
     covariance = _ewma_shrinkage_covariance(candidates)
 
-    objective_mean = expected_excess + expected_total * 0.35
+    probability_edge = np.maximum((up_probability - down_probability) / 100.0, 0.0)
+    objective_mean = (
+        expected_excess * expected_excess_weight
+        + expected_total * expected_total_weight
+        + probability_edge * probability_edge_weight
+    )
     weights = _seed_weights(
         target_equity=target_equity,
         current_weights=current_weights,
