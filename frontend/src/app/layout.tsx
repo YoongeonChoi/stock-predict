@@ -21,9 +21,38 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+const siteName = "SP";
+const siteDescription = "한국 시장 브리핑, 기회 레이더, 스크리너, 포트폴리오 비교를 제공하는 분석 워크스페이스";
+const ogImage = {
+  url: "/og/sp-og.png",
+  width: 1200,
+  height: 630,
+  alt: "SP 시장 분석 워크스페이스 대표 이미지",
+};
+
 export const metadata: Metadata = {
-  title: "yoongeon.xyz | Stock Predict",
-  description: "한국 시장 브리핑, 기회 레이더, 스크리너, 포트폴리오 비교를 제공하는 분석 워크스페이스",
+  metadataBase: new URL("https://www.yoongeon.xyz"),
+  applicationName: siteName,
+  title: {
+    default: "SP | yoongeon.xyz",
+    template: "%s | SP",
+  },
+  description: siteDescription,
+  openGraph: {
+    title: "SP",
+    description: siteDescription,
+    url: "/",
+    siteName,
+    locale: "ko_KR",
+    type: "website",
+    images: [ogImage],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SP",
+    description: siteDescription,
+    images: [ogImage.url],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

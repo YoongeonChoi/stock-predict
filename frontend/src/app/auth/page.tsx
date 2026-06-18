@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import AuthPageClient from "@/components/auth/AuthPageClient";
 
 export const metadata: Metadata = {
-  title: "로그인 및 회원가입 | Stock Predict",
+  title: "로그인 및 회원가입",
 };
 
 function AuthPageFallback() {

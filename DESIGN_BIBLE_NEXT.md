@@ -1,4 +1,4 @@
-# Stock Predict Redesign Brief
+# SP Redesign Brief
 
 This file is the active UI/UX standard for the v2.68.x redesign. The previous
 `DESIGN_BIBLE.md` is preserved as legacy reference, but new redesign work should
@@ -13,6 +13,10 @@ The public page should explain the product quickly, then direct users to the
 dashboard, opportunity radar, screener, portfolio, and contact form. Logged-in
 application routes keep the existing data and API flows, but should move toward
 the same visual language over time.
+
+The visible product name is `SP`. Legacy repository names can remain in code or
+infrastructure where they identify historical projects, but user-facing brand,
+metadata, and share assets should use `SP`.
 
 ## Design Principle
 

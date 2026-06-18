@@ -61,14 +61,18 @@ function radarData(): OpportunityRadarResponse {
 }
 
 describe("OpportunityRadarBoard weekly plan compatibility", () => {
-  it("weekly_trade_plan이 없어도 기존 후보 카드를 렌더링한다", () => {
+  it("compact 보드는 모바일 요약 필드만 렌더링한다", () => {
     render(<OpportunityRadarBoard data={radarData()} compact />);
 
     expect(screen.getByText("삼성전자")).toBeInTheDocument();
+    expect(screen.getByText("005930.KS")).toBeInTheDocument();
+    expect(screen.getByText("₩70,000")).toBeInTheDocument();
+    expect(screen.getByText("최종 점수")).toBeInTheDocument();
     expect(screen.queryByText("이번 주 매수·매도")).not.toBeInTheDocument();
+    expect(screen.queryByText("진입 조건")).not.toBeInTheDocument();
   });
 
-  it("weekly_trade_plan이 있으면 선택적으로 매수·매도 요약을 표시한다", () => {
+  it("weekly_trade_plan이 있으면 전체 보드의 상세 카드에서 매수·매도 요약을 표시한다", () => {
     const data = radarData();
     data.opportunities[0].weekly_trade_plan = {
       horizon_days: 5,
@@ -97,7 +101,7 @@ describe("OpportunityRadarBoard weekly plan compatibility", () => {
       data_quality: "정상",
     };
 
-    render(<OpportunityRadarBoard data={data} compact />);
+    render(<OpportunityRadarBoard data={data} />);
 
     expect(screen.getByText("이번 주 매수·매도")).toBeInTheDocument();
     expect(screen.getByText("₩69,000")).toBeInTheDocument();

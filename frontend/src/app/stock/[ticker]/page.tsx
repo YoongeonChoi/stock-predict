@@ -10,17 +10,19 @@ export async function generateMetadata({ params }: { params: { ticker: string } 
   const data = await timeboxServerPromise(() => getPublicStockDetail(ticker), 1000, null);
   const name = data?.name || ticker;
   return {
-    title: `${name} (${ticker}) 주가, 예측 분포, 재무 요약 - Stock Predict`,
+    title: `${name} (${ticker}) 주가, 예측 분포, 재무 요약`,
     description: `${name} (${ticker})의 가격 흐름, 예측 분포, 기술 신호, 재무 요약을 확인하세요.`,
     openGraph: {
-      title: `${name} (${ticker}) 주가와 예측 분포 - Stock Predict`,
+      title: `${name} (${ticker}) 주가와 예측 분포 - SP`,
       description: `${name} (${ticker})의 가격 흐름과 재무 종합 요약.`,
       type: "website",
+      images: ["/og/sp-og.png"],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: `${name} (${ticker}) 분석 리포트`,
       description: `${name} 종목의 예측 분포와 기회 레이더 요약입니다.`,
+      images: ["/og/sp-og.png"],
     },
   };
 }
