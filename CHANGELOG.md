@@ -2,6 +2,12 @@
 
 All notable changes to this project are tracked here.
 
+## v2.70.1 - 2026-06-18
+
+- 사이트 표시명을 `SP`로 정리하고, 기본 metadata/Open Graph/Twitter 카드가 `frontend/public/og/sp-og.png` 대표 이미지를 사용하도록 연결했습니다.
+- `/radar` 모바일 후보 목록과 `/dashboard` 강한 셋업 compact 보드를 티커, 종목명, 현재가, 최종 점수 중심 요약 행으로 간소화했습니다. 진입 조건, 주간 매수·매도, 확률 세부값은 종목 상세 또는 데스크톱 상세 카드에서 확인합니다.
+- README, DESIGN_BIBLE_NEXT, 프론트 회귀 테스트, 프론트/백엔드 버전을 `v2.70.1` 기준으로 동기화했습니다.
+
 ## v2.70.0 - 2026-06-05
 
 - `/settings`에 계정별 투자 성향 설정을 추가했습니다. `원금보존형`, `안정추구형`, `균형형`, `성장추구형`, `적극투자형` 중 하나를 저장하면 Supabase `investment_profiles`에 사용자별로 분리 저장됩니다.

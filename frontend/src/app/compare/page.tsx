@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import ComparePageClient from "@/components/pages/ComparePageClient";
 
 export const metadata: Metadata = {
-  title: "종목 비교 | Stock Predict",
+  title: "종목 비교",
 };
 
 function ComparePageFallback() {

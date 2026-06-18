@@ -135,7 +135,7 @@ export default function Navigation() {
         <div className="sticky top-0 flex h-screen w-full flex-col border-r border-border/12 bg-bg px-4 py-4 xl:px-5">
           <Link href="/" className="border-b border-border/12 pb-4">
             <div className="font-mono text-[11px] font-semibold uppercase text-text-secondary">yoongeon.xyz</div>
-            <div className="mt-2 text-[1.22rem] font-semibold text-text">Stock Predict</div>
+            <div className="mt-2 text-[1.22rem] font-semibold text-text">SP</div>
             <div className="mt-2 max-w-[15rem] text-[0.8rem] leading-5 text-text-secondary">
               대시보드, 레이더, 스크리너, 포트폴리오를 연결합니다.
             </div>
@@ -170,7 +170,7 @@ export default function Navigation() {
             yoongeon.xyz
           </div>
           <div className="mt-1 truncate text-[0.84rem] font-semibold text-text">
-            Stock Predict
+            SP
           </div>
         </Link>
         <div className="flex items-center gap-2 pl-3">

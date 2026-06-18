@@ -1,8 +1,8 @@
 ﻿"""
-Centralized error code registry for Stock Predict.
+Centralized error code registry for SP.
 
 Format: SP-XYYY
-  SP = Stock Predict prefix
+  SP = product prefix
   X  = Category digit (1~6)
   YYY = Specific error number
 

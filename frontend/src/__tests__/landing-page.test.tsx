@@ -9,7 +9,7 @@ describe("LandingPage", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Stock Predict",
+        name: "SP",
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /대시보드/ })[0]).toHaveAttribute("href", "/dashboard");

@@ -137,7 +137,7 @@ export default function LandingPage() {
       <section className="landing-hero grid items-center gap-10 pb-14 pt-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.85fr)] lg:gap-12 lg:pb-16 lg:pt-16 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,0.82fr)]">
         <div className="min-w-0">
           <h1 className="landing-hero-title text-5xl font-bold leading-[1.1] text-text sm:text-6xl lg:text-7xl">
-            Stock Predict
+            SP
           </h1>
           <p className="landing-hero-copy mt-7 max-w-2xl text-lg leading-8 text-text-secondary sm:text-xl sm:leading-9">
             한국 시장 브리핑, 기회 레이더, 스크리너, 포트폴리오 비교를 제공합니다.
